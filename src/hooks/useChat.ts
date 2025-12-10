@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface Message {
   id: string;
@@ -16,6 +17,12 @@ export function useChat() {
   const [isLoading, setIsLoading] = useState(false);
 
   const sendMessage = useCallback(async (content: string, model: string, imageData?: string) => {
+    // Get current session for JWT
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast.error("Sesión expirada. Inicia sesión de nuevo.");
+      return;
+    }
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -58,7 +65,7 @@ export function useChat() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          Authorization: `Bearer ${session.access_token}`,
         },
         body: JSON.stringify({ messages: messagesToSend, model }),
       });
