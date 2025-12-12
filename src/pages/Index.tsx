@@ -1,4 +1,4 @@
-import { ChatContainer } from "@/components/chat/ChatContainer";
+import { ProtectedChatContainer } from "@/components/chat/ProtectedChatContainer";
 import { Helmet } from "react-helmet-async";
 
 const Index = () => {
@@ -8,7 +8,7 @@ const Index = () => {
         <title>AI Tor - ΔlieπFlΦw DAO Synapse Collective</title>
         <meta name="description" content="Interfaz de chat multi-IA especializada en Blockchain, Web3, Web4, Computación Cuántica, Filosofía y más. Powered by Gemini y GPT." />
       </Helmet>
-      <ChatContainer />
+      <ProtectedChatContainer />
     </>
   );
 };

@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AI_MODELS, type AIModel } from "@/lib/ai-models";
+import { Badge } from "@/components/ui/badge";
+import { AI_MODELS } from "@/lib/ai-models";
 
 interface ModelSelectorProps {
   value: string;
@@ -12,10 +13,13 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
 
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-[200px] border-border bg-background">
+      <SelectTrigger className="w-[220px] border-border bg-background/80 backdrop-blur-sm">
         <SelectValue placeholder="Seleccionar modelo" />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-[400px]">
+        <div className="px-2 py-1.5 text-xs font-semibold text-primary">
+          Modelos Activos
+        </div>
         {availableModels.map((model) => (
           <SelectItem key={model.id} value={model.id}>
             <div className="flex items-center gap-2">
@@ -26,14 +30,16 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         ))}
         {unavailableModels.length > 0 && (
           <>
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">
-              Próximamente (requiere API key)
+            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground mt-2 border-t border-border pt-2">
+              Próximamente
             </div>
             {unavailableModels.map((model) => (
               <SelectItem key={model.id} value={model.id} disabled>
-                <div className="flex items-center gap-2 opacity-50">
+                <div className="flex items-center gap-2 opacity-60">
                   <span>{model.name}</span>
-                  <span className="text-xs">({model.provider})</span>
+                  <Badge variant="outline" className="text-[10px] px-1 py-0 h-4">
+                    Coming Soon
+                  </Badge>
                 </div>
               </SelectItem>
             ))}
