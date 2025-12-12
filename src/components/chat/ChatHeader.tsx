@@ -3,6 +3,7 @@ import { ModelSelector } from "./ModelSelector";
 import { Trash2, LogOut } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -24,24 +25,12 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
   return (
     <header className="flex items-center justify-between border-b border-border/50 bg-background/80 backdrop-blur-sm px-4 py-3">
       <div className="flex items-center gap-3">
-        {/* AlienFlow Logo */}
-        <div className="relative flex items-center justify-center w-10 h-10">
-          <svg viewBox="0 0 100 100" className="w-full h-full">
-            {/* Alien head outline */}
-            <ellipse cx="50" cy="45" rx="28" ry="35" fill="none" stroke="hsl(var(--secondary))" strokeWidth="2"/>
-            {/* Eyes */}
-            <ellipse cx="38" cy="40" rx="8" ry="12" fill="hsl(var(--secondary))" opacity="0.8"/>
-            <ellipse cx="62" cy="40" rx="8" ry="12" fill="hsl(var(--secondary))" opacity="0.8"/>
-            {/* Eye glow */}
-            <ellipse cx="38" cy="38" rx="4" ry="6" fill="hsl(var(--primary))" className="animate-pulse"/>
-            <ellipse cx="62" cy="38" rx="4" ry="6" fill="hsl(var(--primary))" className="animate-pulse" style={{animationDelay: '0.5s'}}/>
-            {/* Delta symbol on forehead */}
-            <polygon points="50,20 42,35 58,35" fill="none" stroke="hsl(var(--primary))" strokeWidth="2"/>
-            {/* Antenna */}
-            <line x1="50" y1="10" x2="50" y2="18" stroke="hsl(var(--primary))" strokeWidth="2"/>
-            <circle cx="50" cy="8" r="3" fill="hsl(var(--primary))" className="animate-pulse"/>
-          </svg>
-        </div>
+        {/* AlienFlow Official Logo */}
+        <img 
+          src={alienflowLogo} 
+          alt="AlienFlow Logo" 
+          className="w-12 h-12 object-contain"
+        />
         
         <div className="flex flex-col">
           <h1 className="text-lg font-heading font-bold tracking-tight">

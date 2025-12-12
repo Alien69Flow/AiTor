@@ -10,6 +10,7 @@ import { Helmet } from "react-helmet-async";
 import { z } from "zod";
 import { Separator } from "@/components/ui/separator";
 import { SpaceBackground } from "@/components/SpaceBackground";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const authSchema = z.object({
   email: z.string().email("Email inválido"),
@@ -99,6 +100,13 @@ export default function Auth() {
       <div className="relative flex min-h-screen items-center justify-center p-4">
         <Card className="w-full max-w-md border-secondary/30 bg-card/80 backdrop-blur-sm">
           <CardHeader className="text-center">
+            <div className="flex justify-center mb-4">
+              <img 
+                src={alienflowLogo} 
+                alt="AlienFlow Logo" 
+                className="w-24 h-24 object-contain"
+              />
+            </div>
             <CardTitle className="text-3xl font-heading">
               <span className="text-secondary">Δlieπ</span>
               <span className="text-primary">FlΦw</span>

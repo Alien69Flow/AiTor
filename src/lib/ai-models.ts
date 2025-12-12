@@ -11,7 +11,7 @@ export const AI_MODELS: AIModel[] = [
   {
     id: "google/gemini-2.5-flash",
     name: "Gemini 2.5 Flash",
-    provider: "Google",
+    provider: "Lovable AI",
     description: "Rápido y equilibrado, excelente para multimodal",
     supportsVision: true,
     available: true,
@@ -19,7 +19,7 @@ export const AI_MODELS: AIModel[] = [
   {
     id: "google/gemini-2.5-pro",
     name: "Gemini 2.5 Pro",
-    provider: "Google",
+    provider: "Lovable AI",
     description: "Top-tier, razonamiento complejo y contexto largo",
     supportsVision: true,
     available: true,
@@ -27,7 +27,7 @@ export const AI_MODELS: AIModel[] = [
   {
     id: "openai/gpt-5",
     name: "GPT-5",
-    provider: "OpenAI",
+    provider: "Lovable AI",
     description: "Máxima precisión, multimodal avanzado",
     supportsVision: true,
     available: true,
@@ -35,27 +35,20 @@ export const AI_MODELS: AIModel[] = [
   {
     id: "openai/gpt-5-mini",
     name: "GPT-5 Mini",
-    provider: "OpenAI",
+    provider: "Lovable AI",
     description: "Balance entre velocidad y rendimiento",
     supportsVision: true,
     available: true,
   },
   {
-    id: "deepseek",
-    name: "DeepSeek",
-    provider: "DeepSeek",
-    description: "Especializado en código y razonamiento",
-    supportsVision: false,
-    available: false, // Requires API key
-  },
-  {
-    id: "grok",
-    name: "Grok",
-    provider: "xAI",
-    description: "Acceso a información en tiempo real",
-    supportsVision: false,
-    available: false, // Requires API key
+    id: "openai/gpt-5-nano",
+    name: "GPT-5 Nano",
+    provider: "Lovable AI",
+    description: "Ultra rápido, ideal para tareas simples",
+    supportsVision: true,
+    available: true,
   },
 ];
 
 export const getAvailableModels = () => AI_MODELS.filter(m => m.available);
+export const DEFAULT_MODEL = "google/gemini-2.5-flash";
