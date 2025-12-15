@@ -1,7 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut } from "lucide-react";
+import { Trash2, LogOut, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
@@ -13,7 +14,8 @@ interface ChatHeaderProps {
 }
 
 export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages }: ChatHeaderProps) {
-  const { signOut } = useAuth();
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -59,15 +61,32 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
           </Button>
         )}
 
-        <Button 
-          variant="ghost" 
-          size="icon"
-          onClick={handleSignOut}
-          className="text-muted-foreground hover:text-primary"
-          title="Cerrar sesión"
-        >
-          <LogOut className="h-4 w-4" />
-        </Button>
+        {user ? (
+          <>
+            <span className="text-xs text-muted-foreground hidden sm:block max-w-[120px] truncate">
+              {user.email}
+            </span>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              onClick={handleSignOut}
+              className="text-muted-foreground hover:text-primary"
+              title="Cerrar sesión"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </>
+        ) : (
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => navigate('/auth')}
+            className="gap-2"
+          >
+            <LogIn className="h-4 w-4" />
+            <span className="hidden sm:inline">Guardar historial</span>
+          </Button>
+        )}
       </div>
     </header>
   );
