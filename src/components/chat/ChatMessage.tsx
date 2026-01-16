@@ -8,31 +8,46 @@ interface ChatMessageProps {
 export function ChatMessage({ message }: ChatMessageProps) {
   const isUser = message.role === "user";
 
+  const formatTimestamp = (date: Date) => {
+    return date.toLocaleTimeString([], { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false 
+    });
+  };
+
   return (
-    <div className={cn("flex gap-3 py-4", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex gap-3 py-3", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[80%] rounded-lg px-4 py-3",
+          "max-w-[90%] rounded-lg px-3 py-2",
           isUser 
-            ? "bg-primary text-primary-foreground" 
-            : "bg-muted text-foreground"
+            ? "bg-primary/90 text-primary-foreground" 
+            : "bg-card/60 backdrop-blur-sm border border-secondary/20 text-foreground"
         )}
       >
         {message.imageData && (
           <img 
             src={message.imageData} 
             alt="Uploaded" 
-            className="mb-2 max-h-48 rounded-md object-contain"
+            className="mb-2 max-h-40 rounded-md object-contain"
           />
         )}
-        <div className="whitespace-pre-wrap text-sm leading-relaxed">
+        <div className={cn(
+          "whitespace-pre-wrap text-sm leading-relaxed",
+          !isUser && "font-mono"
+        )}>
+          {!isUser && (
+            <span className="text-secondary mr-1.5">&gt;</span>
+          )}
           {message.content}
         </div>
         <div className={cn(
-          "mt-1 text-[10px]",
-          isUser ? "text-primary-foreground/70" : "text-muted-foreground"
+          "mt-1.5 text-[10px] font-mono",
+          isUser ? "text-primary-foreground/60" : "text-muted-foreground"
         )}>
-          {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          [{formatTimestamp(message.timestamp)}]
         </div>
       </div>
     </div>

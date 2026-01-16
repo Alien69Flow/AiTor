@@ -142,3 +142,33 @@
     @apply font-heading;
   }
 }
+
+/* Terminal Matrix Effects */
+@keyframes glow-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 20px hsla(145, 63%, 42%, 0.2), 0 0 40px hsla(45, 100%, 50%, 0.1); 
+  }
+  50% { 
+    box-shadow: 0 0 30px hsla(145, 63%, 42%, 0.4), 0 0 60px hsla(45, 100%, 50%, 0.2); 
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes text-glitch {
+  0%, 100% { opacity: 1; transform: translateX(0); }
+  10% { opacity: 0.8; transform: translateX(-1px); }
+  20% { opacity: 1; transform: translateX(1px); }
+  30% { opacity: 0.9; transform: translateX(0); }
+}
+
+.terminal-glow {
+  animation: glow-pulse 4s ease-in-out infinite;
+}
+
+.thinking-glitch {
+  animation: text-glitch 0.3s ease-in-out;
+}
