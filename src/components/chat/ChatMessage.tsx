@@ -18,37 +18,48 @@ export function ChatMessage({ message }: ChatMessageProps) {
   };
 
   return (
-    <div className={cn("flex gap-3 py-3", isUser ? "justify-end" : "justify-start")}>
-      <div
-        className={cn(
-          "max-w-[90%] rounded-lg px-3 py-2",
-          isUser 
-            ? "bg-primary/90 text-primary-foreground" 
-            : "bg-card/60 backdrop-blur-sm border border-secondary/20 text-foreground"
-        )}
-      >
-        {message.imageData && (
+    <div className={cn(
+      "py-2 px-3 font-mono text-xs",
+      isUser ? "bg-transparent" : "bg-card/30"
+    )}>
+      {/* Header with role and timestamp */}
+      <div className="flex items-center gap-2 mb-1">
+        <span className={cn(
+          "font-medium tracking-wider",
+          isUser ? "text-primary" : "text-secondary"
+        )}>
+          {isUser ? "[USER]" : "[TOR]"}
+        </span>
+        <span className="text-muted-foreground/60 text-[9px]">
+          {formatTimestamp(message.timestamp)}
+        </span>
+      </div>
+
+      {/* Image preview for user messages */}
+      {message.imageData && (
+        <div className="mb-2">
           <img 
             src={message.imageData} 
             alt="Uploaded" 
-            className="mb-2 max-h-40 rounded-md object-contain"
+            className="max-h-32 rounded border border-secondary/30"
           />
-        )}
-        <div className={cn(
-          "whitespace-pre-wrap text-sm leading-relaxed",
-          !isUser && "font-mono"
+        </div>
+      )}
+
+      {/* Message content */}
+      <div className={cn(
+        "pl-3 border-l-2",
+        isUser ? "border-primary/40 text-foreground/90" : "border-secondary/40 text-muted-foreground"
+      )}>
+        <span className={cn(
+          "mr-1.5",
+          isUser ? "text-primary/60" : "text-secondary/60"
         )}>
-          {!isUser && (
-            <span className="text-secondary mr-1.5">&gt;</span>
-          )}
+          &gt;
+        </span>
+        <span className="whitespace-pre-wrap break-words leading-relaxed">
           {message.content}
-        </div>
-        <div className={cn(
-          "mt-1.5 text-[10px] font-mono",
-          isUser ? "text-primary-foreground/60" : "text-muted-foreground"
-        )}>
-          [{formatTimestamp(message.timestamp)}]
-        </div>
+        </span>
       </div>
     </div>
   );
