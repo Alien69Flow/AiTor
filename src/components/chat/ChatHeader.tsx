@@ -1,10 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn } from "lucide-react";
+import { Trash2, LogOut, LogIn, Wallet, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
+import { AI_MODELS } from "@/lib/ai-models";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -18,6 +19,8 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
   const navigate = useNavigate();
   const [sessionId, setSessionId] = useState("");
 
+  const currentModel = AI_MODELS.find(m => m.id === selectedModel);
+
   useEffect(() => {
     // Generate random hex session ID
     setSessionId(Math.random().toString(16).slice(2, 10).toUpperCase());
@@ -30,41 +33,64 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
     }
   };
 
+  const handleConnectWallet = () => {
+    toast.info("Conectar Wallet disponible próximamente", {
+      description: "Desbloquea el modo Nexo Soberano con Web3"
+    });
+  };
+
   return (
-    <header className="bg-card/90 backdrop-blur-sm border-b border-secondary/40">
+    <header className="bg-card/90 backdrop-blur-md border-b border-secondary/40">
       {/* Terminal window bar */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-secondary/20">
         <div className="flex items-center gap-1.5">
-          <div className="w-2.5 h-2.5 rounded-full bg-destructive/80 hover:bg-destructive transition-colors" />
-          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors" />
-          <div className="w-2.5 h-2.5 rounded-full bg-green-500/80 hover:bg-green-500 transition-colors" />
+          <div className="w-2.5 h-2.5 rounded-full bg-destructive/80 hover:bg-destructive transition-colors cursor-pointer" />
+          <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors cursor-pointer" />
+          <div className="w-2.5 h-2.5 rounded-full bg-secondary/80 hover:bg-secondary transition-colors cursor-pointer" />
         </div>
         
         <div className="flex-1 flex items-center justify-center gap-2">
-          <span className="text-xs font-mono text-secondary font-medium tracking-wider">
+          <span className="text-xs font-heading text-primary neon-text-gold tracking-wider">
             [ AI_TOR.v69 ]
           </span>
-          <span className="flex items-center gap-1 text-[10px] text-primary font-mono">
-            <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+          <span className="flex items-center gap-1 text-[10px] text-secondary font-mono">
+            <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
             SYNCED
           </span>
         </div>
 
-        <div className="w-[52px]" /> {/* Spacer for balance */}
+        {/* Active Oracle indicator */}
+        {currentModel && (
+          <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
+            <Zap className="w-2.5 h-2.5 text-primary animate-pulse" />
+            <span className="hidden sm:inline">{currentModel.oracleIcon}</span>
+          </div>
+        )}
       </div>
       
       {/* Controls row */}
-      <div className="flex items-center justify-between px-3 py-1.5">
-        <div className="flex flex-col">
-          <span className="text-[10px] font-mono text-muted-foreground tracking-wide">
+      <div className="flex items-center justify-between px-3 py-1.5 gap-2">
+        <div className="flex flex-col min-w-0">
+          <span className="text-[10px] font-heading text-secondary tracking-wide truncate">
             ΔlieπFlΦw DAO Synapse
           </span>
-          <span className="text-[9px] font-mono text-secondary/60">
+          <span className="text-[9px] font-mono text-muted-foreground/60 truncate">
             SESSION:0x{sessionId}
           </span>
         </div>
         
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 flex-shrink-0">
+          {/* Connect Wallet button - neon style */}
+          <Button 
+            variant="outline"
+            size="sm"
+            onClick={handleConnectWallet}
+            className="h-7 px-2 text-[10px] font-mono border-secondary/50 bg-secondary/10 text-secondary hover:bg-secondary/20 hover:border-secondary hover:text-secondary-foreground neon-border transition-all duration-300"
+          >
+            <Wallet className="h-3 w-3 mr-1" />
+            <span className="hidden sm:inline">Wallet</span>
+          </Button>
+
           <ModelSelector value={selectedModel} onChange={onModelChange} />
           
           {hasMessages && (

@@ -5,90 +5,113 @@ export interface AIModel {
   description: string;
   supportsVision: boolean;
   available: boolean;
+  oracleType?: 'primary' | 'advanced' | 'blockchain' | 'external';
+  oracleIcon?: string;
 }
 
 export const AI_MODELS: AIModel[] = [
-  // Modelos disponibles (Lovable AI)
+  // Oráculos Activos (Lovable AI Gateway)
   {
     id: "google/gemini-2.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
-    description: "IA principal del colectivo, rápida y multimodal",
+    description: "Oráculo principal, rápido y multimodal",
     supportsVision: true,
     available: true,
+    oracleType: 'primary',
+    oracleIcon: '🔮',
   },
   {
     id: "google/gemini-2.5-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
-    description: "Versión avanzada con razonamiento complejo",
+    description: "Razonamiento cuántico avanzado",
     supportsVision: true,
     available: true,
+    oracleType: 'advanced',
+    oracleIcon: '🔮',
   },
   {
     id: "openai/gpt-4o",
-    name: "GPT-4o",
+    name: "GPT-4o Oracle",
     provider: "Lovable AI",
-    description: "Máxima precisión, multimodal avanzado",
+    description: "Máxima precisión, multimodal",
     supportsVision: true,
     available: true,
+    oracleType: 'advanced',
+    oracleIcon: '⚡',
   },
   {
     id: "openai/gpt-4o-mini",
     name: "GPT-4o Mini",
     provider: "Lovable AI",
-    description: "Balance entre velocidad y rendimiento",
+    description: "Balance velocidad/rendimiento",
     supportsVision: true,
     available: true,
+    oracleType: 'primary',
+    oracleIcon: '⚡',
   },
-  // Modelos próximamente (requieren API key)
+  // Oráculos Blockchain (Próximamente)
+  {
+    id: "chaingpt/oracle",
+    name: "ChainGPT Oracle",
+    provider: "ChainGPT",
+    description: "IA especializada en Web3 y cripto",
+    supportsVision: false,
+    available: false,
+    oracleType: 'blockchain',
+    oracleIcon: '🔗',
+  },
+  {
+    id: "chainlink/oracle",
+    name: "Chainlink Oracle",
+    provider: "Chainlink",
+    description: "Datos on-chain verificados",
+    supportsVision: false,
+    available: false,
+    oracleType: 'blockchain',
+    oracleIcon: '⛓️',
+  },
+  // Otros Oráculos (Próximamente - requieren API key)
   {
     id: "deepseek/deepseek-v3",
     name: "DeepSeek V3",
     provider: "DeepSeek",
-    description: "Modelo de código abierto de última generación",
+    description: "Código abierto de última generación",
     supportsVision: false,
     available: false,
+    oracleType: 'external',
+    oracleIcon: '🌊',
   },
   {
     id: "deepseek/deepseek-r1",
     name: "DeepSeek R1",
     provider: "DeepSeek",
-    description: "Razonamiento avanzado estilo o1",
+    description: "Razonamiento estilo o1",
     supportsVision: false,
     available: false,
-  },
-  {
-    id: "google/gemini-2.5-pro-direct",
-    name: "Gemini 2.5 Pro",
-    provider: "Google",
-    description: "Conexión directa a Google AI",
-    supportsVision: true,
-    available: false,
-  },
-  {
-    id: "google/gemini-2.5-flash-direct",
-    name: "Gemini 2.5 Flash",
-    provider: "Google",
-    description: "Conexión directa a Google AI",
-    supportsVision: true,
-    available: false,
+    oracleType: 'external',
+    oracleIcon: '🌊',
   },
   {
     id: "xai/grok-2",
     name: "Grok 2",
     provider: "xAI",
-    description: "IA de Elon Musk con acceso a X",
+    description: "IA con acceso a X (Twitter)",
     supportsVision: true,
     available: false,
+    oracleType: 'external',
+    oracleIcon: '🚀',
   },
   {
     id: "anthropic/claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet",
     provider: "Anthropic",
-    description: "Razonamiento y creatividad superior",
+    description: "Creatividad y razonamiento",
     supportsVision: true,
     available: false,
+    oracleType: 'external',
+    oracleIcon: '🎭',
   },
 ];
 

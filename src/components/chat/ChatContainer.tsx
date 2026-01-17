@@ -8,9 +8,12 @@ import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SpaceBackground } from "@/components/SpaceBackground";
+import { Maximize2, Minimize2, AlertTriangle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const { messages, isLoading, sendMessage, clearChat } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -27,20 +30,41 @@ export function ChatContainer() {
     }
   }, [messages, isLoading]);
 
+  const containerClasses = isFullscreen
+    ? "fixed inset-4 sm:inset-8 flex flex-col"
+    : "relative flex flex-col w-full max-w-[480px] max-h-[75vh]";
+
   return (
     <>
       <SpaceBackground />
-      <div className="fixed inset-0 flex items-center justify-center p-4 pointer-events-none z-10">
-        <div className="pointer-events-auto relative flex flex-col w-full max-w-[450px] max-h-[70vh] bg-card/85 backdrop-blur-xl rounded-lg border border-secondary/40 shadow-[0_0_40px_rgba(0,200,100,0.15)] overflow-hidden terminal-glow">
+      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-4 pointer-events-none z-10">
+        <div className={`pointer-events-auto ${containerClasses} glass-dark rounded-lg border border-secondary/40 overflow-hidden terminal-glow scanlines`}>
           
-          {/* Scanlines overlay */}
-          <div className="absolute inset-0 pointer-events-none opacity-[0.02] bg-[repeating-linear-gradient(0deg,transparent,transparent_2px,hsl(142_70%_45%/0.1)_2px,hsl(142_70%_45%/0.1)_4px)] z-10" />
+          {/* HUD Corners */}
+          <div className="absolute top-0 left-0 w-5 h-5 border-l-2 border-t-2 border-secondary/50 rounded-tl-lg z-20" />
+          <div className="absolute top-0 right-0 w-5 h-5 border-r-2 border-t-2 border-secondary/50 rounded-tr-lg z-20" />
+          <div className="absolute bottom-0 left-0 w-5 h-5 border-l-2 border-b-2 border-secondary/50 rounded-bl-lg z-20" />
+          <div className="absolute bottom-0 right-0 w-5 h-5 border-r-2 border-b-2 border-secondary/50 rounded-br-lg z-20" />
           
           {/* Corner symbols */}
-          <div className="absolute top-1 left-2 text-secondary/20 font-mono text-[10px] z-20">Δ</div>
-          <div className="absolute top-1 right-2 text-secondary/20 font-mono text-[10px] z-20">Ω</div>
-          <div className="absolute bottom-1 left-2 text-secondary/20 font-mono text-[10px] z-20">Φ</div>
-          <div className="absolute bottom-1 right-2 text-secondary/20 font-mono text-[10px] z-20">π</div>
+          <div className="absolute top-2 left-3 text-primary/30 font-heading text-[10px] z-20">Δ</div>
+          <div className="absolute top-2 right-3 text-primary/30 font-heading text-[10px] z-20">Ω</div>
+          <div className="absolute bottom-7 left-3 text-secondary/30 font-heading text-[10px] z-20">Φ</div>
+          <div className="absolute bottom-7 right-3 text-secondary/30 font-heading text-[10px] z-20">π</div>
+
+          {/* Fullscreen toggle */}
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="absolute top-2 right-10 h-6 w-6 text-muted-foreground/50 hover:text-primary z-30"
+          >
+            {isFullscreen ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </Button>
           
           <ChatHeader
             selectedModel={selectedModel}
@@ -71,6 +95,16 @@ export function ChatContainer() {
             isLoading={isLoading}
             supportsVision={supportsVision}
           />
+
+          {/* Disclaimer footer */}
+          <div className="px-2 py-1 border-t border-secondary/20 bg-card/30 z-10">
+            <div className="flex items-start gap-1.5 text-[7px] text-muted-foreground/40">
+              <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0 mt-0.5" />
+              <span>
+                AI Tor puede cometer errores. Verifica la información. Para consultas médicas o financieras, consulta con profesionales cualificados.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </>

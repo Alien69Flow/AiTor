@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import cosmicBg from '@/assets/cosmic-background.jpg';
 
 interface Star {
   x: number;
@@ -30,6 +31,14 @@ interface Particle {
   maxLife: number;
 }
 
+interface GravityWave {
+  x: number;
+  y: number;
+  radius: number;
+  maxRadius: number;
+  opacity: number;
+}
+
 export function SpaceBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -44,9 +53,10 @@ export function SpaceBackground() {
     const stars: Star[] = [];
     const nebulae: Nebula[] = [];
     const particles: Particle[] = [];
-    const numStars = 300;
-    const numNebulae = 5;
-    const maxParticles = 50;
+    const gravityWaves: GravityWave[] = [];
+    const numStars = 400;
+    const numNebulae = 6;
+    const maxParticles = 80;
 
     const resizeCanvas = () => {
       canvas.width = window.innerWidth;
@@ -60,9 +70,9 @@ export function SpaceBackground() {
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
           size: Math.random() * 2.5 + 0.3,
-          speed: Math.random() * 0.3 + 0.05,
+          speed: Math.random() * 0.2 + 0.03,
           opacity: Math.random() * 0.8 + 0.2,
-          twinkleSpeed: Math.random() * 0.02 + 0.01,
+          twinkleSpeed: Math.random() * 0.02 + 0.005,
         });
       }
     };
@@ -70,37 +80,52 @@ export function SpaceBackground() {
     const initNebulae = () => {
       nebulae.length = 0;
       const colors = [
-        'rgba(0, 200, 100, 0.15)',   // Green
-        'rgba(255, 215, 0, 0.12)',    // Gold
-        'rgba(0, 150, 80, 0.1)',      // Dark green
-        'rgba(180, 150, 50, 0.08)',   // Muted gold
-        'rgba(50, 180, 120, 0.1)',    // Teal green
+        'rgba(105, 175, 0, 0.12)',    // Verde Lima Neón
+        'rgba(255, 215, 0, 0.10)',    // Dorado Real
+        'rgba(105, 175, 0, 0.08)',    // Verde Lima sutil
+        'rgba(200, 180, 50, 0.06)',   // Dorado apagado
+        'rgba(80, 140, 0, 0.10)',     // Verde oscuro
+        'rgba(255, 200, 50, 0.08)',   // Ámbar
       ];
       for (let i = 0; i < numNebulae; i++) {
         nebulae.push({
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
-          radius: Math.random() * 300 + 150,
+          radius: Math.random() * 350 + 150,
           color: colors[i % colors.length],
           opacity: Math.random() * 0.5 + 0.3,
-          drift: (Math.random() - 0.5) * 0.2,
+          drift: (Math.random() - 0.5) * 0.15,
+        });
+      }
+    };
+
+    // Spawn gravity waves periodically
+    const spawnGravityWave = () => {
+      if (gravityWaves.length < 3 && Math.random() < 0.005) {
+        gravityWaves.push({
+          x: Math.random() * canvas.width,
+          y: Math.random() * canvas.height,
+          radius: 0,
+          maxRadius: Math.random() * 300 + 200,
+          opacity: 0.3,
         });
       }
     };
 
     const spawnParticle = () => {
-      if (particles.length < maxParticles && Math.random() < 0.1) {
-        const isGold = Math.random() > 0.5;
+      if (particles.length < maxParticles && Math.random() < 0.15) {
+        const isGold = Math.random() > 0.4;
+        // Particles flow downward like gravity discharge
         particles.push({
           x: Math.random() * canvas.width,
-          y: Math.random() * canvas.height,
-          vx: (Math.random() - 0.5) * 0.5,
-          vy: (Math.random() - 0.5) * 0.5,
-          size: Math.random() * 3 + 1,
-          opacity: Math.random() * 0.6 + 0.2,
-          color: isGold ? 'rgba(255, 215, 0,' : 'rgba(0, 200, 100,',
+          y: -10,
+          vx: (Math.random() - 0.5) * 0.3,
+          vy: Math.random() * 1.5 + 0.5,
+          size: Math.random() * 2.5 + 1,
+          opacity: Math.random() * 0.7 + 0.3,
+          color: isGold ? 'rgba(255, 215, 0,' : 'rgba(105, 175, 0,',
           life: 0,
-          maxLife: Math.random() * 300 + 200,
+          maxLife: Math.random() * 400 + 300,
         });
       }
     };
@@ -112,6 +137,7 @@ export function SpaceBackground() {
           nebula.x, nebula.y, nebula.radius
         );
         gradient.addColorStop(0, nebula.color);
+        gradient.addColorStop(0.5, nebula.color.replace(/[\d.]+\)$/, '0.05)'));
         gradient.addColorStop(1, 'transparent');
         
         ctx.beginPath();
@@ -121,7 +147,7 @@ export function SpaceBackground() {
 
         // Slow drift
         nebula.x += nebula.drift;
-        nebula.y += nebula.drift * 0.5;
+        nebula.y += nebula.drift * 0.3;
         
         // Wrap around
         if (nebula.x < -nebula.radius) nebula.x = canvas.width + nebula.radius;
@@ -131,35 +157,59 @@ export function SpaceBackground() {
       });
     };
 
+    const drawGravityWaves = () => {
+      gravityWaves.forEach((wave, index) => {
+        wave.radius += 1.5;
+        wave.opacity = 0.3 * (1 - wave.radius / wave.maxRadius);
+        
+        if (wave.radius >= wave.maxRadius) {
+          gravityWaves.splice(index, 1);
+          return;
+        }
+
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, wave.radius, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(105, 175, 0, ${wave.opacity})`;
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Inner ring
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, wave.radius * 0.7, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(255, 215, 0, ${wave.opacity * 0.5})`;
+        ctx.stroke();
+      });
+    };
+
     const drawStars = () => {
       stars.forEach((star) => {
         ctx.beginPath();
         ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
         
-        // Mix of gold and green stars
+        // Mix of gold and lime stars
         const isGold = star.size > 1.5;
         const color = isGold 
           ? `rgba(255, 215, 0, ${star.opacity})`
-          : `rgba(200, 255, 200, ${star.opacity})`;
+          : `rgba(200, 255, 150, ${star.opacity})`;
         ctx.fillStyle = color;
         ctx.fill();
 
         // Add glow effect for larger stars
         if (star.size > 1.8) {
           ctx.beginPath();
-          ctx.arc(star.x, star.y, star.size * 2, 0, Math.PI * 2);
+          ctx.arc(star.x, star.y, star.size * 2.5, 0, Math.PI * 2);
           const glowColor = isGold 
-            ? `rgba(255, 215, 0, ${star.opacity * 0.3})`
-            : `rgba(0, 200, 100, ${star.opacity * 0.3})`;
+            ? `rgba(255, 215, 0, ${star.opacity * 0.25})`
+            : `rgba(105, 175, 0, ${star.opacity * 0.25})`;
           ctx.fillStyle = glowColor;
           ctx.fill();
         }
 
         // Twinkle effect
-        star.opacity += Math.sin(Date.now() * star.twinkleSpeed) * 0.02;
+        star.opacity += Math.sin(Date.now() * star.twinkleSpeed) * 0.015;
         star.opacity = Math.max(0.1, Math.min(1, star.opacity));
 
-        // Slow movement
+        // Slow downward movement
         star.y += star.speed;
         if (star.y > canvas.height) {
           star.y = 0;
@@ -174,19 +224,23 @@ export function SpaceBackground() {
         particle.y += particle.vy;
         particle.life++;
 
+        // Slight horizontal drift
+        particle.vx += (Math.random() - 0.5) * 0.02;
+
         const lifeRatio = 1 - particle.life / particle.maxLife;
         const currentOpacity = particle.opacity * lifeRatio;
 
-        // Particle with glow
+        // Particle with glow trail
         const gradient = ctx.createRadialGradient(
           particle.x, particle.y, 0,
-          particle.x, particle.y, particle.size * 3
+          particle.x, particle.y, particle.size * 4
         );
         gradient.addColorStop(0, `${particle.color}${currentOpacity})`);
+        gradient.addColorStop(0.5, `${particle.color}${currentOpacity * 0.3})`);
         gradient.addColorStop(1, `${particle.color}0)`);
 
         ctx.beginPath();
-        ctx.arc(particle.x, particle.y, particle.size * 3, 0, Math.PI * 2);
+        ctx.arc(particle.x, particle.y, particle.size * 4, 0, Math.PI * 2);
         ctx.fillStyle = gradient;
         ctx.fill();
 
@@ -196,8 +250,8 @@ export function SpaceBackground() {
         ctx.fillStyle = `${particle.color}${currentOpacity})`; 
         ctx.fill();
 
-        // Remove dead particles
-        if (particle.life >= particle.maxLife) {
+        // Remove dead particles or out of bounds
+        if (particle.life >= particle.maxLife || particle.y > canvas.height + 50) {
           particles.splice(index, 1);
         }
       });
@@ -207,8 +261,10 @@ export function SpaceBackground() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       
       drawNebulae();
+      drawGravityWaves();
       drawStars();
       spawnParticle();
+      spawnGravityWave();
       drawParticles();
 
       animationId = requestAnimationFrame(animate);
@@ -234,12 +290,27 @@ export function SpaceBackground() {
   }, []);
 
   return (
-    <canvas
-      ref={canvasRef}
-      className="fixed inset-0 -z-10"
-      style={{ 
-        background: 'radial-gradient(ellipse at center, hsl(140, 30%, 8%) 0%, hsl(220, 25%, 4%) 100%)' 
-      }}
-    />
+    <div className="fixed inset-0 -z-10">
+      {/* Base cosmic image */}
+      <div 
+        className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+        style={{ 
+          backgroundImage: `url(${cosmicBg})`,
+          opacity: 0.6,
+        }}
+      />
+      {/* Dark overlay for readability */}
+      <div 
+        className="absolute inset-0"
+        style={{ 
+          background: 'radial-gradient(ellipse at center, hsl(220 25% 6% / 0.7) 0%, hsl(220 25% 4% / 0.9) 100%)' 
+        }}
+      />
+      {/* Animated canvas on top */}
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0"
+      />
+    </div>
   );
 }
