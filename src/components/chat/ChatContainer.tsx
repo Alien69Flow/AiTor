@@ -8,7 +8,7 @@ import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import { Maximize2, Minimize2, AlertTriangle } from "lucide-react";
+import { Maximize2, Minimize2, AlertTriangle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ChatContainer() {
@@ -26,42 +26,43 @@ export function ChatContainer() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
     }
   }, [messages, isLoading]);
 
-  // AJUSTE DE DISEÑO: La versión "mini" ahora es más seria (600px y 85vh)
   const containerClasses = isFullscreen
-    ? "fixed inset-4 sm:inset-8 flex flex-col"
-    : "relative flex flex-col w-full max-w-[650px] h-[85vh] shadow-[0_0_50px_rgba(0,0,0,0.5)]";
+    ? "relative flex flex-col w-[95vw] h-[92vh] shadow-[0_0_60px_rgba(0,0,0,0.9)]"
+    : "relative flex flex-col w-full max-w-[680px] h-[82vh] shadow-2xl";
 
   return (
     <>
       <SpaceBackground />
-      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-4 pointer-events-none z-10">
-        <div className={`pointer-events-auto ${containerClasses} glass-dark rounded-none border border-primary/20 overflow-hidden terminal-glow scanlines transition-all duration-300`}>
+      <div className="fixed inset-0 flex items-center justify-center p-4 z-10 overflow-hidden">
+        <div className={`${containerClasses} glass-dark border border-white/10 rounded-sm transition-all duration-500 ease-in-out overflow-hidden`}>
           
-          {/* HUD Corners - Estilo Tesla */}
-          <div className="absolute top-0 left-0 w-6 h-6 border-l-2 border-t-2 border-primary/40 z-20" />
-          <div className="absolute top-0 right-0 w-6 h-6 border-r-2 border-t-2 border-primary/40 z-20" />
-          <div className="absolute bottom-0 left-0 w-6 h-6 border-l-2 border-b-2 border-secondary/40 z-20" />
-          <div className="absolute bottom-0 right-0 w-6 h-6 border-r-2 border-b-2 border-secondary/40 z-20" />
+          {/* HUD DE SEGURIDAD Y TESLA */}
+          <div className="absolute top-0 left-0 w-8 h-8 border-l border-t border-primary/30 z-20 pointer-events-none" />
+          <div className="absolute top-0 right-0 w-8 h-8 border-r border-t border-primary/30 z-20 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-8 h-8 border-l border-b border-secondary/30 z-20 pointer-events-none" />
+          <div className="absolute bottom-0 right-0 w-8 h-8 border-r border-b border-secondary/30 z-20 pointer-events-none" />
           
-          {/* Corner symbols */}
-          <div className="absolute top-1.5 left-2 text-primary/40 font-heading text-[10px] z-20">Δ</div>
-          <div className="absolute top-1.5 right-2 text-primary/40 font-heading text-[10px] z-20">Ω</div>
+          {/* Símbolos Alquímicos */}
+          <div className="absolute top-1.5 left-2 text-[10px] text-primary/40 font-mono z-20">Δ</div>
+          <div className="absolute top-1.5 right-2 text-[10px] text-primary/40 font-mono z-20">Ω</div>
 
-          {/* Fullscreen toggle */}
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="absolute top-2 right-10 h-6 w-6 text-muted-foreground/50 hover:text-primary z-30"
+            className="absolute top-2.5 right-12 h-6 w-6 text-muted-foreground/40 hover:text-primary z-30 transition-colors"
           >
-            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+            {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
           </Button>
           
-          <div className="bg-black/40 border-b border-white/5">
+          <div className="bg-black/30 backdrop-blur-md border-b border-white/5">
             <ChatHeader
               selectedModel={selectedModel}
               onModelChange={setSelectedModel}
@@ -70,40 +71,52 @@ export function ChatContainer() {
             />
           </div>
           
-          <ScrollArea className="flex-1 min-h-0 relative z-0" ref={scrollRef}>
-            <div className="p-4">
+          <ScrollArea className="flex-1 bg-transparent" ref={scrollRef}>
+            <div className="p-4 max-w-3xl mx-auto w-full">
               {messages.length === 0 ? (
                 <EmptyState />
               ) : (
-                <div className="divide-y divide-secondary/5">
+                <div className="space-y-1">
                   {messages.map((message) => (
                     <ChatMessage key={message.id} message={message} />
                   ))}
                 </div>
               )}
-              {isLoading && messages[messages.length - 1]?.role === "user" && (
-                <ThinkingIndicator />
+              {isLoading && (
+                <div className="py-4">
+                  <ThinkingIndicator />
+                </div>
               )}
             </div>
           </ScrollArea>
           
-          <div className="p-4 bg-black/60 border-t border-white/5">
+          {/* INPUT Y FOOTER */}
+          <div className="p-4 bg-black/40 backdrop-blur-xl border-t border-white/5">
             <ChatInput
               onSend={handleSend}
               isLoading={isLoading}
               supportsVision={supportsVision}
             />
-            {/* Tesla Freq Indicator */}
-            <div className="mt-2 flex justify-center text-[7px] text-primary/30 tracking-[0.5em] font-mono">
-              CORE_V.69 // 3-6-9_SINC
+            
+            {/* Tesla Freq Footer */}
+            <div className="mt-3 flex justify-center items-center gap-4">
+               <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
+               <span className="text-[7px] text-primary/30 tracking-[0.6em] font-mono whitespace-nowrap uppercase">
+                 Frequency 3-6-9 Sync
+               </span>
+               <div className="h-[1px] flex-1 bg-gradient-to-r from-transparent via-primary/10 to-transparent" />
             </div>
           </div>
 
-          {/* Disclaimer footer */}
-          <div className="px-2 py-1 bg-card/50 z-10 border-t border-white/5">
-            <div className="flex items-start gap-1.5 text-[7px] text-muted-foreground/40 font-mono">
-              <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0" />
-              <span>AI TOR.v69: VERIFICA_DATOS_CUÁNTICOS.</span>
+          {/* DISCLAIMER DEFINITIVO */}
+          <div className="px-3 py-1.5 bg-black/90 z-10 border-t border-primary/10 flex items-center justify-between">
+            <div className="flex items-center gap-2 text-[7px] text-muted-foreground/40 font-mono">
+              <AlertTriangle className="w-3 h-3 text-secondary/40" />
+              <span className="uppercase tracking-widest">Aitor.v69 // Protocolo de verificación cuántica activo</span>
+            </div>
+            <div className="flex items-center gap-2 text-[7px] text-primary/30 font-mono">
+              <Shield className="w-2.5 h-2.5" />
+              <span>DAO_ENCRYPTED</span>
             </div>
           </div>
         </div>
