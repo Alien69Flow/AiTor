@@ -1,11 +1,11 @@
-import { Button } from "@/components/ui/button";
-import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, Wallet, Zap } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { Trash2, LogOut, LogIn, Wallet, Zap } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
 import { AI_MODELS } from "@/lib/ai-models";
+import { ModelSelector } from "./ModelSelector";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -22,7 +22,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
 
   useEffect(() => {
-    // Generate random hex session ID
+    // Generar ID de sesión hexadecimal aleatorio
     setSessionId(Math.random().toString(16).slice(2, 10).toUpperCase());
   }, []);
 
@@ -41,7 +41,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
 
   return (
     <header className="bg-card/90 backdrop-blur-md border-b border-secondary/40">
-      {/* Terminal window bar */}
+      {/* Barra de ventana estilo Terminal */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-secondary/20">
         <div className="flex items-center gap-1.5">
           <div className="w-2.5 h-2.5 rounded-full bg-destructive/80 hover:bg-destructive transition-colors cursor-pointer" />
@@ -59,7 +59,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
           </span>
         </div>
 
-        {/* Active Oracle indicator */}
+        {/* Indicador de Oráculo Activo */}
         {currentModel && (
           <div className="flex items-center gap-1 text-[9px] text-muted-foreground">
             <Zap className="w-2.5 h-2.5 text-primary animate-pulse" />
@@ -68,7 +68,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
         )}
       </div>
       
-      {/* Controls row */}
+      {/* Fila de Controles */}
       <div className="flex items-center justify-between px-3 py-1.5 gap-2">
         <div className="flex flex-col min-w-0">
           <span className="text-[10px] font-heading text-secondary tracking-wide truncate">
@@ -80,7 +80,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
         </div>
         
         <div className="flex items-center gap-1 flex-shrink-0">
-          {/* Connect Wallet button - neon style */}
+          {/* Botón Connect Wallet - estilo neón */}
           <Button 
             variant="outline"
             size="sm"
