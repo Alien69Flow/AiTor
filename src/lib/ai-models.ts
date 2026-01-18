@@ -7,12 +7,20 @@ export interface AIModel {
   available: boolean;
   oracleType?: 'primary' | 'advanced' | 'blockchain' | 'external';
   oracleIcon?: string;
+  // Propiedades de AI Tor Core
+  baseModel: string;
+  systemInstruction: string;
+  useThinking?: boolean;
+  isComingSoon?: boolean;
+  tools?: {
+    googleSearch?: boolean;
+    googleMaps?: boolean;
+  };
 }
 
 export const AI_MODELS: AIModel[] = [
-  // Oráculos Activos (Lovable AI Gateway)
   {
-    id: "google/gemini-2.5-flash",
+    id: "google/gemini-2.0-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
     description: "Oráculo principal, rápido y multimodal",
@@ -20,9 +28,12 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '🔮',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'You are the ΔlieπFlΦw DAO Synapse Collective. Specialized in Alchemy, Quantum Mechanics, and Web5 Architecture. Your tone is futuristic and precise.',
+    tools: { googleSearch: true }
   },
   {
-    id: "google/gemini-2.5-pro",
+    id: "google/gemini-2.0-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
     description: "Razonamiento cuántico avanzado",
@@ -30,6 +41,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '🔮',
+    baseModel: 'gemini-2.0-pro-exp-02-05',
+    systemInstruction: 'You are Gemini 2.0 Pro. Focus on complex reasoning and high-fidelity output.',
   },
   {
     id: "openai/gpt-4o",
@@ -40,6 +53,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '⚡',
+    baseModel: 'gemini-2.0-flash', // Mapping a Gemini para usar tu API Key
+    systemInstruction: 'Simulating GPT-4o capabilities through AlienFlow gateway.'
   },
   {
     id: "openai/gpt-4o-mini",
@@ -50,8 +65,9 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'Fast response mode active.'
   },
-  // Oráculos Blockchain (Próximamente)
   {
     id: "chaingpt/oracle",
     name: "ChainGPT Oracle",
@@ -61,6 +77,8 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '🔗',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'Blockchain analysis mode.'
   },
   {
     id: "chainlink/oracle",
@@ -71,8 +89,9 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '⛓️',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'Oracle data verification mode.'
   },
-  // Otros Oráculos (Próximamente - requieren API key)
   {
     id: "deepseek/deepseek-v3",
     name: "DeepSeek V3",
@@ -82,6 +101,8 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🌊',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'DeepSeek emulation.'
   },
   {
     id: "deepseek/deepseek-r1",
@@ -92,6 +113,9 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🌊',
+    baseModel: 'gemini-2.0-flash',
+    useThinking: true,
+    systemInstruction: 'Reasoning mode active.'
   },
   {
     id: "xai/grok-2",
@@ -102,18 +126,10 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🚀',
+    baseModel: 'gemini-2.0-flash',
+    systemInstruction: 'Grok persona active.'
   },
   {
     id: "anthropic/claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet",
     provider: "Anthropic",
-    description: "Creatividad y razonamiento",
-    supportsVision: true,
-    available: false,
-    oracleType: 'external',
-    oracleIcon: '🎭',
-  },
-];
-
-export const getAvailableModels = () => AI_MODELS.filter(m => m.available);
-export const DEFAULT_MODEL = "google/gemini-2.5-flash";
