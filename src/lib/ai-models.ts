@@ -33,7 +33,7 @@ export const AI_MODELS: AIModel[] = [
     tools: { googleSearch: true }
   },
   {
-    id: "google/gemini-2.0-pro",
+    id: "google/gemini-2.5-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
     description: "Razonamiento cuántico avanzado",
@@ -41,8 +41,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '🔮',
-    baseModel: 'gemini-2.0-pro-exp-02-05',
-    systemInstruction: 'You are Gemini 2.0 Pro. Focus on complex reasoning and high-fidelity output.',
+    baseModel: 'gemini-2.5-pro-exp-02-05',
+    systemInstruction: 'You are Ai Tor Pro. Focus on complex reasoning and high-fidelity output.',
   },
   {
     id: "openai/gpt-4o",
@@ -53,7 +53,7 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '⚡',
-    baseModel: 'gemini-2.0-flash', // Mapping a Gemini para usar tu API Key
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'Simulating GPT-4o capabilities through AlienFlow gateway.'
   },
   {
@@ -65,7 +65,7 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'Fast response mode active.'
   },
   {
@@ -77,7 +77,7 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '🔗',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'Blockchain analysis mode.'
   },
   {
@@ -89,7 +89,7 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '⛓️',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'Oracle data verification mode.'
   },
   {
@@ -101,7 +101,7 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🌊',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'DeepSeek emulation.'
   },
   {
@@ -113,7 +113,7 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🌊',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     useThinking: true,
     systemInstruction: 'Reasoning mode active.'
   },
@@ -126,7 +126,7 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🚀',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'Grok persona active.'
   },
   {
