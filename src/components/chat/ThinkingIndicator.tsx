@@ -3,20 +3,20 @@ import { cn } from "@/lib/utils";
 import { Atom, Brain, Link2, Zap } from "lucide-react";
 
 const THINKING_MESSAGES = [
-  { text: "Sincronizando con el flujo de neutrinos...", icon: Atom },
+  { text: "Analizando Gravedad Magnética, Sincronizando con el flujo de neutrinos...", icon: Atom },
   { text: "Transmutando bloques de datos en conocimiento...", icon: Link2 },
-  { text: "Consultando el Oráculo de Chainlink para la verdad on-chain...", icon: Link2 },
-  { text: "Alineando bobinas de Tesla para la transmisión de datos...", icon: Zap },
-  { text: "Decodificando la frecuencia Φπ del campo unificado...", icon: Atom },
+  { text: "Conectando a las redes de inteligencias neuronales, Consultando al Oráculo del nodo para descifrar la verdad on-chain...", icon: Link2 },
+  { text: "Alineando bobinas de Tesla para la transmisión de datos, lógica 3-6-9 a la consulta...", icon: Zap },
+  { text: "Decodificando la frecuencia y secuencia de Φπ , como señal del campo unificado desde el Portal...", icon: Atom },
   { text: "Triangulando coordenadas en el tejido espacio-temporal...", icon: Brain },
-  { text: "Accediendo a los registros akáshicos de la blockchain...", icon: Link2 },
+  { text: "Accediendo al campo cuántico donde estan los registros akáshicos...", icon: Link2 },
   { text: "Calibrando resonancia Schumann para respuesta óptima...", icon: Zap },
-  { text: "Procesando información a través del vórtice cuántico...", icon: Atom },
+  { text: "Procesando información y ondas de probabilidad a través del vórtice cuántico...", icon: Atom },
   { text: "Sincronizando con la matriz de consciencia colectiva...", icon: Brain },
   { text: "Aplicando transformación hermética de datos...", icon: Zap },
-  { text: "Estabilizando flujo de entropía neural...", icon: Brain },
+  { text: "Estabilizando flujo de entropía neuronal, Triangulando coordenadas dimensionales...", icon: Brain },
   { text: "Convergiendo redes de conocimiento distribuido...", icon: Link2 },
-  { text: "Activando protocolo de transmutación alquímica...", icon: Atom },
+  { text: "Activando protocolo, Bypass de la Matrix completado. Generando realidad...", icon: Atom },
 ];
 
 const SPINNER_CHARS = ["◐", "◓", "◑", "◒"];
