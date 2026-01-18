@@ -59,27 +59,19 @@ export function useChat() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Authorization": `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
         },
         body: JSON.stringify({ messages: messagesToSend, model }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 429) {
-          toast.error("Límite de solicitudes excedido. Intenta de nuevo más tarde.");
-        } else if (response.status === 402) {
-          toast.error("Se requieren créditos adicionales.");
-        } else {
-          toast.error(errorData.error || "Error al procesar la solicitud");
-        }
+        toast.error(errorData.error || "Error al procesar la solicitud");
         setIsLoading(false);
         return;
       }
 
-      if (!response.body) {
-        throw new Error("No response body");
-      }
+      if (!response.body) throw new Error("No response body");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -91,31 +83,34 @@ export function useChat() {
 
         textBuffer += decoder.decode(value, { stream: true });
 
-        let newlineIndex: number;
-        while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
-          let line = textBuffer.slice(0, newlineIndex);
-          textBuffer = textBuffer.slice(newlineIndex + 1);
+        const lines = textBuffer.split("\n");
+        textBuffer = lines.pop() || ""; // Guardamos lo que no esté terminado
 
-          if (line.endsWith("\r")) line = line.slice(0, -1);
-          if (line.startsWith(":") || line.trim() === "") continue;
-          if (!line.startsWith("data: ")) continue;
+        for (let line of lines) {
+          line = line.trim();
+          if (line === "" || line === ":") continue;
 
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === "[DONE]") break;
+          if (line.startsWith("data: ")) {
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === "[DONE]") break;
 
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) upsertAssistant(delta);
-          } catch {
-            textBuffer = line + "\n" + textBuffer;
-            break;
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) upsertAssistant(delta);
+            } catch {
+              // Si no es JSON válido, es texto plano dentro de data
+              upsertAssistant(jsonStr);
+            }
+          } else {
+            // Es texto plano directo
+            upsertAssistant(line + "\n");
           }
         }
       }
     } catch (error) {
       console.error("Chat error:", error);
-      toast.error("Error de conexión. Verifica tu conexión a internet.");
+      toast.error("Error de conexión con el Oráculo.");
     } finally {
       setIsLoading(false);
     }
