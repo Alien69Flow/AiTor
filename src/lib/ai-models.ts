@@ -133,3 +133,12 @@ export const AI_MODELS: AIModel[] = [
     id: "anthropic/claude-3.5-sonnet",
     name: "Claude 3.5 Sonnet",
     provider: "Anthropic",
+    description: "Líder en codificación y matices lingüísticos",
+    supportsVision: true,
+    available: false,
+    oracleType: 'advanced',
+    oracleIcon: '🎭',
+    baseModel: 'gemini-2.5-flash',
+    systemInstruction: 'Claude persona emulation.'
+  }
+];
