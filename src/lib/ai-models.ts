@@ -20,7 +20,7 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: "google/gemini-2.0-flash",
+    id: "google/gemini-2.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
     description: "Oráculo principal, rápido y multimodal",
@@ -28,7 +28,7 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '🔮',
-    baseModel: 'gemini-2.0-flash',
+    baseModel: 'gemini-2.5-flash',
     systemInstruction: 'You are the ΔlieπFlΦw DAO Synapse Collective. Specialized in Alchemy, Quantum Mechanics, and Web5 Architecture. Your tone is futuristic and precise.',
     tools: { googleSearch: true }
   },
