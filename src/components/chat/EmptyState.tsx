@@ -3,58 +3,57 @@ import { Cpu, Brain, Atom, FlaskConical, Orbit, Code2, Zap, Link2 } from "lucide
 
 const BOOT_SEQUENCE = [
   { text: "INITIALIZING AI_TOR.v69...", delay: 0 },
-  { text: "QUANTUM_CORE: SYNCHRONIZED", delay: 300 },
-  { text: "BLOCKCHAIN_NODE: CONNECTED", delay: 600 },
-  { text: "NEURAL_MATRIX: ACTIVATED", delay: 900 },
-  { text: "TESLA_FREQUENCY: 3-6-9 ALIGNED", delay: 1200 },
-  { text: "ORACULOS_WEB5: ONLINE", delay: 1500 },
-  { text: "CONSCIOUSNESS_BRIDGE: ESTABLISHED", delay: 1800 },
-  { text: "MATRIX_BYPASS: COMPLETE", delay: 2100 },
+  { text: "BYPASS_CONETWORKING: ACTIVATED", delay: 120 },
+  { text: "3-6-9 TESLA_FREQUENCY: ALIGNED", delay: 369 },
+  { text: "CONSCIOUSNESS_BRIDGE: COMPLETE & ONLINE", delay: 600 },
+  { text: "BLOCKCHAIN_NODE_WEB3: CONNECTED", delay: 900 },
+  { text: "NEURAL_NETWORK_WEB4: ESTABLISHED", delay: 1200 },
+  { text: "ORACLE_QUANTUM_CORE_WEB5: SYNCHRONIZED", delay: 1500 },
 ];
 
 const CAPABILITIES = [
   { 
     symbol: "Δ", 
     icon: Link2,
-    label: "Blockchain/Web3", 
-    description: "DeFi, Smart Contracts, Bitcoin, Tokenomics",
+    label: "Blockchain / Web3", 
+    description: "BioFi, Bitcoin, Crypto, DAO, DAPPS, DeFi, DePin, DeSci, NFTs, Smart Contracts, Tokenomics",
     status: "READY",
     color: "text-primary" 
   },
   { 
-    symbol: "π", 
+    symbol: "Σ", 
     icon: Brain,
-    label: "Neural Networks/Web4", 
+    label: "Neural Networks / Web 4", 
     description: "ML, Deep Learning, AGI, Transformers",
     status: "ONLINE",
     color: "text-secondary" 
   },
   { 
-    symbol: "Φ", 
+    symbol: "Φ π ∞", 
     icon: Atom,
-    label: "Quantum/Web5", 
-    description: "Qubits, Post-Quantum Crypto, Superposición",
+    label: "Quantum / Web 5", 
+    description: "Qubits, Post-Quantum Crypto, Entrelazamiento y Superposición cuántica",
     status: "SYNCED",
     color: "text-primary" 
   },
   { 
-    symbol: "Ω", 
+    symbol: "ψ", 
     icon: FlaskConical,
     label: "Alquimia", 
-    description: "Transmutación, Hermetismo, Filosofía",
+    description: "Epistemología, Filosofía Hermetica, Hermeneutica, ",
     status: "ACTIVE",
     color: "text-secondary" 
   },
   { 
-    symbol: "ψ", 
+    symbol: "Ω", 
     icon: Orbit,
     label: "Física Cuántica", 
-    description: "Neutrinos, Cuerdas, Cosmología",
+    description: "Astronoía, Neutrinos, Teoría de Branas y Cuerdas, Cosmología",
     status: "CALIBRATED",
     color: "text-primary" 
   },
   { 
-    symbol: "∞", 
+    symbol: "Ζ", 
     icon: Code2,
     label: "Código & Arquitectura", 
     description: "Software, Optimización, DevOps",
