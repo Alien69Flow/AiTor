@@ -15,7 +15,7 @@ export interface AIModel {
   tools?: {
     googleSearch?: boolean;
     googleMaps?: boolean;
-    githubIntegration?: boolean; // Nueva herramienta para integración con GitHub
+    githubIntegration?: boolean;
   };
 }
 
@@ -24,7 +24,7 @@ export const AI_MODELS: AIModel[] = [
     id: "google/gemini-2.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
-    description: "Oráculo principal, rápido y multimodal especializado en física cuántica y Web5.",
+    description: "Oráculo principal, rápido y multimodal especializado en Alquimia cuántica y Web5.",
     supportsVision: true,
     available: true,
     oracleType: "primary",
