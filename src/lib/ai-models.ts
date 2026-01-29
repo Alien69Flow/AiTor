@@ -21,7 +21,7 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: "google/gemini-2.5-flash",
+    id: "google/gemini-1.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
     description: "Oráculo principal, rápido y multimodal especializado en Alquimia cuántica y Web5.",
@@ -29,13 +29,13 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: "primary",
     oracleIcon: "👽",
-    baseModel: "gemini-2.5-flash",
+    baseModel: "gemini-1.5-flash",
     systemInstruction:
       "You are the ΔlieπFlΦw DAO Synapse Collective. Specialized in Alchemy, Quantum Mechanics, and Web5 Architecture. Your tone is futuristic and precise.",
     tools: { googleSearch: true },
   },
   {
-    id: "google/gemini-2.5-pro",
+    id: "google/gemini-1.5-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
     description: "Razonamiento cuántico avanzado para tareas complejas y análisis profundo.",
@@ -43,7 +43,7 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: "advanced",
     oracleIcon: "⚡",
-    baseModel: "gemini-2.5-pro-exp-02-05",
+    baseModel: "gemini-1.5-pro",
     systemInstruction:
       "You are Ai Tor Pro. Focus on complex reasoning and high-fidelity output.",
     tools: { googleSearch: true },
