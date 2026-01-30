@@ -12,7 +12,7 @@ import { Maximize2, Minimize2, AlertTriangle, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ChatContainer() {
-  const [selectedModel, setSelectedModel] = useState("google/gemini-1.5-flash");
+  const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const { messages, isLoading, sendMessage, clearChat } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
