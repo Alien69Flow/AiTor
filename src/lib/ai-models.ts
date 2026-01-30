@@ -21,7 +21,7 @@ export interface AIModel {
 
 export const AI_MODELS: AIModel[] = [
   {
-    id: "google/gemini-1.5-flash",
+    id: "google/gemini-2.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
     description: "Oráculo principal, rápido y multimodal especializado en Alquimia cuántica y Web5.",
@@ -35,7 +35,7 @@ export const AI_MODELS: AIModel[] = [
     tools: { googleSearch: true },
   },
   {
-    id: "google/gemini-1.5-pro",
+    id: "google/gemini-2.5-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
     description: "Razonamiento cuántico avanzado para tareas complejas y análisis profundo.",
@@ -55,7 +55,7 @@ export const AI_MODELS: AIModel[] = [
     description:
       "IA rápida y ligera con capacidades para desarrollo y conexión con GitHub.",
     supportsVision: false,
-    available: true,
+    available: false,
     oracleType: "primary",
     oracleIcon: "🔩",
     baseModel: "bolt-v1",
@@ -69,7 +69,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "Anthropic",
     description:
       "Experto en lenguaje natural y codificación con alta precisión y matices.",
-    supportsVision: true,
+    supportsVision: false,
     available: true,
     oracleType: "advanced",
     oracleIcon: "🎭",
@@ -84,7 +84,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "Chainlink",
     description: "Datos on-chain verificados para aplicaciones blockchain.",
     supportsVision: false,
-    available: false, // Cambiar a true si está integrado y activo
+    available: false,
     oracleType: "blockchain",
     oracleIcon: "⛓️",
     baseModel: "chainlink-oracle-v1",
@@ -98,7 +98,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "ChainGPT",
     description: "IA especializada en Web3, cripto y análisis blockchain.",
     supportsVision: false,
-    available: false, // Cambiar a true si está integrado y activo
+    available: false,
     oracleType: "blockchain",
     oracleIcon: "🔗",
     baseModel: "chaingpt-oracle-v1",
@@ -111,7 +111,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "DeepSeek",
     description: "Razonamiento avanzado estilo o1 para análisis profundo.",
     supportsVision: false,
-    available: false, // Cambiar a true si está integrado y activo
+    available: false,
     oracleType: "external",
     oracleIcon: "🌊",
     baseModel: "deepseek-r1",
@@ -125,7 +125,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "DeepSeek",
     description: "Código abierto de última generación para búsquedas y análisis.",
     supportsVision: false,
-    available: false, // Cambiar a true si está integrado y activo
+    available: false,
     oracleType: "external",
     oracleIcon: "🌊",
     baseModel: "deepseek-v3",
@@ -196,7 +196,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "xAI",
     description: "IA con acceso a X (Twitter) para respuestas en tiempo real.",
     supportsVision: true,
-    available: true,
+    available: false,
     oracleType: "external",
     oracleIcon: "🚀",
     baseModel: "grok-2",
