@@ -108,16 +108,24 @@ export function ChatContainer() {
             </div>
           </div>
 
-          {/* DISCLAIMER DEFINITIVO */}
-          <div className="px-3 py-1.5 bg-black/90 z-10 border-t border-primary/10 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-[7px] text-muted-foreground/40 font-mono">
-              <AlertTriangle className="w-3 h-3 text-secondary/40" />
-              <span className="uppercase tracking-widest">Aitor.v69 // Protocolo de verificación cuántica activo</span>
+          {/* DISCLAIMER */}
+          <div className="px-3 py-2 bg-black/95 z-10 border-t border-primary/10 flex flex-col gap-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-[7px] text-muted-foreground/40 font-mono">
+                <AlertTriangle className="w-3 h-3 text-secondary/40" />
+                <span className="uppercase tracking-widest">Aitor.v69 // Protocolo de verificación cuántica activo</span>
+              </div>
+              <div className="flex items-center gap-2 text-[7px] text-primary/30 font-mono">
+                <Shield className="w-2.5 h-2.5" />
+                <span>DAO_ENCRYPTED</span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-[7px] text-primary/30 font-mono">
-              <Shield className="w-2.5 h-2.5" />
-              <span>DAO_ENCRYPTED</span>
-            </div>
+            
+            <p className="text-[6px] leading-relaxed text-muted-foreground/30 font-mono uppercase text-center mt-1 border-t border-white/5 pt-1">
+              Atención: Ai Tor puede generar información inexacta. No constituye asesoramiento financiero, legal o médico. 
+              Contraste toda la información antes de tomar decisiones importantes. 
+              Frecuencia de error inherente al procesamiento neuronal.
+            </p>
           </div>
         </div>
       </div>
