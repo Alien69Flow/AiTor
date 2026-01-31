@@ -50,8 +50,12 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
         </div>
         
         <div className="flex-1 flex items-center justify-center gap-2">
-          <span className="text-xs font-heading text-primary neon-text-gold tracking-wider">
-            [ AI_TOR.v69 ]
+          <span className="text-xs font-heading tracking-wider">
+            <span className="text-primary neon-text-gold">[ AI_</span>
+            <span className="text-secondary neon-text-lime">TOR</span>
+            <span className="text-primary neon-text-gold">.v</span>
+            <span className="text-purple-500">69</span>
+            <span className="text-primary neon-text-gold"> ]</span>
           </span>
           <span className="flex items-center gap-1 text-[10px] text-secondary font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
