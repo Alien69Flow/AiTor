@@ -1,4 +1,4 @@
-# 🤖 Ai Tor.v69 | Akasha Shiva Vak | Neural Intelligence Core Engine
+# 🤖 Ai Tor.v69 | Neural Intelligence Core Engine
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Alien69Flow/Alien69Flow/main/Alien.gif" width="100" />
