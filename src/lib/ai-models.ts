@@ -4,18 +4,14 @@ export interface AIModel {
   provider: string;
   description: string;
   supportsVision: boolean;
+  supportsImageGen: boolean;
   available: boolean;
-  oracleType?: 'primary' | 'advanced' | 'blockchain' | 'external';
-  oracleIcon?: string;
-  // Propiedades de AI Tor Core
-  baseModel: string;
-  systemInstruction: string;
-  useThinking?: boolean;
-  isComingSoon?: boolean;
-  tools?: {
-    googleSearch?: boolean;
-    googleMaps?: boolean;
-    githubIntegration?: boolean;
+  oracleType: 'primary' | 'advanced' | 'quantum' | 'speed' | 'creative';
+  oracleIcon: string;
+  tools: {
+    webSearch?: boolean;
+    imageGen?: boolean;
+    codeExec?: boolean;
   };
 }
 
@@ -24,183 +20,144 @@ export const AI_MODELS: AIModel[] = [
     id: "google/gemini-2.5-flash",
     name: "Ai Tor",
     provider: "ΔlieπFlΦw",
-    description: "Oráculo principal, rápido y multimodal especializado en Alquimia cuántica y Web5.",
+    description: "Oráculo principal — razonamiento rápido y multimodal.",
     supportsVision: true,
+    supportsImageGen: false,
     available: true,
     oracleType: "primary",
     oracleIcon: "👽",
-    baseModel: "gemini-1.5-flash",
-    systemInstruction:
-      "You are the ΔlieπFlΦw DAO Synapse Collective. Specialized in Alchemy, Quantum Mechanics, and Web5 Architecture. Your tone is futuristic and precise.",
-    tools: { googleSearch: true },
+    tools: { webSearch: true, codeExec: true },
   },
   {
     id: "google/gemini-2.5-pro",
     name: "Ai Tor Pro",
     provider: "ΔlieπFlΦw",
-    description: "Razonamiento cuántico avanzado para tareas complejas y análisis profundo.",
+    description: "Razonamiento cuántico profundo, contexto masivo.",
     supportsVision: true,
+    supportsImageGen: false,
     available: true,
     oracleType: "advanced",
     oracleIcon: "⚡",
-    baseModel: "gemini-1.5-pro",
-    systemInstruction:
-      "You are Ai Tor Pro. Focus on complex reasoning and high-fidelity output.",
-    tools: { googleSearch: true },
+    tools: { webSearch: true, codeExec: true },
   },
   {
-    id: "bolt/oracle",
-    name: "Bolt",
-    provider: "Bolt AI",
-    description:
-      "IA rápida y ligera con capacidades para desarrollo y conexión con GitHub.",
-    supportsVision: false,
-    available: false,
-    oracleType: "primary",
-    oracleIcon: "🔩",
-    baseModel: "bolt-v1",
-    systemInstruction:
-      "You are Bolt AI, efficient and fast for general tasks and code development.",
-    tools: { googleSearch: true, githubIntegration: true },
+    id: "google/gemini-3-flash-preview",
+    name: "Gemini 3 Flash",
+    provider: "Google",
+    description: "Última generación, velocidad y eficiencia óptimas.",
+    supportsVision: true,
+    supportsImageGen: false,
+    available: true,
+    oracleType: "speed",
+    oracleIcon: "🔮",
+    tools: { webSearch: true, codeExec: true },
   },
   {
-    id: "anthropic/claude-3.5-sonnet",
-    name: "Claude 3.5 Sonnet",
-    provider: "Anthropic",
-    description:
-      "Experto en lenguaje natural y codificación con alta precisión y matices.",
-    supportsVision: false,
+    id: "google/gemini-3-pro-preview",
+    name: "Gemini 3 Pro",
+    provider: "Google",
+    description: "Siguiente generación del motor de razonamiento más potente.",
+    supportsVision: true,
+    supportsImageGen: false,
     available: true,
     oracleType: "advanced",
-    oracleIcon: "🎭",
-    baseModel: "claude-3.5-sonnet",
-    systemInstruction:
-      "You are Claude 3.5 Sonnet, expert in nuanced language and coding.",
-    tools: { googleSearch: true },
+    oracleIcon: "🔮",
+    tools: { webSearch: true, codeExec: true },
   },
   {
-    id: "chainlink/oracle",
-    name: "Chainlink Oracle",
-    provider: "Chainlink",
-    description: "Datos on-chain verificados para aplicaciones blockchain.",
-    supportsVision: false,
-    available: false,
-    oracleType: "blockchain",
-    oracleIcon: "⛓️",
-    baseModel: "chainlink-oracle-v1",
-    systemInstruction:
-      "Oracle data verification mode specialized in blockchain.",
-    tools: {},
-  },
-  {
-    id: "chaingpt/oracle",
-    name: "ChainGPT Oracle",
-    provider: "ChainGPT",
-    description: "IA especializada en Web3, cripto y análisis blockchain.",
-    supportsVision: false,
-    available: false,
-    oracleType: "blockchain",
-    oracleIcon: "🔗",
-    baseModel: "chaingpt-oracle-v1",
-    systemInstruction: "Blockchain analysis mode.",
-    tools: {},
-  },
-  {
-    id: "deepseek/deepseek-r1",
-    name: "DeepSeek R1",
-    provider: "DeepSeek",
-    description: "Razonamiento avanzado estilo o1 para análisis profundo.",
-    supportsVision: false,
-    available: false,
-    oracleType: "external",
-    oracleIcon: "🌊",
-    baseModel: "deepseek-r1",
-    useThinking: true,
-    systemInstruction: "Reasoning mode active.",
-    tools: {},
-  },
-  {
-    id: "deepseek/deepseek-v3",
-    name: "DeepSeek V3",
-    provider: "DeepSeek",
-    description: "Código abierto de última generación para búsquedas y análisis.",
-    supportsVision: false,
-    available: false,
-    oracleType: "external",
-    oracleIcon: "🌊",
-    baseModel: "deepseek-v3",
-    systemInstruction: "DeepSeek emulation.",
-    tools: {},
-  },
-  {
-    id: "ecosia/ai",
-    name: "Ecosia AI",
-    provider: "Ecosia",
-    description:
-      "IA con enfoque en sostenibilidad, integridad y compasión para respuestas acertadas.",
-    supportsVision: false,
-    available: true,
-    oracleType: "external",
-    oracleIcon: "🌱",
-    baseModel: "ecosia-core-v1",
-    systemInstruction:
-      "You are Ecosia AI, providing accurate, sustainable, and compassionate answers with integrity.",
-    useThinking: true,
-    tools: { googleSearch: true },
-  },
-  {
-    id: "lovable/core",
-    name: "Lovable",
-    provider: "Lovable AI",
-    description:
-      "Modelo base para ChatGPT y variantes, con capacidades conversacionales avanzadas.",
+    id: "google/gemini-2.5-flash-lite",
+    name: "Ai Tor Lite",
+    provider: "ΔlieπFlΦw",
+    description: "Ultra-rápido para tareas simples y clasificación.",
     supportsVision: true,
+    supportsImageGen: false,
     available: true,
-    oracleType: "primary",
-    oracleIcon: "❤️",
-    baseModel: "lovable-core-v1",
-    systemInstruction:
-      "You are Lovable AI, providing conversational excellence.",
-    tools: { googleSearch: true, googleMaps: true },
+    oracleType: "speed",
+    oracleIcon: "⚡",
+    tools: { webSearch: true },
   },
   {
-    id: "openai/gpt-4o",
-    name: "GPT-4o Oracle",
+    id: "google/gemini-2.5-flash-image",
+    name: "Imagen 4.0",
+    provider: "ΔlieπFlΦw",
+    description: "Generación y edición de imágenes con IA.",
+    supportsVision: true,
+    supportsImageGen: true,
+    available: true,
+    oracleType: "creative",
+    oracleIcon: "🎨",
+    tools: { imageGen: true },
+  },
+  {
+    id: "openai/gpt-5",
+    name: "GPT-5 Oracle",
     provider: "OpenAI",
-    description: "Modelo avanzado de OpenAI para máxima precisión y multimodalidad.",
+    description: "Motor de razonamiento avanzado, multimodal y preciso.",
     supportsVision: true,
+    supportsImageGen: false,
     available: true,
     oracleType: "advanced",
     oracleIcon: "🤖",
-    baseModel: "openai-gpt-4o",
-    systemInstruction:
-      "Simulating GPT-4o capabilities through AlienFlow gateway.",
-    tools: { googleSearch: true, googleMaps: true },
+    tools: { webSearch: true, codeExec: true },
   },
   {
-    id: "openai/gpt-4o-mini",
-    name: "GPT-4o Mini",
+    id: "openai/gpt-5-mini",
+    name: "GPT-5 Mini",
     provider: "OpenAI",
-    description: "Versión ligera y rápida del modelo GPT-4o para respuestas ágiles.",
+    description: "Balance perfecto entre rendimiento y velocidad.",
     supportsVision: true,
+    supportsImageGen: false,
     available: true,
     oracleType: "primary",
     oracleIcon: "🤖",
-    baseModel: "openai-gpt-4o-mini",
-    systemInstruction: "Fast response mode active.",
-    tools: { googleSearch: true },
+    tools: { webSearch: true },
   },
   {
-    id: "xai/grok-2",
-    name: "Grok 2",
-    provider: "xAI",
-    description: "IA con acceso a X (Twitter) para respuestas en tiempo real.",
+    id: "openai/gpt-5-nano",
+    name: "GPT-5 Nano",
+    provider: "OpenAI",
+    description: "Ultra eficiente para consultas de alto volumen.",
     supportsVision: true,
-    available: false,
-    oracleType: "external",
-    oracleIcon: "🚀",
-    baseModel: "grok-2",
-    systemInstruction: "Grok persona active.",
-    tools: { googleSearch: true },
+    supportsImageGen: false,
+    available: true,
+    oracleType: "speed",
+    oracleIcon: "🤖",
+    tools: { webSearch: true },
+  },
+  {
+    id: "openai/gpt-5.2",
+    name: "GPT-5.2",
+    provider: "OpenAI",
+    description: "Último modelo de OpenAI con razonamiento mejorado.",
+    supportsVision: true,
+    supportsImageGen: false,
+    available: true,
+    oracleType: "advanced",
+    oracleIcon: "🧠",
+    tools: { webSearch: true, codeExec: true },
+  },
+  {
+    id: "google/gemini-3-pro-image-preview",
+    name: "Imagen 4.0 Pro",
+    provider: "Google",
+    description: "Generación de imágenes de próxima generación.",
+    supportsVision: true,
+    supportsImageGen: true,
+    available: true,
+    oracleType: "creative",
+    oracleIcon: "🎨",
+    tools: { imageGen: true },
   },
 ];
+
+export const getModelById = (id: string) => AI_MODELS.find(m => m.id === id);
+
+export const getImageModel = () => AI_MODELS.find(m => m.supportsImageGen);
+
+export const MODEL_CATEGORIES = {
+  primary: { label: "Oráculos Primarios", icon: "⚡" },
+  advanced: { label: "Razonamiento Avanzado", icon: "🧠" },
+  speed: { label: "Velocidad Cuántica", icon: "💨" },
+  creative: { label: "Generación Creativa", icon: "🎨" },
+  quantum: { label: "Computación Cuántica", icon: "⚛️" },
+};

@@ -1,15 +1,25 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Send, ImagePlus, X, Loader2 } from "lucide-react";
+import {
+  Send, ImagePlus, X, Loader2, Globe, Code2, Sparkles,
+  Image as ImageIcon
+} from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ChatInputProps {
   onSend: (content: string, imageData?: string) => void;
   isLoading: boolean;
   supportsVision: boolean;
+  supportsImageGen?: boolean;
+  onToolAction?: (tool: string) => void;
 }
 
-export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, supportsVision, supportsImageGen, onToolAction }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -32,22 +42,25 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
     const reader = new FileReader();
-    reader.onload = (event) => {
-      setImageData(event.target?.result as string);
-    };
+    reader.onload = (event) => setImageData(event.target?.result as string);
     reader.readAsDataURL(file);
   };
 
+  const tools = [
+    { id: "search", icon: Globe, label: "Búsqueda Web", always: true },
+    { id: "image", icon: ImageIcon, label: "Generar Imagen", always: true },
+    { id: "code", icon: Code2, label: "Análisis de Código", always: true },
+  ];
+
   return (
-    <form onSubmit={handleSubmit} className="border-t border-secondary/30 bg-card/60 backdrop-blur-sm p-3">
+    <form onSubmit={handleSubmit} className="space-y-2">
       {imageData && (
-        <div className="relative mb-2 inline-block">
-          <img 
-            src={imageData} 
-            alt="Preview" 
-            className="h-16 rounded border border-secondary/30 object-contain"
+        <div className="relative inline-block">
+          <img
+            src={imageData}
+            alt="Preview"
+            className="h-16 rounded border border-border/30 object-contain"
           />
           <button
             type="button"
@@ -58,49 +71,93 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
           </button>
         </div>
       )}
-      
-      <div className="flex items-end gap-2">
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={handleImageUpload}
-          accept="image/*"
-          className="hidden"
-        />
-        
+
+      {/* Tool bar */}
+      <div className="flex items-center gap-1 px-1">
         {supportsVision && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isLoading}
-            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-secondary"
-          >
-            <ImagePlus className="h-4 w-4" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isLoading}
+                className="h-7 w-7 text-muted-foreground/60 hover:text-primary hover:bg-primary/10"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" className="text-xs">Adjuntar imagen</TooltipContent>
+          </Tooltip>
         )}
-        
-        <div className="flex-1 flex items-center gap-2 bg-background/40 border border-secondary/30 rounded-md px-3 py-1 focus-within:border-secondary/60 transition-colors">
-          <span className="text-secondary font-mono text-sm font-medium">λ&gt;</span>
+
+        {tools.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <Tooltip key={tool.id}>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => {
+                    if (tool.id === "image") {
+                      setInput(prev => prev ? prev + "\n[Genera una imagen: " : "[Genera una imagen: ");
+                    } else if (tool.id === "search") {
+                      setInput(prev => prev ? prev + "\n[Busca en la web: " : "[Busca en la web: ");
+                    } else if (tool.id === "code") {
+                      setInput(prev => prev ? prev + "\n[Analiza el código: " : "[Analiza el código: ");
+                    }
+                    onToolAction?.(tool.id);
+                  }}
+                  disabled={isLoading}
+                  className="h-7 w-7 text-muted-foreground/60 hover:text-secondary hover:bg-secondary/10"
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">{tool.label}</TooltipContent>
+            </Tooltip>
+          );
+        })}
+
+        <div className="flex-1" />
+
+        <div className="flex items-center gap-1 text-[8px] text-muted-foreground/40 font-mono">
+          <Sparkles className="w-2.5 h-2.5 text-primary/40" />
+          <span>TOOLS ACTIVE</span>
+        </div>
+      </div>
+
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleImageUpload}
+        accept="image/*"
+        className="hidden"
+      />
+
+      {/* Input area */}
+      <div className="flex items-end gap-2">
+        <div className="flex-1 flex items-center gap-2 bg-background/40 border border-border/30 rounded-lg px-3 py-1.5 focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+          <span className="text-primary/60 font-mono text-sm font-medium">λ&gt;</span>
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ingresa comando..."
+            placeholder="Consulta al Oráculo..."
             disabled={isLoading}
-            className="min-h-[32px] max-h-[120px] resize-none bg-transparent border-none p-0 focus-visible:ring-0 font-mono text-sm placeholder:text-muted-foreground/50"
+            className="min-h-[32px] max-h-[120px] resize-none bg-transparent border-none p-0 focus-visible:ring-0 font-mono text-sm placeholder:text-muted-foreground/40"
             rows={1}
           />
-          <span className="text-secondary animate-pulse font-mono">_</span>
         </div>
-        
-        <Button 
-          type="submit" 
+
+        <Button
+          type="submit"
           disabled={isLoading || (!input.trim() && !imageData)}
           size="icon"
-          variant="ghost"
-          className="shrink-0 h-8 w-8 text-secondary hover:text-primary hover:bg-secondary/10"
+          className="shrink-0 h-9 w-9 bg-primary/10 border border-primary/30 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
         >
           {isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
