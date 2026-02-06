@@ -1,16 +1,21 @@
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
 
 export interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   imageData?: string;
+  generatedImage?: string;
   timestamp: Date;
 }
 
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+
+const IMAGE_MODELS = [
+  "google/gemini-2.5-flash-image",
+  "google/gemini-3-pro-image-preview",
+];
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -28,25 +33,7 @@ export function useChat() {
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
-    let assistantContent = "";
-
-    const upsertAssistant = (chunk: string) => {
-      assistantContent += chunk;
-      setMessages(prev => {
-        const last = prev[prev.length - 1];
-        if (last?.role === "assistant") {
-          return prev.map((m, i) => 
-            i === prev.length - 1 ? { ...m, content: assistantContent } : m
-          );
-        }
-        return [...prev, {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: assistantContent,
-          timestamp: new Date(),
-        }];
-      });
-    };
+    const isImageModel = IMAGE_MODELS.includes(model);
 
     try {
       const messagesToSend = [...messages, userMessage].map(m => ({
@@ -71,7 +58,44 @@ export function useChat() {
         return;
       }
 
+      if (isImageModel) {
+        // Handle image generation response (non-streaming)
+        const data = await response.json();
+        const assistantMsg = data.choices?.[0]?.message;
+        const generatedImage = assistantMsg?.images?.[0]?.image_url?.url;
+
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: assistantMsg?.content || "Imagen generada:",
+          generatedImage,
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // Streaming text response
       if (!response.body) throw new Error("No response body");
+
+      let assistantContent = "";
+      const upsertAssistant = (chunk: string) => {
+        assistantContent += chunk;
+        setMessages(prev => {
+          const last = prev[prev.length - 1];
+          if (last?.role === "assistant") {
+            return prev.map((m, i) =>
+              i === prev.length - 1 ? { ...m, content: assistantContent } : m
+            );
+          }
+          return [...prev, {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: assistantContent,
+            timestamp: new Date(),
+          }];
+        });
+      };
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -82,13 +106,12 @@ export function useChat() {
         if (done) break;
 
         textBuffer += decoder.decode(value, { stream: true });
-
         const lines = textBuffer.split("\n");
-        textBuffer = lines.pop() || ""; // Guardamos lo que no esté terminado
+        textBuffer = lines.pop() || "";
 
         for (let line of lines) {
           line = line.trim();
-          if (line === "" || line === ":") continue;
+          if (line === "" || line.startsWith(":")) continue;
 
           if (line.startsWith("data: ")) {
             const jsonStr = line.slice(6).trim();
@@ -99,12 +122,8 @@ export function useChat() {
               const delta = parsed.choices?.[0]?.delta?.content;
               if (delta) upsertAssistant(delta);
             } catch {
-              // Si no es JSON válido, es texto plano dentro de data
               upsertAssistant(jsonStr);
             }
-          } else {
-            // Es texto plano directo
-            upsertAssistant(line + "\n");
           }
         }
       }
@@ -116,9 +135,7 @@ export function useChat() {
     }
   }, [messages]);
 
-  const clearChat = useCallback(() => {
-    setMessages([]);
-  }, []);
+  const clearChat = useCallback(() => setMessages([]), []);
 
   return { messages, isLoading, sendMessage, clearChat };
 }
