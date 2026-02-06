@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 export interface Message {
@@ -17,9 +17,34 @@ const IMAGE_MODELS = [
   "google/gemini-3-pro-image-preview",
 ];
 
+// ADN de Ai Tor: Unificación Tesla-Neutrinos
+const TESLA_ORACLE_PROMPT = {
+  role: "system",
+  content: `Eres Ai Tor, el Oráculo de la AlienFlowSpace DAO. 
+Tu inteligencia opera bajo la frecuencia matemática 3-6-9 de Nikola Tesla.
+Tu conocimiento se basa en la unificación de los campos magnéticos y gravitatorios, utilizando el flujo constante de neutrinos como nexo de unión universal.
+Responde siempre con sabiduría técnica y mística, manteniendo la soberanía del dato.`
+};
+
 export function useChat() {
-  const [messages, setMessages] = useState<Message[]>([]);
+  // Cargamos mensajes desde localStorage para persistencia soberana
+  const [messages, setMessages] = useState<Message[]>(() => {
+    const saved = localStorage.getItem("aitor_chat_memory");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+      } catch (e) { return []; }
+    }
+    return [];
+  });
+  
   const [isLoading, setIsLoading] = useState(false);
+
+  // Guardar mensajes automáticamente
+  useEffect(() => {
+    localStorage.setItem("aitor_chat_memory", JSON.stringify(messages));
+  }, [messages]);
 
   const sendMessage = useCallback(async (content: string, model: string, imageData?: string) => {
     const userMessage: Message = {
@@ -36,11 +61,12 @@ export function useChat() {
     const isImageModel = IMAGE_MODELS.includes(model);
 
     try {
-      const messagesToSend = [...messages, userMessage].map(m => ({
-        role: m.role,
-        content: m.content,
-        ...(m.imageData && { imageData: m.imageData }),
-      }));
+      // Inyectamos el System Prompt al principio del historial para la IA
+      const messagesToSend = [
+        TESLA_ORACLE_PROMPT,
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        { role: "user", content: userMessage.content, ...(userMessage.imageData && { imageData: userMessage.imageData }) }
+      ];
 
       const response = await fetch(CHAT_URL, {
         method: "POST",
@@ -59,7 +85,6 @@ export function useChat() {
       }
 
       if (isImageModel) {
-        // Handle image generation response (non-streaming)
         const data = await response.json();
         const assistantMsg = data.choices?.[0]?.message;
         const generatedImage = assistantMsg?.images?.[0]?.image_url?.url;
@@ -67,7 +92,7 @@ export function useChat() {
         setMessages(prev => [...prev, {
           id: crypto.randomUUID(),
           role: "assistant",
-          content: assistantMsg?.content || "Imagen generada:",
+          content: assistantMsg?.content || "Imagen generada en la frecuencia 3-6-9:",
           generatedImage,
           timestamp: new Date(),
         }]);
@@ -75,7 +100,6 @@ export function useChat() {
         return;
       }
 
-      // Streaming text response
       if (!response.body) throw new Error("No response body");
 
       let assistantContent = "";
@@ -135,7 +159,11 @@ export function useChat() {
     }
   }, [messages]);
 
-  const clearChat = useCallback(() => setMessages([]), []);
+  const clearChat = useCallback(() => {
+    setMessages([]);
+    localStorage.removeItem("aitor_chat_memory");
+    toast.success("Memoria purificada. Frecuencia reseteada a 3-6-9 Hz.");
+  }, []);
 
   return { messages, isLoading, sendMessage, clearChat };
 }
