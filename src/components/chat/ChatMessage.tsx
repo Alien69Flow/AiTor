@@ -42,14 +42,17 @@ export function ChatMessage({ message }: ChatMessageProps) {
           )}
         </div>
 
-        {/* Image */}
+        {/* Uploaded Image */}
         {message.imageData && (
           <div className="mb-1">
-            <img
-              src={message.imageData}
-              alt="Uploaded"
-              className="max-h-48 rounded-lg border border-border/30 object-contain"
-            />
+            <img src={message.imageData} alt="Uploaded" className="max-h-48 rounded-lg border border-border/30 object-contain" />
+          </div>
+        )}
+
+        {/* Generated Image */}
+        {message.generatedImage && (
+          <div className="mb-1">
+            <img src={message.generatedImage} alt="Generated" className="max-w-sm rounded-lg border border-primary/30 shadow-lg" />
           </div>
         )}
 
