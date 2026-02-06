@@ -10,7 +10,8 @@ export interface Message {
   timestamp: Date;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const SB_URL = import.meta.env.VITE_SUPABASE_URL;
+const CHAT_URL = SB_URL ? `${SB_URL}/functions/v1/chat` : "";
 
 // Modelos que devuelven imagen (JSON no-streaming)
 const IMAGE_MODELS = [
@@ -67,7 +68,31 @@ export function useChat() {
     const isImageModel = IMAGE_MODELS.includes(model);
 
     try {
-      // Construcción del historial incluyendo el ADN Tesla
+      // --- PROTOCOLO DE CONTINGENCIA: SALTO CUÁNTICO SI SUPABASE NO ESTÁ ---
+      if (!CHAT_URL || CHAT_URL.includes("undefined")) {
+        const apiKey = ""; // La key se inyecta en tiempo de ejecución
+        const directResponse = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${TESLA_ORACLE_PROMPT.content}\n\nUser query: ${content}` }] }]
+          }),
+        });
+        
+        const resData = await directResponse.json();
+        const aiText = resData.candidates?.[0]?.content?.parts?.[0]?.text || "Interferencia en el canal directo.";
+        
+        setMessages(prev => [...prev, {
+          id: crypto.randomUUID(),
+          role: "assistant",
+          content: aiText,
+          timestamp: new Date(),
+        }]);
+        setIsLoading(false);
+        return;
+      }
+
+      // --- CONSTRUCCIÓN DE HISTORIAL ORIGINAL ---
       const messagesToSend = [
         TESLA_ORACLE_PROMPT,
         ...messages.map(m => ({ role: m.role, content: m.content })),
@@ -88,10 +113,8 @@ export function useChat() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json();
-        toast.error(errorData.error || "Interferencia en la frecuencia 3-6-9.");
-        setIsLoading(false);
-        return;
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "Interferencia en la frecuencia 3-6-9.");
       }
 
       // Gestión de modelos de imagen (Leonardo, Gemini Image, etc.)
@@ -164,9 +187,9 @@ export function useChat() {
           }
         }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Chat error:", error);
-      toast.error("Interferencia detectada. Reintenta la conexión.");
+      toast.error(error.message || "Interferencia detectada. Reintenta la conexión.");
     } finally {
       setIsLoading(false);
     }
