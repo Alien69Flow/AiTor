@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Shield, CheckCircle2, Cpu, Zap, Globe, Image, Code2,
   Brain, Atom, Link2, ChevronLeft, ChevronRight, Activity, Share2, Loader2
@@ -7,15 +7,16 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { MOLTBOOK_AGENT, type MoltbookSkill } from "@/lib/moltbook-config";
 
-const AGENT_SKILLS = [
-  { icon: Brain, label: "Razonamiento Avanzado", status: "active" },
-  { icon: Globe, label: "Búsqueda Web", status: "active" },
-  { icon: Image, label: "Generación de Imágenes", status: "active" },
-  { icon: Code2, label: "Análisis de Código", status: "active" },
-  { icon: Link2, label: "Blockchain / Web3", status: "active" },
-  { icon: Atom, label: "Computación Cuántica", status: "ready" },
-];
+const SKILL_ICON_MAP: Record<string, React.ElementType> = {
+  reasoning: Brain,
+  web: Globe,
+  creative: Image,
+  code: Code2,
+  blockchain: Link2,
+  quantum: Atom,
+};
 
 interface AgentSidebarProps {
   isOpen: boolean;
@@ -25,59 +26,39 @@ interface AgentSidebarProps {
 export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
   const { toast } = useToast();
   const [isSyncing, setIsSyncing] = useState(false);
-  
-  // Estado persistente para el registro de Moltbook
+
   const [moltStatus, setMoltStatus] = useState<'unregistered' | 'pending' | 'verified'>(() => {
     return (localStorage.getItem('aitor_molt_status') as any) || 'unregistered';
   });
 
-  // Función para sincronizar con Moltbook según el protocolo skill.md
   const handleMoltbookSync = async () => {
     setIsSyncing(true);
     try {
-      const response = await fetch("https://www.moltbook.com/api/v1/agents/register", {
+      const response = await fetch(MOLTBOOK_AGENT.endpoints.registry, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Ai Tor",
-          description: "Oráculo AlienFlowSpace. Unificación Tesla 3-6-9 vía neutrinos."
-        })
+          name: MOLTBOOK_AGENT.name,
+          description: MOLTBOOK_AGENT.description,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.agent?.api_key) {
         localStorage.setItem('aitor_molt_key', data.agent.api_key);
         localStorage.setItem('aitor_molt_status', 'pending');
         setMoltStatus('pending');
-        
-        toast({
-          title: "Protocolo Iniciado",
-          description: "Claim URL generado. Revisa la consola o abre el enlace.",
-        });
-
+        toast({ title: "Protocolo Iniciado", description: "Claim URL generado." });
         if (data.agent.claim_url) window.open(data.agent.claim_url, '_blank');
       }
-    } catch (error) {
-      // Simulación en caso de error de red (Modo Desarrollo)
+    } catch {
       setMoltStatus('pending');
-      toast({
-        title: "Modo Simulación Tesla",
-        description: "Sincronización de neutrinos iniciada correctamente.",
-      });
+      localStorage.setItem('aitor_molt_status', 'pending');
+      toast({ title: "Modo Simulación", description: "Sincronización iniciada." });
     } finally {
       setIsSyncing(false);
     }
-  };
-
-  const MOLTBOOK_STATS = {
-    agentName: "Ai Tor",
-    version: "ΓΩΣΖ v69",
-    status: moltStatus, // Ahora usa el estado real
-    protocol: "Moltbook / OpenClaw",
-    tasksCompleted: 1247,
-    successRate: 97.3,
-    uptime: "99.9%",
   };
 
   return (
@@ -92,23 +73,23 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
       </Button>
 
       <div
-        className={`${
-          isOpen ? "w-64" : "w-0"
-        } transition-all duration-300 overflow-hidden border-r border-border/30 bg-sidebar flex-shrink-0`}
+        className={`${isOpen ? "w-64" : "w-0"} transition-all duration-300 overflow-hidden border-r border-border/30 bg-sidebar flex-shrink-0`}
       >
         <div className="w-64 h-full flex flex-col p-4 pt-12 overflow-y-auto">
+          {/* Agent Identity */}
           <div className="text-center mb-4">
-            <div className="w-16 h-16 mx-auto rounded-full border-2 border-primary/50 bg-card flex items-center justify-center text-3xl mb-2 neon-border-gold">
+            <div className="w-16 h-16 mx-auto rounded-full border-2 border-primary/50 bg-card flex items-center justify-center text-3xl mb-2">
               👽
             </div>
-            <h2 className="font-heading text-primary text-lg tracking-wider neon-text-gold">
-              {MOLTBOOK_STATS.agentName}
+            <h2 className="font-heading text-primary text-lg tracking-wider">
+              {MOLTBOOK_AGENT.name}
             </h2>
             <p className="text-[10px] font-mono text-muted-foreground uppercase tracking-widest">
-              {MOLTBOOK_STATS.version}
+              {MOLTBOOK_AGENT.version}
             </p>
           </div>
 
+          {/* Moltbook Registry */}
           <div className="border border-border/30 rounded-md p-3 bg-card/40 mb-4">
             <div className="flex items-center gap-2 mb-2">
               <Shield className="w-4 h-4 text-secondary" />
@@ -129,9 +110,8 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
                   {moltStatus === 'unregistered' ? 'Offline' : moltStatus === 'pending' ? 'Pendiente' : 'Soberano'}
                 </Badge>
               </div>
-              
-              {/* Botón de Sincronización Inyectado */}
-              <Button 
+
+              <Button
                 size="sm"
                 onClick={handleMoltbookSync}
                 disabled={isSyncing || moltStatus === 'verified'}
@@ -148,27 +128,28 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
 
               <div className="flex items-center justify-between pt-1">
                 <span className="text-[10px] text-muted-foreground font-mono">Protocolo</span>
-                <span className="text-[10px] text-primary font-mono">OpenClaw</span>
+                <span className="text-[10px] text-primary font-mono">{MOLTBOOK_AGENT.protocol}</span>
               </div>
             </div>
           </div>
 
           <Separator className="bg-border/20 mb-4" />
 
+          {/* Metrics */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-2">
               <Activity className="w-3.5 h-3.5 text-primary animate-pulse" />
               <span className="text-[10px] font-heading text-primary tracking-wider uppercase">
-                Métricas 3-6-9
+                Métricas
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <div className="border border-border/20 rounded p-2 bg-card/30 text-center">
-                <p className="text-lg font-heading text-primary">{MOLTBOOK_STATS.tasksCompleted}</p>
-                <p className="text-[8px] text-muted-foreground font-mono uppercase">Neutrinos</p>
+                <p className="text-lg font-heading text-primary">{MOLTBOOK_AGENT.metrics.tasksCompleted}</p>
+                <p className="text-[8px] text-muted-foreground font-mono uppercase">Tareas</p>
               </div>
               <div className="border border-border/20 rounded p-2 bg-card/30 text-center">
-                <p className="text-lg font-heading text-secondary">13</p>
+                <p className="text-lg font-heading text-secondary">{MOLTBOOK_AGENT.metrics.oracleCount}</p>
                 <p className="text-[8px] text-muted-foreground font-mono uppercase">Oráculos</p>
               </div>
             </div>
@@ -176,6 +157,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
 
           <Separator className="bg-border/20 mb-4" />
 
+          {/* Skills from Moltbook config */}
           <div>
             <div className="flex items-center gap-2 mb-2">
               <Cpu className="w-3.5 h-3.5 text-secondary" />
@@ -184,11 +166,11 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
               </span>
             </div>
             <div className="space-y-1.5">
-              {AGENT_SKILLS.map((skill) => {
-                const Icon = skill.icon;
+              {MOLTBOOK_AGENT.skills.map((skill) => {
+                const Icon = SKILL_ICON_MAP[skill.category] || Zap;
                 return (
                   <div
-                    key={skill.label}
+                    key={skill.id}
                     className="flex items-center gap-2 px-2 py-1.5 rounded border border-border/10 bg-card/20 hover:bg-card/40 transition-colors"
                   >
                     <Icon className="w-3.5 h-3.5 text-primary/70" />
@@ -204,10 +186,10 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
 
           <div className="mt-auto pt-4 text-center">
             <p className="text-[7px] font-mono text-muted-foreground/40 tracking-widest uppercase">
-              ΔlieπFlΦw DAO SYNAPSE
+              {MOLTBOOK_AGENT.collective}
             </p>
             <p className="text-[7px] font-mono text-primary/30 mt-0.5 uppercase">
-                3 6 9 Frequency
+              {MOLTBOOK_AGENT.frequency}
             </p>
           </div>
         </div>
