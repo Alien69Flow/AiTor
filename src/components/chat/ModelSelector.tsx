@@ -48,9 +48,12 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                     <span className="text-base">{model.oracleIcon}</span>
                     <div className="flex flex-col">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-medium text-foreground text-xs">{model.name}</span>
-                        {model.supportsVision && <Eye className="w-2.5 h-2.5 text-secondary/70" />}
-                        {model.supportsImageGen && <Image className="w-2.5 h-2.5 text-primary/70" />}
+                        <span className={`font-medium text-xs ${model.available ? 'text-foreground' : 'text-muted-foreground/50'}`}>{model.name}</span>
+                        {!model.available && (
+                          <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 border-muted-foreground/30 text-muted-foreground/50">SOON</Badge>
+                        )}
+                        {model.supportsVision && model.available && <Eye className="w-2.5 h-2.5 text-secondary/70" />}
+                        {model.supportsImageGen && model.available && <Image className="w-2.5 h-2.5 text-primary/70" />}
                       </div>
                       <span className="text-[9px] text-muted-foreground">{model.description}</span>
                     </div>
