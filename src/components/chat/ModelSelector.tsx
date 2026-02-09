@@ -65,7 +65,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         })}
 
         <div className="px-2 py-1 text-[8px] text-muted-foreground/40 border-t border-border/10 mt-1 text-center font-mono">
-          11 Oráculos · Lovable AI Gateway
+          {AI_MODELS.length} Oráculos · Lovable AI Gateway
         </div>
       </SelectContent>
     </Select>
