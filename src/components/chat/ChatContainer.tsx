@@ -105,7 +105,7 @@ export function ChatContainer() {
               </div>
               <div className="flex items-center gap-1.5 text-[7px] text-muted-foreground/30 font-mono">
                 <Shield className="w-2.5 h-2.5" />
-                <span>DAO_ENCRYPTED</span>
+                <span>DAO_ENCRYPTED_v2</span>
               </div>
             </div>
           </div>
