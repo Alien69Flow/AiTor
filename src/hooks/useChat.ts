@@ -10,8 +10,7 @@ export interface Message {
   timestamp: Date;
 }
 
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const CHAT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?key=${GEMINI_KEY}`;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 // Modelos que devuelven imagen (JSON no-streaming)
 const IMAGE_MODELS = [
