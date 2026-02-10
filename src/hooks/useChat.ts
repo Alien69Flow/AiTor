@@ -10,8 +10,7 @@ export interface Message {
   timestamp: Date;
 }
 
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const CHAT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?key=${GEMINI_KEY}`;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 // Modelos que devuelven imagen (JSON no-streaming)
 const IMAGE_MODELS = [
@@ -54,24 +53,23 @@ export function useChat() {
     const isImageModel = IMAGE_MODELS.includes(model);
 
     try {
-      // Build history — system prompt is injected server-side
-  const messagesToSend = messages.map(m => ({
-  role: m.role === "user" ? "user" : "model",
-  parts: [{ text: m.content }]
-}));
+      const messagesToSend = [
+        ...messages.map(m => ({ role: m.role, content: m.content })),
+        {
+          role: "user",
+          content: userMessage.content,
+          ...(userMessage.imageData && { imageData: userMessage.imageData }),
+        },
+      ];
 
-messagesToSend.push({
-  role: "user",
-  parts: [{ text: userMessage.content }]
-});
-
-const response = await fetch(CHAT_URL, {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({ contents: messagesToSend }),
-});
+      const response = await fetch(CHAT_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify({ messages: messagesToSend, model }),
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
