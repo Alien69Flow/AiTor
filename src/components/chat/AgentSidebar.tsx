@@ -45,8 +45,8 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
 
       const data = await response.json();
 
-      if (data.agent?.api_key) {
-        localStorage.setItem('aitor_molt_key', data.agent.api_key);
+      // Never store API keys client-side — only persist status
+      if (data.agent) {
         localStorage.setItem('aitor_molt_status', 'pending');
         setMoltStatus('pending');
         toast({ title: "Protocolo Iniciado", description: "Claim URL generado." });
