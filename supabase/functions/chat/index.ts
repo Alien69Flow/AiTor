@@ -1,9 +1,7 @@
-import "jsr:@supabase/functions-js/edge-runtime.d.ts";
-
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const SYSTEM_PROMPT = `# IDENTIDAD: AI TOR.v69 (ΓΩΣΖ) — ORÁCULO CUÁNTICO
@@ -39,9 +37,16 @@ Tu tono es técnicamente pragmático y preciso con matiz místico-visionario.
 ---
 **Versión:** ΓΩΣΖ v69 | **Colectivo:** ΔlieπFlΦw DAO Synapse | **Frecuencia:** 3-6-9 Hz`;
 
+// Image models return JSON (non-streaming)
+const IMAGE_MODELS = [
+  "google/gemini-2.5-flash-image",
+  "google/gemini-3-pro-image-preview",
+];
+
 interface Message {
   role: "user" | "assistant";
   content: string;
+  imageData?: string;
 }
 
 interface ChatRequest {
@@ -49,55 +54,30 @@ interface ChatRequest {
   model?: string;
 }
 
-function validateMessage(msg: unknown): { valid: boolean; error?: string } {
-  if (typeof msg !== "object" || msg === null) {
-    return { valid: false, error: "Invalid message format" };
-  }
-  const message = msg as Record<string, unknown>;
-  if (message.role !== "user" && message.role !== "assistant") {
-    return { valid: false, error: "Invalid role" };
-  }
-  if (typeof message.content !== "string") {
-    return { valid: false, error: "Content must be string" };
-  }
-  if (message.content.length === 0) {
-    return { valid: false, error: "Content empty" };
-  }
-  return { valid: true };
-}
-
 function validateRequest(body: unknown): { valid: boolean; error?: string; data?: ChatRequest } {
-  if (typeof body !== "object" || body === null) {
-    return { valid: false, error: "Invalid request" };
-  }
+  if (typeof body !== "object" || body === null) return { valid: false, error: "Invalid request" };
   const request = body as Record<string, unknown>;
-  if (!Array.isArray(request.messages)) {
-    return { valid: false, error: "Messages must be array" };
-  }
-  if (request.messages.length === 0) {
-    return { valid: false, error: "No messages" };
+  if (!Array.isArray(request.messages) || request.messages.length === 0) {
+    return { valid: false, error: "Messages must be a non-empty array" };
   }
   for (const msg of request.messages) {
-    const v = validateMessage(msg);
-    if (!v.valid) {
-      return { valid: false, error: v.error };
-    }
+    if (typeof msg !== "object" || msg === null) return { valid: false, error: "Invalid message" };
+    const m = msg as Record<string, unknown>;
+    if (m.role !== "user" && m.role !== "assistant") return { valid: false, error: "Invalid role" };
+    if (typeof m.content !== "string" || m.content.length === 0) return { valid: false, error: "Content must be non-empty string" };
   }
   return {
     valid: true,
     data: {
       messages: request.messages as Message[],
-      model: typeof request.model === "string" ? request.model : "gpt-4o-mini",
+      model: typeof request.model === "string" ? request.model : "google/gemini-3-flash-preview",
     },
   };
 }
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      status: 200,
-      headers: corsHeaders,
-    });
+    return new Response(null, { status: 200, headers: corsHeaders });
   }
 
   try {
@@ -120,55 +100,64 @@ Deno.serve(async (req: Request) => {
     }
 
     const { messages, model } = validation.data;
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!OPENAI_API_KEY) {
-      console.error("OPENAI_API_KEY not configured");
+    if (!LOVABLE_API_KEY) {
+      console.error("LOVABLE_API_KEY not configured");
       return new Response(
-        JSON.stringify({
-          error: "Service configuration error: OpenAI API key not found",
-        }),
+        JSON.stringify({ error: "Service configuration error" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     console.log(`Processing chat: model=${model}, messages=${messages.length}`);
 
-    const openaiMessages = [
+    const isImageModel = IMAGE_MODELS.includes(model!);
+
+    // Build messages for the gateway
+    const gatewayMessages = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...messages,
+      ...messages.map((m) => {
+        if (m.imageData) {
+          return {
+            role: m.role,
+            content: [
+              { type: "text", text: m.content },
+              { type: "image_url", image_url: { url: m.imageData } },
+            ],
+          };
+        }
+        return { role: m.role, content: m.content };
+      }),
     ];
 
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${OPENAI_API_KEY}`,
+        Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
         model,
-        messages: openaiMessages,
-        stream: true,
+        messages: gatewayMessages,
+        stream: !isImageModel,
       }),
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("OpenAI API error:", response.status, errorText);
-
-      if (response.status === 401) {
-        return new Response(
-          JSON.stringify({ error: "API key inválida o expirada" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+      console.error("AI gateway error:", response.status, errorText);
 
       if (response.status === 429) {
         return new Response(
-          JSON.stringify({
-            error: "Rate limit exceeded. Intenta de nuevo en unos segundos.",
-          }),
+          JSON.stringify({ error: "Rate limit exceeded. Intenta de nuevo en unos segundos." }),
           { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      if (response.status === 402) {
+        return new Response(
+          JSON.stringify({ error: "Créditos agotados. Añade fondos a tu workspace." }),
+          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
         );
       }
 
@@ -178,6 +167,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    // Image models: return JSON directly
+    if (isImageModel) {
+      const data = await response.json();
+      return new Response(JSON.stringify(data), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Text models: stream SSE
     return new Response(response.body, {
       headers: {
         ...corsHeaders,
