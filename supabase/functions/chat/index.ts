@@ -54,17 +54,29 @@ interface ChatRequest {
   model?: string;
 }
 
+const MAX_MESSAGES = 50;
+const MAX_CONTENT_LENGTH = 50000;
+const MAX_IMAGE_SIZE = 10_000_000;
+
 function validateRequest(body: unknown): { valid: boolean; error?: string; data?: ChatRequest } {
   if (typeof body !== "object" || body === null) return { valid: false, error: "Invalid request" };
   const request = body as Record<string, unknown>;
   if (!Array.isArray(request.messages) || request.messages.length === 0) {
     return { valid: false, error: "Messages must be a non-empty array" };
   }
+  if (request.messages.length > MAX_MESSAGES) {
+    return { valid: false, error: "Too many messages in conversation" };
+  }
   for (const msg of request.messages) {
     if (typeof msg !== "object" || msg === null) return { valid: false, error: "Invalid message" };
     const m = msg as Record<string, unknown>;
     if (m.role !== "user" && m.role !== "assistant") return { valid: false, error: "Invalid role" };
     if (typeof m.content !== "string" || m.content.length === 0) return { valid: false, error: "Content must be non-empty string" };
+    if (m.content.length > MAX_CONTENT_LENGTH) return { valid: false, error: "Message content too long" };
+    if (m.imageData && typeof m.imageData === "string") {
+      if (!m.imageData.startsWith("data:image/")) return { valid: false, error: "Invalid image data format" };
+      if (m.imageData.length > MAX_IMAGE_SIZE) return { valid: false, error: "Image too large" };
+    }
   }
   return {
     valid: true,
@@ -103,10 +115,10 @@ Deno.serve(async (req: Request) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY not configured");
+      console.error("[CONFIG] Required API key not configured");
       return new Response(
-        JSON.stringify({ error: "Service configuration error" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify({ error: "Service temporarily unavailable" }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
@@ -146,7 +158,7 @@ Deno.serve(async (req: Request) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+      console.error(`[GATEWAY] status=${response.status} body=${errorText}`);
 
       if (response.status === 429) {
         return new Response(
