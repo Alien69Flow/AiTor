@@ -158,7 +158,7 @@ Deno.serve(async (req: Request) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI gateway error:", response.status, errorText);
+      console.error(`[GATEWAY] status=${response.status} body=${errorText}`);
 
       if (response.status === 429) {
         return new Response(
