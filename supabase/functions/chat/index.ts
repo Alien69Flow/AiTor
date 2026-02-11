@@ -43,6 +43,28 @@ const IMAGE_MODELS = [
   "google/gemini-3-pro-image-preview",
 ];
 
+const ALLOWED_MODELS = [
+  "google/gemini-2.5-flash",
+  "google/gemini-2.5-pro",
+  "google/gemini-3-flash-preview",
+  "google/gemini-3-pro-preview",
+  "google/gemini-2.5-flash-lite",
+  "google/gemini-2.5-flash-image",
+  "google/gemini-3-pro-image-preview",
+  "openai/gpt-5",
+  "openai/gpt-5-mini",
+  "openai/gpt-5-nano",
+  "openai/gpt-5.2",
+];
+
+const VALID_IMAGE_PREFIXES = [
+  "data:image/jpeg",
+  "data:image/png",
+  "data:image/gif",
+  "data:image/webp",
+  "data:image/svg+xml",
+];
+
 interface Message {
   role: "user" | "assistant";
   content: string;
@@ -67,6 +89,13 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
   if (request.messages.length > MAX_MESSAGES) {
     return { valid: false, error: "Too many messages in conversation" };
   }
+
+  // Validate model against whitelist
+  const modelId = typeof request.model === "string" ? request.model : "google/gemini-3-flash-preview";
+  if (!ALLOWED_MODELS.includes(modelId)) {
+    return { valid: false, error: "Invalid model selection" };
+  }
+
   for (const msg of request.messages) {
     if (typeof msg !== "object" || msg === null) return { valid: false, error: "Invalid message" };
     const m = msg as Record<string, unknown>;
@@ -74,7 +103,9 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     if (typeof m.content !== "string" || m.content.length === 0) return { valid: false, error: "Content must be non-empty string" };
     if (m.content.length > MAX_CONTENT_LENGTH) return { valid: false, error: "Message content too long" };
     if (m.imageData && typeof m.imageData === "string") {
-      if (!m.imageData.startsWith("data:image/")) return { valid: false, error: "Invalid image data format" };
+      if (!VALID_IMAGE_PREFIXES.some(prefix => (m.imageData as string).startsWith(prefix))) {
+        return { valid: false, error: "Invalid image format. Allowed: JPEG, PNG, GIF, WebP, SVG" };
+      }
       if (m.imageData.length > MAX_IMAGE_SIZE) return { valid: false, error: "Image too large" };
     }
   }
@@ -82,7 +113,7 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     valid: true,
     data: {
       messages: request.messages as Message[],
-      model: typeof request.model === "string" ? request.model : "google/gemini-3-flash-preview",
+      model: modelId,
     },
   };
 }
@@ -115,14 +146,14 @@ Deno.serve(async (req: Request) => {
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
     if (!LOVABLE_API_KEY) {
-      console.error("[CONFIG] Required API key not configured");
+      console.error("[CHAT] Service configuration error");
       return new Response(
         JSON.stringify({ error: "Service temporarily unavailable" }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`Processing chat: model=${model}, messages=${messages.length}`);
+    console.log(`[CHAT] Processing: messages=${messages.length}`);
 
     const isImageModel = IMAGE_MODELS.includes(model!);
 
@@ -158,7 +189,7 @@ Deno.serve(async (req: Request) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`[GATEWAY] status=${response.status} body=${errorText}`);
+      console.error(`[CHAT] Upstream error: status=${response.status}`);
 
       if (response.status === 429) {
         return new Response(
@@ -196,7 +227,7 @@ Deno.serve(async (req: Request) => {
       },
     });
   } catch (e) {
-    console.error("Chat error:", e instanceof Error ? e.message : "Unknown");
+    console.error("[CHAT] Unhandled error");
     return new Response(JSON.stringify({ error: "Error interno del servidor" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
