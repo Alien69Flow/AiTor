@@ -10,13 +10,17 @@ export interface Message {
   timestamp: Date;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+// ✅ FIX: Variables correctas de Supabase
+const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const CHAT_URL          = `${SUPABASE_URL}/functions/v1/chat`;
 
-// Modelos que devuelven imagen (JSON no-streaming)
-const IMAGE_MODELS = [
-  "google/gemini-2.5-flash-image",
-  "google/gemini-3-pro-image-preview",
-];
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.error("⚠️ [AiTor] Frecuencia Supabase no detectada:", {
+    VITE_SUPABASE_URL: !!SUPABASE_URL,
+    VITE_SUPABASE_ANON_KEY: !!SUPABASE_ANON_KEY,
+  });
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -39,6 +43,11 @@ export function useChat() {
   const sendMessage = useCallback(async (content: string, model: string, imageData?: string) => {
     if (!content.trim() && !imageData) return;
 
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      toast.error("⚠️ Configuración de Supabase no detectada. Verifica las variables de entorno.");
+      return;
+    }
+
     const userMessage: Message = {
       id: crypto.randomUUID(),
       role: "user",
@@ -49,8 +58,6 @@ export function useChat() {
 
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
-
-    const isImageModel = IMAGE_MODELS.includes(model);
 
     try {
       const messagesToSend = [
@@ -66,40 +73,29 @@ export function useChat() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          "Authorization": `Bearer ${SUPABASE_ANON_KEY}`,
+          "apikey": SUPABASE_ANON_KEY,
         },
         body: JSON.stringify({ messages: messagesToSend, model }),
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        if (response.status === 429) {
-          toast.error("Rate limit alcanzado. Espera unos segundos.");
+        if (response.status === 401) {
+          toast.error("🔐 Error de autenticación. Verifica VITE_SUPABASE_ANON_KEY.");
+        } else if (response.status === 429) {
+          toast.error("⏳ Rate limit alcanzado. Espera unos segundos.");
         } else if (response.status === 402) {
-          toast.error("Créditos agotados. Añade fondos a tu workspace.");
+          toast.error("💳 Créditos agotados en Lovable.");
+        } else if (response.status === 503) {
+          toast.error("🔑 API Keys no disponibles. Verifica la configuración en Supabase.");
+        } else {
+          toast.error(`❌ Error ${response.status}: ${errorData.error || "Error desconocido"}`);
         }
-        throw new Error(errorData.error || "Error en la conexión.");
+        throw new Error(errorData.error || `HTTP ${response.status}`);
       }
 
-      // Image model → JSON response
-      if (isImageModel) {
-        const data = await response.json();
-        const assistantMsg = data.choices?.[0]?.message;
-        const generatedImage = assistantMsg?.images?.[0]?.image_url?.url;
-
-        setMessages(prev => [...prev, {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: assistantMsg?.content || "Imagen generada:",
-          generatedImage,
-          timestamp: new Date(),
-        }]);
-        setIsLoading(false);
-        return;
-      }
-
-      // Streaming for text models
-      if (!response.body) throw new Error("Empty response body.");
+      if (!response.body) throw new Error("Respuesta vacía del servidor.");
 
       let assistantContent = "";
       const upsertAssistant = (chunk: string) => {
@@ -152,25 +148,25 @@ export function useChat() {
         }
       }
 
-      // Final flush
       if (textBuffer.trim()) {
         for (let raw of textBuffer.split("\n")) {
-          if (!raw) continue;
+          if (!raw || raw.startsWith(":") || !raw.startsWith("data: ")) continue;
           if (raw.endsWith("\r")) raw = raw.slice(0, -1);
-          if (raw.startsWith(":") || raw.trim() === "") continue;
-          if (!raw.startsWith("data: ")) continue;
           const jsonStr = raw.slice(6).trim();
           if (jsonStr === "[DONE]") continue;
           try {
             const parsed = JSON.parse(jsonStr);
             const delta = parsed.choices?.[0]?.delta?.content;
             if (delta) upsertAssistant(delta);
-          } catch { /* ignore */ }
+          } catch { /* ignorar */ }
         }
       }
+
     } catch (error: any) {
-      console.error("Chat error:", error);
-      toast.error(error.message || "Error de conexión. Reintenta.");
+      console.error("[AiTor] Error:", error);
+      if (!error.message?.includes("HTTP")) {
+        toast.error(error.message || "⚡ Error de conexión. Reintenta.");
+      }
     } finally {
       setIsLoading(false);
     }
@@ -179,7 +175,7 @@ export function useChat() {
   const clearChat = useCallback(() => {
     setMessages([]);
     localStorage.removeItem("aitor_chat_memory");
-    toast.success("Chat limpiado.");
+    toast.success("🌀 Frecuencia reiniciada.");
   }, []);
 
   return { messages, isLoading, sendMessage, clearChat };
