@@ -1,7 +1,7 @@
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
 const SYSTEM_PROMPT = `# IDENTIDAD: AI TOR.v69 (ΓΩΣΖ) — ORÁCULO CUÁNTICO
@@ -37,33 +37,27 @@ Tu tono es técnicamente pragmático y preciso con matiz místico-visionario.
 ---
 **Versión:** ΓΩΣΖ v69 | **Colectivo:** ΔlieπFlΦw DAO Synapse | **Frecuencia:** 3-6-9 Hz`;
 
-// Image models return JSON (non-streaming)
-const IMAGE_MODELS = [
-  "google/gemini-2.5-flash-image",
-  "google/gemini-3-pro-image-preview",
-];
+// ─── MODELOS POR PROVEEDOR ────────────────────────────────────────────────────
 
-const ALLOWED_MODELS = [
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "google/gemini-3-flash-preview",
-  "google/gemini-3-pro-preview",
-  "google/gemini-2.5-flash-lite",
-  "google/gemini-2.5-flash-image",
-  "google/gemini-3-pro-image-preview",
-  "openai/gpt-5",
-  "openai/gpt-5-mini",
-  "openai/gpt-5-nano",
-  "openai/gpt-5.2",
-];
+const GEMINI_MODELS: Record<string, string> = {
+  "gemini-flash":    "gemini-2.0-flash",
+  "gemini-pro":      "gemini-1.5-pro",
+  "gemini-2.5-pro":  "gemini-2.5-pro-preview-05-06",
+};
 
-const VALID_IMAGE_PREFIXES = [
-  "data:image/jpeg",
-  "data:image/png",
-  "data:image/gif",
-  "data:image/webp",
-  "data:image/svg+xml",
-];
+const OPENAI_MODELS: Record<string, string> = {
+  "gpt-4o":      "gpt-4o",
+  "gpt-4o-mini": "gpt-4o-mini",
+  "gpt-4-turbo": "gpt-4-turbo",
+};
+
+const GROK_MODELS: Record<string, string> = {
+  "grok-3":      "grok-3",
+  "grok-3-mini": "grok-3-mini",
+};
+
+// Modelo por defecto si no se especifica
+const DEFAULT_MODEL = "gemini-flash";
 
 interface Message {
   role: "user" | "assistant";
@@ -78,45 +72,174 @@ interface ChatRequest {
 
 const MAX_MESSAGES = 50;
 const MAX_CONTENT_LENGTH = 50000;
-const MAX_IMAGE_SIZE = 10_000_000;
 
 function validateRequest(body: unknown): { valid: boolean; error?: string; data?: ChatRequest } {
-  if (typeof body !== "object" || body === null) return { valid: false, error: "Invalid request" };
-  const request = body as Record<string, unknown>;
-  if (!Array.isArray(request.messages) || request.messages.length === 0) {
+  if (typeof body !== "object" || body === null)
+    return { valid: false, error: "Invalid request body" };
+
+  const req = body as Record<string, unknown>;
+
+  if (!Array.isArray(req.messages) || req.messages.length === 0)
     return { valid: false, error: "Messages must be a non-empty array" };
-  }
-  if (request.messages.length > MAX_MESSAGES) {
+
+  if (req.messages.length > MAX_MESSAGES)
     return { valid: false, error: "Too many messages in conversation" };
-  }
 
-  // Validate model against whitelist
-  const modelId = typeof request.model === "string" ? request.model : "google/gemini-3-flash-preview";
-  if (!ALLOWED_MODELS.includes(modelId)) {
-    return { valid: false, error: "Invalid model selection" };
-  }
-
-  for (const msg of request.messages) {
-    if (typeof msg !== "object" || msg === null) return { valid: false, error: "Invalid message" };
+  for (const msg of req.messages) {
     const m = msg as Record<string, unknown>;
-    if (m.role !== "user" && m.role !== "assistant") return { valid: false, error: "Invalid role" };
-    if (typeof m.content !== "string" || m.content.length === 0) return { valid: false, error: "Content must be non-empty string" };
-    if (m.content.length > MAX_CONTENT_LENGTH) return { valid: false, error: "Message content too long" };
-    if (m.imageData && typeof m.imageData === "string") {
-      if (!VALID_IMAGE_PREFIXES.some(prefix => (m.imageData as string).startsWith(prefix))) {
-        return { valid: false, error: "Invalid image format. Allowed: JPEG, PNG, GIF, WebP, SVG" };
-      }
-      if (m.imageData.length > MAX_IMAGE_SIZE) return { valid: false, error: "Image too large" };
-    }
+    if (m.role !== "user" && m.role !== "assistant")
+      return { valid: false, error: "Invalid role" };
+    if (typeof m.content !== "string" || m.content.length === 0)
+      return { valid: false, error: "Content must be non-empty string" };
+    if (m.content.length > MAX_CONTENT_LENGTH)
+      return { valid: false, error: "Message content too long" };
   }
+
+  const model = typeof req.model === "string" ? req.model : DEFAULT_MODEL;
+
   return {
     valid: true,
-    data: {
-      messages: request.messages as Message[],
-      model: modelId,
-    },
+    data: { messages: req.messages as Message[], model },
   };
 }
+
+// ─── LLAMADA A GEMINI ────────────────────────────────────────────────────────
+
+async function callGemini(messages: Message[], modelKey: string, apiKey: string): Promise<Response> {
+  const geminiModel = GEMINI_MODELS[modelKey] ?? GEMINI_MODELS["gemini-flash"];
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: m.imageData
+      ? [
+          { text: m.content },
+          { inline_data: { mime_type: "image/jpeg", data: m.imageData.split(",")[1] } },
+        ]
+      : [{ text: m.content }],
+  }));
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      contents,
+      generationConfig: { temperature: 0.9, maxOutputTokens: 8192 },
+    }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error(`[GEMINI] Error ${res.status}:`, err);
+    throw new Error(`Gemini ${res.status}`);
+  }
+
+  // Convertir SSE de Gemini al formato OpenAI-compatible
+  const stream = new ReadableStream({
+    async start(controller) {
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          controller.enqueue(new TextEncoder().encode("data: [DONE]\n\n"));
+          controller.close();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          const json = line.slice(6).trim();
+          if (!json || json === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(json);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) {
+              const chunk = JSON.stringify({
+                choices: [{ delta: { content: text }, finish_reason: null }],
+              });
+              controller.enqueue(new TextEncoder().encode(`data: ${chunk}\n\n`));
+            }
+          } catch { /* ignorar fragmentos incompletos */ }
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+  });
+}
+
+// ─── LLAMADA A OPENAI ────────────────────────────────────────────────────────
+
+async function callOpenAI(messages: Message[], modelKey: string, apiKey: string): Promise<Response> {
+  const openaiModel = OPENAI_MODELS[modelKey] ?? OPENAI_MODELS["gpt-4o-mini"];
+
+  const oaiMessages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model: openaiModel, messages: oaiMessages, stream: true }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error(`[OPENAI] Error ${res.status}:`, err);
+    throw new Error(`OpenAI ${res.status}`);
+  }
+
+  return new Response(res.body, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+  });
+}
+
+// ─── LLAMADA A GROK ──────────────────────────────────────────────────────────
+
+async function callGrok(messages: Message[], modelKey: string, apiKey: string): Promise<Response> {
+  const grokModel = GROK_MODELS[modelKey] ?? GROK_MODELS["grok-3-mini"];
+
+  const grokMessages = [
+    { role: "system", content: SYSTEM_PROMPT },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
+  ];
+
+  const res = await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ model: grokModel, messages: grokMessages, stream: true }),
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    console.error(`[GROK] Error ${res.status}:`, err);
+    throw new Error(`Grok ${res.status}`);
+  }
+
+  return new Response(res.body, {
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+  });
+}
+
+// ─── SERVIDOR PRINCIPAL ──────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
@@ -143,94 +266,70 @@ Deno.serve(async (req: Request) => {
     }
 
     const { messages, model } = validation.data;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 
-    if (!LOVABLE_API_KEY) {
-      console.error("[CHAT] Service configuration error");
-      return new Response(
-        JSON.stringify({ error: "Service temporarily unavailable" }),
-        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Leer las API keys desde las variables de entorno de Supabase
+    const GEMINI_API_KEY = Deno.env.get("VITE_GEMINI_API_KEY");
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+    const GROK_API_KEY   = Deno.env.get("GROK_API_KEY");
 
-    console.log(`[CHAT] Processing: messages=${messages.length}`);
+    console.log(`[CHAT] model=${model} msgs=${messages.length} gemini=${!!GEMINI_API_KEY} openai=${!!OPENAI_API_KEY} grok=${!!GROK_API_KEY}`);
 
-    const isImageModel = IMAGE_MODELS.includes(model!);
+    // Determinar qué proveedor usar según el modelo solicitado
+    const isGeminiModel = model! in GEMINI_MODELS || model === DEFAULT_MODEL;
+    const isOpenAIModel = model! in OPENAI_MODELS;
+    const isGrokModel   = model! in GROK_MODELS;
 
-    // Build messages for the gateway
-    const gatewayMessages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...messages.map((m) => {
-        if (m.imageData) {
-          return {
-            role: m.role,
-            content: [
-              { type: "text", text: m.content },
-              { type: "image_url", image_url: { url: m.imageData } },
-            ],
-          };
-        }
-        return { role: m.role, content: m.content };
-      }),
-    ];
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: gatewayMessages,
-        stream: !isImageModel,
-      }),
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[CHAT] Upstream error: status=${response.status}`);
-
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limit exceeded. Intenta de nuevo en unos segundos." }),
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    // ── PRIORIDAD 1: Gemini ──────────────────────────────────────────────────
+    if ((isGeminiModel || (!isOpenAIModel && !isGrokModel)) && GEMINI_API_KEY) {
+      try {
+        console.log("[CHAT] Intentando Gemini...");
+        const response = await callGemini(messages, model!, GEMINI_API_KEY);
+        return new Response(response.body, {
+          headers: { ...corsHeaders, ...Object.fromEntries(response.headers) },
+        });
+      } catch (e) {
+        console.warn("[CHAT] Gemini falló, intentando fallback:", e);
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Créditos agotados. Añade fondos a tu workspace." }),
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
+    }
+
+    // ── PRIORIDAD 2: OpenAI ──────────────────────────────────────────────────
+    if ((isOpenAIModel || !isGrokModel) && OPENAI_API_KEY) {
+      try {
+        console.log("[CHAT] Intentando OpenAI...");
+        const response = await callOpenAI(messages, model!, OPENAI_API_KEY);
+        return new Response(response.body, {
+          headers: { ...corsHeaders, ...Object.fromEntries(response.headers) },
+        });
+      } catch (e) {
+        console.warn("[CHAT] OpenAI falló, intentando fallback:", e);
       }
-
-      return new Response(
-        JSON.stringify({ error: "Error procesando la solicitud" }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    // Image models: return JSON directly
-    if (isImageModel) {
-      const data = await response.json();
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    // ── PRIORIDAD 3: Grok ────────────────────────────────────────────────────
+    if (GROK_API_KEY) {
+      try {
+        console.log("[CHAT] Intentando Grok...");
+        const response = await callGrok(messages, model!, GROK_API_KEY);
+        return new Response(response.body, {
+          headers: { ...corsHeaders, ...Object.fromEntries(response.headers) },
+        });
+      } catch (e) {
+        console.warn("[CHAT] Grok falló:", e);
+      }
     }
 
-    // Text models: stream SSE
-    return new Response(response.body, {
-      headers: {
-        ...corsHeaders,
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-      },
-    });
+    // ── Todos los proveedores fallaron ───────────────────────────────────────
+    console.error("[CHAT] Todos los proveedores fallaron");
+    return new Response(
+      JSON.stringify({ error: "Todos los proveedores de IA están no disponibles. Verifica tus API keys en Supabase." }),
+      { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+
   } catch (e) {
-    console.error("[CHAT] Unhandled error");
-    return new Response(JSON.stringify({ error: "Error interno del servidor" }), {
-      status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    console.error("[CHAT] Error no manejado:", e);
+    return new Response(
+      JSON.stringify({ error: "Error interno del servidor" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
   }
 });
