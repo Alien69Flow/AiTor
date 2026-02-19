@@ -1,21 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 
-// ✅ Variables correctas
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY || "";
+const SUPABASE_URL = "https://avuflwehgtcstrejqdyh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2dWZsd2VoZ3Rjc3RyZWpxZHloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMDUyNjIsImV4cCI6MjA4NjU4MTI2Mn0.2e8GpmZ7lgU9j9CJbk9ZO0RVoq_XFj1v0nvSI2lw61U";
 
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("⚠️ [AiTor] Frecuencia Supabase no detectada:", {
-    VITE_SUPABASE_URL: !!SUPABASE_URL,
-    VITE_SUPABASE_ANON_KEY: !!SUPABASE_ANON_KEY,
-  });
-  console.warn("⚠️ Advertencia Tesla: Frecuencia Supabase no detectada. Verifica las variables de entorno.");
-}
+console.log("✅ Supabase configurado:", {
+  url: SUPABASE_URL,
+  keyPresent: !!SUPABASE_ANON_KEY
+});
 
 export const supabase = createClient<Database>(
-  SUPABASE_URL || 'https://placeholder.supabase.co', 
-  SUPABASE_ANON_KEY || 'placeholder-key', 
+  SUPABASE_URL, 
+  SUPABASE_ANON_KEY, 
   {
     auth: {
       storage: typeof window !== 'undefined' ? window.localStorage : undefined,
