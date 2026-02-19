@@ -10,17 +10,9 @@ export interface Message {
   timestamp: Date;
 }
 
-// ✅ FIX: Variables correctas de Supabase
-const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const SUPABASE_URL      = "https://avuflwehgtcstrejqdyh.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF2dWZsd2VoZ3Rjc3RyZWpxZHloIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEwMDUyNjIsImV4cCI6MjA4NjU4MTI2Mn0.2e8GpmZ7lgU9j9CJbk9ZO0RVoq_XFj1v0nvSI2lw61U";
 const CHAT_URL          = `${SUPABASE_URL}/functions/v1/chat`;
-
-if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error("⚠️ [AiTor] Frecuencia Supabase no detectada:", {
-    VITE_SUPABASE_URL: !!SUPABASE_URL,
-    VITE_SUPABASE_ANON_KEY: !!SUPABASE_ANON_KEY,
-  });
-}
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -42,11 +34,6 @@ export function useChat() {
 
   const sendMessage = useCallback(async (content: string, model: string, imageData?: string) => {
     if (!content.trim() && !imageData) return;
-
-    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-      toast.error("⚠️ Configuración de Supabase no detectada. Verifica las variables de entorno.");
-      return;
-    }
 
     const userMessage: Message = {
       id: crypto.randomUUID(),
@@ -82,13 +69,13 @@ export function useChat() {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         if (response.status === 401) {
-          toast.error("🔐 Error de autenticación. Verifica VITE_SUPABASE_ANON_KEY.");
+          toast.error("🔐 Error de autenticación con Supabase.");
         } else if (response.status === 429) {
           toast.error("⏳ Rate limit alcanzado. Espera unos segundos.");
         } else if (response.status === 402) {
-          toast.error("💳 Créditos agotados en Lovable.");
+          toast.error("💳 Créditos agotados.");
         } else if (response.status === 503) {
-          toast.error("🔑 API Keys no disponibles. Verifica la configuración en Supabase.");
+          toast.error("🔑 API Keys no disponibles en Supabase.");
         } else {
           toast.error(`❌ Error ${response.status}: ${errorData.error || "Error desconocido"}`);
         }
