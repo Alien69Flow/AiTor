@@ -20,10 +20,8 @@ export function useChat() {
     setIsLoading(true);
 
     try {
-      // URL LIMPIA, SIN RAREZAS DE STREAMING QUE DAN 404
       const key = "AIzaSyBRxqMw64TP8rurqfhSzchppr7NgeM1tvM";
-      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
-
+const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`;
       const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
