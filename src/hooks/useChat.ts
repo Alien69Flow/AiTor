@@ -9,8 +9,7 @@ export interface Message {
 }
 
 const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const CHAT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`;
-
+const CHAT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=AIzaSyBRxqMw64TP8rurqfhSzchppr7NgeM1tvM`;
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
     const saved = localStorage.getItem("aitor_chat_memory");
