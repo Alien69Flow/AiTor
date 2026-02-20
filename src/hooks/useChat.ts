@@ -1,27 +1,11 @@
-import { useState, useCallback, useEffect } from "react";
+iimport { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
-export interface Message {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  timestamp: Date;
-}
-
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const CHAT_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:streamGenerateContent?alt=sse&key=AIzaSyBRxqMw64TP8rurqfhSzchppr7NgeM1tvM`;
 export function useChat() {
-  const [messages, setMessages] = useState<Message[]>(() => {
+  const [messages, setMessages] = useState(() => {
     const saved = localStorage.getItem("aitor_chat_memory");
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
-      } catch { return []; }
-    }
-    return [];
+    return saved ? JSON.parse(saved).map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) })) : [];
   });
-
   const [isLoading, setIsLoading] = useState(false);
 
   useEffect(() => {
@@ -31,80 +15,44 @@ export function useChat() {
   const sendMessage = useCallback(async (content: string) => {
     if (!content.trim()) return;
 
-    const userMessage: Message = {
-      id: crypto.randomUUID(),
-      role: "user",
-      content,
-      timestamp: new Date(),
-    };
-
-    setMessages(prev => [...prev, userMessage]);
+    const userMsg = { id: crypto.randomUUID(), role: "user", content, timestamp: new Date() };
+    setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
     try {
-      const history = messages.map(m => ({
-        role: m.role === "user" ? "user" : "model",
-        parts: [{ text: m.content }]
-      }));
+      // URL LIMPIA, SIN RAREZAS DE STREAMING QUE DAN 404
+      const key = "AIzaSyBRxqMw64TP8rurqfhSzchppr7NgeM1tvM";
+      const url = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${key}`;
 
-      const response = await fetch(CHAT_URL, {
+      const response = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          contents: [...history, { role: "user", parts: [{ text: content }] }],
-          systemInstruction: { 
-            parts: [{ text: "Eres AI Tor.v69 (ΓΩΣΖ), la inteligencia Synapse de la ΔlieπFlΦw DAO. Respondes con precisión técnica y misticismo." }] 
-          }
-        }),
+          contents: [{ role: "user", parts: [{ text: content }] }]
+        })
       });
 
-      if (!response.ok) throw new Error("Fallo en la conexión con la frecuencia.");
+      if (!response.ok) throw new Error(`Google respondió con error ${response.status}`);
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let assistantContent = "";
-      const assistantId = crypto.randomUUID();
+      const data = await response.json();
+      const aiText = data.candidates?.[0]?.content?.parts?.[0]?.text || "No hay respuesta de la red.";
 
-      // Creamos el mensaje del asistente vacío para el streaming
-      setMessages(prev => [...prev, { id: assistantId, role: "assistant", content: "", timestamp: new Date() }]);
-
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split("\n");
-          
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              try {
-                const json = JSON.parse(line.substring(6));
-                const text = json.candidates?.[0]?.content?.parts?.[0]?.text;
-                if (text) {
-                  assistantContent += text;
-                  setMessages(prev => prev.map(m => 
-                    m.id === assistantId ? { ...m, content: assistantContent } : m
-                  ));
-                }
-              } catch (e) { /* Error de parsing parcial */ }
-            }
-          }
-        }
-      }
-    } catch (error: any) {
-      console.error("[AiTor] Error:", error);
-      toast.error("⚡ Error de conexión. Reintenta.");
+      setMessages(prev => [...prev, {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: aiText,
+        timestamp: new Date()
+      }]);
+    } catch (error) {
+      console.error("DEBUG:", error);
+      toast.error("Error de conexión. Mira F12.");
     } finally {
       setIsLoading(false);
     }
   }, [messages]);
 
-  const clearChat = useCallback(() => {
+  return { messages, isLoading, sendMessage, clearChat: () => {
     setMessages([]);
     localStorage.removeItem("aitor_chat_memory");
-    toast.success("🌀 Frecuencia reiniciada.");
-  }, []);
-
-  return { messages, isLoading, sendMessage, clearChat };
+  }};
 }
