@@ -1,4 +1,4 @@
-iimport { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 export function useChat() {
