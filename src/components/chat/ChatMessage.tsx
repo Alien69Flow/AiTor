@@ -1,7 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/hooks/useChat";
 import { User, Bot, Clock, Terminal } from "lucide-react";
-import ReactMarkdown from 'react-markdown'; // Asumiendo que usas react-markdown
 
 interface ChatMessageProps {
   message: Message;
@@ -76,31 +75,14 @@ export function ChatMessage({ message }: ChatMessageProps) {
               alt="Uploaded context" 
               className="max-h-[300px] w-auto rounded-md object-contain transition-transform duration-500 group-hover/img:scale-[1.02]"
             />
-            <div className="absolute top-2 left-2 bg-black/60 backdrop-blur-md px-2 py-1 rounded text-[8px] text-primary font-mono border border-primary/20">
-              IMG_ANALYSIS_MOD_v69
-            </div>
           </div>
         )}
 
-        {/* Cuerpo del Mensaje */}
         <div className={cn(
-          "font-sans text-sm leading-relaxed prose prose-invert max-w-none",
-          isUser ? "text-foreground/90 pl-1" : "text-muted-foreground pl-1"
+          "font-mono text-sm leading-relaxed whitespace-pre-wrap break-words",
+          isUser ? "text-foreground/90 pl-1" : "text-muted-foreground/90 pl-1"
         )}>
-          {/* Si usas Markdown, se vería así (mucho más pro para código) */}
-          {/* @ts-ignore */}
-          <ReactMarkdown
-            components={{
-              code: ({ node, ...props }) => (
-                <code className="bg-black/40 border border-secondary/20 rounded px-1.5 py-0.5 font-mono text-primary text-xs" {...props} />
-              ),
-              pre: ({ node, ...props }) => (
-                <pre className="bg-black/60 border border-secondary/30 rounded-lg p-4 font-mono text-xs overflow-x-auto my-4 scanlines" {...props} />
-              )
-            }}
-          >
-            {message.content}
-          </ReactMarkdown>
+          {message.content}
         </div>
       </div>
     </div>
