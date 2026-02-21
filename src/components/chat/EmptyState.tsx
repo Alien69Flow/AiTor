@@ -70,7 +70,7 @@ export function EmptyState() {
 
   useEffect(() => {
     const timers: NodeJS.Timeout[] = [];
-    
+
     BOOT_SEQUENCE.forEach((_, index) => {
       const timer = setTimeout(() => {
         setVisibleLines(index + 1);
@@ -96,10 +96,7 @@ export function EmptyState() {
       {/* Boot sequence */}
       <div className="space-y-0.5 mb-4 w-full">
         {BOOT_SEQUENCE.slice(0, visibleLines).map((line, index) => (
-          <div 
-            key={index}
-            className="flex items-center gap-2 animate-fade-in"
-          >
+          <div key={index} className="flex items-center gap-2 animate-fade-in">
             <span className="text-secondary">&gt;</span>
             <span className={index === 0 ? "text-primary neon-text-gold" : "text-muted-foreground"}>
               {line.text}
@@ -109,7 +106,6 @@ export function EmptyState() {
         ))}
       </div>
 
-      {/* Capabilities grid */}
       {showCapabilities && (
         <div className="w-full space-y-3 animate-fade-in">
           <div className="border-t border-secondary/30 pt-3">
@@ -120,7 +116,7 @@ export function EmptyState() {
               </span>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-2">
             {CAPABILITIES.map((cap, index) => {
               const IconComponent = cap.icon;
