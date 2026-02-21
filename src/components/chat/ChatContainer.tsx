@@ -8,7 +8,7 @@ import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import { Maximize2, Minimize2, AlertTriangle } from "lucide-react";
+import { Maximize2, Minimize2, AlertTriangle, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ChatContainer() {
@@ -26,44 +26,44 @@ export function ChatContainer() {
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTo({
+          top: viewport.scrollHeight,
+          behavior: 'smooth'
+        });
+      }
     }
   }, [messages, isLoading]);
 
+  // CONTAINER DEFINITIVO: Máxima optimización de espacio para dApp
   const containerClasses = isFullscreen
-    ? "fixed inset-4 sm:inset-8 flex flex-col"
-    : "relative flex flex-col w-full max-w-[480px] max-h-[75vh]";
+    ? "fixed inset-2 sm:inset-4 flex flex-col z-50"
+    : "relative flex flex-col w-full max-w-[850px] h-[85vh] shadow-[0_0_60px_-15px_rgba(var(--primary-rgb),0.3)]";
 
   return (
     <>
       <SpaceBackground />
-      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-4 pointer-events-none z-10">
-        <div className={`pointer-events-auto ${containerClasses} glass-dark rounded-lg border border-secondary/40 overflow-hidden terminal-glow scanlines`}>
+      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-6 pointer-events-none z-10">
+        <div className={`pointer-events-auto ${containerClasses} glass-dark rounded-xl border border-secondary/30 overflow-hidden terminal-glow scanlines transition-all duration-500`}>
           
-          {/* HUD Corners */}
-          <div className="absolute top-0 left-0 w-5 h-5 border-l-2 border-t-2 border-secondary/50 rounded-tl-lg z-20" />
-          <div className="absolute top-0 right-0 w-5 h-5 border-r-2 border-t-2 border-secondary/50 rounded-tr-lg z-20" />
-          <div className="absolute bottom-0 left-0 w-5 h-5 border-l-2 border-b-2 border-secondary/50 rounded-bl-lg z-20" />
-          <div className="absolute bottom-0 right-0 w-5 h-5 border-r-2 border-b-2 border-secondary/50 rounded-br-lg z-20" />
+          {/* HUD Decorative Corners */}
+          <div className="absolute top-0 left-0 w-8 h-8 border-l-2 border-t-2 border-primary/30 rounded-tl-xl z-20 pointer-events-none" />
+          <div className="absolute top-0 right-0 w-8 h-8 border-r-2 border-t-2 border-primary/30 rounded-tr-xl z-20 pointer-events-none" />
+          <div className="absolute bottom-0 left-0 w-8 h-8 border-l-2 border-b-2 border-secondary/30 rounded-bl-xl z-20 pointer-events-none" />
+          <div className="absolute bottom-0 right-0 w-8 h-8 border-r-2 border-b-2 border-secondary/30 rounded-br-xl z-20 pointer-events-none" />
           
-          {/* Corner symbols */}
-          <div className="absolute top-2 left-3 text-primary/30 font-heading text-[10px] z-20">Δ</div>
-          <div className="absolute top-2 right-3 text-primary/30 font-heading text-[10px] z-20">Ω</div>
-          <div className="absolute bottom-7 left-3 text-secondary/30 font-heading text-[10px] z-20">Φ</div>
-          <div className="absolute bottom-7 right-3 text-secondary/30 font-heading text-[10px] z-20">π</div>
+          {/* Corner Metadata Symbols */}
+          <div className="absolute top-2 left-3 text-primary/40 font-heading text-[10px] z-20 select-none hidden sm:block">SYNP_v69</div>
+          <div className="absolute bottom-12 right-3 text-secondary/30 font-heading text-[10px] z-20 select-none rotate-90 origin-right">ΔLIEπFLΦW</div>
 
-          {/* Fullscreen toggle */}
           <Button
             variant="ghost"
             size="icon"
             onClick={() => setIsFullscreen(!isFullscreen)}
-            className="absolute top-2 right-10 h-6 w-6 text-muted-foreground/50 hover:text-primary z-30"
+            className="absolute top-2.5 right-12 h-6 w-6 text-muted-foreground/40 hover:text-primary transition-colors z-30"
           >
-            {isFullscreen ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
+            {isFullscreen ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </Button>
           
           <ChatHeader
@@ -73,36 +73,40 @@ export function ChatContainer() {
             hasMessages={messages.length > 0}
           />
           
-          <ScrollArea className="flex-1 min-h-0 relative z-0" ref={scrollRef}>
-            <div>
+          <ScrollArea className="flex-1 min-h-0 relative z-0 bg-black/5" ref={scrollRef}>
+            <div className="max-w-3xl mx-auto w-full">
               {messages.length === 0 ? (
                 <EmptyState />
               ) : (
-                <div className="divide-y divide-secondary/10">
+                <div className="flex flex-col py-6 px-4 gap-1">
                   {messages.map((message) => (
                     <ChatMessage key={message.id} message={message} />
                   ))}
                 </div>
               )}
-              {isLoading && messages[messages.length - 1]?.role === "user" && (
-                <ThinkingIndicator />
+              {isLoading && (
+                <div className="px-6 py-4">
+                  <ThinkingIndicator />
+                </div>
               )}
             </div>
           </ScrollArea>
           
-          <ChatInput
-            onSend={handleSend}
-            isLoading={isLoading}
-            supportsVision={supportsVision}
-          />
+          <div className="bg-card/40 backdrop-blur-xl border-t border-secondary/20 relative z-10">
+            <ChatInput
+              onSend={handleSend}
+              isLoading={isLoading}
+              supportsVision={supportsVision}
+            />
 
-          {/* Disclaimer footer */}
-          <div className="px-2 py-1 border-t border-secondary/20 bg-card/30 z-10">
-            <div className="flex items-start gap-1.5 text-[7px] text-muted-foreground/40">
-              <AlertTriangle className="w-2.5 h-2.5 flex-shrink-0 mt-0.5" />
-              <span>
-                AI Tor puede cometer errores. Verifica la información. Para consultas médicas o financieras, consulta con profesionales cualificados.
-              </span>
+            {/* --- DISCLAIMER FOOTER ACTUALIZADO Y MEJORADO --- */}
+            <div className="px-4 py-2 border-t border-secondary/10 bg-black/40">
+              <div className="flex items-start gap-2 max-w-2xl mx-auto">
+                <ShieldAlert className="w-3 h-3 text-primary/60 mt-0.5 flex-shrink-0 animate-pulse" />
+                <p className="text-[8px] leading-relaxed text-muted-foreground/50 font-mono uppercase tracking-wider">
+                  <span className="text-primary/70 font-bold">Protocolo de Seguridad:</span> AI Tor puede cometer errores. Verifica la información de forma independiente. Para consultas <span className="text-secondary/70">financieras, legales o médicas</span>, consulta siempre con profesionales cualificados. Datos encriptados y protegidos por ΔlieπFlΦw DAO.
+                </p>
+              </div>
             </div>
           </div>
         </div>
