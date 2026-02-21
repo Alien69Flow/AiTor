@@ -19,7 +19,7 @@ export const AI_MODELS: AIModel[] = [
     supportsVision: true,
     available: true,
     oracleType: 'primary',
-    oracleIcon: '🔮',
+    oracleIcon: '👽',
   },
   {
     id: "google/gemini-2.5-pro",
