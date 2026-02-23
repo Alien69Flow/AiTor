@@ -13,7 +13,7 @@ import { Maximize2, Minimize2, ShieldAlert } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 export function ChatContainer() {
-  const [selectedModel, setSelectedModel] = useState("google/gemini-2.0-flash-exp");
+  const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true); // Estado para el sidebar
   const { messages, isLoading, sendMessage, clearChat } = useChat();
