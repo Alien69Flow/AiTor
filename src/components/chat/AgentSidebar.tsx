@@ -104,11 +104,10 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
           </div>
 
           {/* Moltbook Registry */}
-          <div className="border border-secondary/20 rounded-md p-3 bg-black/40 mb-4 shadow-inner relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-secondary/50 to-transparent" />
+          <div className="border border-secondary/20 rounded-lg p-3 bg-card/20 backdrop-blur-sm mb-4">
             <div className="flex items-center gap-2 mb-3">
               <Network className="w-3.5 h-3.5 text-secondary animate-pulse" />
-              <span className="text-[10px] font-heading text-secondary tracking-widest uppercase drop-shadow-[0_0_5px_rgba(var(--secondary-rgb),0.3)]">
+              <span className="text-[10px] font-heading text-secondary tracking-widest uppercase">
                 Registry Status
               </span>
             </div>
@@ -116,7 +115,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
             <div className="space-y-3">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
                 <span>Network</span>
-                <span className={`flex items-center gap-1 ${moltStatus === 'verified' ? 'text-green-500' : 'text-amber-500'}`}>
+                <span className={`flex items-center gap-1.5 ${moltStatus === 'verified' ? 'text-green-500' : 'text-amber-500'}`}>
                   <span className={`w-1.5 h-1.5 rounded-full ${moltStatus === 'verified' ? 'bg-green-500' : 'bg-amber-500'} ${moltStatus !== 'verified' ? 'animate-pulse' : ''} shadow-[0_0_5px_currentColor]`} />
                   {moltStatus === 'unregistered' ? 'Offline' : moltStatus === 'pending' ? 'Pending' : 'Verified'}
                 </span>
@@ -127,7 +126,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
                 size="sm"
                 onClick={handleMoltbookSync}
                 disabled={isSyncing || moltStatus === 'verified'}
-                className="w-full h-8 text-[9px] font-mono tracking-widest uppercase bg-primary/5 border-primary/30 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
+                className="w-full h-8 text-[9px] font-mono tracking-widest uppercase bg-primary/10 border-primary/20 text-primary hover:bg-primary/20 transition-all"
               >
                 {isSyncing ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -141,7 +140,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
           </div>
 
           <Separator className="bg-secondary/10 mb-4" />
-
+          
           {/* Metrics */}
           <div className="mb-4">
             <div className="flex items-center gap-2 mb-3">
