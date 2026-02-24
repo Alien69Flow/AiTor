@@ -7,7 +7,6 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-// NOTA: Asegúrate de que este archivo moltbook-config exista en tu repo
 import { MOLTBOOK_AGENT, type MoltbookSkill } from "@/lib/moltbook-config";
 
 const SKILL_ICON_MAP: Record<string, React.ElementType> = {
@@ -73,30 +72,43 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
       </Button>
 
       <div
-        className={`${isOpen ? "w-64 border-r border-secondary/20" : "w-0"} transition-all duration-300 overflow-hidden bg-black/40 backdrop-blur-xl flex flex-col h-full z-20 shrink-0`}
+        className={`${isOpen ? "w-64 border-r border-secondary/20" : "w-0"} transition-all duration-300 overflow-hidden bg-black/60 backdrop-blur-xl flex flex-col h-full z-20 shrink-0 shadow-[4px_0_24px_-10px_rgba(var(--primary-rgb),0.3)]`}
       >
-        <div className="w-64 h-full flex flex-col p-4 overflow-y-auto">
+        <div className="w-64 h-full flex flex-col p-4 overflow-y-auto no-scrollbar">
           
-          {/* Cabecera Agent Identity */}
-          <div className="flex items-center gap-2 mb-6 mt-2">
-            <div className="p-1.5 bg-primary/10 border border-primary/30 rounded shadow-[0_0_10px_rgba(var(--primary-rgb),0.2)]">
-              <Cpu className="w-5 h-5 text-primary" />
+          {/* Cabecera Agent Identity - ALIEN HUD */}
+          <div className="flex flex-col items-center gap-3 mb-6 mt-2">
+            <div className="relative group">
+              {/* Avatar Alien */}
+              <div className="w-16 h-16 rounded-full border-2 border-primary/40 bg-black/40 flex items-center justify-center text-4xl shadow-[0_0_20px_rgba(var(--primary-rgb),0.2)] group-hover:shadow-[0_0_30px_rgba(var(--primary-rgb),0.4)] transition-all duration-500 cursor-pointer overflow-hidden border-double relative">
+                <span className="drop-shadow-[0_0_8px_rgba(255,255,255,0.5)] z-10">👽</span>
+                {/* Barrido Láser Decorativo */}
+                <div className="absolute inset-0 bg-gradient-to-t from-primary/10 to-transparent opacity-20" />
+              </div>
+              {/* Pulso Vital */}
+              <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-[#0a0a0a] animate-pulse shadow-[0_0_10px_#22c55e]" />
             </div>
-            <div>
-              <h2 className="text-sm font-heading font-bold text-primary tracking-widest uppercase">
+            
+            <div className="text-center">
+              <h2 className="text-sm font-heading font-bold text-primary tracking-[0.2em] uppercase drop-shadow-[0_0_5px_rgba(var(--primary-rgb),0.5)]">
                 {MOLTBOOK_AGENT.name}
               </h2>
-              <p className="text-[9px] text-muted-foreground font-mono uppercase tracking-widest">
-                Node // {MOLTBOOK_AGENT.version}
-              </p>
+              <div className="flex items-center justify-center gap-2 mt-1">
+                <span className="w-6 h-[1px] bg-primary/20" />
+                <p className="text-[9px] text-muted-foreground font-mono uppercase tracking-[0.3em] opacity-80">
+                  Node // {MOLTBOOK_AGENT.version}
+                </p>
+                <span className="w-6 h-[1px] bg-primary/20" />
+              </div>
             </div>
           </div>
 
           {/* Moltbook Registry */}
-          <div className="border border-secondary/20 rounded-md p-3 bg-black/40 mb-4 shadow-inner">
+          <div className="border border-secondary/20 rounded-md p-3 bg-black/40 mb-4 shadow-inner relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-secondary/50 to-transparent" />
             <div className="flex items-center gap-2 mb-3">
               <Network className="w-3.5 h-3.5 text-secondary animate-pulse" />
-              <span className="text-[10px] font-heading text-secondary tracking-widest uppercase">
+              <span className="text-[10px] font-heading text-secondary tracking-widest uppercase drop-shadow-[0_0_5px_rgba(var(--secondary-rgb),0.3)]">
                 Registry Status
               </span>
             </div>
@@ -105,7 +117,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
                 <span>Network</span>
                 <span className={`flex items-center gap-1 ${moltStatus === 'verified' ? 'text-green-500' : 'text-amber-500'}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full ${moltStatus === 'verified' ? 'bg-green-500' : 'bg-amber-500'} animate-pulse`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${moltStatus === 'verified' ? 'bg-green-500' : 'bg-amber-500'} ${moltStatus !== 'verified' ? 'animate-pulse' : ''} shadow-[0_0_5px_currentColor]`} />
                   {moltStatus === 'unregistered' ? 'Offline' : moltStatus === 'pending' ? 'Pending' : 'Verified'}
                 </span>
               </div>
@@ -115,7 +127,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
                 size="sm"
                 onClick={handleMoltbookSync}
                 disabled={isSyncing || moltStatus === 'verified'}
-                className="w-full h-8 text-[9px] font-mono tracking-widest uppercase bg-primary/5 border-primary/30 text-primary hover:bg-primary/20"
+                className="w-full h-8 text-[9px] font-mono tracking-widest uppercase bg-primary/5 border-primary/30 text-primary hover:bg-primary/20 hover:border-primary/50 transition-all"
               >
                 {isSyncing ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -139,13 +151,13 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
               </span>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <div className="bg-black/40 p-2 rounded border border-primary/20 text-center">
-                <p className="text-lg font-bold text-primary">{MOLTBOOK_AGENT.metrics.tasksCompleted}</p>
-                <p className="text-[8px] text-muted-foreground uppercase tracking-widest">Tareas</p>
+              <div className="bg-black/40 p-2 rounded border border-primary/20 text-center hover:bg-primary/5 transition-colors group">
+                <p className="text-lg font-bold text-primary group-hover:scale-110 transition-transform">{MOLTBOOK_AGENT.metrics.tasksCompleted}</p>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-widest mt-1">Tareas</p>
               </div>
-              <div className="bg-black/40 p-2 rounded border border-secondary/20 text-center">
-                <p className="text-lg font-bold text-secondary">{MOLTBOOK_AGENT.metrics.oracleCount}</p>
-                <p className="text-[8px] text-muted-foreground uppercase tracking-widest">Oráculos</p>
+              <div className="bg-black/40 p-2 rounded border border-secondary/20 text-center hover:bg-secondary/5 transition-colors group">
+                <p className="text-lg font-bold text-secondary group-hover:scale-110 transition-transform">{MOLTBOOK_AGENT.metrics.oracleCount}</p>
+                <p className="text-[8px] text-muted-foreground uppercase tracking-widest mt-1">Oráculos</p>
               </div>
             </div>
           </div>
@@ -159,7 +171,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
               {MOLTBOOK_AGENT.skills.map((skill) => {
                 const Icon = SKILL_ICON_MAP[skill.category] || Zap;
                 return (
-                  <li key={skill.id} className="flex items-center justify-between p-2 rounded hover:bg-white/5 cursor-pointer transition-colors group">
+                  <li key={skill.id} className="flex items-center justify-between p-2 rounded hover:bg-white/5 cursor-pointer transition-colors group border border-transparent hover:border-primary/10">
                     <div className="flex items-center gap-2">
                       <Icon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
                       <span className="text-[10px] font-mono text-muted-foreground group-hover:text-foreground">{skill.label}</span>
@@ -172,12 +184,12 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
           </div>
 
           {/* Footer Logo */}
-          <div className="mt-4 pt-4 border-t border-secondary/10 text-center">
+          <div className="mt-4 pt-4 border-t border-secondary/10 text-center pb-2">
             <p className="text-[7px] font-mono text-muted-foreground/40 tracking-widest uppercase">
               {MOLTBOOK_AGENT.collective}
             </p>
-            <p className="text-[7px] font-mono text-primary/30 mt-1 uppercase">
-              {MOLTBOOK_AGENT.frequency}
+            <p className="text-[7px] font-mono text-primary/30 mt-1 uppercase tracking-[0.2em]">
+              Freq // {MOLTBOOK_AGENT.frequency}
             </p>
           </div>
         </div>
