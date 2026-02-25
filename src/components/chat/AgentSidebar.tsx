@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  Shield, CheckCircle2, Cpu, Zap, Globe, Image, Code2,
-  Brain, Atom, Link2, ChevronLeft, ChevronRight, Activity, 
-  Share2, Loader2, Network, BadgeCheck, LogOut, ShieldAlert
+  Brain, Atom, Image, Code2, Globe, Link2, 
+  ChevronLeft, ChevronRight, Activity, 
+  Share2, Loader2, Network, LogOut, ShieldAlert, Zap
 } from "lucide-react";
-import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth"; 
+import { useMoltbook } from "@/hooks/useMoltbook";
 import { MOLTBOOK_AGENT } from "@/lib/moltbook-config";
 
 const SKILL_ICON_MAP: Record<string, React.ElementType> = {
@@ -28,38 +28,34 @@ interface AgentSidebarProps {
 export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { user, signOut, loading } = useAuth(); 
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  // El estado de Moltbook ahora depende de si hay un usuario logueado
-  const moltStatus = user ? 'verified' : 'unregistered';
+  const { user, signOut } = useAuth(); 
+  const { registerAgent, isRegistering } = useMoltbook();
 
   const handleMoltbookSync = async () => {
     if (!user) {
-      toast({ title: "Acceso Denegado", description: "Firma de identidad requerida.", variant: "destructive" });
+      toast({ 
+        title: "Acceso Denegado", 
+        description: "Firma de identidad requerida para enlazar con @Alien69Flow.", 
+        variant: "destructive" 
+      });
       navigate("/auth");
       return;
     }
 
-    setIsSyncing(true);
-    try {
-      // Intento de registro real en el oráculo Moltbook
-      const response = await fetch(MOLTBOOK_AGENT.endpoints.registry, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: MOLTBOOK_AGENT.name,
-          user_id: user.id,
-          email: user.email
-        }),
+    // Iniciamos registro real
+    const agentData = await registerAgent();
+    
+    if (agentData?.claim_url) {
+      // Notificación de éxito en el primer paso
+      toast({ 
+        title: "Enlace Cuántico Iniciado", 
+        description: "Redirigiendo al Oráculo para verificar en X..." 
       });
-      
-      toast({ title: "Nodo Sincronizado", description: "Enlace cuántico establecido con la DAO." });
-    } catch (e) {
-      // Fallback para desarrollo
-      toast({ title: "Modo Simulación", description: "Sincronización local activa." });
-    } finally {
-      setIsSyncing(false);
+
+      // Abrimos la URL de Moltbook para que el usuario verifique con su Twitter
+      setTimeout(() => {
+        window.open(agentData.claim_url, "_blank");
+      }, 1500);
     }
   };
 
@@ -93,7 +89,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
             </div>
           </div>
 
-          {/* Registry Status ( DINÁMICO ) */}
+          {/* Registry Status */}
           <div className="border border-secondary/20 rounded-lg p-3 bg-card/20 backdrop-blur-sm mb-4">
             <div className="flex items-center gap-2 mb-3">
               <Network className="w-3.5 h-3.5 text-secondary animate-pulse" />
@@ -102,20 +98,18 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
             
             <div className="space-y-3">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                <span>Network</span>
-                <span className={`flex items-center gap-1.5 ${user ? 'text-green-500' : 'text-amber-500'}`}>
-                  {user ? 'Verified' : 'Offline'}
-                </span>
+                <span>X Account</span>
+                <span className="text-primary opacity-80">@Alien69Flow</span>
               </div>
 
               <Button
                 variant="outline"
                 size="sm"
-                onClick={user ? handleMoltbookSync : () => navigate("/auth")}
-                disabled={isSyncing}
+                onClick={handleMoltbookSync}
+                disabled={isRegistering}
                 className="w-full h-8 text-[9px] font-mono tracking-widest uppercase bg-primary/10 border-primary/20 text-primary hover:bg-primary/20 transition-all"
               >
-                {isSyncing ? (
+                {isRegistering ? (
                   <Loader2 className="w-3 h-3 animate-spin" />
                 ) : user ? (
                   <><Share2 className="w-3 h-3 mr-2" /> Sync Node</>
