@@ -8,11 +8,13 @@ export interface MoltbookSkill {
 export const MOLTBOOK_AGENT = {
   name: "Ai Tor",
   version: "v.69",
-  protocol: "NEUTRINO-0",
-  collective: "ΔlieπFlΦw Collective",
+  protocol: "NEUTRINO",
+  collective: "ΔlieπFlΦw DAO Synapse",
   frequency: "3-6-9 Sync Active",
   endpoints: {
-    registry: "https://api.moltbook.com/v1/registry",
+    // URL OFICIAL según el SKILL.md que me mostraste
+    registry: "https://www.moltbook.com/api/v1/agents/register",
+    base: "https://www.moltbook.com/api/v1"
   },
   metrics: {
     tasksCompleted: 1247,
