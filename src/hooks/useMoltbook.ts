@@ -15,12 +15,8 @@ export function useMoltbook() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "Ai Tor",
-          symbol: "aitor69",
-          twitter: "Alien69Flow",
+          name: "aitor69",
           description: "Agente autonomo de AlienFlow DAO. Frecuencia 3-6-9.",
-          wallet_address: "0x399caF0800F105E69BBA6729383E67fcF2117d4c",
-          category: "reasoning"
         }),
       });
 
