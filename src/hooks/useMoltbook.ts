@@ -8,17 +8,18 @@ export function useMoltbook() {
 
   const registerAgent = async () => {
     setIsRegistering(true);
-    console.log("📡 Conectando con el registro de Moltbook...");
+    console.log("📡 Sincronizando con el Oráculo...");
     
     try {
-      const response = await fetch(MOLTBOOK_AGENT.endpoints.registry, {
+      const response = await fetch("https://www.moltbook.com/api/v1/agents/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Limpiamos nombres y añadimos symbol para evitar el Error 400
-          name: "Ai Tor", 
-          symbol: "AITOR",
-          description: "Agente autonomo de AlienFlow DAO. Operando en frecuencia 3-6-9.",
+          name: "Ai Tor",
+          symbol: "aitor69",
+          twitter: "Alien69Flow",
+          description: "Agente autonomo de AlienFlow DAO. Frecuencia 3-6-9.",
+          wallet_address: "0x399caF0800F105E69BBA6729383E67fcF2117d4c",
           category: "reasoning"
         }),
       });
@@ -26,38 +27,38 @@ export function useMoltbook() {
       const data = await response.json();
       console.log("📦 Respuesta del Oráculo:", data);
 
-      // Verificamos si la respuesta fue exitosa
       if (!response.ok) {
-        console.error("❌ Error de Moltbook:", data.message || "Petición rechazada");
+        // Debug detallado de los errores
+        console.error("❌ Errores detectados:", data.error || data.message);
+        toast({
+          title: "Error de Registro",
+          description: Array.isArray(data.error) ? data.error[0] : (data.message || "Datos inválidos"),
+          variant: "destructive",
+        });
         return null;
       }
 
       const agent = data.agent || data;
 
       if (agent && agent.claim_url) {
-        // Guardamos la key para el futuro
         localStorage.setItem("moltbook_api_key", agent.api_key);
         
         toast({
-          title: "¡Portal Abierto!",
-          description: "Redirigiendo a la verificación de X...",
+          title: "¡Portal Detectado!",
+          description: "Abriendo verificación en X...",
         });
 
-        // Intentamos abrir la URL directamente
-        window.open(agent.claim_url, "_blank");
+        // Pequeño delay para que el navegador no bloquee el pop-up
+        setTimeout(() => {
+          window.open(agent.claim_url, "_blank");
+        }, 500);
 
         return agent; 
-      } else {
-        console.error("❌ La respuesta no contiene claim_url o api_key:", data);
-        return null;
       }
+      
+      return null;
     } catch (error) {
-      console.error("❌ Error de red:", error);
-      toast({
-        title: "Error de Enlace",
-        description: "Revisa tu conexión o el estado del oráculo.",
-        variant: "destructive",
-      });
+      console.error("❌ Error de red fatal:", error);
       return null;
     } finally {
       setIsRegistering(false);
