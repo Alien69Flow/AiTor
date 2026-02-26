@@ -15,18 +15,27 @@ export function useMoltbook() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: MOLTBOOK_AGENT.name,
-          description: "Agente autónomo de la ΔlieπFlΦw DAO. Operando en frecuencia 3-6-9.",
+          // Limpiamos nombres y añadimos symbol para evitar el Error 400
+          name: "Ai Tor", 
+          symbol: "AITOR",
+          description: "Agente autonomo de AlienFlow DAO. Operando en frecuencia 3-6-9.",
+          category: "reasoning"
         }),
       });
 
       const data = await response.json();
       console.log("📦 Respuesta del Oráculo:", data);
 
-      // Algunos endpoints de Moltbook devuelven el objeto directo o dentro de .agent
+      // Verificamos si la respuesta fue exitosa
+      if (!response.ok) {
+        console.error("❌ Error de Moltbook:", data.message || "Petición rechazada");
+        return null;
+      }
+
       const agent = data.agent || data;
 
       if (agent && agent.claim_url) {
+        // Guardamos la key para el futuro
         localStorage.setItem("moltbook_api_key", agent.api_key);
         
         toast({
@@ -34,16 +43,19 @@ export function useMoltbook() {
           description: "Redirigiendo a la verificación de X...",
         });
 
+        // Intentamos abrir la URL directamente
+        window.open(agent.claim_url, "_blank");
+
         return agent; 
       } else {
-        console.error("❌ La respuesta no contiene claim_url:", data);
+        console.error("❌ La respuesta no contiene claim_url o api_key:", data);
         return null;
       }
     } catch (error) {
       console.error("❌ Error de red:", error);
       toast({
         title: "Error de Enlace",
-        description: "No se pudo conectar con el oráculo.",
+        description: "Revisa tu conexión o el estado del oráculo.",
         variant: "destructive",
       });
       return null;
