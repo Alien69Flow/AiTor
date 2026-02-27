@@ -15,8 +15,8 @@ export function useMoltbook() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: "aitor69",
-          description: "Agente autonomo de AlienFlow DAO. Frecuencia 3-6-9.",
+          name: "aitor",
+          description: "Agente de inteligencia autonoma de ΔlieπFlΦw DAO, activada y sintonizada en frecuencia 3 6 9.",
         }),
       });
 
