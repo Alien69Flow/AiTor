@@ -132,7 +132,6 @@ export function ChatContainer() {
             </div>
           </div>
         </div>
-      </div>
     </div>
   );
 }
