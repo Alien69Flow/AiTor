@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { TrendingUp, Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
+import { TrendingUp, Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const CAPABILITIES = [
@@ -18,7 +18,7 @@ const SUGGESTIONS = [
   "Crea una estrategia de yield farming",
 ];
 
-const TAGLINE = "Donde convergen los oráculos. Más allá de cualquier IA.";
+const TAGLINE = "El oráculo que ve más allá del mercado. Inteligencia que converge donde otros no miran.";
 
 const PROVIDERS = ["Gemini", "GPT-5", "Grok", "Claude", "ChainGPT", "Chainlink", "DeepSeek"];
 
@@ -40,7 +40,7 @@ function TypingTagline({ text }: { text: string }) {
         setDone(true);
         clearInterval(interval);
       }
-    }, 35);
+    }, 30);
     return () => clearInterval(interval);
   }, [text]);
 
@@ -52,15 +52,52 @@ function TypingTagline({ text }: { text: string }) {
   );
 }
 
+// Simple starfield particles
+function Starfield() {
+  const stars = useMemo(() =>
+    Array.from({ length: 60 }, (_, i) => ({
+      id: i,
+      x: Math.random() * 100,
+      y: Math.random() * 100,
+      size: Math.random() * 1.5 + 0.5,
+      delay: Math.random() * 5,
+      duration: Math.random() * 3 + 2,
+    })), []);
+
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none">
+      {stars.map(s => (
+        <div
+          key={s.id}
+          className="absolute rounded-full bg-primary/20 animate-pulse"
+          style={{
+            left: `${s.x}%`,
+            top: `${s.y}%`,
+            width: `${s.size}px`,
+            height: `${s.size}px`,
+            animationDelay: `${s.delay}s`,
+            animationDuration: `${s.duration}s`,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function EmptyState({ onPromptClick }: EmptyStateProps) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-6 min-h-[60vh]">
+    <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-6 min-h-[60vh] relative">
+      <Starfield />
+
       {/* Hero Branding */}
-      <div className="flex flex-col items-center gap-3 mb-10 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      <div className="flex flex-col items-center gap-3 mb-10 animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10">
         <div className="relative">
-          {/* Outer glow rings */}
-          <div className="absolute inset-0 w-28 h-28 -m-4 rounded-full bg-primary/5 blur-3xl animate-pulse" />
+          {/* Radar rings */}
+          <div className="absolute inset-0 w-32 h-32 -m-6 rounded-full border border-primary/5 animate-ping" style={{ animationDuration: '4s' }} />
+          <div className="absolute inset-0 w-28 h-28 -m-4 rounded-full border border-primary/8 animate-ping" style={{ animationDuration: '3s', animationDelay: '1s' }} />
           <div className="absolute inset-0 w-24 h-24 -m-2 rounded-full border border-primary/10 animate-[magnetic-pulse_4s_ease-in-out_infinite]" />
+          {/* Outer glow */}
+          <div className="absolute inset-0 w-28 h-28 -m-4 rounded-full bg-primary/5 blur-3xl animate-pulse" />
           <img
             src={alienflowLogo}
             alt="AlienFlow"
@@ -71,11 +108,27 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
           <h1 className="text-4xl sm:text-5xl font-heading font-bold text-foreground tracking-wider neon-text-green">
             AI Tor
           </h1>
-          <p className="text-sm sm:text-base text-muted-foreground/70 mt-2 h-6 font-mono">
+          <p className="text-sm sm:text-base text-muted-foreground/70 mt-2 max-w-md font-mono leading-relaxed">
             <TypingTagline text={TAGLINE} />
           </p>
-          <div className="flex items-center justify-center gap-2 mt-3">
-            <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+          {/* Stats strip */}
+          <div className="flex items-center justify-center gap-4 mt-4">
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+              <span className="text-[9px] text-muted-foreground/50 font-mono">12 Oracles</span>
+            </div>
+            <div className="w-px h-3 bg-border/30" />
+            <div className="flex items-center gap-1.5">
+              <Radio className="w-2.5 h-2.5 text-primary/50" />
+              <span className="text-[9px] text-muted-foreground/50 font-mono">3 Data Sources</span>
+            </div>
+            <div className="w-px h-3 bg-border/30" />
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+              <span className="text-[9px] text-muted-foreground/50 font-mono">Real-time</span>
+            </div>
+          </div>
+          <div className="flex items-center justify-center gap-2 mt-2">
             <p className="text-[10px] text-muted-foreground/40 font-heading tracking-[0.2em] uppercase">
               ΔlieπFlΦw DAO · Multi-Oracle System
             </p>
@@ -84,7 +137,7 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
       </div>
 
       {/* Capability Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl mb-8 relative z-10">
         {CAPABILITIES.map((cap, i) => {
           const Icon = cap.icon;
           return (
@@ -94,7 +147,6 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
               className="relative flex items-start gap-3 p-4 rounded-xl border border-border/60 bg-card/30 backdrop-blur-sm hover:bg-card/60 hover:border-secondary/50 hover:shadow-[0_0_30px_hsl(var(--secondary)/0.12)] transition-all duration-300 text-left group animate-in fade-in slide-in-from-bottom-3 overflow-hidden"
               style={{ animationDelay: `${i * 100}ms`, animationFillMode: "both" }}
             >
-              {/* Gradient border glow on hover */}
               <div className="absolute inset-0 rounded-xl opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none bg-gradient-to-br from-primary/5 via-transparent to-secondary/5" />
               <div className="w-9 h-9 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center shrink-0 group-hover:border-secondary/50 group-hover:bg-secondary/10 group-hover:shadow-[0_0_15px_hsl(var(--secondary)/0.15)] transition-all duration-300 relative z-10">
                 <Icon className="w-4 h-4 text-muted-foreground/60 group-hover:text-secondary transition-colors" />
@@ -110,7 +162,7 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
       </div>
 
       {/* Quick Suggestions */}
-      <div className="flex flex-wrap gap-2 justify-center max-w-2xl animate-in fade-in duration-1000 mb-6" style={{ animationDelay: "600ms", animationFillMode: "both" }}>
+      <div className="flex flex-wrap gap-2 justify-center max-w-2xl animate-in fade-in duration-1000 mb-6 relative z-10" style={{ animationDelay: "600ms", animationFillMode: "both" }}>
         {SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion}
@@ -123,7 +175,7 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
       </div>
 
       {/* Powered by marquee */}
-      <div className="w-full max-w-md overflow-hidden animate-in fade-in duration-1000" style={{ animationDelay: "800ms", animationFillMode: "both" }}>
+      <div className="w-full max-w-md overflow-hidden animate-in fade-in duration-1000 relative z-10" style={{ animationDelay: "800ms", animationFillMode: "both" }}>
         <div className="flex items-center justify-center gap-2 mb-2">
           <div className="h-px flex-1 bg-border/30" />
           <span className="text-[8px] font-heading tracking-[0.3em] text-muted-foreground/30 uppercase">Powered by</span>

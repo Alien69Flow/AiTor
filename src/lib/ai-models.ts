@@ -7,10 +7,12 @@ export interface AIModel {
   available: boolean;
   oracleType?: 'primary' | 'advanced' | 'blockchain' | 'external';
   oracleIcon?: string;
+  contextWindow?: string;
+  speed?: 'instant' | 'fast' | 'medium' | 'slow';
+  recommended?: boolean;
 }
 
 export const AI_MODELS: AIModel[] = [
-  // Oráculos Activos (Lovable AI Gateway)
   {
     id: "google/gemini-2.5-flash",
     name: "Ai Tor",
@@ -20,6 +22,9 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
+    contextWindow: '1M',
+    speed: 'fast',
+    recommended: true,
   },
   {
     id: "google/gemini-2.5-pro",
@@ -30,6 +35,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '👽',
+    contextWindow: '1M',
+    speed: 'medium',
   },
   {
     id: "google/gemini-3-flash-preview",
@@ -40,6 +47,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
+    contextWindow: '1M',
+    speed: 'fast',
   },
   {
     id: "google/gemini-2.5-flash-lite",
@@ -50,6 +59,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
+    contextWindow: '1M',
+    speed: 'instant',
   },
   {
     id: "openai/gpt-5",
@@ -60,6 +71,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'advanced',
     oracleIcon: '🧠',
+    contextWindow: '128K',
+    speed: 'slow',
   },
   {
     id: "openai/gpt-5-mini",
@@ -70,6 +83,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '🧠',
+    contextWindow: '128K',
+    speed: 'fast',
   },
   {
     id: "openai/gpt-5-nano",
@@ -80,8 +95,9 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'primary',
     oracleIcon: '🧠',
+    contextWindow: '128K',
+    speed: 'instant',
   },
-  // Grok (xAI - API key directa)
   {
     id: "xai/grok-2",
     name: "Grok 2",
@@ -91,8 +107,9 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'external',
     oracleIcon: '🚀',
+    contextWindow: '128K',
+    speed: 'fast',
   },
-  // Oráculos Blockchain (Próximamente)
   {
     id: "chaingpt/oracle",
     name: "ChainGPT Oracle",
@@ -102,6 +119,8 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '🔗',
+    contextWindow: '32K',
+    speed: 'medium',
   },
   {
     id: "chainlink/oracle",
@@ -112,8 +131,9 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'blockchain',
     oracleIcon: '⛓️',
+    contextWindow: '—',
+    speed: 'medium',
   },
-  // Otros Oráculos (Próximamente - requieren API key)
   {
     id: "deepseek/deepseek-v3",
     name: "DeepSeek V3",
@@ -123,6 +143,8 @@ export const AI_MODELS: AIModel[] = [
     available: false,
     oracleType: 'external',
     oracleIcon: '🌊',
+    contextWindow: '64K',
+    speed: 'medium',
   },
   {
     id: "anthropic/claude-sonnet-4",
@@ -133,6 +155,8 @@ export const AI_MODELS: AIModel[] = [
     available: true,
     oracleType: 'external',
     oracleIcon: '🎭',
+    contextWindow: '200K',
+    speed: 'medium',
   },
 ];
 

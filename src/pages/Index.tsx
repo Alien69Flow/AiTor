@@ -13,6 +13,7 @@ import { AlertsTab } from "@/components/dashboard/AlertsTab";
 import { MonitorTab } from "@/components/dashboard/MonitorTab";
 import { SignalsTab } from "@/components/dashboard/SignalsTab";
 import { AgentsTab } from "@/components/dashboard/AgentsTab";
+import { MarketsTab } from "@/components/dashboard/MarketsTab";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<TabId>("terminal");
@@ -21,6 +22,7 @@ const Index = () => {
     switch (activeTab) {
       case "terminal": return <ChatContainer />;
       case "markets": return <GlobeDashboard />;
+      case "predictions": return <MarketsTab />;
       case "feed": return <FeedTab />;
       case "movers": return <MoversTab />;
       case "portfolio": return <PortfolioTab />;
