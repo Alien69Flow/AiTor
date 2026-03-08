@@ -2,6 +2,7 @@ import { Suspense, lazy, useState, useCallback } from "react";
 import { LiveTicker } from "./LiveTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
 import { FeedPanel } from "./FeedPanel";
+import { useUAPSightings } from "@/hooks/useUAPSightings";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 
 const CesiumGlobe = lazy(() =>
@@ -10,6 +11,7 @@ const CesiumGlobe = lazy(() =>
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<HotspotData | null>(null);
+  const { sightings } = useUAPSightings();
 
   const handleHotspotClick = useCallback((data: HotspotData | null) => {
     setSelectedHotspot(data);
@@ -28,13 +30,31 @@ export function GlobeDashboard() {
               </div>
             }
           >
-            <CesiumGlobe onHotspotClick={handleHotspotClick} />
+            <CesiumGlobe onHotspotClick={handleHotspotClick} sightings={sightings} />
           </Suspense>
 
           <GlobeOverlay
             selectedHotspot={selectedHotspot}
             onClose={() => setSelectedHotspot(null)}
           />
+
+          {/* Legend */}
+          <div className="absolute bottom-3 left-3 bg-card/80 backdrop-blur border border-border/30 rounded p-2 text-[10px] font-mono space-y-1 z-10">
+            <div className="text-muted-foreground/70 font-semibold mb-1">SIGHTINGS</div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: "#00ffff" }} />
+              <span className="text-muted-foreground">UAP</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: "#aa44ff" }} />
+              <span className="text-muted-foreground">UFO Historical</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full" style={{ background: "#ff8800" }} />
+              <span className="text-muted-foreground">Cryptozoology</span>
+            </div>
+            <div className="text-muted-foreground/50 mt-1">{sightings.length} reports loaded</div>
+          </div>
         </div>
 
         <FeedPanel />
