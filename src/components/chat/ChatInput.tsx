@@ -1,15 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
-  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap
+  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github
 } from "lucide-react";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-  DropdownMenuLabel,
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
+  DropdownMenuSeparator, DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
@@ -22,6 +18,7 @@ interface ChatInputProps {
 const TOOLS = [
   { icon: Search, label: "Búsqueda Web", prompt: "Busca en la web: ", shortcut: "⌘K" },
   { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: ", shortcut: "⌘J" },
+  { icon: Github, label: "GitHub Repo", prompt: "Analiza el repositorio de GitHub: ", shortcut: "⌘H" },
   { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: ", shortcut: "⌘G" },
   { icon: Link2, label: "Web3 & DeFi", prompt: "Analiza este protocolo DeFi o contrato: ", shortcut: "⌘W" },
   { icon: FileText, label: "Analizar Documento", prompt: "Analiza el siguiente documento: ", shortcut: "⌘D" },
@@ -31,6 +28,7 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   const [input, setInput] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
   const [deepThink, setDeepThink] = useState(false);
+  const [focused, setFocused] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,48 +70,40 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto px-3 sm:px-4 pb-3 pt-2">
-      {/* Image preview */}
       {imageData && (
         <div className="relative mb-2 inline-block">
           <img src={imageData} alt="Preview" className="h-20 rounded-xl border border-border object-contain bg-card/40" />
-          <button
-            type="button"
-            onClick={() => setImageData(null)}
-            className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-lg"
-          >
+          <button type="button" onClick={() => setImageData(null)} className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-lg">
             <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
-      {/* Main input container - Claude/ChatGPT style */}
-      <div className="relative rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-lg focus-within:border-primary/40 focus-within:shadow-[0_0_20px_hsl(var(--primary)/0.08)] transition-all duration-300">
-        {/* Top row: Textarea */}
+      <div className={`relative rounded-2xl border bg-card/70 backdrop-blur-md shadow-lg transition-all duration-500 ${
+        focused
+          ? "border-primary/50 shadow-[0_0_30px_hsl(var(--primary)/0.12),0_0_60px_hsl(var(--primary)/0.04)]"
+          : "border-border hover:border-border/80"
+      }`}>
         <div className="flex items-end px-3 pt-3 pb-1">
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
             placeholder="Pregunta a AI Tor cualquier cosa..."
             disabled={isLoading}
             rows={1}
-            className="flex-1 min-h-[28px] max-h-[200px] resize-none bg-transparent border-none p-0 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 disabled:opacity-50 leading-relaxed"
+            className="flex-1 min-h-[32px] max-h-[200px] resize-none bg-transparent border-none p-0 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 disabled:opacity-50 leading-relaxed"
           />
         </div>
 
-        {/* Bottom row: Actions */}
         <div className="flex items-center justify-between px-2 pb-2 pt-1">
-          {/* Left actions */}
           <div className="flex items-center gap-0.5">
-            {/* Tools dropdown */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button
-                  type="button"
-                  disabled={isLoading}
-                  className="flex items-center gap-1 h-8 px-2 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
-                >
+                <button type="button" disabled={isLoading} className="flex items-center gap-1 h-8 px-2 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30">
                   <Plus className="h-4 w-4" />
                 </button>
               </DropdownMenuTrigger>
@@ -125,11 +115,7 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
                 {TOOLS.map((tool) => {
                   const Icon = tool.icon;
                   return (
-                    <DropdownMenuItem
-                      key={tool.label}
-                      onClick={() => handleToolClick(tool.prompt)}
-                      className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30"
-                    >
+                    <DropdownMenuItem key={tool.label} onClick={() => handleToolClick(tool.prompt)} className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30">
                       <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center text-muted-foreground">
                         <Icon className="h-4 w-4" />
                       </div>
@@ -143,16 +129,11 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
                 {supportsVision && (
                   <>
                     <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30"
-                    >
+                    <DropdownMenuItem onClick={() => fileInputRef.current?.click()} className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30">
                       <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center text-muted-foreground">
                         <ImagePlus className="h-4 w-4" />
                       </div>
-                      <div className="flex flex-col flex-1">
-                        <span className="text-xs font-medium text-foreground">Subir Imagen</span>
-                      </div>
+                      <span className="text-xs font-medium text-foreground">Subir Imagen</span>
                     </DropdownMenuItem>
                   </>
                 )}
@@ -161,47 +142,43 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
 
             <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
 
-            {/* Quick tool buttons - visible on desktop */}
             <div className="hidden sm:flex items-center gap-0.5">
               <TooltipProvider delayDuration={300}>
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleToolClick("Busca en la web: ")}
-                      disabled={isLoading}
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
-                    >
-                      <Globe className="h-4 w-4" />
+                    <button type="button" onClick={() => handleToolClick("Busca en la web: ")} disabled={isLoading} className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30">
+                      <Globe className="h-3.5 w-3.5" />
+                      <span className="text-[9px] font-mono text-muted-foreground/40">Web</span>
                     </button>
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs">Búsqueda Web</TooltipContent>
+                  <TooltipContent side="top" className="text-xs">Búsqueda Web con Firecrawl</TooltipContent>
                 </Tooltip>
 
                 <Tooltip>
                   <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => handleToolClick("Analiza este código: ")}
-                      disabled={isLoading}
-                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
-                    >
-                      <Code2 className="h-4 w-4" />
+                    <button type="button" onClick={() => handleToolClick("Analiza este código: ")} disabled={isLoading} className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30">
+                      <Code2 className="h-3.5 w-3.5" />
+                      <span className="text-[9px] font-mono text-muted-foreground/40">Code</span>
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="top" className="text-xs">Analizar Código</TooltipContent>
                 </Tooltip>
 
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button type="button" onClick={() => handleToolClick("Analiza el repositorio de GitHub: ")} disabled={isLoading} className="h-8 px-2 rounded-lg flex items-center gap-1.5 text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30">
+                      <Github className="h-3.5 w-3.5" />
+                      <span className="text-[9px] font-mono text-muted-foreground/40">Git</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">GitHub Repos</TooltipContent>
+                </Tooltip>
+
                 {supportsVision && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isLoading}
-                        className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
-                      >
-                        <Paperclip className="h-4 w-4" />
+                      <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isLoading} className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30">
+                        <Paperclip className="h-3.5 w-3.5" />
                       </button>
                     </TooltipTrigger>
                     <TooltipContent side="top" className="text-xs">Adjuntar Imagen</TooltipContent>
@@ -211,9 +188,7 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
             </div>
           </div>
 
-          {/* Right actions */}
           <div className="flex items-center gap-1">
-            {/* Deep Think toggle */}
             <TooltipProvider delayDuration={300}>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -232,22 +207,17 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
                   </button>
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
-                  {deepThink ? "Modo Deep Think activado — razonamiento profundo" : "Activar Deep Think"}
+                  {deepThink ? "Modo Deep Think activado" : "Activar Deep Think"}
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
 
-            {/* Send button */}
             <button
               type="submit"
               disabled={isLoading || (!input.trim() && !imageData)}
               className="h-8 w-8 rounded-xl flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-md shadow-primary/20"
             >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowUp className="h-4 w-4" />
-              )}
+              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
           </div>
         </div>
