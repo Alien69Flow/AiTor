@@ -3,7 +3,7 @@ import type { Message } from "@/hooks/useChat";
 import { User, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import aitorLogo from "@/assets/aitor-brain-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 interface ChatMessageProps {
   message: Message;
@@ -33,7 +33,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           ) : (
             <div className="w-7 h-7 rounded-lg border border-secondary/30 overflow-hidden bg-card/60 flex items-center justify-center">
-              <img src={aitorLogo} alt="AI Tor" className="w-6 h-6 object-contain" />
+              <img src={alienflowLogo} alt="AI Tor" className="w-6 h-6 object-contain" />
             </div>
           )}
         </div>
@@ -46,18 +46,12 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </span>
           </div>
 
-          {/* Image */}
           {message.imageData && (
             <div className="mb-3 overflow-hidden rounded-lg border border-border max-w-xs">
-              <img
-                src={message.imageData}
-                alt="Uploaded"
-                className="max-h-[200px] w-auto object-contain"
-              />
+              <img src={message.imageData} alt="Uploaded" className="max-h-[200px] w-auto object-contain" />
             </div>
           )}
 
-          {/* Text content with markdown */}
           <div className={cn(
             "text-sm leading-relaxed font-mono",
             isUser ? "text-foreground/90 whitespace-pre-wrap" : "text-muted-foreground prose-terminal"
@@ -92,7 +86,6 @@ export function ChatMessage({ message }: ChatMessageProps) {
             )}
           </div>
 
-          {/* Actions */}
           {!isUser && message.content && (
             <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button

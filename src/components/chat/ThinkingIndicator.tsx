@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import aitorLogo from "@/assets/aitor-brain-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const THINKING_PHASES = [
   "Procesando consulta...",
@@ -22,7 +22,7 @@ export function ThinkingIndicator() {
     <div className="w-full py-4 px-4 md:px-6 bg-card/30">
       <div className="max-w-3xl mx-auto flex gap-4">
         <div className="w-7 h-7 rounded-lg border border-secondary/30 overflow-hidden bg-card/60 flex items-center justify-center shrink-0 mt-1">
-          <img src={aitorLogo} alt="AI Tor" className="w-6 h-6 object-contain animate-pulse" />
+          <img src={alienflowLogo} alt="AI Tor" className="w-6 h-6 object-contain animate-pulse" />
         </div>
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-mono font-bold text-foreground/80">AI Tor</span>

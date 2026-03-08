@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import { AI_MODELS } from "@/lib/ai-models";
-import aitorLogo from "@/assets/aitor-brain-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -27,7 +27,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
   return (
     <header className="h-12 flex items-center justify-between px-4 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
       <div className="flex items-center gap-2.5 min-w-0">
-        <img src={aitorLogo} alt="AI Tor" className="w-6 h-6 object-contain" />
+        <img src={alienflowLogo} alt="AlienFlow" className="w-6 h-6 object-contain" />
         <div className="flex flex-col leading-none">
           <span className="text-sm font-mono font-bold text-primary tracking-wider">AI Tor</span>
           {currentModel && (
