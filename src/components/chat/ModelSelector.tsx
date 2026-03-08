@@ -82,7 +82,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-2 h-8 px-3 rounded-full border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/30 transition-all duration-200 text-xs font-mono group hover:shadow-[0_0_20px_hsl(var(--primary)/0.1)]">
+        <button className="flex items-center gap-2 h-8 px-3 rounded-full border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/30 transition-all duration-200 text-xs font-mono group">
           <span className="text-sm">{selected ? getIcon(selected) : "🔮"}</span>
           <span className="text-foreground/80 truncate max-w-[100px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
           {selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
@@ -97,7 +97,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[380px] p-0 bg-popover/95 backdrop-blur-xl border-border shadow-[0_0_60px_hsl(var(--primary)/0.1)] animate-in zoom-in-95 fade-in duration-200"
+        className="w-[380px] p-0 bg-popover backdrop-blur-md border-border shadow-lg animate-in zoom-in-95 fade-in duration-200"
         align="center"
         sideOffset={8}
       >
@@ -137,13 +137,13 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                           className={cn(
                             "flex items-center gap-3 py-3 px-2 rounded-lg cursor-pointer transition-all duration-150",
                             !model.available && "opacity-35 cursor-not-allowed",
-                            isSelected && "bg-primary/10 border border-primary/25 shadow-[0_0_15px_hsl(var(--primary)/0.08)]",
+                            isSelected && "bg-primary/10 border border-primary/25",
                             !isSelected && model.available && "hover:bg-muted/15"
                           )}
                         >
                           <div className={cn(
                             "w-9 h-9 rounded-lg border flex items-center justify-center text-base shrink-0 transition-all duration-200",
-                            isSelected ? "bg-primary/15 border-primary/30 shadow-[0_0_12px_hsl(var(--primary)/0.15)]" : "bg-muted/20 border-border/50"
+                            isSelected ? "bg-primary/15 border-primary/30" : "bg-muted/20 border-border/50"
                           )}>
                             {getIcon(model)}
                           </div>
@@ -151,7 +151,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                             <div className="flex items-center gap-1.5">
                               <span className={cn("text-xs font-mono font-medium truncate", isSelected ? "text-foreground" : "text-foreground/80")}>{model.name}</span>
                               {model.recommended && (
-                                <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 font-mono border-secondary/40 text-secondary bg-secondary/10 animate-pulse">
+                                <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 font-mono border-secondary/40 text-secondary bg-secondary/10">
                                   <Star className="w-2 h-2 mr-0.5" />REC
                                 </Badge>
                               )}
