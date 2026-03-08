@@ -9,22 +9,30 @@ import alienflowLogo from "@/assets/alienflow-logo.png";
 
 export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar";
 
+type TabStatus = "live" | "demo" | "status";
+
 interface TopNavBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
 }
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: "terminal", label: "Terminal" },
-  { id: "markets", label: "Markets" },
-  { id: "feed", label: "Feed" },
-  { id: "movers", label: "Movers" },
-  { id: "portfolio", label: "Portfolio" },
-  { id: "alerts", label: "Alerts" },
-  { id: "monitor", label: "Monitor" },
-  { id: "ufo", label: "UFO/Alien" },
-  { id: "solar", label: "Solar System" },
+const TABS: { id: TabId; label: string; status: TabStatus }[] = [
+  { id: "terminal", label: "Terminal", status: "live" },
+  { id: "markets", label: "Markets", status: "live" },
+  { id: "feed", label: "Feed", status: "live" },
+  { id: "movers", label: "Movers", status: "live" },
+  { id: "portfolio", label: "Portfolio", status: "demo" },
+  { id: "alerts", label: "Alerts", status: "demo" },
+  { id: "monitor", label: "Monitor", status: "status" },
+  { id: "ufo", label: "UFO/Alien", status: "live" },
+  { id: "solar", label: "Solar System", status: "demo" },
 ];
+
+const STATUS_COLORS: Record<TabStatus, string> = {
+  live: "bg-secondary",
+  demo: "bg-yellow-500",
+  status: "bg-muted-foreground/50",
+};
 
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   const { user, signOut } = useAuth();
@@ -58,12 +66,13 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`px-3 py-1.5 text-[11px] font-heading tracking-wider uppercase whitespace-nowrap transition-all duration-200 rounded-sm ${
+              className={`px-3 py-1.5 text-[11px] font-heading tracking-wider uppercase whitespace-nowrap transition-all duration-200 rounded-sm flex items-center gap-1.5 ${
                 activeTab === tab.id
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground/60 hover:text-foreground/80"
               }`}
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[tab.status]}`} />
               {tab.label}
             </button>
           ))}

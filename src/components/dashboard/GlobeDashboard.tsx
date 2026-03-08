@@ -4,8 +4,8 @@ import { GlobeOverlay } from "./GlobeOverlay";
 import { FeedPanel } from "./FeedPanel";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 
-const GlobeScene = lazy(() =>
-  import("@/components/globe/GlobeScene").then((m) => ({ default: m.GlobeScene }))
+const CesiumGlobe = lazy(() =>
+  import("@/components/globe/CesiumGlobe").then((m) => ({ default: m.CesiumGlobe }))
 );
 
 export function GlobeDashboard() {
@@ -28,7 +28,7 @@ export function GlobeDashboard() {
               </div>
             }
           >
-            <GlobeScene onHotspotClick={handleHotspotClick} />
+            <CesiumGlobe onHotspotClick={handleHotspotClick} />
           </Suspense>
 
           <GlobeOverlay
