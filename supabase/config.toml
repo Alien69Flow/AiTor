@@ -2,3 +2,6 @@ project_id = "wkdtvrxavkhbifjtvvdw"
 
 [functions.chat]
 verify_jwt = false
+
+[functions.ufo-feed]
+verify_jwt = false
