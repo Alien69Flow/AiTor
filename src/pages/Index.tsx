@@ -13,7 +13,7 @@ import { AlertsTab } from "@/components/dashboard/AlertsTab";
 import { MonitorTab } from "@/components/dashboard/MonitorTab";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<TabId>("markets");
+  const [activeTab, setActiveTab] = useState<TabId>("terminal");
 
   const renderTab = () => {
     switch (activeTab) {

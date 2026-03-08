@@ -28,7 +28,7 @@ export function GlobeDashboard() {
               </div>
             }
           >
-            <GlobeScene onHotspotClick={handleHotspotClick} />
+            <CesiumGlobe onHotspotClick={handleHotspotClick} />
           </Suspense>
 
           <GlobeOverlay

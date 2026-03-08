@@ -66,12 +66,13 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
             <button
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
-              className={`px-3 py-1.5 text-[11px] font-heading tracking-wider uppercase whitespace-nowrap transition-all duration-200 rounded-sm ${
+              className={`px-3 py-1.5 text-[11px] font-heading tracking-wider uppercase whitespace-nowrap transition-all duration-200 rounded-sm flex items-center gap-1.5 ${
                 activeTab === tab.id
                   ? "text-primary border-b-2 border-primary"
                   : "text-muted-foreground/60 hover:text-foreground/80"
               }`}
             >
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[tab.status]}`} />
               {tab.label}
             </button>
           ))}
