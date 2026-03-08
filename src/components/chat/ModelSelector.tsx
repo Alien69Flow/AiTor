@@ -1,105 +1,80 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { AI_MODELS } from "@/lib/ai-models";
-import { Zap, Brain, Sparkles, Link2, Eye } from "lucide-react";
+import { Eye, Zap, Sparkles } from "lucide-react";
 
 interface ModelSelectorProps {
   value: string;
   onChange: (value: string) => void;
 }
 
-const getOracleIcon = (id: string) => {
+const getIcon = (id: string) => {
   if (id === 'google/gemini-2.5-pro') return "👽";
   if (id.includes('gemini')) return "⚡";
   if (id.includes('gpt')) return "🧠";
   if (id.includes('grok')) return "🚀";
-  if (id.includes('deepseek')) return "🌊";
   if (id.includes('claude')) return "🎭";
   if (id.includes('chaingpt')) return "🔗";
   if (id.includes('chainlink')) return "⛓️";
+  if (id.includes('deepseek')) return "🌊";
   return "✦";
 };
 
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
-  const availableModels = AI_MODELS.filter(m => m.available);
-  const unavailableModels = AI_MODELS.filter(m => !m.available);
-  const selectedModel = AI_MODELS.find(m => m.id === value);
+  const available = AI_MODELS.filter(m => m.available);
+  const unavailable = AI_MODELS.filter(m => !m.available);
+  const selected = AI_MODELS.find(m => m.id === value);
 
   return (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-[140px] sm:w-[180px] h-7 text-[10px] border-secondary/40 bg-card/60 backdrop-blur-sm hover:border-secondary/60 transition-colors">
+      <SelectTrigger className="w-[140px] sm:w-[170px] h-8 text-[10px] font-mono border-border bg-card/40 hover:bg-card/60 transition-colors">
         <div className="flex items-center gap-1.5 truncate">
-          <span className="text-sm">{selectedModel ? getOracleIcon(selectedModel.id) : "🔮"}</span>
-          <SelectValue placeholder="Oráculo" />
+          <span className="text-sm">{selected ? getIcon(selected.id) : "🔮"}</span>
+          <SelectValue placeholder="Modelo" />
         </div>
       </SelectTrigger>
-      <SelectContent className="max-h-[350px] bg-popover/95 backdrop-blur-xl border-secondary/40">
-        {/* Active Oracles */}
-        <div className="px-2 py-1.5 flex items-center gap-2 border-b border-secondary/20">
-          <Zap className="w-3 h-3 text-primary" />
-          <span className="text-[10px] font-heading text-primary tracking-wider">
-            ORÁCULOS ACTIVOS
-          </span>
+      <SelectContent className="max-h-[350px] bg-popover/95 backdrop-blur-xl border-border">
+        <div className="px-2 py-1.5 flex items-center gap-2 border-b border-border">
+          <Zap className="w-3 h-3 text-secondary" />
+          <span className="text-[10px] font-mono font-bold text-foreground/70 tracking-wider">ACTIVOS</span>
         </div>
-        {availableModels.map((model) => (
-          <SelectItem 
-            key={model.id} 
-            value={model.id}
-            className="focus:bg-secondary/20 cursor-pointer"
-          >
+        {available.map((model) => (
+          <SelectItem key={model.id} value={model.id} className="focus:bg-muted/30 cursor-pointer">
             <div className="flex items-center gap-2 py-0.5">
-              <span className="text-base">{getOracleIcon(model.id)}</span>
+              <span className="text-sm">{getIcon(model.id)}</span>
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-medium text-foreground">{model.name}</span>
-                  {model.supportsVision && (
-                    <Eye className="w-3 h-3 text-secondary" />
-                  )}
+                  <span className="font-mono text-xs font-medium text-foreground">{model.name}</span>
+                  {model.supportsVision && <Eye className="w-3 h-3 text-secondary/70" />}
                 </div>
-                <span className="text-[9px] text-muted-foreground">{model.description}</span>
+                <span className="text-[9px] font-mono text-muted-foreground/50">{model.description}</span>
               </div>
             </div>
           </SelectItem>
         ))}
 
-        {/* Coming Soon Oracles */}
-        {unavailableModels.length > 0 && (
+        {unavailable.length > 0 && (
           <>
-            <div className="px-2 py-1.5 flex items-center gap-2 border-t border-secondary/20 mt-1">
-              <Sparkles className="w-3 h-3 text-muted-foreground" />
-              <span className="text-[10px] font-heading text-muted-foreground tracking-wider">
-                PRÓXIMAMENTE
-              </span>
+            <div className="px-2 py-1.5 flex items-center gap-2 border-t border-border mt-1">
+              <Sparkles className="w-3 h-3 text-muted-foreground/50" />
+              <span className="text-[10px] font-mono text-muted-foreground/50 tracking-wider">PRÓXIMAMENTE</span>
             </div>
-            {unavailableModels.map((model) => (
-              <SelectItem 
-                key={model.id} 
-                value={model.id} 
-                disabled
-                className="opacity-50"
-              >
+            {unavailable.map((model) => (
+              <SelectItem key={model.id} value={model.id} disabled className="opacity-40">
                 <div className="flex items-center gap-2 py-0.5">
-                  <span className="text-base grayscale">{getOracleIcon(model.id)}</span>
+                  <span className="text-sm grayscale">{getIcon(model.id)}</span>
                   <div className="flex flex-col">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-muted-foreground">{model.name}</span>
-                      <Badge variant="outline" className="text-[8px] px-1 py-0 h-3.5 border-muted-foreground/30">
-                        Soon
-                      </Badge>
+                      <span className="font-mono text-xs text-muted-foreground">{model.name}</span>
+                      <Badge variant="outline" className="text-[7px] px-1 py-0 h-3 border-border font-mono">Soon</Badge>
                     </div>
-                    <span className="text-[9px] text-muted-foreground/60">{model.provider}</span>
+                    <span className="text-[9px] font-mono text-muted-foreground/40">{model.provider}</span>
                   </div>
                 </div>
               </SelectItem>
             ))}
           </>
         )}
-
-        {/* Footer */}
-        <div className="px-2 py-1.5 text-[8px] text-muted-foreground/50 border-t border-secondary/20 mt-1 flex items-center gap-1">
-          <Link2 className="w-2.5 h-2.5" />
-          <span>ChainGPT & Chainlink próximamente</span>
-        </div>
       </SelectContent>
     </Select>
   );

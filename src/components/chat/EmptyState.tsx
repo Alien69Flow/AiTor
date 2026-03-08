@@ -1,40 +1,11 @@
-import { Brain, Atom, Code2, Link2, Zap, Sparkles } from "lucide-react";
-import alienflowLogo from "@/assets/alienflow-logo.png";
-
-const CAPABILITIES = [
-  { 
-    icon: Link2,
-    label: "Blockchain & Web3", 
-    description: "DeFi, Smart Contracts, Tokenomics",
-    color: "border-primary/20 hover:border-primary/40" 
-  },
-  { 
-    icon: Brain,
-    label: "Neural Networks", 
-    description: "ML, Deep Learning, Transformers",
-    color: "border-secondary/20 hover:border-secondary/40" 
-  },
-  { 
-    icon: Atom,
-    label: "Quantum Computing", 
-    description: "Post-Quantum Crypto, Qubits",
-    color: "border-primary/20 hover:border-primary/40" 
-  },
-  { 
-    icon: Code2,
-    label: "Código & Arquitectura", 
-    description: "Software, DevOps, Optimización",
-    color: "border-secondary/20 hover:border-secondary/40" 
-  },
-];
+import { Brain, Atom, Code2, Link2, Zap, Sparkles, Globe, FileSearch } from "lucide-react";
+import aitorLogo from "@/assets/aitor-brain-logo.png";
 
 const QUICK_PROMPTS = [
-  "¿Qué es DeFi y cómo funciona?",
-  "Explica los Smart Contracts",
-  "Analiza este código por vulnerabilidades",
-  "¿Cómo funciona la computación cuántica?",
-  "Genera una arquitectura Web3",
-  "Optimiza mi algoritmo",
+  { icon: Link2, text: "Analiza el mercado DeFi actual", color: "border-primary/20 hover:border-primary/40" },
+  { icon: Code2, text: "Revisa este código por vulnerabilidades", color: "border-secondary/20 hover:border-secondary/40" },
+  { icon: Globe, text: "Busca las últimas noticias sobre Bitcoin", color: "border-primary/20 hover:border-primary/40" },
+  { icon: Brain, text: "Explica redes neuronales transformers", color: "border-secondary/20 hover:border-secondary/40" },
 ];
 
 interface EmptyStateProps {
@@ -43,71 +14,40 @@ interface EmptyStateProps {
 
 export function EmptyState({ onPromptClick }: EmptyStateProps) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-8 min-h-[60vh]">
-      {/* Logo + Brand */}
-      <div className="flex flex-col items-center gap-4 mb-8">
-        <div className="relative">
-          <img 
-            src={alienflowLogo} 
-            alt="AlienFlow" 
-            className="w-20 h-20 sm:w-24 sm:h-24 object-contain drop-shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)]"
-          />
-          <div className="absolute -inset-3 rounded-full bg-primary/5 blur-xl animate-pulse pointer-events-none" />
-        </div>
-        
+    <div className="flex flex-1 flex-col items-center justify-center p-6 min-h-[60vh]">
+      <div className="flex flex-col items-center gap-3 mb-8">
+        <img
+          src={aitorLogo}
+          alt="AI Tor"
+          className="w-16 h-16 object-contain drop-shadow-[0_0_15px_hsl(var(--secondary)/0.4)]"
+        />
         <div className="text-center">
-          <h1 className="text-2xl sm:text-3xl font-heading text-primary neon-text-gold tracking-wider">
-            AI Tor
-          </h1>
-          <p className="text-sm text-muted-foreground/70 mt-1 font-mono">
-            Oráculo de Inteligencia Artificial Multimodal
+          <h1 className="text-xl font-mono font-bold text-primary tracking-wider">AI Tor</h1>
+          <p className="text-xs text-muted-foreground/60 font-mono mt-0.5">
+            Sistema Operativo de IA Soberana
           </p>
-          <p className="text-[10px] text-secondary/50 font-mono tracking-widest uppercase mt-1">
-            ΔlieπFlΦw DAO Synapse Collective
+          <p className="text-[9px] text-muted-foreground/30 font-mono tracking-widest uppercase mt-1">
+            ΔlieπFlΦw DAO · Versión ΓΩΣΖ v69
           </p>
         </div>
       </div>
 
-      {/* Capability cards */}
-      <div className="grid grid-cols-2 gap-3 w-full max-w-md mb-8">
-        {CAPABILITIES.map((cap) => {
-          const IconComp = cap.icon;
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-lg">
+        {QUICK_PROMPTS.map((prompt) => {
+          const Icon = prompt.icon;
           return (
-            <div 
-              key={cap.label}
-              className={`flex items-start gap-3 p-3 rounded-xl border bg-card/30 backdrop-blur-sm ${cap.color} transition-all duration-300 cursor-default hover:bg-card/50 group`}
+            <button
+              key={prompt.text}
+              onClick={() => onPromptClick?.(prompt.text)}
+              className={`flex items-center gap-3 p-3 rounded-xl border bg-card/20 backdrop-blur-sm ${prompt.color} transition-all duration-200 cursor-pointer hover:bg-card/40 text-left group`}
             >
-              <div className="p-2 rounded-lg bg-card/60 border border-secondary/10 group-hover:border-secondary/30 transition-colors">
-                <IconComp className="w-4 h-4 text-secondary/70 group-hover:text-secondary transition-colors" />
-              </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-xs font-heading text-foreground/80 tracking-wide">{cap.label}</span>
-                <span className="text-[10px] text-muted-foreground/60 mt-0.5">{cap.description}</span>
-              </div>
-            </div>
+              <Icon className="w-4 h-4 text-muted-foreground/50 group-hover:text-secondary transition-colors shrink-0" />
+              <span className="text-xs font-mono text-muted-foreground/70 group-hover:text-foreground/80 transition-colors">
+                {prompt.text}
+              </span>
+            </button>
           );
         })}
-      </div>
-
-      {/* Quick prompts */}
-      <div className="w-full max-w-lg">
-        <div className="flex items-center gap-2 justify-center mb-3">
-          <Sparkles className="w-3 h-3 text-primary/50" />
-          <span className="text-[10px] font-heading text-muted-foreground/50 tracking-widest uppercase">
-            Sugerencias rápidas
-          </span>
-        </div>
-        <div className="flex flex-wrap justify-center gap-2">
-          {QUICK_PROMPTS.map((prompt) => (
-            <button
-              key={prompt}
-              onClick={() => onPromptClick?.(prompt)}
-              className="px-3 py-1.5 text-[11px] font-mono text-muted-foreground/70 bg-card/40 border border-secondary/15 rounded-full hover:border-primary/30 hover:text-foreground/80 hover:bg-card/60 transition-all duration-200 cursor-pointer"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );
