@@ -2,16 +2,26 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Allowed AI models
-const ALLOWED_MODELS = [
+// Lovable AI Gateway models
+const LOVABLE_MODELS = [
   "google/gemini-2.5-flash",
   "google/gemini-2.5-pro",
-  "openai/gpt-4o-mini",
-  "openai/gpt-4o",
+  "google/gemini-3-flash-preview",
+  "google/gemini-2.5-flash-lite",
+  "openai/gpt-5",
+  "openai/gpt-5-mini",
+  "openai/gpt-5-nano",
 ];
+
+// Grok models (direct xAI API)
+const GROK_MODELS = [
+  "xai/grok-2",
+];
+
+const ALLOWED_MODELS = [...LOVABLE_MODELS, ...GROK_MODELS];
 
 // Validation constants
 const MAX_MESSAGES = 100;
@@ -73,12 +83,10 @@ function validateMessage(msg: unknown): { valid: boolean; error?: string } {
   
   const message = msg as Record<string, unknown>;
   
-  // Validate role
   if (message.role !== "user" && message.role !== "assistant") {
     return { valid: false, error: "Invalid message role" };
   }
   
-  // Validate content
   if (typeof message.content !== "string") {
     return { valid: false, error: "Message content must be a string" };
   }
@@ -91,7 +99,6 @@ function validateMessage(msg: unknown): { valid: boolean; error?: string } {
     return { valid: false, error: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters` };
   }
   
-  // Validate optional imageData
   if (message.imageData !== undefined) {
     if (typeof message.imageData !== "string") {
       return { valid: false, error: "Image data must be a string" };
@@ -104,7 +111,6 @@ function validateMessage(msg: unknown): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// Validate request body
 function validateRequest(body: unknown): { valid: boolean; error?: string; data?: { messages: Array<{ role: string; content: string; imageData?: string }>; model: string } } {
   if (typeof body !== "object" || body === null) {
     return { valid: false, error: "Invalid request body" };
@@ -112,7 +118,6 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
   
   const request = body as Record<string, unknown>;
   
-  // Validate messages array
   if (!Array.isArray(request.messages)) {
     return { valid: false, error: "Messages must be an array" };
   }
@@ -125,7 +130,6 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     return { valid: false, error: `Too many messages. Maximum is ${MAX_MESSAGES}` };
   }
   
-  // Validate each message
   for (const msg of request.messages) {
     const validation = validateMessage(msg);
     if (!validation.valid) {
@@ -133,7 +137,6 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     }
   }
   
-  // Validate model
   const model = typeof request.model === "string" ? request.model : "google/gemini-2.5-flash";
   if (!ALLOWED_MODELS.includes(model)) {
     return { valid: false, error: `Invalid model. Allowed models: ${ALLOWED_MODELS.join(", ")}` };
@@ -148,13 +151,79 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
   };
 }
 
+// Build processed messages with potential image data
+function buildProcessedMessages(messages: Array<{ role: string; content: string; imageData?: string }>) {
+  return messages.map((msg) => {
+    if (msg.role === "user" && msg.imageData) {
+      return {
+        role: "user",
+        content: [
+          { type: "text", text: msg.content },
+          { type: "image_url", image_url: { url: msg.imageData } }
+        ]
+      };
+    }
+    return { role: msg.role, content: msg.content };
+  });
+}
+
+// Route to Lovable AI Gateway
+async function routeToLovable(model: string, processedMessages: unknown[]) {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) {
+    throw new Error("LOVABLE_API_KEY is not configured");
+  }
+
+  return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...processedMessages,
+      ],
+      stream: true,
+    }),
+  });
+}
+
+// Route to xAI Grok API
+async function routeToGrok(model: string, processedMessages: unknown[]) {
+  const GROK_API_KEY = Deno.env.get("GROK_API_KEY");
+  if (!GROK_API_KEY) {
+    throw new Error("GROK_API_KEY is not configured");
+  }
+
+  // xAI uses model name without prefix
+  const xaiModel = model.replace("xai/", "");
+
+  return await fetch("https://api.x.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${GROK_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: xaiModel,
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        ...processedMessages,
+      ],
+      stream: true,
+    }),
+  });
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
 
   try {
-    // Parse and validate request
     let requestBody: unknown;
     try {
       requestBody = await req.json();
@@ -174,60 +243,34 @@ serve(async (req) => {
     }
     
     const { messages, model } = validation.data;
-    const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    
-    if (!LOVABLE_API_KEY) {
-      console.error("LOVABLE_API_KEY is not configured");
+    const processedMessages = buildProcessedMessages(messages);
+
+    console.log(`Processing chat request with model: ${model}, message count: ${messages.length}`);
+
+    // Route to appropriate provider
+    let response: Response;
+    try {
+      if (GROK_MODELS.includes(model)) {
+        response = await routeToGrok(model, processedMessages);
+      } else {
+        response = await routeToLovable(model, processedMessages);
+      }
+    } catch (configError) {
+      console.error("Provider config error:", configError instanceof Error ? configError.message : "Unknown");
       return new Response(
         JSON.stringify({ error: "Service configuration error" }), 
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
-    console.log(`Processing chat request with model: ${model}, message count: ${messages.length}`);
-
-    // Build the messages array with potential image data
-    const processedMessages = messages.map((msg) => {
-      if (msg.role === "user" && msg.imageData) {
-        return {
-          role: "user",
-          content: [
-            { type: "text", text: msg.content },
-            {
-              type: "image_url",
-              image_url: { url: msg.imageData }
-            }
-          ]
-        };
-      }
-      return { role: msg.role, content: msg.content };
-    });
-
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          ...processedMessages,
-        ],
-        stream: true,
-      }),
-    });
-
     if (!response.ok) {
-      // Log detailed error server-side only
       const errorText = await response.text();
-      console.error("AI gateway error:", { 
+      console.error("AI provider error:", { 
         status: response.status, 
+        model,
         timestamp: new Date().toISOString() 
       });
       
-      // Return generic errors to client
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: "Rate limits exceeded, please try again later." }), 
@@ -251,13 +294,11 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
     });
   } catch (e) {
-    // Log detailed error server-side only
     console.error("Chat error:", { 
       timestamp: new Date().toISOString(),
       error: e instanceof Error ? e.message : "Unknown error"
     });
     
-    // Return generic error to client
     return new Response(
       JSON.stringify({ error: "An error occurred processing your request" }), 
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
