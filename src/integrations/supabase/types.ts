@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      uap_sightings: {
+        Row: {
+          created_at: string | null
+          date_reported: string | null
+          description: string | null
+          id: string
+          lat: number | null
+          location: string
+          lon: number | null
+          severity: string | null
+          source: string | null
+          source_url: string | null
+          type: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          date_reported?: string | null
+          description?: string | null
+          id?: string
+          lat?: number | null
+          location: string
+          lon?: number | null
+          severity?: string | null
+          source?: string | null
+          source_url?: string | null
+          type?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          date_reported?: string | null
+          description?: string | null
+          id?: string
+          lat?: number | null
+          location?: string
+          lon?: number | null
+          severity?: string | null
+          source?: string | null
+          source_url?: string | null
+          type?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
