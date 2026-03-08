@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       uap_sightings: {
         Row: {
+          category: string | null
           created_at: string | null
           date_reported: string | null
           description: string | null
@@ -29,6 +30,7 @@ export type Database = {
           type: string | null
         }
         Insert: {
+          category?: string | null
           created_at?: string | null
           date_reported?: string | null
           description?: string | null
@@ -42,6 +44,7 @@ export type Database = {
           type?: string | null
         }
         Update: {
+          category?: string | null
           created_at?: string | null
           date_reported?: string | null
           description?: string | null
