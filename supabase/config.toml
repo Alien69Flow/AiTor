@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.crypto-feed]
 verify_jwt = false
+
+[functions.github-proxy]
+verify_jwt = false
+
+[functions.firecrawl-search]
+verify_jwt = false
