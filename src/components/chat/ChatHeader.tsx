@@ -75,14 +75,16 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
           </Button>
         )}
 
-        {user ? (
-          <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-8 w-8 text-muted-foreground/40 hover:text-foreground" title="Cerrar sesión">
-            <LogOut className="h-3.5 w-3.5" />
-          </Button>
-        ) : (
-          <Button variant="ghost" size="icon" onClick={() => navigate('/auth')} className="h-8 w-8 text-muted-foreground/40 hover:text-foreground" title="Iniciar sesión">
-            <LogIn className="h-3.5 w-3.5" />
-          </Button>
+        {!isCompact && (
+          user ? (
+            <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-8 w-8 text-muted-foreground/40 hover:text-foreground" title="Cerrar sesión">
+              <LogOut className="h-3.5 w-3.5" />
+            </Button>
+          ) : (
+            <Button variant="ghost" size="icon" onClick={() => navigate('/auth')} className="h-8 w-8 text-muted-foreground/40 hover:text-foreground" title="Iniciar sesión">
+              <LogIn className="h-3.5 w-3.5" />
+            </Button>
+          )
         )}
       </div>
     </header>
