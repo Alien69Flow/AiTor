@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Send, ImagePlus, X, Loader2, ArrowUp } from "lucide-react";
+import { Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, FileSearch, Sparkles } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
   onSend: (content: string, imageData?: string) => void;
@@ -8,13 +9,19 @@ interface ChatInputProps {
   supportsVision: boolean;
 }
 
+const TOOLS = [
+  { icon: Globe, label: "Buscar Web", prompt: "Busca en la web: " },
+  { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: " },
+  { icon: FileSearch, label: "Auditar Contrato", prompt: "Audita este smart contract: " },
+  { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: " },
+];
+
 export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Auto-resize textarea
   useEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
@@ -45,6 +52,11 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
     reader.readAsDataURL(file);
   };
 
+  const handleToolClick = (prompt: string) => {
+    setInput(prompt);
+    textareaRef.current?.focus();
+  };
+
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto px-4 pb-4 pt-2">
       {imageData && (
@@ -61,20 +73,47 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
       )}
 
       <div className="relative flex items-end gap-2 rounded-2xl border border-border bg-card/60 backdrop-blur-sm px-3 py-2 focus-within:border-secondary/50 focus-within:ring-1 focus-within:ring-secondary/20 transition-all">
-        {/* Image upload */}
-        {supportsVision && (
-          <>
-            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/30 transition-colors disabled:opacity-30"
-            >
-              <ImagePlus className="h-5 w-5" />
-            </button>
-          </>
-        )}
+        {/* Tool buttons row */}
+        <TooltipProvider delayDuration={200}>
+          <div className="flex items-center gap-0.5 shrink-0">
+            {supportsVision && (
+              <>
+                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={isLoading}
+                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-secondary hover:bg-muted/30 transition-colors disabled:opacity-30"
+                    >
+                      <ImagePlus className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs font-mono">Subir imagen</TooltipContent>
+                </Tooltip>
+              </>
+            )}
+            {TOOLS.map((tool, i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => handleToolClick(tool.prompt)}
+                    disabled={isLoading}
+                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-secondary hover:bg-muted/30 transition-colors disabled:opacity-30"
+                  >
+                    <tool.icon className="h-4 w-4" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs font-mono">{tool.label}</TooltipContent>
+              </Tooltip>
+            ))}
+          </div>
+        </TooltipProvider>
+
+        {/* Divider */}
+        <div className="w-px h-5 bg-border/50 shrink-0" />
 
         {/* Command prefix */}
         <span className="text-xs font-mono text-secondary/60 shrink-0 pb-1.5 select-none hidden sm:block">AITOR &gt;</span>
