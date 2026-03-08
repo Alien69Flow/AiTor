@@ -1,22 +1,26 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useState, useCallback } from "react";
 import { LiveTicker } from "./LiveTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
 import { FeedPanel } from "./FeedPanel";
+import type { HotspotData } from "@/components/globe/GlobeScene";
 
 const GlobeScene = lazy(() =>
   import("@/components/globe/GlobeScene").then((m) => ({ default: m.GlobeScene }))
 );
 
 export function GlobeDashboard() {
+  const [selectedHotspot, setSelectedHotspot] = useState<HotspotData | null>(null);
+
+  const handleHotspotClick = useCallback((data: HotspotData | null) => {
+    setSelectedHotspot(data);
+  }, []);
+
   return (
     <div className="flex flex-col flex-1 min-h-0 relative">
-      {/* Live ticker bar */}
       <LiveTicker />
 
       <div className="flex flex-1 min-h-0">
-        {/* Globe area */}
         <div className="flex-1 relative min-w-0">
-          {/* Globe */}
           <Suspense
             fallback={
               <div className="w-full h-full flex items-center justify-center">
@@ -24,18 +28,18 @@ export function GlobeDashboard() {
               </div>
             }
           >
-            <GlobeScene />
+            <GlobeScene onHotspotClick={handleHotspotClick} />
           </Suspense>
 
-          {/* Globe overlay UI */}
-          <GlobeOverlay />
+          <GlobeOverlay
+            selectedHotspot={selectedHotspot}
+            onClose={() => setSelectedHotspot(null)}
+          />
         </div>
 
-        {/* Right panel - Feed */}
         <FeedPanel />
       </div>
 
-      {/* Bottom status bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-card/60 border-t border-border/20 text-[9px]">
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
