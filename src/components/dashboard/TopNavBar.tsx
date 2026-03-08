@@ -18,8 +18,9 @@ interface TopNavBarProps {
 
 const TABS: { id: TabId; label: string; status: TabStatus }[] = [
   { id: "terminal", label: "Terminal", status: "live" },
-  { id: "markets", label: "Markets", status: "live" },
-  { id: "signals", label: "Signals", status: "new" },
+  { id: "markets", label: "Globe", status: "live" },
+  { id: "predictions", label: "Markets", status: "live" },
+  { id: "signals", label: "Signals", status: "live" },
   { id: "agents", label: "Agents", status: "new" },
   { id: "feed", label: "Feed", status: "live" },
   { id: "movers", label: "Movers", status: "live" },

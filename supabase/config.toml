@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.firecrawl-search]
 verify_jwt = false
+
+[functions.crypto-signals]
+verify_jwt = false
