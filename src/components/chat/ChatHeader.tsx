@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, PanelRightOpen, PanelRightClose } from "lucide-react";
+import { Trash2, LogOut, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,11 +12,9 @@ interface ChatHeaderProps {
   onModelChange: (model: string) => void;
   onClear: () => void;
   hasMessages: boolean;
-  controlRoomOpen?: boolean;
-  onToggleControlRoom?: () => void;
 }
 
-export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages, controlRoomOpen, onToggleControlRoom }: ChatHeaderProps) {
+export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -28,7 +26,6 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
 
   return (
     <header className="h-12 flex items-center justify-between px-4 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
-      {/* Left: Brand */}
       <div className="flex items-center gap-2.5 min-w-0">
         <img src={aitorLogo} alt="AI Tor" className="w-6 h-6 object-contain" />
         <div className="flex flex-col leading-none">
@@ -51,19 +48,12 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
         )}
       </div>
 
-      {/* Right: Actions */}
       <div className="flex items-center gap-1">
         <ModelSelector value={selectedModel} onChange={onModelChange} />
 
         {hasMessages && (
           <Button variant="ghost" size="icon" onClick={onClear} className="h-8 w-8 text-muted-foreground/50 hover:text-destructive" title="Nuevo chat">
             <Trash2 className="h-4 w-4" />
-          </Button>
-        )}
-
-        {onToggleControlRoom && (
-          <Button variant="ghost" size="icon" onClick={onToggleControlRoom} className="h-8 w-8 text-muted-foreground/50 hover:text-foreground" title="Control Room">
-            {controlRoomOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
           </Button>
         )}
 

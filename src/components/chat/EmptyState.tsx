@@ -1,11 +1,11 @@
-import { Brain, Atom, Code2, Link2, Zap, Sparkles, Globe, FileSearch } from "lucide-react";
+import { Brain, Code2, Link2, Globe, TrendingUp, FileSearch } from "lucide-react";
 import aitorLogo from "@/assets/aitor-brain-logo.png";
 
 const QUICK_PROMPTS = [
-  { icon: Link2, text: "Analiza el mercado DeFi actual", color: "border-primary/20 hover:border-primary/40" },
-  { icon: Code2, text: "Revisa este código por vulnerabilidades", color: "border-secondary/20 hover:border-secondary/40" },
-  { icon: Globe, text: "Busca las últimas noticias sobre Bitcoin", color: "border-primary/20 hover:border-primary/40" },
-  { icon: Brain, text: "Explica redes neuronales transformers", color: "border-secondary/20 hover:border-secondary/40" },
+  { icon: TrendingUp, text: "Analiza el mercado DeFi actual y dame las tendencias principales", color: "border-primary/20 hover:border-primary/40" },
+  { icon: Globe, text: "Busca las últimas noticias sobre Bitcoin y criptomonedas", color: "border-secondary/20 hover:border-secondary/40" },
+  { icon: Code2, text: "Revisa este smart contract y busca vulnerabilidades de seguridad", color: "border-primary/20 hover:border-primary/40" },
+  { icon: Brain, text: "Genera un thread viral para X/Twitter sobre tendencias crypto", color: "border-secondary/20 hover:border-secondary/40" },
 ];
 
 interface EmptyStateProps {
