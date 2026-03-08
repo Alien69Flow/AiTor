@@ -55,6 +55,11 @@ export function useMoltbook() {
       return null;
     } catch (error) {
       console.error("❌ Error de red fatal:", error);
+      toast({
+        title: "Error de Conexión",
+        description: "No se pudo conectar con el Oráculo Moltbook. La API de X/Twitter puede estar temporalmente inactiva. Intenta de nuevo en unos minutos.",
+        variant: "destructive",
+      });
       return null;
     } finally {
       setIsRegistering(false);
