@@ -1,22 +1,20 @@
-import { TrendingUp, Code2, Globe, Brain, Zap, Shield, Atom, Link2 } from "lucide-react";
+import { TrendingUp, Code2, Globe, Brain, Zap, Shield, Atom, Link2, Sparkles, Search, ArrowRight } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const CAPABILITIES = [
-  { icon: TrendingUp, title: "DeFi & Trading", desc: "Análisis de mercados, tokens y tendencias en tiempo real", color: "border-primary/20 hover:border-primary/40" },
-  { icon: Globe, title: "Búsqueda Web", desc: "Búsqueda inteligente con web scraping avanzado", color: "border-secondary/20 hover:border-secondary/40" },
-  { icon: Shield, title: "Seguridad & Auditoría", desc: "Auditoría de smart contracts y detección de vulnerabilidades", color: "border-primary/20 hover:border-primary/40" },
-  { icon: Atom, title: "Quantum Computing", desc: "Computación cuántica aplicada a criptografía y optimización", color: "border-secondary/20 hover:border-secondary/40" },
-  { icon: Code2, title: "Código & Arquitectura", desc: "Generación, análisis y refactorización de código", color: "border-primary/20 hover:border-primary/40" },
-  { icon: Link2, title: "Web3 & DAO", desc: "Gobernanza descentralizada, NFTs y protocolos DeFi", color: "border-secondary/20 hover:border-secondary/40" },
+  { icon: Search, title: "Búsqueda Web", desc: "Busca y analiza información en tiempo real", prompt: "Busca las últimas noticias sobre crypto y DeFi" },
+  { icon: TrendingUp, title: "DeFi & Trading", desc: "Análisis de mercados y estrategias", prompt: "Analiza el mercado DeFi actual y dame oportunidades" },
+  { icon: Shield, title: "Auditoría Smart Contracts", desc: "Seguridad y detección de vulnerabilidades", prompt: "Audita un smart contract ERC-20 buscando vulnerabilidades" },
+  { icon: Code2, title: "Código & Arquitectura", desc: "Genera, analiza y refactoriza código", prompt: "Genera un smart contract en Solidity para un token ERC-20" },
+  { icon: Atom, title: "Quantum Computing", desc: "Criptografía post-cuántica y optimización", prompt: "Explica la computación cuántica aplicada a criptografía" },
+  { icon: Link2, title: "Web3 & DAO", desc: "Gobernanza, NFTs y protocolos DeFi", prompt: "Diseña la arquitectura de una DAO con gobernanza on-chain" },
 ];
 
-const QUICK_SUGGESTIONS = [
-  "Analiza el mercado DeFi actual",
-  "Busca las últimas noticias crypto",
-  "Audita un smart contract ERC-20",
+const SUGGESTIONS = [
   "Genera un thread viral para X",
-  "Explica la computación cuántica post-quantum",
+  "Compara Ethereum vs Solana",
   "Crea una estrategia de yield farming",
+  "Explica zero-knowledge proofs",
 ];
 
 interface EmptyStateProps {
@@ -25,76 +23,67 @@ interface EmptyStateProps {
 
 export function EmptyState({ onPromptClick }: EmptyStateProps) {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center p-6 min-h-[60vh]">
-      {/* Logo & Branding */}
-      <div className="flex flex-col items-center gap-4 mb-8">
+    <div className="flex flex-1 flex-col items-center justify-center p-4 sm:p-6 min-h-[60vh]">
+      {/* Hero Branding */}
+      <div className="flex flex-col items-center gap-3 mb-10">
         <div className="relative">
+          <div className="absolute inset-0 w-24 h-24 rounded-full bg-primary/10 blur-2xl animate-pulse" />
           <img
             src={alienflowLogo}
             alt="AlienFlow"
-            className="w-20 h-20 object-contain drop-shadow-[0_0_25px_hsl(var(--primary)/0.5)]"
+            className="w-20 h-20 object-contain relative z-10 drop-shadow-[0_0_30px_hsl(var(--primary)/0.4)]"
           />
-          <div className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-secondary border-2 border-background animate-pulse" />
         </div>
         <div className="text-center">
-          <h1 className="text-3xl font-heading font-bold text-primary tracking-wider">⚡ AI Tor</h1>
-          <p className="text-xs text-muted-foreground/60 font-mono mt-1">
-            Sistema Operativo de IA Soberana
+          <h1 className="text-4xl font-heading font-bold text-foreground tracking-wider">
+            AI Tor
+          </h1>
+          <p className="text-sm text-muted-foreground/60 mt-1">
+            Tu oráculo de inteligencia artificial soberana
           </p>
-          <div className="flex items-center justify-center gap-2 mt-2">
-            <Zap className="w-3 h-3 text-secondary" />
-            <p className="text-[9px] text-muted-foreground/40 font-heading tracking-widest uppercase">
-              ΔlieπFlΦw DAO · Versión ΓΩΣΖ v69
+          <div className="flex items-center justify-center gap-2 mt-3">
+            <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
+            <p className="text-[10px] text-muted-foreground/40 font-heading tracking-[0.2em] uppercase">
+              ΔlieπFlΦw DAO · Multi-Oracle System
             </p>
-            <Zap className="w-3 h-3 text-secondary" />
           </div>
         </div>
       </div>
 
       {/* Capability Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 w-full max-w-2xl mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 w-full max-w-3xl mb-8">
         {CAPABILITIES.map((cap) => {
           const Icon = cap.icon;
           return (
-            <div
+            <button
               key={cap.title}
-              className={`flex flex-col gap-2 p-3.5 rounded-xl border bg-card/20 backdrop-blur-sm ${cap.color} transition-all duration-200 group`}
+              onClick={() => onPromptClick?.(cap.prompt)}
+              className="flex items-start gap-3 p-4 rounded-xl border border-border/60 bg-card/30 hover:bg-card/60 hover:border-primary/30 hover:shadow-[0_0_20px_hsl(var(--primary)/0.05)] transition-all duration-300 text-left group"
             >
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center shrink-0 group-hover:border-secondary/40 transition-colors">
-                  <Icon className="w-4 h-4 text-muted-foreground/50 group-hover:text-secondary transition-colors" />
-                </div>
-                <span className="text-xs font-heading text-foreground/80 tracking-wide">{cap.title}</span>
+              <div className="w-9 h-9 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center shrink-0 group-hover:border-primary/40 group-hover:bg-primary/5 transition-all">
+                <Icon className="w-4 h-4 text-muted-foreground/60 group-hover:text-primary transition-colors" />
               </div>
-              <span className="text-[10px] font-mono text-muted-foreground/50 leading-relaxed">{cap.desc}</span>
-            </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-medium text-foreground/80 group-hover:text-foreground transition-colors">{cap.title}</span>
+                <span className="text-[10px] text-muted-foreground/50 leading-relaxed mt-0.5">{cap.desc}</span>
+              </div>
+              <ArrowRight className="w-3 h-3 text-muted-foreground/20 group-hover:text-primary/60 shrink-0 mt-1 transition-colors" />
+            </button>
           );
         })}
       </div>
 
       {/* Quick Suggestions */}
-      <div className="w-full max-w-2xl">
-        <div className="flex items-center gap-2 mb-3">
-          <Brain className="w-3 h-3 text-secondary/70" />
-          <span className="text-[10px] font-heading text-muted-foreground/60 tracking-widest uppercase">Sugerencias Rápidas</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {QUICK_SUGGESTIONS.map((suggestion) => (
-            <button
-              key={suggestion}
-              onClick={() => onPromptClick?.(suggestion)}
-              className="px-3 py-1.5 rounded-full border border-border bg-card/30 hover:bg-card/60 hover:border-secondary/30 text-[10px] font-mono text-muted-foreground/60 hover:text-foreground/80 transition-all cursor-pointer"
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Status Badge */}
-      <div className="mt-6 flex items-center gap-2 px-3 py-1.5 rounded-full bg-card/30 border border-secondary/15">
-        <div className="w-2 h-2 rounded-full bg-secondary animate-pulse" />
-        <span className="text-[9px] font-mono text-muted-foreground/50">Oráculo activo · Multi-modelo disponible</span>
+      <div className="flex flex-wrap gap-2 justify-center max-w-2xl">
+        {SUGGESTIONS.map((suggestion) => (
+          <button
+            key={suggestion}
+            onClick={() => onPromptClick?.(suggestion)}
+            className="px-3.5 py-2 rounded-full border border-border/60 bg-card/20 hover:bg-card/50 hover:border-primary/30 text-xs text-muted-foreground/60 hover:text-foreground/80 transition-all cursor-pointer"
+          >
+            {suggestion}
+          </button>
+        ))}
       </div>
     </div>
   );

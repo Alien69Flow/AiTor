@@ -1,5 +1,16 @@
 import { useState, useRef, useEffect } from "react";
-import { Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2 } from "lucide-react";
+import {
+  Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
+  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap
+} from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
+  DropdownMenuLabel,
+} from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
@@ -9,15 +20,17 @@ interface ChatInputProps {
 }
 
 const TOOLS = [
-  { icon: Code2, label: "ANALIZADOR", prompt: "Analiza este código buscando vulnerabilidades: " },
-  { icon: Globe, label: "BUSCADOR", prompt: "Busca en la web: " },
-  { icon: Sparkles, label: "GENERADOR", prompt: "Genera un thread viral para X/Twitter sobre: " },
-  { icon: Link2, label: "WEB3/DAO", prompt: "Analiza este protocolo DeFi o contrato: " },
+  { icon: Search, label: "Búsqueda Web", prompt: "Busca en la web: ", shortcut: "⌘K" },
+  { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: ", shortcut: "⌘J" },
+  { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: ", shortcut: "⌘G" },
+  { icon: Link2, label: "Web3 & DeFi", prompt: "Analiza este protocolo DeFi o contrato: ", shortcut: "⌘W" },
+  { icon: FileText, label: "Analizar Documento", prompt: "Analiza el siguiente documento: ", shortcut: "⌘D" },
 ];
 
 export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps) {
   const [input, setInput] = useState("");
   const [imageData, setImageData] = useState<string | null>(null);
+  const [deepThink, setDeepThink] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -31,7 +44,8 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() && !imageData) return;
-    onSend(input, imageData || undefined);
+    const prefix = deepThink ? "[DEEP THINK] " : "";
+    onSend(prefix + input, imageData || undefined);
     setInput("");
     setImageData(null);
   };
@@ -57,88 +71,190 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto px-4 pb-4 pt-2">
-      {/* Tool buttons with labels */}
-      <div className="flex items-center gap-2 mb-2 flex-wrap">
-        {TOOLS.map((tool) => {
-          const Icon = tool.icon;
-          return (
-            <button
-              key={tool.label}
-              type="button"
-              onClick={() => handleToolClick(tool.prompt)}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card/30 hover:bg-card/60 hover:border-secondary/30 text-[10px] font-mono text-muted-foreground/60 hover:text-secondary transition-all disabled:opacity-30"
-            >
-              <Icon className="h-3 w-3" />
-              <span className="font-heading tracking-wider">{tool.label}</span>
-            </button>
-          );
-        })}
-
-        {supportsVision && (
-          <>
-            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card/30 hover:bg-card/60 hover:border-secondary/30 text-[10px] font-mono text-muted-foreground/60 hover:text-secondary transition-all disabled:opacity-30"
-            >
-              <ImagePlus className="h-3 w-3" />
-              <span className="font-heading tracking-wider">IMAGEN</span>
-            </button>
-          </>
-        )}
-      </div>
-
+    <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto px-3 sm:px-4 pb-3 pt-2">
       {/* Image preview */}
       {imageData && (
         <div className="relative mb-2 inline-block">
-          <img src={imageData} alt="Preview" className="h-16 rounded-lg border border-border object-contain bg-card/40" />
+          <img src={imageData} alt="Preview" className="h-20 rounded-xl border border-border object-contain bg-card/40" />
           <button
             type="button"
             onClick={() => setImageData(null)}
-            className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground hover:bg-destructive/90 transition-colors"
+            className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground hover:bg-destructive/90 transition-colors shadow-lg"
           >
             <X className="h-3 w-3" />
           </button>
         </div>
       )}
 
-      {/* Input bar */}
-      <div className="relative flex items-end gap-2 rounded-2xl border border-border bg-card/60 backdrop-blur-sm px-3 py-2 focus-within:border-secondary/50 focus-within:ring-1 focus-within:ring-secondary/20 transition-all">
-        {/* Command prefix */}
-        <span className="text-xs font-mono text-secondary/60 shrink-0 pb-1.5 select-none hidden sm:block">AITOR &gt;</span>
+      {/* Main input container - Claude/ChatGPT style */}
+      <div className="relative rounded-2xl border border-border bg-card/70 backdrop-blur-md shadow-lg focus-within:border-primary/40 focus-within:shadow-[0_0_20px_hsl(var(--primary)/0.08)] transition-all duration-300">
+        {/* Top row: Textarea */}
+        <div className="flex items-end px-3 pt-3 pb-1">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Pregunta a AI Tor cualquier cosa..."
+            disabled={isLoading}
+            rows={1}
+            className="flex-1 min-h-[28px] max-h-[200px] resize-none bg-transparent border-none p-0 text-sm text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 disabled:opacity-50 leading-relaxed"
+          />
+        </div>
 
-        {/* Textarea */}
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Pregunta al oráculo..."
-          disabled={isLoading}
-          rows={1}
-          className="flex-1 min-h-[36px] max-h-[200px] resize-none bg-transparent border-none p-0 pb-1 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 disabled:opacity-50"
-        />
+        {/* Bottom row: Actions */}
+        <div className="flex items-center justify-between px-2 pb-2 pt-1">
+          {/* Left actions */}
+          <div className="flex items-center gap-0.5">
+            {/* Tools dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  disabled={isLoading}
+                  className="flex items-center gap-1 h-8 px-2 rounded-lg text-muted-foreground/60 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-64 bg-popover/95 backdrop-blur-xl border-border">
+                <DropdownMenuLabel className="text-[10px] font-heading tracking-widest text-muted-foreground/60 uppercase">
+                  Herramientas AI Tor
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {TOOLS.map((tool) => {
+                  const Icon = tool.icon;
+                  return (
+                    <DropdownMenuItem
+                      key={tool.label}
+                      onClick={() => handleToolClick(tool.prompt)}
+                      className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center text-muted-foreground">
+                        <Icon className="h-4 w-4" />
+                      </div>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-xs font-medium text-foreground">{tool.label}</span>
+                      </div>
+                      <span className="text-[9px] font-mono text-muted-foreground/40">{tool.shortcut}</span>
+                    </DropdownMenuItem>
+                  );
+                })}
+                {supportsVision && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30"
+                    >
+                      <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center text-muted-foreground">
+                        <ImagePlus className="h-4 w-4" />
+                      </div>
+                      <div className="flex flex-col flex-1">
+                        <span className="text-xs font-medium text-foreground">Subir Imagen</span>
+                      </div>
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
-        {/* Send */}
-        <button
-          type="submit"
-          disabled={isLoading || (!input.trim() && !imageData)}
-          className="shrink-0 p-1.5 rounded-lg bg-secondary/80 text-secondary-foreground hover:bg-secondary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          {isLoading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <ArrowUp className="h-4 w-4" />
-          )}
-        </button>
+            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+
+            {/* Quick tool buttons - visible on desktop */}
+            <div className="hidden sm:flex items-center gap-0.5">
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => handleToolClick("Busca en la web: ")}
+                      disabled={isLoading}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
+                    >
+                      <Globe className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">Búsqueda Web</TooltipContent>
+                </Tooltip>
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => handleToolClick("Analiza este código: ")}
+                      disabled={isLoading}
+                      className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
+                    >
+                      <Code2 className="h-4 w-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">Analizar Código</TooltipContent>
+                </Tooltip>
+
+                {supportsVision && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isLoading}
+                        className="h-8 w-8 rounded-lg flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-all disabled:opacity-30"
+                      >
+                        <Paperclip className="h-4 w-4" />
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">Adjuntar Imagen</TooltipContent>
+                  </Tooltip>
+                )}
+              </TooltipProvider>
+            </div>
+          </div>
+
+          {/* Right actions */}
+          <div className="flex items-center gap-1">
+            {/* Deep Think toggle */}
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => setDeepThink(!deepThink)}
+                    disabled={isLoading}
+                    className={`h-8 px-2.5 rounded-lg flex items-center gap-1.5 text-xs font-medium transition-all disabled:opacity-30 ${
+                      deepThink
+                        ? "bg-primary/15 text-primary border border-primary/30"
+                        : "text-muted-foreground/50 hover:text-foreground hover:bg-muted/30"
+                    }`}
+                  >
+                    <Brain className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline text-[10px] font-heading tracking-wider">DEEP</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {deepThink ? "Modo Deep Think activado — razonamiento profundo" : "Activar Deep Think"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            {/* Send button */}
+            <button
+              type="submit"
+              disabled={isLoading || (!input.trim() && !imageData)}
+              className="h-8 w-8 rounded-xl flex items-center justify-center bg-primary text-primary-foreground hover:bg-primary/90 transition-all disabled:opacity-30 disabled:cursor-not-allowed shadow-md shadow-primary/20"
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <ArrowUp className="h-4 w-4" />
+              )}
+            </button>
+          </div>
+        </div>
       </div>
 
-      <p className="text-center text-[9px] font-mono text-muted-foreground/30 mt-2">
-        AI Tor puede generar inexactitudes. Verifica datos críticos.
+      <p className="text-center text-[9px] text-muted-foreground/30 mt-2">
+        AI Tor puede generar inexactitudes · Verifica datos críticos · ΔlieπFlΦw DAO
       </p>
     </form>
   );
