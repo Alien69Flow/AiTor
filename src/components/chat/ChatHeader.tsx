@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
 import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus } from "lucide-react";
