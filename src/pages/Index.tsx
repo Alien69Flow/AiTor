@@ -11,32 +11,26 @@ import { MoversTab } from "@/components/dashboard/MoversTab";
 import { PortfolioTab } from "@/components/dashboard/PortfolioTab";
 import { AlertsTab } from "@/components/dashboard/AlertsTab";
 import { MonitorTab } from "@/components/dashboard/MonitorTab";
+import { SignalsTab } from "@/components/dashboard/SignalsTab";
+import { AgentsTab } from "@/components/dashboard/AgentsTab";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<TabId>("terminal");
 
   const renderTab = () => {
     switch (activeTab) {
-      case "terminal":
-        return <ChatContainer />;
-      case "markets":
-        return <GlobeDashboard />;
-      case "feed":
-        return <FeedTab />;
-      case "movers":
-        return <MoversTab />;
-      case "portfolio":
-        return <PortfolioTab />;
-      case "alerts":
-        return <AlertsTab />;
-      case "monitor":
-        return <MonitorTab />;
-      case "ufo":
-        return <UFOMonitorTab />;
-      case "solar":
-        return <SolarSystemTab />;
-      default:
-        return null;
+      case "terminal": return <ChatContainer />;
+      case "markets": return <GlobeDashboard />;
+      case "feed": return <FeedTab />;
+      case "movers": return <MoversTab />;
+      case "portfolio": return <PortfolioTab />;
+      case "alerts": return <AlertsTab />;
+      case "monitor": return <MonitorTab />;
+      case "ufo": return <UFOMonitorTab />;
+      case "solar": return <SolarSystemTab />;
+      case "signals": return <SignalsTab />;
+      case "agents": return <AgentsTab />;
+      default: return null;
     }
   };
 
@@ -51,7 +45,6 @@ const Index = () => {
       
       <div className="fixed inset-0 flex flex-col z-10">
         <TopNavBar activeTab={activeTab} onTabChange={setActiveTab} />
-        
         <div className="flex-1 flex flex-col min-h-0 relative">
           {renderTab()}
         </div>
