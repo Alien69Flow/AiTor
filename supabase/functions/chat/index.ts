@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// Edge function for AI chat routing
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -309,7 +309,7 @@ async function routeToAnthropic(model: string, processedMessages: unknown[]) {
   });
 }
 
-serve(async (req) => {
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
