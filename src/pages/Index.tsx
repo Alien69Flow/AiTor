@@ -18,13 +18,7 @@ const Index = () => {
   const renderTab = () => {
     switch (activeTab) {
       case "terminal":
-        return (
-          <div className="flex-1 flex items-center justify-center p-2 sm:p-4">
-            <div className="w-full max-w-6xl h-[calc(100vh-100px)]">
-              <ChatContainer />
-            </div>
-          </div>
-        );
+        return <ChatContainer />;
       case "markets":
         return <GlobeDashboard />;
       case "feed":
