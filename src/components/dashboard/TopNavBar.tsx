@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
-export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor";
+export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar";
 
 interface TopNavBarProps {
   activeTab: TabId;
@@ -22,6 +22,8 @@ const TABS: { id: TabId; label: string }[] = [
   { id: "portfolio", label: "Portfolio" },
   { id: "alerts", label: "Alerts" },
   { id: "monitor", label: "Monitor" },
+  { id: "ufo", label: "UFO/Alien" },
+  { id: "solar", label: "Solar System" },
 ];
 
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
@@ -41,12 +43,11 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
 
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 relative">
-      {/* Top bar with logo, search, wallet */}
       <div className="flex items-center justify-between px-4 py-2 gap-4">
         {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <img src={alienflowLogo} alt="AlienFlow" className="w-7 h-7 object-contain" />
-          <span className="text-sm font-heading text-primary neon-text-gold tracking-wider hidden sm:inline">
+          <span className="text-sm font-heading text-primary neon-text-green tracking-wider hidden sm:inline">
             ΔlieπFlΦw
           </span>
         </div>
