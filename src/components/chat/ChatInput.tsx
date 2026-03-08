@@ -130,7 +130,7 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
                       onClick={() => handleToolClick(tool.prompt)}
                       className="flex items-center gap-3 py-2.5 cursor-pointer focus:bg-muted/30"
                     >
-                      <div className={`w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center ${tool.color}`}>
+                      <div className="w-8 h-8 rounded-lg bg-muted/20 border border-border/50 flex items-center justify-center text-muted-foreground">
                         <Icon className="h-4 w-4" />
                       </div>
                       <div className="flex flex-col flex-1">
