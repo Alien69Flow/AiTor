@@ -63,7 +63,7 @@ export default function Auth() {
             toast.error(error.message);
           }
         } else {
-          toast.success("¡Cuenta creada! Ya puedes acceder.");
+          toast.success("¡Cuenta creada! Revisa tu email para confirmar tu cuenta antes de iniciar sesión.");
         }
       }
     } finally {
