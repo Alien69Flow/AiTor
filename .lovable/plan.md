@@ -1,58 +1,86 @@
 
 
-## Plan: Phase 3 — Stripe Monetization + GitHub PAT + Data Integrations
+## Plan: Premium UI Overhaul — Glint.trade + Polymarket + NASA Eyes Fusion
 
-### Part A: GitHub PAT Setup
-The `github-proxy` edge function already exists and expects a `GITHUB_PAT` secret. I just need to request you to add it. Once configured, the "GitHub Repo" tool in the chat input will work — AI Tor can analyze repos, read files, list branches, and view commits.
+### Inspiration Analysis
+- **Glint.trade**: Real-time feed with impact scores, AI market matching, inline trading, whale tracker, grid view
+- **Polymarket**: Clean market cards with YES/NO percentages, volume indicators, category filters
+- **NASA Eyes**: Immersive 3D visualization, cinematic UI, dark ambient aesthetic
+- **Predik.app**: Prediction cards with probability bars, social proof indicators
+- **Explore.org**: Live feeds, nature-inspired calm UI, discovery-first navigation
 
-### Part B: Stripe Monetization
-Enable Stripe integration to create a tiered plan system:
+### What to Improve
 
-**Plans:**
-- **Free**: 5 messages/day, basic models only (Gemini Flash, GPT-5 Nano)
-- **Pro** ($19/mo): Unlimited messages, all models including GPT-5, Deep Think mode
-- **Enterprise** ($99/mo): API access, priority models, GitHub repo analysis, custom agents
+**1. Model Selector — Professional Tier Upgrade**
+- Add speed/latency indicator per model (e.g., "~1.2s" response time)
+- Add a "Recommended" highlight on the best model for the current context
+- Show token limit per model (e.g., "128K context")
+- Smoother animations: scale-in on open, item hover glow
+- Better visual hierarchy: larger selected state, dimmer unselected
+- Add keyboard navigation hints (↑↓ to navigate, Enter to select)
 
-**Implementation:**
-1. Enable Stripe via Lovable's Stripe tool (creates products, prices, checkout)
-2. Create database tables: `user_subscriptions` (user_id, plan, stripe_customer_id, status) and `usage_tracking` (user_id, date, message_count)
-3. Add usage-checking middleware in `useChat.ts` — check message count before sending
-4. Create a pricing/upgrade page component accessible from the header
-5. Add plan badge in header showing current tier
-6. Gate premium models behind Pro/Enterprise plans in `ModelSelector.tsx`
+**2. Signals Tab — Glint-style Real-Time Feed**
+- Replace mock data with real CoinGecko + public Polymarket API data
+- Add **impact score badges** (Critical/High/Medium/Low) like Glint
+- Add **market matching**: each signal linked to a prediction market contract
+- Polymarket-style YES/NO probability bars with live percentages
+- Category filter pills (Politics, Crypto, Sports, Tech, World)
+- Inline "Trade" button that opens Polymarket/Predik in new tab
+- Auto-refresh with live pulse indicator
+- Grid view toggle (single column vs multi-column like Glint)
 
-### Part C: Real Data Connections (Glint/Polymarket/Predik style)
-Connect the Signals tab to real prediction market and trading data:
+**3. Feed Tab — Glint Intel Feed Style**
+- Add AI-classified impact levels (color-coded: red=critical, orange=high, yellow=medium, green=low)
+- Source icons (X/Twitter, Telegram, News) instead of just hostname
+- Timestamp with "2m ago" relative format
+- Sentiment indicator per article (bullish/bearish/neutral)
+- Expandable preview with first paragraph
+- Filter bar: source type, impact level, asset category
 
-1. Create edge function `crypto-signals` that fetches from public APIs:
-   - CoinGecko for price data (free, no key needed)
-   - Polymarket API for prediction markets (public)
-2. Update `SignalsTab.tsx` to show live data instead of mock signals
-3. Add a "Markets" data source in the Signals tab showing real prediction market events
+**4. Movers Tab — Polymarket + Trading Terminal Style**
+- Add mini sparkline charts per asset (7-day trend)
+- Market cap rank badge
+- Heatmap view toggle (treemap of market caps with color = 24h change)
+- Click-to-expand with more details (ATH, ATL, supply info)
+- "Add to Watchlist" star icon per row
 
-### Files to create/modify
+**5. Empty State — More Epic, NASA-Inspired**
+- Replace tagline with: **"El oráculo que ve más allá del mercado. Inteligencia que converge donde otros no miran."**
+- Add subtle starfield particle animation behind logo (like NASA Eyes)
+- Pulsing concentric rings around logo (like a radar/oracle scanning)
+- Stats strip: "12 Oracles · 3 Data Sources · Real-time" with live dot
+
+**6. New Tab: "Markets Browser" (Glint-inspired)**
+- Browse prediction market contracts from Polymarket API
+- Category cards: Politics, Crypto, Sports, Tech, Culture
+- Each market: title, current YES%, volume, end date
+- Search/filter within markets
+- Click to see full details + trade link
+
+### Files to Create/Modify
 
 | File | Action |
 |---|---|
-| `src/components/pricing/PricingPage.tsx` | Create — pricing cards with Stripe checkout |
-| `src/components/chat/UsageBar.tsx` | Create — shows remaining messages for free tier |
-| `src/hooks/useSubscription.ts` | Create — subscription status + usage tracking |
-| `src/hooks/useChat.ts` | Modify — add usage gate before sending |
-| `src/components/chat/ModelSelector.tsx` | Modify — lock premium models behind plans |
-| `src/components/chat/ChatHeader.tsx` | Modify — add plan badge + upgrade button |
-| `src/components/dashboard/SignalsTab.tsx` | Modify — real API data |
-| `supabase/functions/crypto-signals/index.ts` | Create — real market data fetcher |
-| DB migration | Create — user_subscriptions + usage_tracking tables |
-| Stripe setup | Enable via tool |
+| `src/components/chat/ModelSelector.tsx` | Modify — add latency, context size, keyboard hints, animations |
+| `src/components/chat/EmptyState.tsx` | Modify — new tagline, particle starfield, radar rings, stats strip |
+| `src/components/dashboard/SignalsTab.tsx` | Rewrite — real API data, impact scores, market matching, filters |
+| `src/components/dashboard/FeedTab.tsx` | Modify — impact levels, source icons, sentiment, filters |
+| `src/components/dashboard/MoversTab.tsx` | Modify — sparklines, heatmap toggle, watchlist |
+| `src/components/dashboard/MarketsTab.tsx` | Create — Polymarket-style markets browser |
+| `src/components/dashboard/TopNavBar.tsx` | Modify — add "Markets" tab |
+| `src/pages/Index.tsx` | Modify — wire MarketsTab |
+| `supabase/functions/crypto-signals/index.ts` | Create — fetch real data from CoinGecko + Polymarket public APIs |
 
-### Implementation order
-1. **GitHub PAT** — request secret immediately
-2. **Stripe enable** — use Stripe tool to set up
-3. **Database tables** — subscriptions + usage tracking
-4. **Usage gate + pricing page** — enforce limits
-5. **Real data for Signals** — connect live APIs
+### Implementation Order
+1. Model Selector polish (quick win, high visibility)
+2. EmptyState epic upgrade (branding)
+3. SignalsTab with real Polymarket data
+4. FeedTab Glint-style improvements
+5. New MarketsTab (Polymarket browser)
+6. MoversTab enhancements (sparklines, heatmap)
 
-### What I need from you
-- **GitHub PAT**: I'll request it via the secrets tool — you'll need to create one at github.com/settings/tokens with `repo` scope
-- **Stripe**: I'll enable it via the Stripe tool — you'll need your Stripe secret key
+### No API Keys Needed
+- CoinGecko: free public API, no key required
+- Polymarket: public CLOB API, no key required
+- All data fetched via edge functions to avoid CORS
 
