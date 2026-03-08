@@ -93,11 +93,22 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
           {selected?.speed && (
             <SpeedIndicator speed={selected.speed} />
           )}
+        <button className="flex items-center gap-2 h-8 px-3 rounded-full border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/30 transition-all duration-200 text-xs font-mono group">
+          <span className="text-sm">{selected ? getIcon(selected) : "🔮"}</span>
+          <span className="text-foreground/80 truncate max-w-[100px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
+          {selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
+            <Badge variant="outline" className={cn("text-[7px] px-1.5 py-0 h-3.5 font-mono", ORACLE_TYPE_BADGES[selected.oracleType].className)}>
+              {ORACLE_TYPE_BADGES[selected.oracleType].label}
+            </Badge>
+          )}
+          {selected?.speed && (
+            <SpeedIndicator speed={selected.speed} />
+          )}
           <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 group-hover:text-foreground/60 transition-all duration-200", open && "rotate-180")} />
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[380px] p-0 bg-popover/95 backdrop-blur-xl border-border shadow-[0_0_60px_hsl(var(--primary)/0.1)] animate-in zoom-in-95 fade-in duration-200"
+        className="w-[380px] p-0 bg-popover backdrop-blur-md border-border shadow-lg animate-in zoom-in-95 fade-in duration-200"
         align="center"
         sideOffset={8}
       >
