@@ -10,7 +10,7 @@ export interface Message {
   timestamp: Date;
 }
 
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const CHAT_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/chat`;
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([]);
