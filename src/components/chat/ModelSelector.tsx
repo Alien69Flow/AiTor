@@ -148,7 +148,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                           className={cn(
                             "flex items-center gap-3 py-3 px-2 rounded-lg cursor-pointer transition-all duration-150",
                             !model.available && "opacity-35 cursor-not-allowed",
-                            isSelected && "bg-primary/10 border border-primary/25 shadow-[0_0_15px_hsl(var(--primary)/0.08)]",
+                            isSelected && "bg-primary/10 border border-primary/25",
                             !isSelected && model.available && "hover:bg-muted/15"
                           )}
                         >
