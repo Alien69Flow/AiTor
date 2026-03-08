@@ -41,18 +41,18 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border-t border-secondary/30 bg-card/60 backdrop-blur-sm p-3">
+    <form onSubmit={handleSubmit} className="px-4 py-3">
       {imageData && (
-        <div className="relative mb-2 inline-block">
+        <div className="relative mb-3 inline-block">
           <img 
             src={imageData} 
             alt="Preview" 
-            className="h-16 rounded border border-secondary/30 object-contain"
+            className="h-20 rounded-xl border border-secondary/30 object-contain bg-card/40"
           />
           <button
             type="button"
             onClick={() => setImageData(null)}
-            className="absolute -right-1.5 -top-1.5 rounded-full bg-destructive p-0.5 text-destructive-foreground hover:bg-destructive/90"
+            className="absolute -right-2 -top-2 rounded-full bg-destructive p-1 text-destructive-foreground hover:bg-destructive/90 transition-colors"
           >
             <X className="h-3 w-3" />
           </button>
@@ -75,32 +75,29 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
             size="icon"
             onClick={() => fileInputRef.current?.click()}
             disabled={isLoading}
-            className="shrink-0 h-8 w-8 text-muted-foreground hover:text-secondary"
+            className="shrink-0 h-10 w-10 rounded-xl text-muted-foreground/60 hover:text-secondary hover:bg-secondary/10 transition-colors"
           >
-            <ImagePlus className="h-4 w-4" />
+            <ImagePlus className="h-5 w-5" />
           </Button>
         )}
         
-        <div className="flex-1 flex items-center gap-2 bg-background/40 border border-secondary/30 rounded-md px-3 py-1 focus-within:border-secondary/60 transition-colors">
-          <span className="text-secondary font-mono text-sm font-medium">λ&gt;</span>
+        <div className="flex-1 bg-card/50 border border-secondary/20 rounded-2xl px-4 py-2 focus-within:border-secondary/40 focus-within:bg-card/70 transition-all">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ingresa comando..."
+            placeholder="Pregunta al oráculo..."
             disabled={isLoading}
-            className="min-h-[32px] max-h-[120px] resize-none bg-transparent border-none p-0 focus-visible:ring-0 font-mono text-sm placeholder:text-muted-foreground/50"
+            className="min-h-[36px] max-h-[120px] resize-none bg-transparent border-none p-0 focus-visible:ring-0 text-sm placeholder:text-muted-foreground/40"
             rows={1}
           />
-          <span className="text-secondary animate-pulse font-mono">_</span>
         </div>
         
         <Button 
           type="submit" 
           disabled={isLoading || (!input.trim() && !imageData)}
           size="icon"
-          variant="ghost"
-          className="shrink-0 h-8 w-8 text-secondary hover:text-primary hover:bg-secondary/10"
+          className="shrink-0 h-10 w-10 rounded-xl bg-secondary/20 border border-secondary/30 text-secondary hover:bg-secondary/30 hover:border-secondary/50 transition-all disabled:opacity-30"
         >
           {isLoading ? (
             <Loader2 className="h-4 w-4 animate-spin" />
