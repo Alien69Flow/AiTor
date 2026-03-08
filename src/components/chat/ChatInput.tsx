@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, FileSearch, Sparkles } from "lucide-react";
+import { Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ChatInputProps {
@@ -10,10 +9,10 @@ interface ChatInputProps {
 }
 
 const TOOLS = [
-  { icon: Globe, label: "Buscar Web", prompt: "Busca en la web: " },
-  { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: " },
-  { icon: FileSearch, label: "Auditar Contrato", prompt: "Audita este smart contract: " },
-  { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: " },
+  { icon: Code2, label: "ANALIZADOR", prompt: "Analiza este código buscando vulnerabilidades: " },
+  { icon: Globe, label: "BUSCADOR", prompt: "Busca en la web: " },
+  { icon: Sparkles, label: "GENERADOR", prompt: "Genera un thread viral para X/Twitter sobre: " },
+  { icon: Link2, label: "WEB3/DAO", prompt: "Analiza este protocolo DeFi o contrato: " },
 ];
 
 export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps) {
@@ -59,6 +58,41 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
 
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-3xl mx-auto px-4 pb-4 pt-2">
+      {/* Tool buttons with labels */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        {TOOLS.map((tool) => {
+          const Icon = tool.icon;
+          return (
+            <button
+              key={tool.label}
+              type="button"
+              onClick={() => handleToolClick(tool.prompt)}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card/30 hover:bg-card/60 hover:border-secondary/30 text-[10px] font-mono text-muted-foreground/60 hover:text-secondary transition-all disabled:opacity-30"
+            >
+              <Icon className="h-3 w-3" />
+              <span className="font-heading tracking-wider">{tool.label}</span>
+            </button>
+          );
+        })}
+
+        {supportsVision && (
+          <>
+            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isLoading}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-card/30 hover:bg-card/60 hover:border-secondary/30 text-[10px] font-mono text-muted-foreground/60 hover:text-secondary transition-all disabled:opacity-30"
+            >
+              <ImagePlus className="h-3 w-3" />
+              <span className="font-heading tracking-wider">IMAGEN</span>
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Image preview */}
       {imageData && (
         <div className="relative mb-2 inline-block">
           <img src={imageData} alt="Preview" className="h-16 rounded-lg border border-border object-contain bg-card/40" />
@@ -72,49 +106,8 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
         </div>
       )}
 
+      {/* Input bar */}
       <div className="relative flex items-end gap-2 rounded-2xl border border-border bg-card/60 backdrop-blur-sm px-3 py-2 focus-within:border-secondary/50 focus-within:ring-1 focus-within:ring-secondary/20 transition-all">
-        {/* Tool buttons row */}
-        <TooltipProvider delayDuration={200}>
-          <div className="flex items-center gap-0.5 shrink-0">
-            {supportsVision && (
-              <>
-                <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={isLoading}
-                      className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-secondary hover:bg-muted/30 transition-colors disabled:opacity-30"
-                    >
-                      <ImagePlus className="h-4 w-4" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="top" className="text-xs font-mono">Subir imagen</TooltipContent>
-                </Tooltip>
-              </>
-            )}
-            {TOOLS.map((tool, i) => (
-              <Tooltip key={i}>
-                <TooltipTrigger asChild>
-                  <button
-                    type="button"
-                    onClick={() => handleToolClick(tool.prompt)}
-                    disabled={isLoading}
-                    className="shrink-0 p-1.5 rounded-lg text-muted-foreground/50 hover:text-secondary hover:bg-muted/30 transition-colors disabled:opacity-30"
-                  >
-                    <tool.icon className="h-4 w-4" />
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs font-mono">{tool.label}</TooltipContent>
-              </Tooltip>
-            ))}
-          </div>
-        </TooltipProvider>
-
-        {/* Divider */}
-        <div className="w-px h-5 bg-border/50 shrink-0" />
-
         {/* Command prefix */}
         <span className="text-xs font-mono text-secondary/60 shrink-0 pb-1.5 select-none hidden sm:block">AITOR &gt;</span>
 
@@ -124,7 +117,7 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Escribe un mensaje..."
+          placeholder="Pregunta al oráculo..."
           disabled={isLoading}
           rows={1}
           className="flex-1 min-h-[36px] max-h-[200px] resize-none bg-transparent border-none p-0 pb-1 text-sm font-mono text-foreground placeholder:text-muted-foreground/40 focus:outline-none focus:ring-0 disabled:opacity-50"
