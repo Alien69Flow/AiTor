@@ -12,7 +12,11 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const {
+    messages, isLoading, isSearching, sendMessage, clearChat,
+    conversations, currentConversationId, startNewConversation,
+    loadConversation, deleteConversation,
+  } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -20,6 +24,10 @@ export function ChatContainer() {
 
   const handleSend = (content: string, imageData?: string) => {
     sendMessage(content, selectedModel, imageData);
+  };
+
+  const handleNewChat = () => {
+    startNewConversation();
   };
 
   useEffect(() => {
@@ -31,18 +39,30 @@ export function ChatContainer() {
     }
   }, [messages, isLoading]);
 
+  const conversationTitle = conversations.find(c => c.id === currentConversationId)?.title;
+
   return (
     <div className="flex-1 flex flex-row min-h-0 bg-background relative">
-      <AgentSidebar isOpen={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <AgentSidebar
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        conversations={conversations}
+        currentConversationId={currentConversationId}
+        onSelectConversation={loadConversation}
+        onDeleteConversation={deleteConversation}
+        onNewConversation={handleNewChat}
+      />
 
       <div className="flex-1 flex flex-col min-h-0">
         <ChatHeader
           selectedModel={selectedModel}
           onModelChange={setSelectedModel}
           onClear={clearChat}
+          onNewChat={handleNewChat}
           hasMessages={messages.length > 0}
           onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
           sidebarOpen={sidebarOpen}
+          conversationTitle={conversationTitle}
         />
 
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
@@ -51,7 +71,7 @@ export function ChatContainer() {
           ) : (
             <div className="flex flex-col">
               {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
-              {isLoading && <ThinkingIndicator />}
+              {isLoading && <ThinkingIndicator isSearching={isSearching} />}
             </div>
           )}
         </ScrollArea>

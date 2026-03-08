@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, Wallet, PanelLeftOpen, PanelLeftClose, Zap } from "lucide-react";
+import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -11,12 +11,14 @@ interface ChatHeaderProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
   onClear: () => void;
+  onNewChat: () => void;
   hasMessages: boolean;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
+  conversationTitle?: string;
 }
 
-export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages, onToggleSidebar, sidebarOpen }: ChatHeaderProps) {
+export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, conversationTitle }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -41,11 +43,13 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
 
         <div className="flex items-center gap-2.5">
           <img src={alienflowLogo} alt="AlienFlow" className="w-7 h-7 object-contain" />
-          <div className="flex flex-col leading-none">
-            <span className="text-sm font-heading font-bold tracking-wider text-foreground">AI Tor</span>
+          <div className="flex flex-col leading-none min-w-0">
+            <span className="text-sm font-heading font-bold tracking-wider text-foreground">
+              {conversationTitle ? conversationTitle : "AI Tor"}
+            </span>
             <div className="flex items-center gap-1.5">
               <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
-              <span className="text-[9px] text-muted-foreground/50">
+              <span className="text-[9px] text-muted-foreground/50 truncate">
                 {currentModel?.name || "Oracle"}
               </span>
             </div>
@@ -60,10 +64,19 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1">
-        {/* Mobile model selector */}
         <div className="md:hidden">
           <ModelSelector value={selectedModel} onChange={onModelChange} />
         </div>
+
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onNewChat}
+          className="h-9 w-9 text-muted-foreground/40 hover:text-primary"
+          title="Nuevo chat"
+        >
+          <Plus className="h-4 w-4" />
+        </Button>
 
         {hasMessages && (
           <Button
@@ -71,7 +84,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
             size="icon"
             onClick={onClear}
             className="h-9 w-9 text-muted-foreground/40 hover:text-destructive"
-            title="Nuevo chat"
+            title="Limpiar chat"
           >
             <Trash2 className="h-4 w-4" />
           </Button>
