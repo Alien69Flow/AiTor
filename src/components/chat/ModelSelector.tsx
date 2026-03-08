@@ -154,7 +154,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                         >
                           <div className={cn(
                             "w-9 h-9 rounded-lg border flex items-center justify-center text-base shrink-0 transition-all duration-200",
-                            isSelected ? "bg-primary/15 border-primary/30 shadow-[0_0_12px_hsl(var(--primary)/0.15)]" : "bg-muted/20 border-border/50"
+                            isSelected ? "bg-primary/15 border-primary/30" : "bg-muted/20 border-border/50"
                           )}>
                             {getIcon(model)}
                           </div>
