@@ -21,6 +21,14 @@ interface ChatHeaderProps {
 export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, conversationTitle }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [isCompact, setIsCompact] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsCompact(window.innerWidth < 500);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -28,7 +36,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
   };
 
   return (
-    <header className="h-12 flex items-center justify-between px-2 sm:px-3 border-b border-border/60 bg-card/40 backdrop-blur-md shrink-0">
+    <header className={`flex items-center justify-between border-b border-border/60 bg-card/40 backdrop-blur-md shrink-0 ${isCompact ? "h-10 px-1.5" : "h-12 px-2 sm:px-3"}`}>
       {/* Left */}
       <div className="flex items-center gap-1.5 min-w-0">
         <Button
