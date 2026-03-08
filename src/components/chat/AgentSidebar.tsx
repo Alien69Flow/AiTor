@@ -71,7 +71,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
         variant="ghost"
         size="icon"
         onClick={onToggle}
-        className="absolute top-2 left-2 z-40 h-8 w-8 text-primary/50 hover:text-primary lg:hidden"
+        className="absolute top-2 left-2 z-40 h-8 w-8 text-primary/50 hover:text-primary"
       >
         {isOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
       </Button>

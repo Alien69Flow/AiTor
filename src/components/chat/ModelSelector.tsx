@@ -9,10 +9,11 @@ interface ModelSelectorProps {
 }
 
 const getOracleIcon = (id: string) => {
-  if (id.includes('gemini')) return "🔮";
-  if (id.includes('gpt')) return "⚡";
-  if (id.includes('deepseek')) return "🌊";
+  if (id === 'google/gemini-2.5-pro') return "👽";
+  if (id.includes('gemini')) return "⚡";
+  if (id.includes('gpt')) return "🧠";
   if (id.includes('grok')) return "🚀";
+  if (id.includes('deepseek')) return "🌊";
   if (id.includes('claude')) return "🎭";
   if (id.includes('chaingpt')) return "🔗";
   if (id.includes('chainlink')) return "⛓️";

@@ -38,7 +38,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
         {/* Left: Brand + Oracle Status */}
         <div className="flex items-center gap-3 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-lg">👽</span>
+            <span className="text-lg">⚡</span>
             <div className="flex flex-col">
               <span className="text-sm font-heading text-primary neon-text-gold tracking-wider leading-tight">
                 AI Tor
