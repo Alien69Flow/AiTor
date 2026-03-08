@@ -7,7 +7,7 @@ import { ComingSoonTab } from "@/components/dashboard/ComingSoonTab";
 import { SpaceBackground } from "@/components/SpaceBackground";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<TabId>("terminal");
+  const [activeTab, setActiveTab] = useState<TabId>("markets");
 
   return (
     <>
