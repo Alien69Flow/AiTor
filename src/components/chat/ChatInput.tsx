@@ -20,11 +20,11 @@ interface ChatInputProps {
 }
 
 const TOOLS = [
-  { icon: Search, label: "Búsqueda Web", prompt: "Busca en la web: ", shortcut: "⌘K", color: "text-blue-400" },
-  { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: ", shortcut: "⌘J", color: "text-emerald-400" },
-  { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: ", shortcut: "⌘G", color: "text-purple-400" },
-  { icon: Link2, label: "Web3 & DeFi", prompt: "Analiza este protocolo DeFi o contrato: ", shortcut: "⌘W", color: "text-amber-400" },
-  { icon: FileText, label: "Analizar Documento", prompt: "Analiza el siguiente documento: ", shortcut: "⌘D", color: "text-cyan-400" },
+  { icon: Search, label: "Búsqueda Web", prompt: "Busca en la web: ", shortcut: "⌘K" },
+  { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: ", shortcut: "⌘J" },
+  { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: ", shortcut: "⌘G" },
+  { icon: Link2, label: "Web3 & DeFi", prompt: "Analiza este protocolo DeFi o contrato: ", shortcut: "⌘W" },
+  { icon: FileText, label: "Analizar Documento", prompt: "Analiza el siguiente documento: ", shortcut: "⌘D" },
 ];
 
 export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps) {
