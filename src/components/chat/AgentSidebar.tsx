@@ -83,7 +83,7 @@ export function AgentSidebar({ isOpen, onToggle }: AgentSidebarProps) {
           <div className="flex flex-col items-center gap-3 mb-6 mt-2">
             <div className="relative">
               <div className="w-16 h-16 rounded-2xl border border-primary/20 bg-card/60 flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(var(--primary-rgb),0.15)] transition-all duration-500 overflow-hidden">
-                <span className="drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">👽</span>
+                <span className="drop-shadow-[0_0_8px_rgba(255,255,255,0.3)]">⚡</span>
               </div>
               <div className={`absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full border-2 border-card ${user ? 'bg-secondary shadow-[0_0_8px_hsl(75,100%,34%,0.5)]' : 'bg-muted-foreground/40'}`} />
             </div>
