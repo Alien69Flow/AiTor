@@ -1,169 +1,114 @@
-import { useState, useEffect } from "react";
-import { Cpu, Brain, Atom, FlaskConical, Orbit, Code2, Zap, Link2 } from "lucide-react";
-
-const BOOT_SEQUENCE = [
-  { text: "INITIALIZING AI_TOR.v69...", delay: 0 },
-  { text: "QUANTUM_CORE: SYNCHRONIZED", delay: 300 },
-  { text: "BLOCKCHAIN_NODE: CONNECTED", delay: 600 },
-  { text: "NEURAL_MATRIX: ACTIVATED", delay: 900 },
-  { text: "TESLA_FREQUENCY: 3-6-9 ALIGNED", delay: 1200 },
-  { text: "ORACULOS_WEB5: ONLINE", delay: 1500 },
-  { text: "CONSCIOUSNESS_BRIDGE: ESTABLISHED", delay: 1800 },
-  { text: "MATRIX_BYPASS: COMPLETE", delay: 2100 },
-];
+import { Brain, Atom, Code2, Link2, Zap, Sparkles } from "lucide-react";
+import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const CAPABILITIES = [
   { 
-    symbol: "Δ", 
     icon: Link2,
-    label: "Blockchain/Web3", 
-    description: "DeFi, Smart Contracts, Bitcoin, Tokenomics",
-    status: "READY",
-    color: "text-primary" 
+    label: "Blockchain & Web3", 
+    description: "DeFi, Smart Contracts, Tokenomics",
+    color: "border-primary/20 hover:border-primary/40" 
   },
   { 
-    symbol: "π", 
     icon: Brain,
-    label: "Neural Networks/Web4", 
-    description: "ML, Deep Learning, AGI, Transformers",
-    status: "ONLINE",
-    color: "text-secondary" 
+    label: "Neural Networks", 
+    description: "ML, Deep Learning, Transformers",
+    color: "border-secondary/20 hover:border-secondary/40" 
   },
   { 
-    symbol: "Φ", 
     icon: Atom,
-    label: "Quantum/Web5", 
-    description: "Qubits, Post-Quantum Crypto, Superposición",
-    status: "SYNCED",
-    color: "text-primary" 
+    label: "Quantum Computing", 
+    description: "Post-Quantum Crypto, Qubits",
+    color: "border-primary/20 hover:border-primary/40" 
   },
   { 
-    symbol: "Ω", 
-    icon: FlaskConical,
-    label: "Alquimia", 
-    description: "Transmutación, Hermetismo, Filosofía",
-    status: "ACTIVE",
-    color: "text-secondary" 
-  },
-  { 
-    symbol: "ψ", 
-    icon: Orbit,
-    label: "Física Cuántica", 
-    description: "Neutrinos, Cuerdas, Cosmología",
-    status: "CALIBRATED",
-    color: "text-primary" 
-  },
-  { 
-    symbol: "∞", 
     icon: Code2,
     label: "Código & Arquitectura", 
-    description: "Software, Optimización, DevOps",
-    status: "COMPILED",
-    color: "text-secondary" 
+    description: "Software, DevOps, Optimización",
+    color: "border-secondary/20 hover:border-secondary/40" 
   },
 ];
 
-export function EmptyState() {
-  const [visibleLines, setVisibleLines] = useState(0);
-  const [showCapabilities, setShowCapabilities] = useState(false);
-  const [bootComplete, setBootComplete] = useState(false);
+const QUICK_PROMPTS = [
+  "¿Qué es DeFi y cómo funciona?",
+  "Explica los Smart Contracts",
+  "Analiza este código por vulnerabilidades",
+  "¿Cómo funciona la computación cuántica?",
+  "Genera una arquitectura Web3",
+  "Optimiza mi algoritmo",
+];
 
-  useEffect(() => {
-    const timers: NodeJS.Timeout[] = [];
+interface EmptyStateProps {
+  onPromptClick?: (prompt: string) => void;
+}
 
-    BOOT_SEQUENCE.forEach((_, index) => {
-      const timer = setTimeout(() => {
-        setVisibleLines(index + 1);
-      }, BOOT_SEQUENCE[index].delay);
-      timers.push(timer);
-    });
-
-    const capTimer = setTimeout(() => {
-      setShowCapabilities(true);
-    }, 2400);
-    timers.push(capTimer);
-
-    const bootTimer = setTimeout(() => {
-      setBootComplete(true);
-    }, 2800);
-    timers.push(bootTimer);
-
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
+export function EmptyState({ onPromptClick }: EmptyStateProps) {
   return (
-    <div className="flex flex-1 flex-col items-start justify-center p-4 font-mono text-xs">
-      {/* Boot sequence */}
-      <div className="space-y-0.5 mb-4 w-full">
-        {BOOT_SEQUENCE.slice(0, visibleLines).map((line, index) => (
-          <div key={index} className="flex items-center gap-2 animate-fade-in">
-            <span className="text-secondary">&gt;</span>
-            <span className={index === 0 ? "text-primary neon-text-gold" : "text-muted-foreground"}>
-              {line.text}
-            </span>
-            <span className="text-secondary text-[10px]">[OK]</span>
-          </div>
-        ))}
+    <div className="flex flex-1 flex-col items-center justify-center p-6 sm:p-8 min-h-[60vh]">
+      {/* Logo + Brand */}
+      <div className="flex flex-col items-center gap-4 mb-8">
+        <div className="relative">
+          <img 
+            src={alienflowLogo} 
+            alt="AlienFlow" 
+            className="w-20 h-20 sm:w-24 sm:h-24 object-contain drop-shadow-[0_0_20px_rgba(var(--primary-rgb),0.4)]"
+          />
+          <div className="absolute -inset-3 rounded-full bg-primary/5 blur-xl animate-pulse pointer-events-none" />
+        </div>
+        
+        <div className="text-center">
+          <h1 className="text-2xl sm:text-3xl font-heading text-primary neon-text-gold tracking-wider">
+            AI Tor
+          </h1>
+          <p className="text-sm text-muted-foreground/70 mt-1 font-mono">
+            Oráculo de Inteligencia Artificial Multimodal
+          </p>
+          <p className="text-[10px] text-secondary/50 font-mono tracking-widest uppercase mt-1">
+            ΔlieπFlΦw DAO Synapse Collective
+          </p>
+        </div>
       </div>
 
-      {showCapabilities && (
-        <div className="w-full space-y-3 animate-fade-in">
-          <div className="border-t border-secondary/30 pt-3">
-            <div className="flex items-center gap-2">
-              <Zap className="w-3 h-3 text-primary animate-pulse" />
-              <span className="text-secondary text-[10px] tracking-widest uppercase">
-                Módulos de Especialización Activos
-              </span>
+      {/* Capability cards */}
+      <div className="grid grid-cols-2 gap-3 w-full max-w-md mb-8">
+        {CAPABILITIES.map((cap) => {
+          const IconComp = cap.icon;
+          return (
+            <div 
+              key={cap.label}
+              className={`flex items-start gap-3 p-3 rounded-xl border bg-card/30 backdrop-blur-sm ${cap.color} transition-all duration-300 cursor-default hover:bg-card/50 group`}
+            >
+              <div className="p-2 rounded-lg bg-card/60 border border-secondary/10 group-hover:border-secondary/30 transition-colors">
+                <IconComp className="w-4 h-4 text-secondary/70 group-hover:text-secondary transition-colors" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-xs font-heading text-foreground/80 tracking-wide">{cap.label}</span>
+                <span className="text-[10px] text-muted-foreground/60 mt-0.5">{cap.description}</span>
+              </div>
             </div>
-          </div>
+          );
+        })}
+      </div>
 
-          <div className="grid grid-cols-2 gap-2">
-            {CAPABILITIES.map((cap, index) => {
-              const IconComponent = cap.icon;
-              return (
-                <div 
-                  key={cap.symbol}
-                  className="group flex items-start gap-2 px-2 py-2 rounded border border-secondary/20 bg-card/40 hover:border-secondary/50 hover:bg-card/60 transition-all duration-300 cursor-default"
-                  style={{ animationDelay: `${index * 100}ms` }}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <span className={`text-lg ${cap.color} font-heading`}>{cap.symbol}</span>
-                    <IconComponent className={`w-3 h-3 ${cap.color} opacity-60 group-hover:opacity-100 transition-opacity`} />
-                  </div>
-                  <div className="flex flex-col flex-1 min-w-0">
-                    <span className="text-foreground text-[10px] font-medium truncate">{cap.label}</span>
-                    <span className="text-muted-foreground text-[8px] truncate">{cap.description}</span>
-                    <span className={`${cap.color} text-[8px] mt-0.5`}>{cap.status}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {bootComplete && (
-            <>
-              <div className="pt-2 border-t border-secondary/20">
-                <div className="flex items-center gap-2">
-                  <span className="text-secondary">&gt;</span>
-                  <span className="text-primary neon-text-gold">SISTEMA_LISTO</span>
-                  <span className="text-secondary animate-pulse">_</span>
-                </div>
-                <p className="text-muted-foreground/70 text-[9px] mt-1 pl-4">
-                  Inicia una conversación para consultar los oráculos...
-                </p>
-              </div>
-
-              <div className="flex items-center justify-between text-[8px] text-muted-foreground/50 pt-2">
-                <span>v.ΓΩΣΖ | ΔlieπFlΦw DAO Synapse Collective</span>
-                <div className="flex items-center gap-1">
-                  <Cpu className="w-2.5 h-2.5" />
-                  <span>Web 3+4+5</span>
-                </div>
-              </div>
-            </>
-          )}
+      {/* Quick prompts */}
+      <div className="w-full max-w-lg">
+        <div className="flex items-center gap-2 justify-center mb-3">
+          <Sparkles className="w-3 h-3 text-primary/50" />
+          <span className="text-[10px] font-heading text-muted-foreground/50 tracking-widest uppercase">
+            Sugerencias rápidas
+          </span>
         </div>
-      )}
+        <div className="flex flex-wrap justify-center gap-2">
+          {QUICK_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              onClick={() => onPromptClick?.(prompt)}
+              className="px-3 py-1.5 text-[11px] font-mono text-muted-foreground/70 bg-card/40 border border-secondary/15 rounded-full hover:border-primary/30 hover:text-foreground/80 hover:bg-card/60 transition-all duration-200 cursor-pointer"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }

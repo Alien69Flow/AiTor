@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/hooks/useChat";
-import { User, Bot, Clock, Terminal } from "lucide-react";
+import { User, Bot, Clock } from "lucide-react";
 
 interface ChatMessageProps {
   message: Message;
@@ -13,74 +13,65 @@ export function ChatMessage({ message }: ChatMessageProps) {
     return date.toLocaleTimeString([], { 
       hour: '2-digit', 
       minute: '2-digit',
-      second: '2-digit',
       hour12: false 
     });
   };
 
   return (
     <div className={cn(
-      "group relative py-6 px-4 transition-all duration-300",
-      isUser 
-        ? "bg-transparent" 
-        : "bg-secondary/5 backdrop-blur-sm border-y border-secondary/10"
+      "flex gap-3 w-full",
+      isUser ? "flex-row-reverse" : "flex-row"
     )}>
-      {/* Indicador lateral neón */}
+      {/* Avatar */}
       <div className={cn(
-        "absolute left-0 top-0 bottom-0 w-1 transition-all duration-500",
-        isUser ? "bg-primary/20 group-hover:bg-primary/60" : "bg-secondary/20 group-hover:bg-secondary/60"
-      )} />
+        "flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center border",
+        isUser 
+          ? "bg-primary/10 border-primary/30" 
+          : "bg-secondary/10 border-secondary/30"
+      )}>
+        {isUser ? (
+          <User className="w-4 h-4 text-primary" />
+        ) : (
+          <span className="text-base">👽</span>
+        )}
+      </div>
 
-      <div className="max-w-3xl mx-auto">
-        {/* Header: Avatar, Rol y Meta */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-3">
-            <div className={cn(
-              "p-1.5 rounded-md border",
-              isUser 
-                ? "bg-primary/10 border-primary/30 text-primary" 
-                : "bg-secondary/10 border-secondary/30 text-secondary"
-            )}>
-              {isUser ? <User className="w-3.5 h-3.5" /> : <Bot className="w-3.5 h-3.5" />}
-            </div>
-            <div className="flex flex-col">
-              <span className={cn(
-                "text-[10px] font-heading tracking-[0.15em] uppercase",
-                isUser ? "text-primary/80" : "text-secondary/80"
-              )}>
-                {isUser ? "Authorized_User" : "AI_Tor_Oracle"}
-              </span>
-              <div className="flex items-center gap-2 mt-0.5">
-                <Clock className="w-2.5 h-2.5 text-muted-foreground/40" />
-                <span className="text-[9px] font-mono text-muted-foreground/40">
-                  {formatTimestamp(message.timestamp)}
-                </span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <Terminal className="w-3 h-3 text-muted-foreground/30" />
-            <span className="text-[8px] font-mono text-muted-foreground/30">
-              ID: {message.id.slice(0, 8)}
-            </span>
-          </div>
+      {/* Bubble */}
+      <div className={cn(
+        "flex flex-col max-w-[80%] min-w-0",
+        isUser ? "items-end" : "items-start"
+      )}>
+        {/* Name + Time */}
+        <div className={cn(
+          "flex items-center gap-2 mb-1 px-1",
+          isUser ? "flex-row-reverse" : "flex-row"
+        )}>
+          <span className="text-[10px] font-heading tracking-wider uppercase text-muted-foreground/60">
+            {isUser ? "Tú" : "AI Tor"}
+          </span>
+          <span className="text-[9px] font-mono text-muted-foreground/40 flex items-center gap-1">
+            <Clock className="w-2.5 h-2.5" />
+            {formatTimestamp(message.timestamp)}
+          </span>
         </div>
 
-        {/* Contenido de Imagen */}
+        {/* Image */}
         {message.imageData && (
-          <div className="relative mb-4 mt-2 overflow-hidden rounded-lg border border-secondary/20 bg-black/40 p-1 group/img">
+          <div className="mb-2 overflow-hidden rounded-xl border border-secondary/20 bg-card/40 p-1">
             <img 
               src={message.imageData} 
               alt="Uploaded context" 
-              className="max-h-[300px] w-auto rounded-md object-contain transition-transform duration-500 group-hover/img:scale-[1.02]"
+              className="max-h-[250px] w-auto rounded-lg object-contain"
             />
           </div>
         )}
 
+        {/* Content bubble */}
         <div className={cn(
-          "font-mono text-sm leading-relaxed whitespace-pre-wrap break-words",
-          isUser ? "text-foreground/90 pl-1" : "text-muted-foreground/90 pl-1"
+          "px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap break-words",
+          isUser 
+            ? "bg-primary/10 border border-primary/20 text-foreground/90 rounded-tr-md" 
+            : "bg-card/60 border border-secondary/15 text-muted-foreground/90 rounded-tl-md backdrop-blur-sm"
         )}>
           {message.content}
         </div>
