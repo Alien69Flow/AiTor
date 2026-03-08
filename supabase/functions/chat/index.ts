@@ -1,4 +1,4 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// Edge function for AI chat routing
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
