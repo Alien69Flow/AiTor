@@ -1,8 +1,15 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, X, TrendingUp, TrendingDown, MapPin, AlertTriangle } from "lucide-react";
+import type { HotspotData } from "@/components/globe/GlobeScene";
+import { supabase } from "@/integrations/supabase/client";
 
-export function GlobeOverlay() {
+interface GlobeOverlayProps {
+  selectedHotspot?: HotspotData | null;
+  onClose?: () => void;
+}
+
+export function GlobeOverlay({ selectedHotspot, onClose }: GlobeOverlayProps) {
   const [tensionLevel, setTensionLevel] = useState(53);
 
   useEffect(() => {
@@ -21,7 +28,7 @@ export function GlobeOverlay() {
 
   return (
     <>
-      {/* Global Tension indicator - centered top */}
+      {/* Global Tension indicator */}
       <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
         <div className="flex items-center gap-2 px-4 py-1.5 rounded-full bg-card/70 backdrop-blur-md border border-border/30">
           <span className={`w-2 h-2 rounded-full ${tensionLevel > 70 ? "bg-destructive" : tensionLevel > 40 ? "bg-primary" : "bg-secondary"} animate-pulse`} />
@@ -31,6 +38,11 @@ export function GlobeOverlay() {
           <HelpCircle className="w-3 h-3 text-muted-foreground/30" />
         </div>
       </div>
+
+      {/* Country Popup */}
+      {selectedHotspot && (
+        <CountryPopup hotspot={selectedHotspot} onClose={onClose} />
+      )}
 
       {/* Market Volume - bottom left */}
       <div className="absolute bottom-16 left-4 z-10">
@@ -48,18 +60,15 @@ export function GlobeOverlay() {
         </div>
       </div>
 
-      {/* Legend - bottom center */}
+      {/* Legend */}
       <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
         <div className="flex items-center gap-4 px-4 py-2 rounded-full bg-card/70 backdrop-blur-md border border-border/30">
           {[
             { label: "All", color: "bg-foreground/80", active: true },
-            { label: "ISR", color: "bg-destructive" },
-            { label: "VIP", color: "bg-primary" },
-            { label: "Bomber", color: "bg-destructive/70" },
-            { label: "Command", color: "bg-destructive/50" },
-            { label: "Tanker", color: "bg-primary/70" },
-            { label: "Transport", color: "bg-primary/50" },
-            { label: "Fighter", color: "bg-secondary" },
+            { label: "Conflict", color: "bg-destructive" },
+            { label: "Finance", color: "bg-primary" },
+            { label: "Tech", color: "bg-secondary" },
+            { label: "Geopolitical", color: "bg-primary/70" },
           ].map((item) => (
             <button
               key={item.label}
@@ -76,5 +85,96 @@ export function GlobeOverlay() {
         </div>
       </div>
     </>
+  );
+}
+
+function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: () => void }) {
+  const [uapCount, setUapCount] = useState(0);
+
+  useEffect(() => {
+    // Fetch nearby UAP sightings count
+    const fetchUAP = async () => {
+      const { count } = await supabase
+        .from("uap_sightings")
+        .select("*", { count: "exact", head: true });
+      setUapCount(count || 0);
+    };
+    fetchUAP();
+  }, [hotspot]);
+
+  const trendPositive = hotspot.trend.startsWith("+");
+  const typeColors: Record<string, string> = {
+    conflict: "border-destructive/50 bg-destructive/5",
+    finance: "border-primary/50 bg-primary/5",
+    tech: "border-secondary/50 bg-secondary/5",
+    geopolitical: "border-primary/30 bg-primary/5",
+  };
+
+  return (
+    <div className="absolute top-16 right-4 z-20 w-72">
+      <div className={`bg-card/90 backdrop-blur-xl border rounded-lg overflow-hidden ${typeColors[hotspot.type] || "border-border/30"}`}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/20">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-3.5 h-3.5 text-primary" />
+            <div>
+              <span className="text-xs font-bold text-foreground">{hotspot.name}</span>
+              <span className="text-[10px] text-muted-foreground ml-1.5">{hotspot.country}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-muted/30 rounded transition-colors">
+            <X className="w-3.5 h-3.5 text-muted-foreground" />
+          </button>
+        </div>
+
+        {/* Market Data */}
+        <div className="px-3 py-2 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Market Volume</span>
+            <span className="text-sm font-mono font-bold text-foreground">{hotspot.marketVolume}</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider">24h Trend</span>
+            <div className="flex items-center gap-1">
+              {trendPositive ? (
+                <TrendingUp className="w-3 h-3 text-secondary" />
+              ) : (
+                <TrendingDown className="w-3 h-3 text-destructive" />
+              )}
+              <span className={`text-sm font-mono font-bold ${trendPositive ? "text-secondary" : "text-destructive"}`}>
+                {hotspot.trend}
+              </span>
+            </div>
+          </div>
+          <div>
+            <span className="text-[10px] text-muted-foreground uppercase tracking-wider block mb-1">Top Tokens</span>
+            <div className="flex gap-1 flex-wrap">
+              {hotspot.topTokens.map((t) => (
+                <Badge key={t} variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-muted/20 text-foreground/80 border-border/30">
+                  {t}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* UAP Data */}
+        <div className="px-3 py-2 border-t border-border/20">
+          <div className="flex items-center gap-1.5">
+            <AlertTriangle className="w-3 h-3 text-primary/60" />
+            <span className="text-[10px] text-muted-foreground">
+              {uapCount} UAP reports in database
+            </span>
+          </div>
+        </div>
+
+        {/* Type badge */}
+        <div className="px-3 pb-2">
+          <Badge variant="outline" className="text-[9px] uppercase tracking-wider">
+            {hotspot.type} zone
+          </Badge>
+        </div>
+      </div>
+    </div>
   );
 }

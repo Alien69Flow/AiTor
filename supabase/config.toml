@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.ufo-feed]
 verify_jwt = false
+
+[functions.crypto-feed]
+verify_jwt = false

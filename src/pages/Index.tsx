@@ -3,10 +3,14 @@ import { Helmet } from "react-helmet-async";
 import { TopNavBar, TabId } from "@/components/dashboard/TopNavBar";
 import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
 import { ChatContainer } from "@/components/chat/ChatContainer";
-import { ComingSoonTab } from "@/components/dashboard/ComingSoonTab";
 import { SpaceBackground } from "@/components/SpaceBackground";
 import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
 import { UFOMonitorTab } from "@/components/dashboard/UFOMonitorTab";
+import { FeedTab } from "@/components/dashboard/FeedTab";
+import { MoversTab } from "@/components/dashboard/MoversTab";
+import { PortfolioTab } from "@/components/dashboard/PortfolioTab";
+import { AlertsTab } from "@/components/dashboard/AlertsTab";
+import { MonitorTab } from "@/components/dashboard/MonitorTab";
 
 const Index = () => {
   const [activeTab, setActiveTab] = useState<TabId>("markets");
@@ -23,12 +27,22 @@ const Index = () => {
         );
       case "markets":
         return <GlobeDashboard />;
+      case "feed":
+        return <FeedTab />;
+      case "movers":
+        return <MoversTab />;
+      case "portfolio":
+        return <PortfolioTab />;
+      case "alerts":
+        return <AlertsTab />;
+      case "monitor":
+        return <MonitorTab />;
       case "ufo":
         return <UFOMonitorTab />;
       case "solar":
         return <SolarSystemTab />;
       default:
-        return <ComingSoonTab title={activeTab.charAt(0).toUpperCase() + activeTab.slice(1)} />;
+        return null;
     }
   };
 
