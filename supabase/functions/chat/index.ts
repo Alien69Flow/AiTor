@@ -343,6 +343,8 @@ serve(async (req) => {
     try {
       if (GROK_MODELS.includes(model)) {
         response = await routeToGrok(model, processedMessages);
+      } else if (ANTHROPIC_MODELS.includes(model)) {
+        response = await routeToAnthropic(model, processedMessages);
       } else {
         response = await routeToLovable(model, processedMessages);
       }
