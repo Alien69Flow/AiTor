@@ -63,15 +63,21 @@ function hexToColor(hex: string, alpha = 1): Color {
   return new Color(r, g, b, alpha);
 }
 
+type LayerKey = "markets" | "uap" | "cryptozoo";
+
 interface CesiumGlobeProps {
   onHotspotClick?: (data: HotspotData | null) => void;
   sightings?: UAPSighting[];
+  visibleLayers?: Set<LayerKey>;
+  flyTo?: { lat: number; lon: number; alt: number } | null;
 }
 
-export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps) {
+export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, flyTo }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
+  const marketEntityIdsRef = useRef<string[]>([]);
+  const arcEntityIdsRef = useRef<string[]>([]);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => {
@@ -87,22 +93,12 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
     Ion.defaultAccessToken = CESIUM_TOKEN;
 
     const viewer = new CesiumViewer(containerRef.current, {
-      animation: false,
-      baseLayerPicker: false,
-      fullscreenButton: false,
-      geocoder: false,
-      homeButton: false,
-      infoBox: false,
-      sceneModePicker: false,
-      selectionIndicator: false,
-      timeline: false,
-      navigationHelpButton: false,
+      animation: false, baseLayerPicker: false, fullscreenButton: false,
+      geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
+      selectionIndicator: false, timeline: false, navigationHelpButton: false,
       creditContainer: document.createElement("div"),
-      skyBox: false,
-      skyAtmosphere: undefined,
-      contextOptions: {
-        webgl: { alpha: true },
-      },
+      skyBox: false, skyAtmosphere: undefined,
+      contextOptions: { webgl: { alpha: true } },
     });
 
     viewer.scene.backgroundColor = Color.TRANSPARENT;
@@ -110,65 +106,6 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
     viewer.scene.globe.atmosphereLightIntensity = 5.0;
 
     viewerRef.current = viewer;
-
-    // Add market hotspots
-    HOTSPOT_DATA.forEach((spot, idx) => {
-      const position = Cartesian3.fromDegrees(spot.lon, spot.lat, 0);
-      const pointSize = 8 + spot.intensity * 12;
-
-      viewer.entities.add({
-        position,
-        point: {
-          pixelSize: pointSize,
-          color: hexToColor(spot.color, 0.85),
-          outlineColor: hexToColor(spot.color, 0.4),
-          outlineWidth: 3,
-          scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.4),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: spot.name,
-          font: "11px monospace",
-          fillColor: Color.fromCssColorString("#00ff41"),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -14),
-          scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: { hotspotIndex: idx } as any,
-      });
-    });
-
-    // Add arcs
-    ARC_PAIRS.forEach(([a, b]) => {
-      if (!HOTSPOT_DATA[a] || !HOTSPOT_DATA[b]) return;
-      const start = HOTSPOT_DATA[a];
-      const end = HOTSPOT_DATA[b];
-      const arcPoints: Cartesian3[] = [];
-      const segments = 50;
-      for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        const lat = start.lat + (end.lat - start.lat) * t;
-        const lon = start.lon + (end.lon - start.lon) * t;
-        const alt = Math.sin(t * Math.PI) * 500000;
-        arcPoints.push(Cartesian3.fromDegrees(lon, lat, alt));
-      }
-
-      viewer.entities.add({
-        polyline: {
-          positions: arcPoints,
-          width: 1.5,
-          material: new PolylineGlowMaterialProperty({
-            glowPower: 0.3,
-            color: Color.fromCssColorString("#00ff41").withAlpha(0.4),
-          }),
-        },
-      });
-    });
 
     // Click handler
     const handler = new ScreenSpaceEventHandler(viewer.scene.canvas);
@@ -180,26 +117,19 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
           handleHotspotClick(HOTSPOT_DATA[idx]);
           return;
         }
-        // Check if it's a sighting entity
         const sightingData = picked.id.properties.sightingData?.getValue();
         if (sightingData) {
           try {
             const parsed = JSON.parse(sightingData);
             handleHotspotClick({
-              lat: parsed.lat,
-              lon: parsed.lon,
+              lat: parsed.lat, lon: parsed.lon,
               intensity: parsed.severity === "critical" ? 1 : parsed.severity === "high" ? 0.8 : 0.5,
               color: CATEGORY_COLORS[parsed.category] || "#00ffff",
-              name: parsed.location,
-              country: parsed.category?.toUpperCase() || "UAP",
-              marketVolume: parsed.source || "Unknown",
-              trend: parsed.date_reported || "",
-              topTokens: [parsed.type || "unknown"],
-              type: parsed.category || "uap",
+              name: parsed.location, country: parsed.category?.toUpperCase() || "UAP",
+              marketVolume: parsed.source || "Unknown", trend: parsed.date_reported || "",
+              topTokens: [parsed.type || "unknown"], type: parsed.category || "uap",
             });
-          } catch {
-            // ignore parse errors
-          }
+          } catch { /* ignore */ }
           return;
         }
       }
@@ -209,40 +139,114 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
     // Initial camera
     viewer.camera.flyTo({
       destination: Cartesian3.fromDegrees(20, 20, 20000000),
-      orientation: {
-        heading: CesiumMath.toRadians(0),
-        pitch: CesiumMath.toRadians(-90),
-        roll: 0,
-      },
+      orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
       duration: 0,
     });
 
     return () => {
       handler.destroy();
-      if (!viewer.isDestroyed()) {
-        viewer.destroy();
-      }
+      if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);
 
-  // Update sighting entities reactively
+  // Market hotspots layer
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    // Remove old sighting entities
+    // Remove old
+    marketEntityIdsRef.current.forEach(id => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    arcEntityIdsRef.current.forEach(id => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    marketEntityIdsRef.current = [];
+    arcEntityIdsRef.current = [];
+
+    const showMarkets = !visibleLayers || visibleLayers.has("markets");
+    if (!showMarkets) return;
+
+    HOTSPOT_DATA.forEach((spot, idx) => {
+      const entityId = `market-${idx}`;
+      const position = Cartesian3.fromDegrees(spot.lon, spot.lat, 0);
+      const pointSize = 8 + spot.intensity * 12;
+
+      viewer.entities.add({
+        id: entityId,
+        position,
+        point: {
+          pixelSize: pointSize,
+          color: hexToColor(spot.color, 0.85),
+          outlineColor: hexToColor(spot.color, 0.4),
+          outlineWidth: 3,
+          scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: spot.name, font: "11px monospace",
+          fillColor: Color.fromCssColorString("#00ff41"),
+          outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          horizontalOrigin: HorizontalOrigin.CENTER,
+          pixelOffset: new Cartesian2(0, -14),
+          scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: { hotspotIndex: idx } as any,
+      });
+      marketEntityIdsRef.current.push(entityId);
+    });
+
+    ARC_PAIRS.forEach(([a, b], arcIdx) => {
+      if (!HOTSPOT_DATA[a] || !HOTSPOT_DATA[b]) return;
+      const start = HOTSPOT_DATA[a], end = HOTSPOT_DATA[b];
+      const arcPoints: Cartesian3[] = [];
+      const segments = 50;
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        arcPoints.push(Cartesian3.fromDegrees(
+          start.lon + (end.lon - start.lon) * t,
+          start.lat + (end.lat - start.lat) * t,
+          Math.sin(t * Math.PI) * 500000
+        ));
+      }
+      const arcId = `arc-${arcIdx}`;
+      viewer.entities.add({
+        id: arcId,
+        polyline: {
+          positions: arcPoints, width: 1.5,
+          material: new PolylineGlowMaterialProperty({ glowPower: 0.3, color: Color.fromCssColorString("#00ff41").withAlpha(0.4) }),
+        },
+      });
+      arcEntityIdsRef.current.push(arcId);
+    });
+  }, [visibleLayers]);
+
+  // Sighting entities (UAP + Cryptozoo)
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
     sightingEntityIdsRef.current.forEach((id) => {
       const entity = viewer.entities.getById(id);
       if (entity) viewer.entities.remove(entity);
     });
     sightingEntityIdsRef.current = [];
 
-    // Add new sighting entities
     sightings.forEach((s) => {
       if (s.lat == null || s.lon == null) return;
 
       const cat = (s.category as string) || "uap";
+      // Filter by visible layers
+      if (visibleLayers) {
+        if ((cat === "uap" || cat === "ufo") && !visibleLayers.has("uap")) return;
+        if (cat === "cryptozoology" && !visibleLayers.has("cryptozoo")) return;
+      }
+
       const colorHex = CATEGORY_COLORS[cat] || "#00ffff";
       const size = SEVERITY_SIZE[s.severity || "signal"] || 6;
       const entityId = `sighting-${s.id}`;
@@ -262,9 +266,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
           text: `${cat === "cryptozoology" ? "🦎" : cat === "ufo" ? "🛸" : "◉"} ${s.location?.split(",")[0] || ""}`,
           font: "10px monospace",
           fillColor: hexToColor(colorHex, 0.9),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
+          outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
           verticalOrigin: VerticalOrigin.BOTTOM,
           horizontalOrigin: HorizontalOrigin.CENTER,
           pixelOffset: new Cartesian2(0, -12),
@@ -273,14 +275,8 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
         },
         properties: {
           sightingData: JSON.stringify({
-            lat: s.lat,
-            lon: s.lon,
-            location: s.location,
-            description: s.description,
-            type: s.type,
-            severity: s.severity,
-            source: s.source,
-            category: s.category,
+            lat: s.lat, lon: s.lon, location: s.location, description: s.description,
+            type: s.type, severity: s.severity, source: s.source, category: s.category,
             date_reported: s.date_reported,
           }),
         } as any,
@@ -288,13 +284,21 @@ export function CesiumGlobe({ onHotspotClick, sightings = [] }: CesiumGlobeProps
 
       sightingEntityIdsRef.current.push(entityId);
     });
-  }, [sightings]);
+  }, [sightings, visibleLayers]);
+
+  // Fly-to handler
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed() || !flyTo) return;
+
+    viewer.camera.flyTo({
+      destination: Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, flyTo.alt),
+      orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
+      duration: 1.5,
+    });
+  }, [flyTo]);
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full"
-      style={{ background: "transparent" }}
-    />
+    <div ref={containerRef} className="w-full h-full" style={{ background: "transparent" }} />
   );
 }

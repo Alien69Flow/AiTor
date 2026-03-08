@@ -31,7 +31,7 @@ const Index = () => {
       case "ufo": return <UFOMonitorTab />;
       case "solar": return <SolarSystemTab />;
       case "signals": return <SignalsTab />;
-      case "agents": return <AgentsTab />;
+      case "agents": return <AgentsTab onNavigateToChat={() => setActiveTab("terminal")} />;
       default: return null;
     }
   };

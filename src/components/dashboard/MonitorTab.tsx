@@ -1,58 +1,82 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Server, Zap, Database, Radio, Eye } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Activity, Server, Zap, Database, Radio, Eye, RefreshCw } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 
 interface SystemStatus {
   name: string;
-  status: "online" | "degraded" | "offline";
-  latency: string;
-  uptime: string;
+  endpoint: string;
+  action: string;
+  status: "online" | "degraded" | "offline" | "checking";
+  latency: number | null;
+  lastCheck: string | null;
   icon: React.ElementType;
 }
 
+const INITIAL_SYSTEMS: SystemStatus[] = [
+  { name: "AI Nexus (Chat)", endpoint: "chat", action: '{"message":"ping","model":"google/gemini-2.5-flash-lite"}', status: "checking", latency: null, lastCheck: null, icon: Zap },
+  { name: "Crypto Feed (CoinGecko)", endpoint: "crypto-feed", action: '{"action":"movers"}', status: "checking", latency: null, lastCheck: null, icon: Database },
+  { name: "Crypto Signals (Polymarket)", endpoint: "crypto-signals", action: '{"action":"all"}', status: "checking", latency: null, lastCheck: null, icon: Radio },
+  { name: "News Feed (Firecrawl)", endpoint: "firecrawl-search", action: '{"query":"crypto","limit":1}', status: "checking", latency: null, lastCheck: null, icon: Server },
+  { name: "UAP Feed", endpoint: "ufo-feed", action: '{"action":"fetch"}', status: "checking", latency: null, lastCheck: null, icon: Eye },
+];
+
 export function MonitorTab() {
-  const [systems, setSystems] = useState<SystemStatus[]>([
-    { name: "AI Terminal (Chat)", status: "online", latency: "120ms", uptime: "99.9%", icon: Zap },
-    { name: "Globe 3D Engine", status: "online", latency: "16ms", uptime: "99.8%", icon: Eye },
-    { name: "UAP Feed (NUFORC)", status: "online", latency: "850ms", uptime: "97.2%", icon: Radio },
-    { name: "Crypto Feed (CoinGecko)", status: "online", latency: "340ms", uptime: "99.5%", icon: Database },
-    { name: "News Feed (Firecrawl)", status: "online", latency: "620ms", uptime: "98.8%", icon: Server },
-    { name: "Live Cameras", status: "online", latency: "N/A", uptime: "95.1%", icon: Eye },
-  ]);
+  const [systems, setSystems] = useState<SystemStatus[]>(INITIAL_SYSTEMS);
+  const [pinging, setPinging] = useState(false);
 
-  // Simulate minor fluctuations
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setSystems((prev) =>
-        prev.map((s) => ({
-          ...s,
-          latency: s.latency === "N/A" ? "N/A" : `${Math.max(10, parseInt(s.latency) + Math.floor((Math.random() - 0.5) * 40))}ms`,
-        }))
-      );
-    }, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  const pingAll = useCallback(async () => {
+    setPinging(true);
+    const results = await Promise.all(
+      systems.map(async (sys) => {
+        const start = Date.now();
+        try {
+          const { error } = await supabase.functions.invoke(sys.endpoint, {
+            body: JSON.parse(sys.action),
+          });
+          const latency = Date.now() - start;
+          const status: "online" | "degraded" | "offline" = error ? "degraded" : latency > 3000 ? "degraded" : "online";
+          return { ...sys, status, latency, lastCheck: new Date().toLocaleTimeString() };
+        } catch {
+          return { ...sys, status: "offline" as const, latency: Date.now() - start, lastCheck: new Date().toLocaleTimeString() };
+        }
+      })
+    );
+    setSystems(results);
+    setPinging(false);
+  }, [systems]);
 
-  const statusColor = { online: "bg-secondary", degraded: "bg-primary", offline: "bg-destructive" };
-  const statusText = { online: "text-secondary", degraded: "text-primary", offline: "text-destructive" };
+  useEffect(() => { pingAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const onlineCount = systems.filter(s => s.status === "online").length;
+  const avgLatency = systems.filter(s => s.latency !== null).reduce((a, s) => a + (s.latency || 0), 0) / (systems.filter(s => s.latency !== null).length || 1);
+
+  const statusColor = { online: "bg-secondary", degraded: "bg-primary", offline: "bg-destructive", checking: "bg-muted-foreground animate-pulse" };
+  const statusText = { online: "text-secondary", degraded: "text-primary", offline: "text-destructive", checking: "text-muted-foreground" };
+  const allOk = onlineCount === systems.length;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 p-4">
       <div className="flex items-center gap-2 mb-4">
         <Activity className="w-4 h-4 text-primary" />
         <h2 className="text-sm font-heading text-primary uppercase tracking-wider">System Monitor</h2>
-        <Badge variant="outline" className="text-[8px] px-1.5 py-0 h-4 text-secondary border-secondary/30 ml-auto">
-          ALL SYSTEMS OPERATIONAL
+        <Badge variant="outline" className={`text-[8px] px-1.5 py-0 h-4 ml-auto ${allOk ? "text-secondary border-secondary/30" : "text-primary border-primary/30"}`}>
+          {allOk ? "ALL SYSTEMS OPERATIONAL" : `${onlineCount}/${systems.length} ONLINE`}
         </Badge>
+        <Button variant="outline" size="sm" onClick={pingAll} disabled={pinging} className="h-7 text-[10px] ml-1">
+          <RefreshCw className={`w-3 h-3 mr-1 ${pinging ? "animate-spin" : ""}`} />
+          Ping All
+        </Button>
       </div>
 
       {/* Metrics summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {[
-          { label: "Active Systems", value: `${systems.filter((s) => s.status === "online").length}/${systems.length}`, color: "text-secondary" },
-          { label: "Avg Latency", value: `${Math.round(systems.filter(s => s.latency !== "N/A").reduce((a, s) => a + parseInt(s.latency), 0) / systems.filter(s => s.latency !== "N/A").length)}ms`, color: "text-primary" },
-          { label: "Data Processed", value: "2.4 GB", color: "text-foreground" },
-          { label: "Requests/min", value: "847", color: "text-foreground" },
+          { label: "Active Systems", value: `${onlineCount}/${systems.length}`, color: onlineCount === systems.length ? "text-secondary" : "text-primary" },
+          { label: "Avg Latency", value: avgLatency > 0 ? `${Math.round(avgLatency)}ms` : "—", color: "text-primary" },
+          { label: "Edge Functions", value: `${systems.length}`, color: "text-foreground" },
+          { label: "Last Check", value: systems[0]?.lastCheck || "—", color: "text-foreground" },
         ].map((m) => (
           <div key={m.label} className="bg-card/60 border border-border/20 rounded-lg p-3">
             <span className="text-[9px] text-muted-foreground/50 uppercase tracking-wider block">{m.label}</span>
@@ -74,14 +98,23 @@ export function MonitorTab() {
                     <span className="text-xs font-bold text-foreground/90">{sys.name}</span>
                   </div>
                   <div className="flex items-center gap-1.5">
-                    <span className={`w-2 h-2 rounded-full ${statusColor[sys.status]} animate-pulse`} />
+                    <span className={`w-2 h-2 rounded-full ${statusColor[sys.status]}`} />
                     <span className={`text-[9px] font-heading uppercase ${statusText[sys.status]}`}>{sys.status}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-4 text-[10px] text-muted-foreground/60">
-                  <span>Latency: <span className="text-foreground/70 font-mono">{sys.latency}</span></span>
-                  <span>Uptime: <span className="text-foreground/70 font-mono">{sys.uptime}</span></span>
+                  <span>Latency: <span className="text-foreground/70 font-mono">{sys.latency !== null ? `${sys.latency}ms` : "—"}</span></span>
+                  <span>Endpoint: <span className="text-foreground/70 font-mono">{sys.endpoint}</span></span>
                 </div>
+                {/* Latency bar */}
+                {sys.latency !== null && (
+                  <div className="mt-2 h-1 bg-muted/20 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all ${sys.status === "online" ? "bg-secondary" : sys.status === "degraded" ? "bg-primary" : "bg-destructive"}`}
+                      style={{ width: `${Math.min(100, (sys.latency / 5000) * 100)}%` }}
+                    />
+                  </div>
+                )}
               </div>
             );
           })}
