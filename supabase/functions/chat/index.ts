@@ -21,7 +21,12 @@ const GROK_MODELS = [
   "xai/grok-2",
 ];
 
-const ALLOWED_MODELS = [...LOVABLE_MODELS, ...GROK_MODELS];
+// Anthropic models (direct Anthropic API)
+const ANTHROPIC_MODELS = [
+  "anthropic/claude-sonnet-4",
+];
+
+const ALLOWED_MODELS = [...LOVABLE_MODELS, ...GROK_MODELS, ...ANTHROPIC_MODELS];
 
 // Validation constants
 const MAX_MESSAGES = 100;
