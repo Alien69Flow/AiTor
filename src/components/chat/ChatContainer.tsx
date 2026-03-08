@@ -49,13 +49,10 @@ export function ChatContainer() {
 
   const containerClasses = isFullscreen
     ? "fixed inset-2 sm:inset-4 flex z-50"
-    : "relative flex w-full max-w-6xl h-[88vh] shadow-[0_0_60px_-15px_rgba(var(--primary-rgb),0.3)]";
+    : "relative flex w-full h-full shadow-[0_0_60px_-15px_rgba(var(--primary-rgb),0.3)]";
 
   return (
-    <>
-      <SpaceBackground />
-      <div className="fixed inset-0 flex items-center justify-center p-2 sm:p-6 pointer-events-none z-10">
-        <div className={`pointer-events-auto ${containerClasses} glass-dark rounded-2xl border border-secondary/20 overflow-hidden terminal-glow transition-all duration-500`}>
+    <div className={`${containerClasses} glass-dark rounded-2xl border border-secondary/20 overflow-hidden terminal-glow transition-all duration-500`}>
           
           {/* Subtle HUD corners */}
           <div className="absolute top-0 left-0 w-8 h-8 border-l-2 border-t-2 border-primary/25 rounded-tl-2xl z-20 pointer-events-none" />
