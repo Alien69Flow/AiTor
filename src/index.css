@@ -2,22 +2,22 @@
 @tailwind components;
 @tailwind utilities;
 
-/* AlienFlow Design System - Gold & Lime Neon Theme */
+/* AlienFlow Design System - Phosphorescent Green Neon Theme */
 
 @layer base {
   :root {
-    /* Dark theme as default - Space theme */
+    /* Dark theme as default - Space terminal theme */
     --background: 220 25% 6%;
-    --foreground: 51 100% 50%;
+    --foreground: 120 100% 50%;
 
     --card: 220 25% 8%;
-    --card-foreground: 51 100% 50%;
+    --card-foreground: 120 100% 50%;
 
     --popover: 220 25% 10%;
-    --popover-foreground: 51 100% 50%;
+    --popover-foreground: 120 100% 50%;
 
-    /* Primary: Dorado Real #FFD700 */
-    --primary: 51 100% 50%;
+    /* Primary: Verde Fosforito #00FF41 */
+    --primary: 120 100% 50%;
     --primary-foreground: 220 25% 6%;
 
     /* Secondary: Verde Lima Neón #69af00 */
@@ -25,7 +25,7 @@
     --secondary-foreground: 0 0% 100%;
 
     --muted: 220 20% 15%;
-    --muted-foreground: 51 50% 60%;
+    --muted-foreground: 120 30% 50%;
 
     /* Accent: Verde Lima Neón */
     --accent: 75 100% 34%;
@@ -36,42 +36,42 @@
 
     --border: 220 20% 18%;
     --input: 220 20% 15%;
-    --ring: 51 100% 50%;
+    --ring: 120 100% 50%;
 
     --radius: 0.5rem;
 
     /* Custom glow colors */
-    --glow-gold: 51 100% 50%;
+    --glow-green: 120 100% 50%;
     --glow-lime: 75 100% 34%;
 
     --sidebar-background: 220 25% 5%;
-    --sidebar-foreground: 51 100% 50%;
-    --sidebar-primary: 51 100% 50%;
+    --sidebar-foreground: 120 100% 50%;
+    --sidebar-primary: 120 100% 50%;
     --sidebar-primary-foreground: 220 25% 6%;
     --sidebar-accent: 75 100% 34%;
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 220 20% 12%;
-    --sidebar-ring: 51 100% 50%;
+    --sidebar-ring: 120 100% 50%;
   }
 
   .dark {
     --background: 220 25% 6%;
-    --foreground: 51 100% 50%;
+    --foreground: 120 100% 50%;
 
     --card: 220 25% 8%;
-    --card-foreground: 51 100% 50%;
+    --card-foreground: 120 100% 50%;
 
     --popover: 220 25% 10%;
-    --popover-foreground: 51 100% 50%;
+    --popover-foreground: 120 100% 50%;
 
-    --primary: 51 100% 50%;
+    --primary: 120 100% 50%;
     --primary-foreground: 220 25% 6%;
 
     --secondary: 75 100% 34%;
     --secondary-foreground: 0 0% 100%;
 
     --muted: 220 20% 15%;
-    --muted-foreground: 51 50% 60%;
+    --muted-foreground: 120 30% 50%;
 
     --accent: 75 100% 34%;
     --accent-foreground: 0 0% 100%;
@@ -81,16 +81,16 @@
 
     --border: 220 20% 18%;
     --input: 220 20% 15%;
-    --ring: 51 100% 50%;
+    --ring: 120 100% 50%;
 
     --sidebar-background: 220 25% 5%;
-    --sidebar-foreground: 51 100% 50%;
-    --sidebar-primary: 51 100% 50%;
+    --sidebar-foreground: 120 100% 50%;
+    --sidebar-primary: 120 100% 50%;
     --sidebar-primary-foreground: 220 25% 6%;
     --sidebar-accent: 75 100% 34%;
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 220 20% 12%;
-    --sidebar-ring: 51 100% 50%;
+    --sidebar-ring: 120 100% 50%;
   }
 
   .light {
@@ -103,8 +103,8 @@
     --popover: 0 0% 100%;
     --popover-foreground: 220 20% 15%;
 
-    --primary: 51 100% 45%;
-    --primary-foreground: 220 20% 8%;
+    --primary: 120 100% 35%;
+    --primary-foreground: 0 0% 100%;
 
     --secondary: 75 100% 30%;
     --secondary-foreground: 0 0% 100%;
@@ -120,16 +120,16 @@
 
     --border: 45 20% 85%;
     --input: 45 20% 90%;
-    --ring: 51 100% 45%;
+    --ring: 120 100% 35%;
 
     --sidebar-background: 45 25% 95%;
     --sidebar-foreground: 220 20% 15%;
-    --sidebar-primary: 51 100% 45%;
-    --sidebar-primary-foreground: 220 20% 8%;
+    --sidebar-primary: 120 100% 35%;
+    --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 75 100% 30%;
     --sidebar-accent-foreground: 0 0% 100%;
     --sidebar-border: 45 20% 88%;
-    --sidebar-ring: 51 100% 45%;
+    --sidebar-ring: 120 100% 35%;
   }
 }
 
@@ -151,15 +151,15 @@
 @keyframes glow-pulse {
   0%, 100% { 
     box-shadow: 
-      0 0 20px hsla(75, 100%, 34%, 0.3), 
-      0 0 40px hsla(51, 100%, 50%, 0.15),
-      inset 0 0 20px hsla(75, 100%, 34%, 0.05); 
+      0 0 20px hsla(120, 100%, 50%, 0.3), 
+      0 0 40px hsla(120, 100%, 50%, 0.15),
+      inset 0 0 20px hsla(120, 100%, 50%, 0.05); 
   }
   50% { 
     box-shadow: 
-      0 0 40px hsla(75, 100%, 34%, 0.5), 
-      0 0 80px hsla(51, 100%, 50%, 0.25),
-      inset 0 0 30px hsla(75, 100%, 34%, 0.1); 
+      0 0 40px hsla(120, 100%, 50%, 0.5), 
+      0 0 80px hsla(120, 100%, 50%, 0.25),
+      inset 0 0 30px hsla(120, 100%, 50%, 0.1); 
   }
 }
 
@@ -209,11 +209,20 @@
   animation: text-glitch 0.3s ease-in-out;
 }
 
+.neon-text-green {
+  text-shadow: 
+    0 0 5px hsl(120 100% 50% / 0.8),
+    0 0 10px hsl(120 100% 50% / 0.6),
+    0 0 20px hsl(120 100% 50% / 0.4);
+  animation: neon-flicker 3s infinite;
+}
+
+/* Keep gold alias for backward compat */
 .neon-text-gold {
   text-shadow: 
-    0 0 5px hsl(51 100% 50% / 0.8),
-    0 0 10px hsl(51 100% 50% / 0.6),
-    0 0 20px hsl(51 100% 50% / 0.4);
+    0 0 5px hsl(120 100% 50% / 0.8),
+    0 0 10px hsl(120 100% 50% / 0.6),
+    0 0 20px hsl(120 100% 50% / 0.4);
   animation: neon-flicker 3s infinite;
 }
 
@@ -227,16 +236,16 @@
 
 .neon-border {
   box-shadow: 
-    0 0 5px hsl(75 100% 34% / 0.5),
-    0 0 10px hsl(75 100% 34% / 0.3),
-    inset 0 0 5px hsl(75 100% 34% / 0.1);
+    0 0 5px hsl(120 100% 50% / 0.5),
+    0 0 10px hsl(120 100% 50% / 0.3),
+    inset 0 0 5px hsl(120 100% 50% / 0.1);
 }
 
 .neon-border-gold {
   box-shadow: 
-    0 0 5px hsl(51 100% 50% / 0.5),
-    0 0 10px hsl(51 100% 50% / 0.3),
-    inset 0 0 5px hsl(51 100% 50% / 0.1);
+    0 0 5px hsl(120 100% 50% / 0.5),
+    0 0 10px hsl(120 100% 50% / 0.3),
+    inset 0 0 5px hsl(120 100% 50% / 0.1);
 }
 
 /* Scanlines overlay */
@@ -249,8 +258,8 @@
     0deg,
     transparent,
     transparent 2px,
-    hsl(75 100% 34% / 0.03) 2px,
-    hsl(75 100% 34% / 0.03) 4px
+    hsl(120 100% 50% / 0.03) 2px,
+    hsl(120 100% 50% / 0.03) 4px
   );
   z-index: 50;
 }
@@ -262,7 +271,7 @@
   position: absolute;
   width: 20px;
   height: 20px;
-  border: 1px solid hsl(75 100% 34% / 0.5);
+  border: 1px solid hsl(120 100% 50% / 0.5);
 }
 
 .hud-corner-tl::before {
