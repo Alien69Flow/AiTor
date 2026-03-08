@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, Wallet, PanelLeftOpen, PanelLeftClose } from "lucide-react";
+import { Trash2, LogOut, LogIn, Wallet, PanelLeftOpen, PanelLeftClose, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -27,66 +27,74 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages,
   };
 
   return (
-    <header className="h-12 flex items-center justify-between px-3 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
-      {/* Left: Branding */}
-      <div className="flex items-center gap-2.5 min-w-0">
+    <header className="h-14 flex items-center justify-between px-3 border-b border-border/60 bg-card/40 backdrop-blur-md shrink-0">
+      {/* Left: Toggle + Branding */}
+      <div className="flex items-center gap-2 min-w-0">
         <Button
           variant="ghost"
           size="icon"
           onClick={onToggleSidebar}
-          className="h-8 w-8 text-muted-foreground/50 hover:text-primary shrink-0"
+          className="h-9 w-9 text-muted-foreground/50 hover:text-foreground shrink-0"
         >
           {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
         </Button>
 
-        <img src={alienflowLogo} alt="AlienFlow" className="w-6 h-6 object-contain" />
-        
-        <div className="flex flex-col leading-none">
-          <span className="text-sm font-heading font-bold text-primary tracking-wider">⚡ AI Tor</span>
-          {currentModel && (
-            <span className="text-[9px] font-mono text-muted-foreground/60 flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse inline-block" />
-              {currentModel.name}
-            </span>
-          )}
-        </div>
-
-        {user && (
-          <div className="hidden md:flex items-center gap-1.5 ml-2 px-2 py-0.5 rounded-md bg-muted/30 border border-border">
-            <div className="w-1.5 h-1.5 rounded-full bg-secondary" />
-            <span className="text-[9px] font-mono text-muted-foreground/70 truncate max-w-[80px]">
-              {user.email?.split('@')[0]}
-            </span>
+        <div className="flex items-center gap-2.5">
+          <img src={alienflowLogo} alt="AlienFlow" className="w-7 h-7 object-contain" />
+          <div className="flex flex-col leading-none">
+            <span className="text-sm font-heading font-bold tracking-wider text-foreground">AI Tor</span>
+            <div className="flex items-center gap-1.5">
+              <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
+              <span className="text-[9px] text-muted-foreground/50">
+                {currentModel?.name || "Oracle"}
+              </span>
+            </div>
           </div>
-        )}
+        </div>
+      </div>
+
+      {/* Center: Model selector on larger screens */}
+      <div className="hidden md:flex items-center">
+        <ModelSelector value={selectedModel} onChange={onModelChange} />
       </div>
 
       {/* Right: Actions */}
       <div className="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 text-[10px] font-heading tracking-wider text-muted-foreground/50 hover:text-primary gap-1.5 hidden sm:flex"
-          onClick={() => toast.info("Wallet coming soon")}
-        >
-          <Wallet className="h-3.5 w-3.5" />
-          WALLET
-        </Button>
-
-        <ModelSelector value={selectedModel} onChange={onModelChange} />
+        {/* Mobile model selector */}
+        <div className="md:hidden">
+          <ModelSelector value={selectedModel} onChange={onModelChange} />
+        </div>
 
         {hasMessages && (
-          <Button variant="ghost" size="icon" onClick={onClear} className="h-8 w-8 text-muted-foreground/50 hover:text-destructive" title="Nuevo chat">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={onClear}
+            className="h-9 w-9 text-muted-foreground/40 hover:text-destructive"
+            title="Nuevo chat"
+          >
             <Trash2 className="h-4 w-4" />
           </Button>
         )}
 
         {user ? (
-          <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-8 w-8 text-muted-foreground/50 hover:text-primary" title="Cerrar sesión">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleSignOut}
+            className="h-9 w-9 text-muted-foreground/40 hover:text-foreground"
+            title="Cerrar sesión"
+          >
             <LogOut className="h-4 w-4" />
           </Button>
         ) : (
-          <Button variant="ghost" size="icon" onClick={() => navigate('/auth')} className="h-8 w-8 text-muted-foreground/50 hover:text-primary" title="Iniciar sesión">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate('/auth')}
+            className="h-9 w-9 text-muted-foreground/40 hover:text-foreground"
+            title="Iniciar sesión"
+          >
             <LogIn className="h-4 w-4" />
           </Button>
         )}
