@@ -198,9 +198,7 @@ function GridLines() {
       }
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
       group.push(
-        <line key={`lon-${lon}`} geometry={geometry}>
-          <lineBasicMaterial color="#1a3a5c" transparent opacity={0.15} />
-        </line>
+        <primitive key={`lon-${lon}`} object={new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: "#1a3a5c", transparent: true, opacity: 0.15 }))} />
       );
     }
 
