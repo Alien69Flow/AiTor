@@ -7,9 +7,9 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
-export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar";
+export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar" | "signals" | "agents";
 
-type TabStatus = "live" | "demo" | "status";
+type TabStatus = "live" | "demo" | "status" | "new";
 
 interface TopNavBarProps {
   activeTab: TabId;
@@ -19,6 +19,8 @@ interface TopNavBarProps {
 const TABS: { id: TabId; label: string; status: TabStatus }[] = [
   { id: "terminal", label: "Terminal", status: "live" },
   { id: "markets", label: "Markets", status: "live" },
+  { id: "signals", label: "Signals", status: "new" },
+  { id: "agents", label: "Agents", status: "new" },
   { id: "feed", label: "Feed", status: "live" },
   { id: "movers", label: "Movers", status: "live" },
   { id: "portfolio", label: "Portfolio", status: "demo" },
@@ -32,6 +34,7 @@ const STATUS_COLORS: Record<TabStatus, string> = {
   live: "bg-secondary",
   demo: "bg-yellow-500",
   status: "bg-muted-foreground/50",
+  new: "bg-primary",
 };
 
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
@@ -52,7 +55,6 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 relative">
       <div className="flex items-center justify-between px-4 py-2 gap-4">
-        {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <img src={alienflowLogo} alt="AlienFlow" className="w-7 h-7 object-contain" />
           <span className="text-sm font-heading text-primary neon-text-green tracking-wider hidden sm:inline">
@@ -60,7 +62,6 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           </span>
         </div>
 
-        {/* Tabs */}
         <nav className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => (
             <button
@@ -72,13 +73,12 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
                   : "text-muted-foreground/60 hover:text-foreground/80"
               }`}
             >
-              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[tab.status]}`} />
+              <span className={`w-1.5 h-1.5 rounded-full ${STATUS_COLORS[tab.status]} ${tab.status === "new" ? "animate-pulse" : ""}`} />
               {tab.label}
             </button>
           ))}
         </nav>
 
-        {/* Search + Actions */}
         <div className="flex items-center gap-2 shrink-0">
           <div className="relative hidden md:flex items-center">
             <Search className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground/40" />
@@ -86,9 +86,7 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
               placeholder="Search markets and events"
               className="h-8 w-[200px] lg:w-[280px] pl-8 text-xs bg-muted/30 border-border/30 focus:border-primary/40"
             />
-            <kbd className="absolute right-2 text-[9px] text-muted-foreground/40 bg-muted/50 px-1.5 py-0.5 rounded font-mono">
-              F
-            </kbd>
+            <kbd className="absolute right-2 text-[9px] text-muted-foreground/40 bg-muted/50 px-1.5 py-0.5 rounded font-mono">F</kbd>
           </div>
 
           <Button
@@ -102,23 +100,11 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           </Button>
 
           {user ? (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSignOut}
-              className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
-              title="Cerrar sesión"
-            >
+            <Button variant="ghost" size="icon" onClick={handleSignOut} className="h-8 w-8 text-muted-foreground/60 hover:text-primary" title="Cerrar sesión">
               <LogOut className="h-4 w-4" />
             </Button>
           ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => navigate("/auth")}
-              className="h-8 w-8 text-muted-foreground/60 hover:text-primary"
-              title="Iniciar sesión"
-            >
+            <Button variant="ghost" size="icon" onClick={() => navigate("/auth")} className="h-8 w-8 text-muted-foreground/60 hover:text-primary" title="Iniciar sesión">
               <LogIn className="h-4 w-4" />
             </Button>
           )}
