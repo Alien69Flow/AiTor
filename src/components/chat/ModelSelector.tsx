@@ -162,7 +162,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                             <div className="flex items-center gap-1.5">
                               <span className={cn("text-xs font-mono font-medium truncate", isSelected ? "text-foreground" : "text-foreground/80")}>{model.name}</span>
                               {model.recommended && (
-                                <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 font-mono border-secondary/40 text-secondary bg-secondary/10 animate-pulse">
+                                <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 font-mono border-secondary/40 text-secondary bg-secondary/10">
                                   <Star className="w-2 h-2 mr-0.5" />REC
                                 </Badge>
                               )}
