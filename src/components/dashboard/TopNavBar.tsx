@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
-export type TabId = "terminal" | "markets" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar" | "signals" | "agents";
+export type TabId = "terminal" | "markets" | "predictions" | "feed" | "movers" | "portfolio" | "alerts" | "monitor" | "ufo" | "solar" | "signals" | "agents";
 
 type TabStatus = "live" | "demo" | "status" | "new";
 
