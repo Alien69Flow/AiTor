@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn } from "lucide-react";
+import { Trash2, LogOut, LogIn, Wallet, PanelLeftOpen, PanelLeftClose } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -12,9 +12,11 @@ interface ChatHeaderProps {
   onModelChange: (model: string) => void;
   onClear: () => void;
   hasMessages: boolean;
+  onToggleSidebar: () => void;
+  sidebarOpen: boolean;
 }
 
-export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages }: ChatHeaderProps) {
+export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages, onToggleSidebar, sidebarOpen }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -25,11 +27,22 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
   };
 
   return (
-    <header className="h-12 flex items-center justify-between px-4 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
+    <header className="h-12 flex items-center justify-between px-3 border-b border-border bg-card/60 backdrop-blur-sm shrink-0">
+      {/* Left: Branding */}
       <div className="flex items-center gap-2.5 min-w-0">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleSidebar}
+          className="h-8 w-8 text-muted-foreground/50 hover:text-primary shrink-0"
+        >
+          {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+        </Button>
+
         <img src={alienflowLogo} alt="AlienFlow" className="w-6 h-6 object-contain" />
+        
         <div className="flex flex-col leading-none">
-          <span className="text-sm font-mono font-bold text-primary tracking-wider">AI Tor</span>
+          <span className="text-sm font-heading font-bold text-primary tracking-wider">⚡ AI Tor</span>
           {currentModel && (
             <span className="text-[9px] font-mono text-muted-foreground/60 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse inline-block" />
@@ -48,7 +61,18 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, hasMessages 
         )}
       </div>
 
+      {/* Right: Actions */}
       <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-8 text-[10px] font-heading tracking-wider text-muted-foreground/50 hover:text-primary gap-1.5 hidden sm:flex"
+          onClick={() => toast.info("Wallet coming soon")}
+        >
+          <Wallet className="h-3.5 w-3.5" />
+          WALLET
+        </Button>
+
         <ModelSelector value={selectedModel} onChange={onModelChange} />
 
         {hasMessages && (
