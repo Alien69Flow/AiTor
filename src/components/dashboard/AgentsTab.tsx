@@ -1,14 +1,19 @@
-import { Bot, Plus, Sparkles, Lock } from "lucide-react";
+import { Bot, Plus, Sparkles, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 const AGENTS = [
-  { name: "AI Tor", role: "Oráculo General", status: "active", model: "Gemini 2.5 Flash", icon: "⚡" },
-  { name: "AlienFlow Pro", role: "Razonamiento Avanzado", status: "active", model: "Gemini 2.5 Pro", icon: "👽" },
-  { name: "DeFi Sentinel", role: "Monitor de Protocolos", status: "coming", model: "ChainGPT", icon: "🔗" },
-  { name: "Code Auditor", role: "Seguridad de Contratos", status: "coming", model: "GPT-5", icon: "🛡️" },
+  { name: "AI Tor", role: "Oráculo General — análisis, búsqueda y razonamiento multi-dominio", status: "active", model: "google/gemini-2.5-flash", icon: "⚡", capabilities: ["Web search", "Crypto analysis", "UAP research", "Code generation"] },
+  { name: "AlienFlow Pro", role: "Razonamiento Avanzado — problemas complejos, análisis profundo", status: "active", model: "google/gemini-2.5-pro", icon: "👽", capabilities: ["Deep reasoning", "Long context", "Image analysis", "Strategy"] },
+  { name: "DeFi Sentinel", role: "Monitor de Protocolos DeFi — TVL, yields, exploits, smart contract auditing", status: "coming", model: "openai/gpt-5", icon: "🔗", capabilities: ["Protocol monitoring", "Yield farming", "Exploit detection"] },
+  { name: "Code Auditor", role: "Seguridad de Contratos — auditoría de Solidity/Rust, detección de vulnerabilidades", status: "coming", model: "openai/gpt-5", icon: "🛡️", capabilities: ["Solidity audit", "Vulnerability scan", "Gas optimization"] },
 ];
 
-export function AgentsTab() {
+interface AgentsTabProps {
+  onNavigateToChat?: (model?: string) => void;
+}
+
+export function AgentsTab({ onNavigateToChat }: AgentsTabProps) {
   return (
     <div className="flex-1 flex flex-col items-center justify-start p-6 overflow-auto">
       <div className="w-full max-w-4xl">
@@ -45,6 +50,26 @@ export function AgentsTab() {
                   </div>
                   <p className="text-[10px] text-muted-foreground/50 mt-0.5">{agent.role}</p>
                   <p className="text-[9px] text-muted-foreground/30 mt-1 font-mono">Modelo: {agent.model}</p>
+
+                  {/* Capabilities */}
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {agent.capabilities.map(cap => (
+                      <Badge key={cap} variant="outline" className="text-[7px] px-1 py-0 h-3.5 border-border/30 text-muted-foreground/50">{cap}</Badge>
+                    ))}
+                  </div>
+
+                  {/* Chat button */}
+                  {agent.status === "active" && onNavigateToChat && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="mt-3 h-7 text-[10px]"
+                      onClick={() => onNavigateToChat(agent.model)}
+                    >
+                      <MessageSquare className="w-3 h-3 mr-1" />
+                      Chat with {agent.name}
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
@@ -53,7 +78,7 @@ export function AgentsTab() {
 
         <div className="mt-8 p-6 rounded-xl border border-border/40 bg-card/20 text-center">
           <Sparkles className="w-5 h-5 text-muted-foreground/40 mx-auto mb-2" />
-          <p className="text-xs text-muted-foreground/50">Agentes personalizados con herramientas, memoria y workflows — próximamente</p>
+          <p className="text-xs text-muted-foreground/50">Agentes personalizados con herramientas, memoria y workflows — próximamente vía ΔlieπFlΦw DAO</p>
         </div>
       </div>
     </div>
