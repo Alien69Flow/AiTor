@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
-  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github
+  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github, GitBranch
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
