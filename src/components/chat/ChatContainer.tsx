@@ -71,7 +71,7 @@ export function ChatContainer() {
           ) : (
             <div className="flex flex-col">
               {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
-              {isLoading && <ThinkingIndicator isSearching={isSearching} />}
+              {isLoading && <ThinkingIndicator isSearching={isSearching} isAnalyzingRepo={isAnalyzingRepo} />}
             </div>
           )}
         </ScrollArea>
