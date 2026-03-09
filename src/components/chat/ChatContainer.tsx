@@ -13,7 +13,7 @@ export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
-    messages, isLoading, isSearching, isAnalyzingRepo, sendMessage, clearChat,
+    messages, isLoading, isSearching, isAnalyzingRepo, isEditingRepo, sendMessage, clearChat,
     conversations, currentConversationId, startNewConversation,
     loadConversation, deleteConversation,
   } = useChat();
