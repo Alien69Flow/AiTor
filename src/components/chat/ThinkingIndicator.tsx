@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Globe, GitBranch } from "lucide-react";
+import { Globe, GitBranch, Loader2 } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const THINKING_PHASES = [
@@ -12,6 +12,7 @@ const THINKING_PHASES = [
 interface ThinkingIndicatorProps {
   isSearching?: boolean;
   isAnalyzingRepo?: boolean;
+  isEditingRepo?: boolean;
 }
 
 export function ThinkingIndicator({ isSearching, isAnalyzingRepo }: ThinkingIndicatorProps) {
