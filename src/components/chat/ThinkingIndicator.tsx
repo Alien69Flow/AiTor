@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Globe } from "lucide-react";
+import { Globe, GitBranch } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const THINKING_PHASES = [
