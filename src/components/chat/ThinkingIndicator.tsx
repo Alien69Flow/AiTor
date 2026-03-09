@@ -33,7 +33,12 @@ export function ThinkingIndicator({ isSearching, isAnalyzingRepo }: ThinkingIndi
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-mono font-bold text-foreground/80">AI Tor</span>
           <div className="flex items-center gap-2">
-            {isSearching ? (
+            {isAnalyzingRepo ? (
+              <>
+                <GitBranch className="w-3.5 h-3.5 text-secondary animate-pulse" />
+                <span className="text-[10px] font-mono text-muted-foreground/50">Analizando repositorio...</span>
+              </>
+            ) : isSearching ? (
               <>
                 <Globe className="w-3.5 h-3.5 text-secondary animate-spin" />
                 <span className="text-[10px] font-mono text-muted-foreground/50">Buscando en la web...</span>
