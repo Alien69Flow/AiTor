@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
-  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github
+  Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github, GitBranch
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
@@ -19,6 +19,7 @@ const TOOLS = [
   { icon: Search, label: "Búsqueda Web", prompt: "Busca en la web: ", shortcut: "⌘K" },
   { icon: Code2, label: "Analizar Código", prompt: "Analiza este código buscando vulnerabilidades: ", shortcut: "⌘J" },
   { icon: Github, label: "GitHub Repo", prompt: "Analiza el repositorio de GitHub: ", shortcut: "⌘H" },
+  { icon: GitBranch, label: "Editar GitHub", prompt: "Edita el repositorio de GitHub: ", shortcut: "⌘E" },
   { icon: Sparkles, label: "Generar Contenido", prompt: "Genera un thread viral para X/Twitter sobre: ", shortcut: "⌘G" },
   { icon: Link2, label: "Web3 & DeFi", prompt: "Analiza este protocolo DeFi o contrato: ", shortcut: "⌘W" },
   { icon: FileText, label: "Analizar Documento", prompt: "Analiza el siguiente documento: ", shortcut: "⌘D" },

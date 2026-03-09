@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Globe, GitBranch } from "lucide-react";
+import { Globe, GitBranch, Loader2 } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const THINKING_PHASES = [
@@ -12,9 +12,10 @@ const THINKING_PHASES = [
 interface ThinkingIndicatorProps {
   isSearching?: boolean;
   isAnalyzingRepo?: boolean;
+  isEditingRepo?: boolean;
 }
 
-export function ThinkingIndicator({ isSearching, isAnalyzingRepo }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ isSearching, isAnalyzingRepo, isEditingRepo }: ThinkingIndicatorProps) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -33,7 +34,12 @@ export function ThinkingIndicator({ isSearching, isAnalyzingRepo }: ThinkingIndi
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-mono font-bold text-foreground/80">AI Tor</span>
           <div className="flex items-center gap-2">
-            {isAnalyzingRepo ? (
+            {isEditingRepo ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
+                <span className="text-[10px] font-mono text-muted-foreground/50">Aplicando cambios al repositorio...</span>
+              </>
+            ) : isAnalyzingRepo ? (
               <>
                 <GitBranch className="w-3.5 h-3.5 text-secondary animate-pulse" />
                 <span className="text-[10px] font-mono text-muted-foreground/50">Analizando repositorio...</span>
