@@ -11,9 +11,10 @@ const THINKING_PHASES = [
 
 interface ThinkingIndicatorProps {
   isSearching?: boolean;
+  isAnalyzingRepo?: boolean;
 }
 
-export function ThinkingIndicator({ isSearching }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ isSearching, isAnalyzingRepo }: ThinkingIndicatorProps) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
