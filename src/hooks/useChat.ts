@@ -148,7 +148,7 @@ export function useChat() {
 
   const deleteConversation = useCallback((id: string) => {
     setConversations(prev => prev.filter(c => c.id !== id));
-    try { localStorage.removeItem(`${STORAGE_KEY}_${id}`); } catch {}
+    try { sessionStorage.removeItem(`${STORAGE_KEY}_${id}`); } catch {}
     if (currentConversationId === id) {
       setCurrentConversationId(null);
       setMessages([]);
