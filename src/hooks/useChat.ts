@@ -27,13 +27,13 @@ const GITHUB_EDIT_PREFIX = "Edita el repositorio de GitHub: ";
 
 function loadFromStorage<T>(key: string, fallback: T): T {
   try {
-    const raw = localStorage.getItem(key);
+    const raw = sessionStorage.getItem(key);
     return raw ? JSON.parse(raw) : fallback;
   } catch { return fallback; }
 }
 
 function saveToStorage(key: string, value: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+  try { sessionStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
 function parseRepoInput(input: string): { owner: string; repo: string } | null {
