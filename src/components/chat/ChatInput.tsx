@@ -3,6 +3,7 @@ import {
   Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
   Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github, GitBranch
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuSeparator, DropdownMenuLabel,
