@@ -3,6 +3,7 @@ import {
   Send, ImagePlus, X, Loader2, ArrowUp, Globe, Code2, Sparkles, Link2,
   Paperclip, Brain, Search, Mic, Plus, ChevronDown, FileText, Zap, Github, GitBranch
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger,
   DropdownMenuSeparator, DropdownMenuLabel,
@@ -59,6 +60,19 @@ export function ChatInput({ onSend, isLoading, supportsVision }: ChatInputProps)
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const MAX_SIZE_MB = 10;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      toast.error(`Imagen muy grande. Máximo ${MAX_SIZE_MB}MB.`);
+      e.target.value = '';
+      return;
+    }
+    if (!file.type.startsWith('image/')) {
+      toast.error('Solo se permiten archivos de imagen.');
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (event) => setImageData(event.target?.result as string);
     reader.readAsDataURL(file);
