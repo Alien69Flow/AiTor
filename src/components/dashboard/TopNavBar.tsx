@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Search, Wallet, LogOut, LogIn } from "lucide-react";
+import { Search, Wallet, LogOut, LogIn, Menu, X } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -41,6 +41,7 @@ const STATUS_COLORS: Record<TabStatus, string> = {
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -53,9 +54,17 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
     });
   };
 
+  const handleTabChange = (tab: TabId) => {
+    onTabChange(tab);
+    setMenuOpen(false);
+  };
+
+  const activeLabel = TABS.find((t) => t.id === activeTab)?.label ?? "Menu";
+
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 relative">
-      <div className="flex items-center justify-between px-4 py-2 gap-4">
+      <div className="flex items-center justify-between px-2 md:px-4 py-2 gap-2 md:gap-4">
+        {/* Logo */}
         <div className="flex items-center gap-2 shrink-0">
           <img src={alienflowLogo} alt="AlienFlow" className="w-7 h-7 object-contain" />
           <span className="text-sm font-heading text-primary neon-text-green tracking-wider hidden sm:inline">
@@ -63,11 +72,12 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           </span>
         </div>
 
-        <nav className="flex items-center gap-0.5 overflow-x-auto no-scrollbar">
+        {/* Desktop nav */}
+        <nav className="hidden md:flex items-center gap-0.5 overflow-x-auto no-scrollbar">
           {TABS.map((tab) => (
             <button
               key={tab.id}
-              onClick={() => onTabChange(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`px-3 py-1.5 text-[11px] font-heading tracking-wider uppercase whitespace-nowrap transition-all duration-200 rounded-sm flex items-center gap-1.5 ${
                 activeTab === tab.id
                   ? "text-primary border-b-2 border-primary"
@@ -80,7 +90,22 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           ))}
         </nav>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Mobile: hamburger + active label */}
+        <div className="flex md:hidden items-center gap-2 flex-1 min-w-0">
+          <button
+            onClick={() => setMenuOpen(!menuOpen)}
+            className="p-1.5 rounded-md text-muted-foreground hover:text-primary transition-colors"
+            aria-label="Toggle menu"
+          >
+            {menuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+          <span className="text-xs font-heading text-primary uppercase tracking-wider truncate">
+            {activeLabel}
+          </span>
+        </div>
+
+        {/* Right actions */}
+        <div className="flex items-center gap-1.5 md:gap-2 shrink-0">
           <div className="relative hidden md:flex items-center">
             <Search className="absolute left-2.5 w-3.5 h-3.5 text-muted-foreground/40" />
             <Input
@@ -94,10 +119,10 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
             variant="outline"
             size="sm"
             onClick={handleConnectWallet}
-            className="h-8 px-3 text-[10px] font-heading tracking-wider border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:border-primary/50 transition-all uppercase"
+            className="h-8 px-2 md:px-3 text-[10px] font-heading tracking-wider border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:border-primary/50 transition-all uppercase"
           >
-            <Wallet className="h-3.5 w-3.5 mr-1.5" />
-            <span className="hidden sm:inline">Setup Trading Wallet</span>
+            <Wallet className="h-3.5 w-3.5 md:mr-1.5" />
+            <span className="hidden md:inline">Setup Trading Wallet</span>
           </Button>
 
           {user ? (
@@ -111,6 +136,28 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           )}
         </div>
       </div>
+
+      {/* Mobile dropdown menu */}
+      {menuOpen && (
+        <div className="md:hidden absolute top-full left-0 right-0 bg-card/95 backdrop-blur-xl border-b border-border/40 z-50 max-h-[70dvh] overflow-y-auto">
+          <nav className="flex flex-col p-2 gap-0.5">
+            {TABS.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => handleTabChange(tab.id)}
+                className={`px-3 py-2.5 text-[12px] font-heading tracking-wider uppercase rounded-md flex items-center gap-2 transition-all ${
+                  activeTab === tab.id
+                    ? "text-primary bg-primary/10 border-l-2 border-primary"
+                    : "text-muted-foreground/60 hover:text-foreground/80 hover:bg-muted/30"
+                }`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_COLORS[tab.status]} ${tab.status === "new" ? "animate-pulse" : ""}`} />
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

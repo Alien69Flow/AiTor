@@ -45,7 +45,7 @@ const Index = () => {
       
       <SpaceBackground />
       
-      <div className="fixed inset-0 flex flex-col z-10">
+      <div className="fixed inset-0 flex flex-col z-10 max-w-[100vw] max-h-[100dvh] overflow-hidden">
         <TopNavBar activeTab={activeTab} onTabChange={setActiveTab} />
         <div className="flex-1 flex flex-col min-h-0 relative">
           {renderTab()}
