@@ -1,37 +1,30 @@
 import { useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { TopNavBar, TabId } from "@/components/dashboard/TopNavBar";
-import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
-import { ChatContainer } from "@/components/chat/ChatContainer";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { TopNavBar } from "@/components/dashboard/TopNavBar";
+import { AppSidebar } from "@/components/dashboard/AppSidebar";
+import { BottomNav } from "@/components/dashboard/BottomNav";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
+import { ChatContainer } from "@/components/chat/ChatContainer";
 import { UFOMonitorTab } from "@/components/dashboard/UFOMonitorTab";
-import { FeedTab } from "@/components/dashboard/FeedTab";
-import { MoversTab } from "@/components/dashboard/MoversTab";
-import { PortfolioTab } from "@/components/dashboard/PortfolioTab";
-import { AlertsTab } from "@/components/dashboard/AlertsTab";
-import { MonitorTab } from "@/components/dashboard/MonitorTab";
-import { SignalsTab } from "@/components/dashboard/SignalsTab";
-import { AgentsTab } from "@/components/dashboard/AgentsTab";
-import { MarketsTab } from "@/components/dashboard/MarketsTab";
+import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
+import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
+import { MarketsSection } from "@/components/dashboard/MarketsSection";
+import { SystemTab } from "@/components/dashboard/SystemTab";
+
+export type TabId = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
 
 const Index = () => {
-  const [activeTab, setActiveTab] = useState<TabId>("terminal");
+  const [activeTab, setActiveTab] = useState<TabId>("agents");
 
   const renderTab = () => {
     switch (activeTab) {
-      case "terminal": return <ChatContainer />;
-      case "markets": return <GlobeDashboard />;
-      case "predictions": return <MarketsTab />;
-      case "feed": return <FeedTab />;
-      case "movers": return <MoversTab />;
-      case "portfolio": return <PortfolioTab />;
-      case "alerts": return <AlertsTab />;
-      case "monitor": return <MonitorTab />;
-      case "ufo": return <UFOMonitorTab />;
-      case "solar": return <SolarSystemTab />;
-      case "signals": return <SignalsTab />;
-      case "agents": return <AgentsTab onNavigateToChat={() => setActiveTab("terminal")} />;
+      case "agents": return <ChatContainer />;
+      case "alien": return <UFOMonitorTab />;
+      case "cosmos": return <SolarSystemTab />;
+      case "globe": return <GlobeDashboard />;
+      case "markets": return <MarketsSection />;
+      case "system": return <SystemTab />;
       default: return null;
     }
   };
@@ -42,15 +35,28 @@ const Index = () => {
         <title>ΔlieπFlΦw — AI Terminal & Real-Time Intelligence</title>
         <meta name="description" content="Real-time AI intelligence terminal with multi-oracle chat, global monitoring, and blockchain analytics. Powered by ΔlieπFlΦw DAO." />
       </Helmet>
-      
+
       <SpaceBackground />
-      
-      <div className="fixed inset-0 flex flex-col z-10 max-w-[100vw] max-h-[100dvh] overflow-hidden">
-        <TopNavBar activeTab={activeTab} onTabChange={setActiveTab} />
-        <div className="flex-1 flex flex-col min-h-0 relative">
-          {renderTab()}
+
+      <SidebarProvider defaultOpen={false}>
+        <div className="fixed inset-0 flex w-full max-w-[100vw] overflow-hidden z-10">
+          {/* Desktop sidebar */}
+          <div className="hidden md:flex">
+            <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
+          </div>
+
+          {/* Main content area */}
+          <div className="flex-1 flex flex-col min-w-0 min-h-0">
+            <TopNavBar />
+            <main className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0">
+              {renderTab()}
+            </main>
+          </div>
         </div>
-      </div>
+      </SidebarProvider>
+
+      {/* Mobile bottom nav */}
+      <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </>
   );
 };
