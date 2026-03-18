@@ -13,7 +13,7 @@ export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const {
-    messages, isLoading, isSearching, isAnalyzingRepo, isEditingRepo, sendMessage, clearChat,
+    messages, isLoading, isSearching, isAnalyzingRepo, isEditingRepo, isFetchingPrice, sendMessage, clearChat,
     conversations, currentConversationId, startNewConversation,
     loadConversation, deleteConversation,
   } = useChat();
@@ -71,7 +71,7 @@ export function ChatContainer() {
           ) : (
             <div className="flex flex-col">
               {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
-              {isLoading && <ThinkingIndicator isSearching={isSearching} isAnalyzingRepo={isAnalyzingRepo} isEditingRepo={isEditingRepo} />}
+              {isLoading && <ThinkingIndicator isSearching={isSearching} isAnalyzingRepo={isAnalyzingRepo} isEditingRepo={isEditingRepo} isFetchingPrice={isFetchingPrice} />}
             </div>
           )}
         </ScrollArea>
