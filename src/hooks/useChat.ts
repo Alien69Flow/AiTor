@@ -1,6 +1,16 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchWebContext,
+  analyzeRepo,
+  fetchCryptoPrice,
+  fetchRepoFilesForEdit,
+  applyGitHubChanges,
+  parseGitHubChanges,
+  stripGitHubChangesBlock,
+  detectTools,
+  parseRepoUrl,
+} from "@/services/agentTools";
 
 export interface Message {
   id: string;
@@ -17,10 +27,10 @@ export interface Conversation {
 }
 
 const CHAT_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/chat`;
-const SEARCH_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/firecrawl-search`;
-const GITHUB_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/github-proxy`;
 const STORAGE_KEY = "aitor_chat_memory";
 const CONVERSATIONS_KEY = "aitor_conversations";
+
+// Legacy prefixes kept as fallback
 const SEARCH_PREFIX = "Busca en la web: ";
 const GITHUB_PREFIX = "Analiza el repositorio de GitHub: ";
 const GITHUB_EDIT_PREFIX = "Edita el repositorio de GitHub: ";
@@ -36,81 +46,6 @@ function saveToStorage(key: string, value: unknown) {
   try { sessionStorage.setItem(key, JSON.stringify(value)); } catch {}
 }
 
-function parseRepoInput(input: string): { owner: string; repo: string } | null {
-  // Handle full GitHub URLs: https://github.com/owner/repo or https://github.com/owner/repo/...
-  const urlMatch = input.match(/github\.com\/([^/\s]+)\/([^/\s]+)/);
-  if (urlMatch) return { owner: urlMatch[1], repo: urlMatch[2].replace(/\.git$/, "") };
-
-  // Handle shorthand: owner/repo
-  const shortMatch = input.trim().match(/^([^/\s]+)\/([^/\s]+)$/);
-  if (shortMatch) return { owner: shortMatch[1], repo: shortMatch[2].replace(/\.git$/, "") };
-
-  return null;
-}
-
-function parseEditInput(input: string): { owner: string; repo: string; instruction: string } | null {
-  // Split by — or first newline to separate repo from instruction
-  const separatorMatch = input.match(/^(.+?)(?:\s*[—\n]\s*|\s{2,})(.+)$/s);
-  
-  let repoStr: string;
-  let instruction: string;
-  
-  if (separatorMatch) {
-    repoStr = separatorMatch[1].trim();
-    instruction = separatorMatch[2].trim();
-  } else {
-    // Just repo, no instruction
-    repoStr = input.trim();
-    instruction = "Analiza el código y sugiere mejoras";
-  }
-  
-  const parsed = parseRepoInput(repoStr);
-  if (!parsed) return null;
-  
-  return { ...parsed, instruction };
-}
-
-async function githubFetch(action: string, params: Record<string, unknown>) {
-  const response = await fetch(GITHUB_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    },
-    body: JSON.stringify({ action, ...params }),
-  });
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    console.error("GitHub fetch error:", error);
-    return null;
-  }
-  return response.json();
-}
-
-interface GitHubFile {
-  path: string;
-  content: string;
-}
-
-function parseGitHubChanges(response: string): GitHubFile[] {
-  const files: GitHubFile[] = [];
-  const regex = /<file\s+path="([^"]+)">([\s\S]*?)<\/file>/g;
-  let match;
-  
-  while ((match = regex.exec(response)) !== null) {
-    files.push({
-      path: match[1],
-      content: match[2].trim(),
-    });
-  }
-  
-  return files;
-}
-
-function stripGitHubChangesBlock(response: string): string {
-  return response.replace(/<github_changes>[\s\S]*?<\/github_changes>/g, '').trim();
-}
-
 export function useChat() {
   const [conversations, setConversations] = useState<Conversation[]>(() => loadFromStorage(CONVERSATIONS_KEY, []));
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
@@ -119,11 +54,10 @@ export function useChat() {
   const [isSearching, setIsSearching] = useState(false);
   const [isAnalyzingRepo, setIsAnalyzingRepo] = useState(false);
   const [isEditingRepo, setIsEditingRepo] = useState(false);
+  const [isFetchingPrice, setIsFetchingPrice] = useState(false);
 
-  // Persist conversations list
   useEffect(() => { saveToStorage(CONVERSATIONS_KEY, conversations); }, [conversations]);
 
-  // Persist messages for current conversation
   useEffect(() => {
     if (currentConversationId && messages.length > 0) {
       saveToStorage(`${STORAGE_KEY}_${currentConversationId}`, messages);
@@ -155,206 +89,12 @@ export function useChat() {
     }
   }, [currentConversationId]);
 
-  const performWebSearch = async (query: string): Promise<string | null> => {
-    try {
-      const response = await fetch(SEARCH_URL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify({ query, options: { limit: 5, lang: "es" } }),
-      });
-
-      if (!response.ok) return null;
-      const data = await response.json();
-      const results = data?.data || [];
-
-      if (results.length === 0) return null;
-
-      return results.map((r: any, i: number) =>
-        `[${i + 1}] ${r.title || "Sin título"}\nURL: ${r.url || ""}\n${r.description || ""}\n${r.markdown ? r.markdown.slice(0, 500) : ""}`
-      ).join("\n\n---\n\n");
-    } catch (e) {
-      console.error("Web search error:", e);
-      return null;
-    }
-  };
-
-  const performGitHubAnalysis = async (repoInput: string): Promise<string | null> => {
-    const parsed = parseRepoInput(repoInput);
-    if (!parsed) {
-      toast.error("Formato de repositorio inválido. Usa 'owner/repo' o una URL de GitHub.");
-      return null;
-    }
-
-    const { owner, repo } = parsed;
-
-    try {
-      // Parallel fetch: repo info, file tree, commits
-      const [repoInfo, tree, commits] = await Promise.all([
-        githubFetch("repo_info", { owner, repo }),
-        githubFetch("tree", { owner, repo, branch: "main" }),
-        githubFetch("commits", { owner, repo }),
-      ]);
-
-      if (!repoInfo) {
-        // Try with master branch if main fails
-        const treeAlt = await githubFetch("tree", { owner, repo, branch: "master" });
-        if (!treeAlt) {
-          toast.error("No se pudo acceder al repositorio. Verifica que existe y es público o que el PAT tiene acceso.");
-          return null;
-        }
-      }
-
-      // Fetch README
-      const readme = await githubFetch("contents", { owner, repo, path: "README.md" });
-
-      // Format repo info
-      let context = `# Análisis del Repositorio: ${owner}/${repo}\n\n`;
-
-      if (repoInfo) {
-        context += `## Información General\n`;
-        context += `- **Nombre**: ${repoInfo.name}\n`;
-        context += `- **Descripción**: ${repoInfo.description || "Sin descripción"}\n`;
-        context += `- **Lenguaje principal**: ${repoInfo.language || "No especificado"}\n`;
-        context += `- **Estrellas**: ${repoInfo.stargazers_count} ⭐\n`;
-        context += `- **Forks**: ${repoInfo.forks_count}\n`;
-        context += `- **Issues abiertos**: ${repoInfo.open_issues_count}\n`;
-        context += `- **Visibilidad**: ${repoInfo.private ? "Privado" : "Público"}\n`;
-        context += `- **URL**: ${repoInfo.html_url}\n`;
-        context += `- **Creado**: ${repoInfo.created_at ? new Date(repoInfo.created_at).toLocaleDateString("es-ES") : "N/A"}\n`;
-        context += `- **Última actualización**: ${repoInfo.updated_at ? new Date(repoInfo.updated_at).toLocaleDateString("es-ES") : "N/A"}\n\n`;
-
-        if (repoInfo.topics?.length) {
-          context += `- **Tópicos**: ${repoInfo.topics.join(", ")}\n\n`;
-        }
-      }
-
-      // File tree (limit to 100 files)
-      if (tree?.tree) {
-        const files = tree.tree
-          .filter((f: any) => f.type === "blob")
-          .slice(0, 100)
-          .map((f: any) => f.path);
-
-        context += `## Estructura de Archivos (primeros ${files.length})\n\`\`\`\n`;
-        context += files.join("\n");
-        context += `\n\`\`\`\n\n`;
-      }
-
-      // Commits
-      if (commits && Array.isArray(commits) && commits.length > 0) {
-        context += `## Últimos Commits\n`;
-        commits.slice(0, 10).forEach((c: any) => {
-          const msg = c.commit?.message?.split("\n")[0] || "Sin mensaje";
-          const author = c.commit?.author?.name || "Desconocido";
-          const date = c.commit?.author?.date ? new Date(c.commit.author.date).toLocaleDateString("es-ES") : "N/A";
-          context += `- **${date}** [${author}]: ${msg}\n`;
-        });
-        context += "\n";
-      }
-
-      // README
-      if (readme?.content) {
-        try {
-          const decoded = atob(readme.content.replace(/\n/g, ""));
-          context += `## README\n${decoded.slice(0, 3000)}${decoded.length > 3000 ? "\n\n...(truncado)" : ""}\n\n`;
-        } catch {}
-      }
-
-      return context;
-    } catch (e) {
-      console.error("GitHub analysis error:", e);
-      return null;
-    }
-  };
-
-  const fetchRepoFilesForEdit = async (owner: string, repo: string): Promise<{ tree: any; keyFiles: Map<string, string> }> => {
-    const tree = await githubFetch("tree", { owner, repo, branch: "main" }) 
-      || await githubFetch("tree", { owner, repo, branch: "master" });
-    
-    if (!tree?.tree) return { tree: null, keyFiles: new Map() };
-
-    // Prioritize key files for context
-    const priorityFiles = [
-      "README.md", "package.json", "tsconfig.json", "src/App.tsx", "src/index.tsx",
-      "src/main.tsx", "index.html", "vite.config.ts", "src/App.js", "src/index.js"
-    ];
-
-    const keyFiles = new Map<string, string>();
-    
-    for (const filePath of priorityFiles) {
-      if (keyFiles.size >= 8) break;
-      const fileInTree = tree.tree.find((f: any) => f.path === filePath && f.type === "blob");
-      if (fileInTree) {
-        const fileData = await githubFetch("get_file", { owner, repo, path: filePath });
-        if (fileData?.content) {
-          try {
-            const decoded = atob(fileData.content.replace(/\n/g, ""));
-            keyFiles.set(filePath, decoded.slice(0, 5000));
-          } catch {}
-        }
-      }
-    }
-
-    return { tree, keyFiles };
-  };
-
-  const applyGitHubChanges = async (
-    owner: string, 
-    repo: string, 
-    files: GitHubFile[],
-    branch = "main"
-  ): Promise<{ success: boolean; applied: string[]; failed: string[] }> => {
-    const applied: string[] = [];
-    const failed: string[] = [];
-
-    for (const file of files) {
-      try {
-        // Get existing file SHA if it exists
-        const existing = await githubFetch("get_file", { owner, repo, path: file.path, branch });
-        const sha = existing?.sha;
-
-        // Encode content to base64
-        const content = btoa(unescape(encodeURIComponent(file.content)));
-
-        const result = await githubFetch("create_or_update_file", {
-          owner,
-          repo,
-          path: file.path,
-          content,
-          message: `Update ${file.path} via AI Tor`,
-          branch,
-          ...(sha && { sha }),
-        });
-
-        if (result?.commit) {
-          applied.push(file.path);
-        } else {
-          failed.push(file.path);
-        }
-      } catch (e) {
-        console.error(`Failed to apply ${file.path}:`, e);
-        failed.push(file.path);
-      }
-    }
-
-    return { success: failed.length === 0, applied, failed };
-  };
-
   const sendMessage = useCallback(async (content: string, model: string, imageData?: string) => {
-    // Ensure conversation exists
     let convId = currentConversationId;
     if (!convId) {
       convId = crypto.randomUUID();
       setCurrentConversationId(convId);
-      const title = content
-        .replace(/^\[DEEP THINK\]\s*/, "")
-        .replace(/^Busca en la web:\s*/i, "")
-        .replace(/^Analiza el repositorio de GitHub:\s*/i, "")
-        .replace(/^Edita el repositorio de GitHub:\s*/i, "")
-        .slice(0, 50) || "Nueva conversación";
+      const title = content.slice(0, 50) || "Nueva conversación";
       setConversations(prev => [{ id: convId!, title, updatedAt: Date.now() }, ...prev]);
     }
 
@@ -394,79 +134,78 @@ export function useChat() {
       let editOwner = "";
       let editRepo = "";
 
-      // Check for web search prefix
-      const isSearch = content.toLowerCase().startsWith(SEARCH_PREFIX.toLowerCase());
-      const isGitHub = content.toLowerCase().startsWith(GITHUB_PREFIX.toLowerCase());
-      const isGitHubEditRequest = content.toLowerCase().startsWith(GITHUB_EDIT_PREFIX.toLowerCase());
+      // 1. Check legacy prefixes first
+      const isLegacySearch = content.toLowerCase().startsWith(SEARCH_PREFIX.toLowerCase());
+      const isLegacyGitHub = content.toLowerCase().startsWith(GITHUB_PREFIX.toLowerCase());
+      const isLegacyEdit = content.toLowerCase().startsWith(GITHUB_EDIT_PREFIX.toLowerCase());
 
-      if (isSearch) {
-        const searchQuery = content.slice(SEARCH_PREFIX.length).trim();
+      if (isLegacySearch) {
+        const query = content.slice(SEARCH_PREFIX.length).trim();
         setIsSearching(true);
-        const searchResults = await performWebSearch(searchQuery);
+        const results = await fetchWebContext(query);
         setIsSearching(false);
-
-        if (searchResults) {
-          finalContent = `El usuario quiere buscar en la web: "${searchQuery}"\n\nResultados de búsqueda web en tiempo real:\n\n${searchResults}\n\nBasándote en estos resultados de búsqueda reales y actualizados, proporciona una respuesta completa, bien estructurada y con las fuentes citadas.`;
+        if (results) {
+          finalContent = `El usuario quiere buscar en la web: "${query}"\n\nResultados de búsqueda web en tiempo real:\n\n${results}\n\nBasándote en estos resultados reales, proporciona una respuesta completa con fuentes citadas.`;
         }
-      } else if (isGitHubEditRequest) {
+      } else if (isLegacyEdit) {
         const editInput = content.slice(GITHUB_EDIT_PREFIX.length).trim();
-        const parsed = parseEditInput(editInput);
-        
-        if (!parsed) {
-          toast.error("Formato inválido. Usa: 'owner/repo — instrucción'");
-          setIsLoading(false);
-          return;
-        }
-
-        isGitHubEdit = true;
-        editOwner = parsed.owner;
-        editRepo = parsed.repo;
-        
+        const sepMatch = editInput.match(/^(.+?)(?:\s*[—\n]\s*|\s{2,})(.+)$/s);
+        let repoStr = sepMatch ? sepMatch[1].trim() : editInput.trim();
+        let instruction = sepMatch ? sepMatch[2].trim() : "Analiza el código y sugiere mejoras";
+        const parsed = parseRepoUrl(repoStr);
+        if (!parsed) { toast.error("Formato inválido. Usa: 'owner/repo — instrucción'"); setIsLoading(false); return; }
+        isGitHubEdit = true; editOwner = parsed.owner; editRepo = parsed.repo;
         setIsAnalyzingRepo(true);
         const { tree, keyFiles } = await fetchRepoFilesForEdit(parsed.owner, parsed.repo);
         setIsAnalyzingRepo(false);
-
-        if (!tree) {
-          toast.error("No se pudo acceder al repositorio.");
-          setIsLoading(false);
-          return;
-        }
-
-        // Build context with key files
-        let context = `# Repositorio: ${parsed.owner}/${parsed.repo}\n\n`;
-        context += `## Instrucción del usuario:\n${parsed.instruction}\n\n`;
-        context += `## Estructura del repositorio:\n\`\`\`\n`;
-        context += tree.tree
-          .filter((f: any) => f.type === "blob")
-          .slice(0, 80)
-          .map((f: any) => f.path)
-          .join("\n");
-        context += `\n\`\`\`\n\n`;
-
-        context += `## Archivos clave:\n\n`;
-        keyFiles.forEach((fileContent, filePath) => {
-          context += `### ${filePath}\n\`\`\`\n${fileContent}\n\`\`\`\n\n`;
-        });
-
-        finalContent = `${context}
-
-IMPORTANTE: Genera los cambios necesarios en formato XML estructurado:
-
-<github_changes>
-<file path="ruta/al/archivo.ext">
-CONTENIDO COMPLETO DEL ARCHIVO AQUÍ
-</file>
-</github_changes>
-
-Después del bloque XML, explica qué cambiaste y por qué. Los cambios se aplicarán automáticamente al repositorio.`;
-      } else if (isGitHub) {
+        if (!tree) { toast.error("No se pudo acceder al repositorio."); setIsLoading(false); return; }
+        let ctx = `# Repositorio: ${parsed.owner}/${parsed.repo}\n\n## Instrucción:\n${instruction}\n\n## Estructura:\n\`\`\`\n`;
+        ctx += tree.tree.filter((f: any) => f.type === "blob").slice(0, 80).map((f: any) => f.path).join("\n");
+        ctx += `\n\`\`\`\n\n## Archivos clave:\n\n`;
+        keyFiles.forEach((c: string, p: string) => { ctx += `### ${p}\n\`\`\`\n${c}\n\`\`\`\n\n`; });
+        finalContent = `${ctx}\nIMPORTANTE: Genera los cambios en formato XML:\n\n<github_changes>\n<file path="ruta/archivo.ext">\nCONTENIDO\n</file>\n</github_changes>\n\nExplica qué cambiaste y por qué.`;
+      } else if (isLegacyGitHub) {
         const repoInput = content.slice(GITHUB_PREFIX.length).trim();
         setIsAnalyzingRepo(true);
-        const repoContext = await performGitHubAnalysis(repoInput);
+        const ctx = await analyzeRepo(repoInput);
         setIsAnalyzingRepo(false);
+        if (ctx) finalContent = `El usuario quiere analizar: "${repoInput}"\n\n${ctx}\n\nProporciona un análisis detallado.`;
+      } else {
+        // 2. Auto-detect tools from content
+        const tools = detectTools(content);
 
-        if (repoContext) {
-          finalContent = `El usuario quiere analizar el repositorio de GitHub: "${repoInput}"\n\n${repoContext}\n\nBasándote en este análisis completo del repositorio, proporciona un análisis detallado del código, su arquitectura, tecnologías utilizadas, calidad del código, y cualquier observación relevante. Responde en español.`;
+        if (tools.githubEdit) {
+          isGitHubEdit = true; editOwner = tools.githubEdit.owner; editRepo = tools.githubEdit.repo;
+          setIsAnalyzingRepo(true);
+          const { tree, keyFiles } = await fetchRepoFilesForEdit(editOwner, editRepo);
+          setIsAnalyzingRepo(false);
+          if (!tree) { toast.error("No se pudo acceder al repositorio."); setIsLoading(false); return; }
+          let ctx = `# Repositorio: ${editOwner}/${editRepo}\n\n## Instrucción:\n${tools.githubEdit.instruction}\n\n## Estructura:\n\`\`\`\n`;
+          ctx += tree.tree.filter((f: any) => f.type === "blob").slice(0, 80).map((f: any) => f.path).join("\n");
+          ctx += `\n\`\`\`\n\n## Archivos clave:\n\n`;
+          keyFiles.forEach((c: string, p: string) => { ctx += `### ${p}\n\`\`\`\n${c}\n\`\`\`\n\n`; });
+          finalContent = `${ctx}\nIMPORTANTE: Genera los cambios en formato XML:\n\n<github_changes>\n<file path="ruta/archivo.ext">\nCONTENIDO\n</file>\n</github_changes>\n\nExplica qué cambiaste y por qué.`;
+        } else if (tools.githubAnalysis) {
+          setIsAnalyzingRepo(true);
+          const ctx = await analyzeRepo(tools.githubAnalysis);
+          setIsAnalyzingRepo(false);
+          if (ctx) finalContent = `El usuario quiere analizar: "${tools.githubAnalysis}"\n\n${ctx}\n\nProporciona un análisis detallado.`;
+        }
+
+        // Enrich with crypto prices if detected
+        if (tools.cryptoPrice) {
+          setIsFetchingPrice(true);
+          const priceCtx = await fetchCryptoPrice(tools.cryptoPrice);
+          setIsFetchingPrice(false);
+          if (priceCtx) finalContent += `\n\nDatos de mercado en tiempo real:\n${priceCtx}\n\nUsa estos datos reales en tu respuesta.`;
+        }
+
+        // Enrich with web search if detected
+        if (tools.webSearch && !tools.githubAnalysis && !tools.githubEdit) {
+          setIsSearching(true);
+          const results = await fetchWebContext(tools.webSearch);
+          setIsSearching(false);
+          if (results) finalContent += `\n\nResultados de búsqueda web:\n${results}\n\nUsa estos datos en tu respuesta.`;
         }
       }
 
@@ -487,13 +226,9 @@ Después del bloque XML, explica qué cambiaste y por qué. Los cambios se aplic
 
       if (!response.ok) {
         const errorData = await response.json();
-        if (response.status === 429) {
-          toast.error("Límite de solicitudes excedido. Intenta de nuevo más tarde.");
-        } else if (response.status === 402) {
-          toast.error("Se requieren créditos adicionales.");
-        } else {
-          toast.error(errorData.error || "Error al procesar la solicitud");
-        }
+        if (response.status === 429) toast.error("Límite de solicitudes excedido.");
+        else if (response.status === 402) toast.error("Se requieren créditos adicionales.");
+        else toast.error(errorData.error || "Error al procesar la solicitud");
         setIsLoading(false);
         return;
       }
@@ -507,21 +242,16 @@ Después del bloque XML, explica qué cambiaste y por qué. Los cambios se aplic
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-
         textBuffer += decoder.decode(value, { stream: true });
-
         let newlineIndex: number;
         while ((newlineIndex = textBuffer.indexOf("\n")) !== -1) {
           let line = textBuffer.slice(0, newlineIndex);
           textBuffer = textBuffer.slice(newlineIndex + 1);
-
           if (line.endsWith("\r")) line = line.slice(0, -1);
           if (line.startsWith(":") || line.trim() === "") continue;
           if (!line.startsWith("data: ")) continue;
-
           const jsonStr = line.slice(6).trim();
           if (jsonStr === "[DONE]") break;
-
           try {
             const parsed = JSON.parse(jsonStr);
             const delta = parsed.choices?.[0]?.delta?.content;
@@ -533,46 +263,39 @@ Después del bloque XML, explica qué cambiaste y por qué. Los cambios se aplic
         }
       }
 
-      // After streaming is complete, check for GitHub edit changes
+      // Apply GitHub changes if detected
       if (isGitHubEdit && assistantContent.includes("<github_changes>")) {
         setIsEditingRepo(true);
         const files = parseGitHubChanges(assistantContent);
-        
         if (files.length > 0) {
           toast.info(`Aplicando ${files.length} cambio(s) al repositorio...`);
           const result = await applyGitHubChanges(editOwner, editRepo, files);
-          
-          // Update the assistant message to remove the XML block and add result
           const cleanContent = stripGitHubChangesBlock(assistantContent);
           let resultMessage = cleanContent + "\n\n---\n\n";
-          
           if (result.applied.length > 0) {
-            resultMessage += `✅ **Cambios aplicados exitosamente:**\n${result.applied.map(f => `- \`${f}\``).join("\n")}\n\n`;
-            toast.success(`${result.applied.length} archivo(s) actualizado(s) en GitHub`);
+            resultMessage += `✅ **Cambios aplicados:**\n${result.applied.map(f => `- \`${f}\``).join("\n")}\n\n`;
+            toast.success(`${result.applied.length} archivo(s) actualizado(s)`);
           }
-          
           if (result.failed.length > 0) {
-            resultMessage += `❌ **Archivos con errores:**\n${result.failed.map(f => `- \`${f}\``).join("\n")}`;
-            toast.error(`${result.failed.length} archivo(s) no se pudieron actualizar`);
+            resultMessage += `❌ **Errores:**\n${result.failed.map(f => `- \`${f}\``).join("\n")}`;
+            toast.error(`${result.failed.length} archivo(s) fallaron`);
           }
-          
           assistantContent = resultMessage;
           setMessages(prev => prev.map((m, i) =>
-            i === prev.length - 1 && m.role === "assistant" 
-              ? { ...m, content: resultMessage } 
-              : m
+            i === prev.length - 1 && m.role === "assistant" ? { ...m, content: resultMessage } : m
           ));
         }
         setIsEditingRepo(false);
       }
     } catch (error) {
       console.error("Chat error:", error);
-      toast.error("Error de conexión. Verifica tu conexión a internet.");
+      toast.error("Error de conexión.");
     } finally {
       setIsLoading(false);
       setIsSearching(false);
       setIsAnalyzingRepo(false);
       setIsEditingRepo(false);
+      setIsFetchingPrice(false);
     }
   }, [messages, currentConversationId]);
 
@@ -587,6 +310,7 @@ Después del bloque XML, explica qué cambiaste y por qué. Los cambios se aplic
     isSearching,
     isAnalyzingRepo,
     isEditingRepo,
+    isFetchingPrice,
     sendMessage,
     clearChat,
     conversations,
