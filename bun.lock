@@ -1133,7 +1133,7 @@
 
     "require-from-string": ["require-from-string@2.0.2", "", {}, "sha512-Xf0nWe6RseziFMu+Ap9biiUbmplq6S9/p+7w7YXP/JBHhrUDDUhwa+vANyubuqfZWTveU//DYVGsDG7RKL/vEw=="],
 
-    "resium": ["resium@1.19.4", "", { "peerDependencies": { "cesium": "1.x", "react": ">=18.2.0", "react-dom": ">=18.2.0" } }, "sha512-RW0ffHlQUbgqbc0jDaF2Dnor/GKbiz5s5AKdamEKxMJfxiwQNgtgfaKK7UvafFpX25Y2J4DZP1MclTlEQ/5YUw=="],
+    "resium": ["resium@1.20.0", "", { "peerDependencies": { "cesium": "1.x", "react": ">=18.2.0", "react-dom": ">=18.2.0" } }, "sha512-gpe15ziKlCiLhhgSgjNy4blAbp3RD9qWFdP+ujd0RyoZEavkk8oAL2GZQcU6KG1VB0dMD4qhr72cIa2tRmoR6g=="],
 
     "resolve": ["resolve@1.22.8", "", { "dependencies": { "is-core-module": "^2.13.0", "path-parse": "^1.0.7", "supports-preserve-symlinks-flag": "^1.0.0" }, "bin": "bin/resolve" }, "sha512-oKWePCxqpd6FlLvGV1VU0x7bkPmmCNolxzjMf4NczoDnQcIWrAF+cPtZn5i6n+RfD2d9i0tzpKnG6Yk168yIyw=="],
 
