@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Globe, GitBranch, Loader2 } from "lucide-react";
+import { Globe, GitBranch, Loader2, Cpu } from "lucide-react";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
 const THINKING_PHASES = [
@@ -13,9 +13,11 @@ interface ThinkingIndicatorProps {
   isSearching?: boolean;
   isAnalyzingRepo?: boolean;
   isEditingRepo?: boolean;
+  isFetchingPrice?: boolean;
+  isProcessingExternal?: boolean;
 }
 
-export function ThinkingIndicator({ isSearching, isAnalyzingRepo, isEditingRepo }: ThinkingIndicatorProps) {
+export function ThinkingIndicator({ isSearching, isAnalyzingRepo, isEditingRepo, isFetchingPrice, isProcessingExternal }: ThinkingIndicatorProps) {
   const [phase, setPhase] = useState(0);
 
   useEffect(() => {
@@ -24,6 +26,17 @@ export function ThinkingIndicator({ isSearching, isAnalyzingRepo, isEditingRepo 
     }, 2000);
     return () => clearInterval(interval);
   }, []);
+
+  const getStatus = () => {
+    if (isEditingRepo) return { icon: <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />, text: "Aplicando cambios al repositorio..." };
+    if (isAnalyzingRepo) return { icon: <GitBranch className="w-3.5 h-3.5 text-secondary animate-pulse" />, text: "Analizando repositorio..." };
+    if (isSearching) return { icon: <Globe className="w-3.5 h-3.5 text-secondary animate-spin" />, text: "Buscando en la web..." };
+    if (isFetchingPrice) return { icon: <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />, text: "Consultando precios crypto..." };
+    if (isProcessingExternal) return { icon: <Cpu className="w-3.5 h-3.5 text-accent animate-pulse" />, text: "Procesando en Nodo Externo..." };
+    return null;
+  };
+
+  const status = getStatus();
 
   return (
     <div className="w-full py-5 px-4 md:px-6 bg-card/30">
@@ -34,20 +47,10 @@ export function ThinkingIndicator({ isSearching, isAnalyzingRepo, isEditingRepo 
         <div className="flex flex-col gap-1.5">
           <span className="text-xs font-mono font-bold text-foreground/80">AI Tor</span>
           <div className="flex items-center gap-2">
-            {isEditingRepo ? (
+            {status ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 text-primary animate-spin" />
-                <span className="text-[10px] font-mono text-muted-foreground/50">Aplicando cambios al repositorio...</span>
-              </>
-            ) : isAnalyzingRepo ? (
-              <>
-                <GitBranch className="w-3.5 h-3.5 text-secondary animate-pulse" />
-                <span className="text-[10px] font-mono text-muted-foreground/50">Analizando repositorio...</span>
-              </>
-            ) : isSearching ? (
-              <>
-                <Globe className="w-3.5 h-3.5 text-secondary animate-spin" />
-                <span className="text-[10px] font-mono text-muted-foreground/50">Buscando en la web...</span>
+                {status.icon}
+                <span className="text-[10px] font-mono text-muted-foreground/50">{status.text}</span>
               </>
             ) : (
               <>

@@ -1,8 +1,6 @@
 import { useState } from "react";
 import { Helmet } from "react-helmet-async";
-import { SidebarProvider } from "@/components/ui/sidebar";
 import { TopNavBar } from "@/components/dashboard/TopNavBar";
-import { AppSidebar } from "@/components/dashboard/AppSidebar";
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { SpaceBackground } from "@/components/SpaceBackground";
 import { ChatContainer } from "@/components/chat/ChatContainer";
@@ -38,24 +36,13 @@ const Index = () => {
 
       <SpaceBackground />
 
-      <SidebarProvider defaultOpen={false}>
-        <div className="fixed inset-0 flex w-full max-w-[100vw] overflow-hidden z-10">
-          {/* Desktop sidebar */}
-          <div className="hidden md:flex">
-            <AppSidebar activeTab={activeTab} onTabChange={setActiveTab} />
-          </div>
+      <div className="fixed inset-0 flex flex-col w-full max-w-[100vw] overflow-hidden z-10">
+        <TopNavBar activeTab={activeTab} onTabChange={setActiveTab} />
+        <main className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0 overflow-hidden">
+          {renderTab()}
+        </main>
+      </div>
 
-          {/* Main content area */}
-          <div className="flex-1 flex flex-col min-w-0 min-h-0">
-            <TopNavBar />
-            <main className="flex-1 flex flex-col min-h-0 pb-14 md:pb-0">
-              {renderTab()}
-            </main>
-          </div>
-        </div>
-      </SidebarProvider>
-
-      {/* Mobile bottom nav */}
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </>
   );
