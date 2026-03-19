@@ -12,11 +12,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const {
-    messages, isLoading, isSearching, isAnalyzingRepo, isEditingRepo, isFetchingPrice, sendMessage, clearChat,
-    conversations, currentConversationId, startNewConversation,
-    loadConversation, deleteConversation,
-  } = useChat();
+  const { messages, isLoading, sendMessage, clearChat } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -27,7 +23,7 @@ export function ChatContainer() {
   };
 
   const handleNewChat = () => {
-    startNewConversation();
+    clearChat();
   };
 
   useEffect(() => {
@@ -39,46 +35,33 @@ export function ChatContainer() {
     }
   }, [messages, isLoading]);
 
-  const conversationTitle = conversations.find(c => c.id === currentConversationId)?.title;
-
   return (
-    <div className="flex-1 flex flex-row min-h-0 bg-background relative">
-      <AgentSidebar
-        isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        conversations={conversations}
-        currentConversationId={currentConversationId}
-        onSelectConversation={loadConversation}
-        onDeleteConversation={deleteConversation}
-        onNewConversation={handleNewChat}
+    <div className="flex-1 flex flex-col min-h-0 bg-background">
+      <ChatHeader
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
+        onClear={clearChat}
+        onNewChat={handleNewChat}
+        hasMessages={messages.length > 0}
+        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        sidebarOpen={sidebarOpen}
       />
 
-      <div className="flex-1 flex flex-col min-h-0">
-        <ChatHeader
-          selectedModel={selectedModel}
-          onModelChange={setSelectedModel}
-          onClear={clearChat}
-          onNewChat={handleNewChat}
-          hasMessages={messages.length > 0}
-          onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
-          sidebarOpen={sidebarOpen}
-          conversationTitle={conversationTitle}
-        />
+      <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
+        {messages.length === 0 ? (
+          <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />
+        ) : (
+          <div className="flex flex-col">
+            {messages.map((message) => (
+              <ChatMessage key={message.id} message={message} />
+            ))}
+            {isLoading && <ThinkingIndicator />}
+          </div>
+        )}
+      </ScrollArea>
 
-        <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
-          {messages.length === 0 ? (
-            <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />
-          ) : (
-            <div className="flex flex-col">
-              {messages.map((message) => <ChatMessage key={message.id} message={message} />)}
-              {isLoading && <ThinkingIndicator isSearching={isSearching} isAnalyzingRepo={isAnalyzingRepo} isEditingRepo={isEditingRepo} isFetchingPrice={isFetchingPrice} />}
-            </div>
-          )}
-        </ScrollArea>
-
-        <div className="border-t border-border bg-background/80 backdrop-blur-sm">
-          <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />
-        </div>
+      <div className="border-t border-border bg-background/80 backdrop-blur-sm">
+        <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />
       </div>
     </div>
   );

@@ -15,10 +15,9 @@ interface ChatHeaderProps {
   hasMessages: boolean;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
-  conversationTitle?: string;
 }
 
-export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, conversationTitle }: ChatHeaderProps) {
+export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isCompact, setIsCompact] = useState(false);
@@ -52,7 +51,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
           <img src={alienflowLogo} alt="AlienFlow" className="w-6 h-6 object-contain" />
           <div className="flex flex-col leading-none min-w-0">
             <span className="text-xs font-heading font-bold tracking-wider text-foreground truncate max-w-[120px] sm:max-w-none">
-              {conversationTitle || "AI Tor"}
+              AI Tor
             </span>
             <div className="flex items-center gap-1">
               <div className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
