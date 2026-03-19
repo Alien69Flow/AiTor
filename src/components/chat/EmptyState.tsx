@@ -14,8 +14,8 @@ const CAPABILITIES = [
 
 const SUGGESTIONS = [
   "Busca en la web: precio de Bitcoin hoy",
-  "Genera un thread viral para X",
-  "Compara Ethereum vs Solana",
+  "Genera un thread viral para RRSS",
+  "Compara Bitcoin vs Ethereum",
   "Crea una estrategia de yield farming",
 ];
 
@@ -98,8 +98,7 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
   const visibleCapabilities = isCompact ? CAPABILITIES.slice(0, 4) : CAPABILITIES;
 
   return (
-    <div className={`flex flex-1 flex-col items-center justify-center min-h-[60vh] relative ${isCompact ? "p-3" : "p-4 sm:p-6"}`}>
-      <Starfield />
+<div className={`flex flex-1 flex-col items-center justify-center min-h-[60vh] relative w-full overflow-x-hidden ${isCompact ? "p-3" : "p-4 sm:p-6"}`}>      <Starfield />
 
       {/* Hero Branding */}
       <div className={`flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10 ${isCompact ? "mb-6" : "mb-10"}`}>
