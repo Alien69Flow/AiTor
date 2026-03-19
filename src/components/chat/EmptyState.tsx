@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { TrendingUp, Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
+import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import alienflowLogo from "@/assets/alienflow-logo.png";
 
@@ -98,17 +98,18 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
   const visibleCapabilities = isCompact ? CAPABILITIES.slice(0, 4) : CAPABILITIES;
 
   return (
-<div className={`flex flex-1 flex-col items-center justify-center min-h-[60vh] relative w-full overflow-x-hidden ${isCompact ? "p-3" : "p-4 sm:p-6"}`}>      <Starfield />
+    <div className={`flex flex-1 flex-col items-center justify-center min-h-[60vh] relative w-full overflow-x-hidden ${isCompact ? "p-3" : "p-4 sm:p-6"}`}>
+      <Starfield />
 
       {/* Hero Branding */}
       <div className={`flex flex-col items-center gap-2 animate-in fade-in slide-in-from-bottom-4 duration-700 relative z-10 ${isCompact ? "mb-6" : "mb-10"}`}>
-        <div className="relative">
+        <div className="relative flex items-center justify-center">
           {!isCompact && (
             <>
-              <div className="absolute inset-0 w-32 h-32 -m-6 rounded-full border border-primary/5 animate-ping" style={{ animationDuration: '4s' }} />
-              <div className="absolute inset-0 w-28 h-28 -m-4 rounded-full border border-primary/8 animate-ping" style={{ animationDuration: '3s', animationDelay: '1s' }} />
-              <div className="absolute inset-0 w-24 h-24 -m-2 rounded-full border border-primary/10 animate-[magnetic-pulse_4s_ease-in-out_infinite]" />
-              <div className="absolute inset-0 w-28 h-28 -m-4 rounded-full bg-primary/5 blur-3xl animate-pulse" />
+              <div className="absolute w-32 h-32 rounded-full border border-primary/5 animate-ping pointer-events-none" style={{ animationDuration: '4s' }} />
+              <div className="absolute w-28 h-28 rounded-full border border-primary/8 animate-ping pointer-events-none" style={{ animationDuration: '3s', animationDelay: '1s' }} />
+              <div className="absolute w-24 h-24 rounded-full border border-primary/10 animate-[magnetic-pulse_4s_ease-in-out_infinite] pointer-events-none" />
+              <div className="absolute w-28 h-28 rounded-full bg-primary/5 blur-3xl animate-pulse pointer-events-none" />
             </>
           )}
           <img
@@ -157,7 +158,7 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
 
       {/* Capability Cards */}
       <div className={`grid gap-2.5 w-full mb-6 relative z-10 ${
-        isCompact ? "grid-cols-1 max-w-sm" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mb-8"
+        isCompact ? "grid-cols-1 w-full max-w-[calc(100vw-2rem)]" : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 max-w-3xl mb-8"
       }`}>
         {visibleCapabilities.map((cap, i) => {
           const Icon = cap.icon;
@@ -187,14 +188,16 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
       </div>
 
       {/* Quick Suggestions */}
-      <div className={`flex gap-2 justify-center max-w-2xl animate-in fade-in duration-1000 mb-6 relative z-10 ${
-        isCompact ? "overflow-x-auto no-scrollbar w-full" : "flex-wrap"
+      <div className={`flex gap-2 animate-in fade-in duration-1000 mb-6 relative z-10 ${
+        isCompact ? "overflow-x-auto no-scrollbar w-full justify-start px-3" : "justify-center max-w-2xl flex-wrap"
       }`} style={{ animationDelay: "600ms", animationFillMode: "both" }}>
         {SUGGESTIONS.map((suggestion) => (
           <button
             key={suggestion}
             onClick={() => onPromptClick?.(suggestion)}
-            className="px-3.5 py-2 rounded-full border border-border/60 bg-card/20 hover:bg-card/50 hover:border-secondary/40 text-xs text-muted-foreground/60 hover:text-foreground/80 transition-all cursor-pointer hover:shadow-[0_0_20px_hsl(var(--secondary)/0.08)] whitespace-nowrap shrink-0"
+            className={`px-3.5 py-2 rounded-full border border-border/60 bg-card/20 hover:bg-card/50 hover:border-secondary/40 text-xs text-muted-foreground/60 hover:text-foreground/80 transition-all cursor-pointer hover:shadow-[0_0_20px_hsl(var(--secondary)/0.08)] ${
+              isCompact ? "flex-shrink-0" : "whitespace-nowrap shrink-0"
+            }`}
           >
             {suggestion}
           </button>
