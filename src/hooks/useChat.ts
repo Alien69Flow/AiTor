@@ -14,6 +14,7 @@ export interface Conversation {
   title: string;
   messages: Message[];
   createdAt: Date;
+  updatedAt: number;
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
