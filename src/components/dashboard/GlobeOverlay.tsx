@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle, X, TrendingUp, TrendingDown, MapPin, AlertTriangle } from "lucide-react";
+import { HelpCircle, X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-react";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import { supabase } from "@/integrations/supabase/client";
+import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 
 const TACTICAL_COLORS: Record<string, string> = {
   conflict: "#FF4444",
@@ -11,21 +12,36 @@ const TACTICAL_COLORS: Record<string, string> = {
   geopolitical: "#0088FF",
 };
 
+const glassStyle = {
+  background: "rgba(0,0,0,0.5)",
+  backdropFilter: "blur(20px)",
+  border: "0.5px solid rgba(255,255,255,0.06)",
+};
+
 interface GlobeOverlayProps {
   selectedHotspot?: HotspotData | null;
   onClose?: () => void;
+  spaceWeather?: SpaceWeather;
 }
 
-export function GlobeOverlay({ selectedHotspot, onClose }: GlobeOverlayProps) {
-  const [tensionLevel, setTensionLevel] = useState(53);
+export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather }: GlobeOverlayProps) {
+  // Dynamic tension based on NOAA data
+  const baseTension = spaceWeather?.solarStorm ? 65 : spaceWeather?.kpIndex ? Math.max(20, spaceWeather.kpIndex * 10) : 35;
 
+  const [tensionLevel, setTensionLevel] = useState(baseTension);
+
+  useEffect(() => {
+    setTensionLevel(baseTension);
+  }, [baseTension]);
+
+  // Small random fluctuation
   useEffect(() => {
     const interval = setInterval(() => {
       setTensionLevel((prev) => {
-        const delta = (Math.random() - 0.5) * 4;
+        const delta = (Math.random() - 0.5) * 2;
         return Math.max(10, Math.min(100, prev + delta));
       });
-    }, 5000);
+    }, 8000);
     return () => clearInterval(interval);
   }, []);
 
@@ -33,32 +49,28 @@ export function GlobeOverlay({ selectedHotspot, onClose }: GlobeOverlayProps) {
     tensionLevel > 70 ? "#FF4444" : tensionLevel > 40 ? "#FFD700" : "#00FF41";
   const tensionStatus = tensionLevel > 70 ? "CRITICAL" : tensionLevel > 40 ? "ELEVATED" : "NORMAL";
 
+  const kpActive = (spaceWeather?.kpIndex || 0) > 4;
+
   return (
     <>
       {/* Global Tension — top center */}
-      <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10">
-        <div
-          className="flex items-center gap-2 px-4 py-1.5 rounded-full"
-          style={{
-            background: "rgba(0,0,0,0.65)",
-            backdropFilter: "blur(16px)",
-            border: "0.5px solid rgba(255,255,255,0.08)",
-          }}
-        >
-          <span
-            className="w-2 h-2 rounded-full animate-pulse"
-            style={{ background: tensionColor }}
-          />
-          <span className="text-[10px] font-mono text-white/40 uppercase tracking-wider">
-            Global Tension
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+        <div className="flex items-center gap-2 px-3 py-1 rounded-full" style={glassStyle}>
+          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: tensionColor }} />
+          <span className="text-[9px] font-mono text-white/30 uppercase tracking-wider">
+            Tension
           </span>
-          <span className="text-sm font-bold font-mono" style={{ color: tensionColor }}>
+          <span className="text-xs font-bold font-mono" style={{ color: tensionColor }}>
             {Math.round(tensionLevel)}
           </span>
-          <span className="text-[10px] font-mono uppercase tracking-wider" style={{ color: tensionColor }}>
+          <span className="text-[8px] font-mono uppercase" style={{ color: tensionColor }}>
             {tensionStatus}
           </span>
-          <HelpCircle className="w-3 h-3 text-white/15" />
+          {kpActive && (
+            <span className="flex items-center gap-0.5 text-[8px] font-mono text-[#FF00FF]">
+              <Zap className="w-2.5 h-2.5" /> Kp{spaceWeather?.kpIndex?.toFixed(0)}
+            </span>
+          )}
         </div>
       </div>
 
@@ -87,74 +99,49 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
   const typeColor = TACTICAL_COLORS[hotspot.type] || "#FFD700";
 
   return (
-    <div className="absolute top-16 right-4 z-20 w-72">
-      <div
-        className="rounded-lg overflow-hidden"
-        style={{
-          background: "rgba(0,0,0,0.75)",
-          backdropFilter: "blur(20px)",
-          border: `0.5px solid ${typeColor}33`,
-        }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: "0.5px solid rgba(255,255,255,0.06)" }}>
-          <div className="flex items-center gap-2">
-            <MapPin className="w-3.5 h-3.5" style={{ color: typeColor }} />
-            <div>
-              <span className="text-xs font-bold text-white">{hotspot.name}</span>
-              <span className="text-[10px] text-white/40 ml-1.5">{hotspot.country}</span>
-            </div>
+    <div className="absolute top-14 right-3 z-20 w-64">
+      <div className="rounded-lg overflow-hidden" style={{ ...glassStyle, border: `0.5px solid ${typeColor}22` }}>
+        <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: "0.5px solid rgba(255,255,255,0.04)" }}>
+          <div className="flex items-center gap-1.5">
+            <MapPin className="w-3 h-3" style={{ color: typeColor }} />
+            <span className="text-xs font-bold text-white">{hotspot.name}</span>
+            <span className="text-[9px] text-white/30">{hotspot.country}</span>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-white/10 rounded transition-colors">
-            <X className="w-3.5 h-3.5 text-white/40" />
+          <button onClick={onClose} className="p-0.5 hover:bg-white/10 rounded transition-colors">
+            <X className="w-3 h-3 text-white/30" />
           </button>
         </div>
 
-        {/* Market Data */}
-        <div className="px-3 py-2 space-y-2">
+        <div className="px-3 py-2 space-y-1.5">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-white/30 uppercase tracking-wider font-mono">Volume</span>
-            <span className="text-sm font-mono font-bold text-white">{hotspot.marketVolume}</span>
+            <span className="text-[9px] text-white/25 uppercase font-mono">Vol</span>
+            <span className="text-xs font-mono font-bold text-white">{hotspot.marketVolume}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] text-white/30 uppercase tracking-wider font-mono">24h Trend</span>
+            <span className="text-[9px] text-white/25 uppercase font-mono">24h</span>
             <div className="flex items-center gap-1">
-              {trendPositive ? (
-                <TrendingUp className="w-3 h-3 text-[#00FF41]" />
-              ) : (
-                <TrendingDown className="w-3 h-3 text-[#FF4444]" />
-              )}
-              <span className={`text-sm font-mono font-bold ${trendPositive ? "text-[#00FF41]" : "text-[#FF4444]"}`}>
+              {trendPositive ? <TrendingUp className="w-3 h-3 text-[#00FF41]" /> : <TrendingDown className="w-3 h-3 text-[#FF4444]" />}
+              <span className={`text-xs font-mono font-bold ${trendPositive ? "text-[#00FF41]" : "text-[#FF4444]"}`}>
                 {hotspot.trend}
               </span>
             </div>
           </div>
-          <div>
-            <span className="text-[10px] text-white/30 uppercase tracking-wider font-mono block mb-1">Top Tokens</span>
-            <div className="flex gap-1 flex-wrap">
-              {hotspot.topTokens.map((t) => (
-                <Badge key={t} variant="outline" className="text-[9px] px-1.5 py-0 h-4 bg-white/5 text-white/60 border-white/10">
-                  {t}
-                </Badge>
-              ))}
-            </div>
+          <div className="flex gap-1 flex-wrap">
+            {hotspot.topTokens.map((t) => (
+              <Badge key={t} variant="outline" className="text-[8px] px-1 py-0 h-3.5 bg-white/5 text-white/50 border-white/8">
+                {t}
+              </Badge>
+            ))}
           </div>
         </div>
 
-        {/* UAP Data */}
-        <div className="px-3 py-2" style={{ borderTop: "0.5px solid rgba(255,255,255,0.06)" }}>
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="w-3 h-3 text-[#00FF41]/60" />
-            <span className="text-[10px] text-white/30 font-mono">
-              {uapCount} UAP reports in database
-            </span>
+        <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)" }}>
+          <div className="flex items-center gap-1">
+            <AlertTriangle className="w-2.5 h-2.5 text-[#00FF41]/50" />
+            <span className="text-[8px] text-white/20 font-mono">{uapCount} UAP</span>
           </div>
-        </div>
-
-        {/* Type badge */}
-        <div className="px-3 pb-2">
-          <Badge variant="outline" className="text-[9px] uppercase tracking-wider font-mono" style={{ color: typeColor, borderColor: typeColor + "44" }}>
-            {hotspot.type} zone
+          <Badge variant="outline" className="text-[7px] uppercase font-mono" style={{ color: typeColor, borderColor: typeColor + "33" }}>
+            {hotspot.type}
           </Badge>
         </div>
       </div>

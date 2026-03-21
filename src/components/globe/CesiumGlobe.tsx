@@ -14,6 +14,8 @@ import {
   PolylineGlowMaterialProperty,
   Cartesian2,
   ArcGisMapServerImageryProvider,
+  IonImageryProvider,
+  EllipsoidTerrainProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -23,7 +25,6 @@ const CESIUM_TOKEN =
   import.meta.env.VITE_CESIUM_TOKEN ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzgzOGZkOS0zYTdjLTQ0NTctYjkzOS00MGJmOWY4NzBlMmQiLCJpZCI6NDAwMzQxLCJpYXQiOjE3NzI5ODYzODJ9.fDprRtLyVdJxT28_Sc0_-fNfCsw3yyESOQ0IDQefDJM";
 
-// Tactical color palette
 const TACTICAL_COLORS: Record<string, string> = {
   finance: "#FFD700",
   tech: "#FFD700",
@@ -76,14 +77,16 @@ interface CesiumGlobeProps {
   sightings?: UAPSighting[];
   visibleLayers?: Set<LayerKey>;
   flyTo?: { lat: number; lon: number; alt: number } | null;
+  kpIndex?: number;
 }
 
-export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, flyTo }: CesiumGlobeProps) {
+export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
   const arcEntityIdsRef = useRef<string[]>([]);
+  const teslaAuraRef = useRef<string | null>(null);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -103,6 +106,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       creditContainer: document.createElement("div"),
       skyBox: false,
       skyAtmosphere: undefined,
+      terrainProvider: new EllipsoidTerrainProvider(),
       contextOptions: { webgl: { alpha: false } },
     });
 
@@ -111,7 +115,22 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 5.0;
 
-    // ArcGIS satellite imagery
+    // Night-side city lights via Cesium Ion Earth at Night (asset 3812)
+    try {
+      const nightLayer = IonImageryProvider.fromAssetId(3812);
+      nightLayer.then((provider) => {
+        if (!viewer.isDestroyed()) {
+          const layer = viewer.imageryLayers.addImageryProvider(provider);
+          layer.dayAlpha = 0.0;    // invisible on day side
+          layer.nightAlpha = 0.85; // visible on night side
+          layer.brightness = 1.8;
+        }
+      }).catch((e: any) => console.warn("Night lights layer failed:", e));
+    } catch (e) {
+      console.warn("Night lights init failed:", e);
+    }
+
+    // ArcGIS satellite imagery (base layer)
     try {
       const arcGisProvider = ArcGisMapServerImageryProvider.fromUrl(
         "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
@@ -120,6 +139,16 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
         if (!viewer.isDestroyed()) {
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(provider);
+
+          // Re-add night lights on top
+          IonImageryProvider.fromAssetId(3812).then((nightProv) => {
+            if (!viewer.isDestroyed()) {
+              const nl = viewer.imageryLayers.addImageryProvider(nightProv);
+              nl.dayAlpha = 0.0;
+              nl.nightAlpha = 0.85;
+              nl.brightness = 1.8;
+            }
+          }).catch(() => {});
         }
       });
     } catch (e) {
@@ -170,6 +199,38 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);
+
+  // Tesla Aura — Kp > 4 renders a pulsing magenta ellipsoid
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    // Remove previous aura
+    if (teslaAuraRef.current) {
+      const e = viewer.entities.getById(teslaAuraRef.current);
+      if (e) viewer.entities.remove(e);
+      teslaAuraRef.current = null;
+    }
+
+    if (kpIndex > 4) {
+      const auraId = "tesla-aura";
+      const intensity = Math.min((kpIndex - 4) / 5, 1); // 0 to 1
+      viewer.entities.add({
+        id: auraId,
+        position: Cartesian3.fromDegrees(0, 0, 0),
+        ellipsoid: {
+          radii: new Cartesian3(6800000, 6800000, 6800000),
+          material: Color.fromCssColorString("#FF00FF").withAlpha(0.06 + intensity * 0.08),
+          outline: true,
+          outlineColor: Color.fromCssColorString("#FF00FF").withAlpha(0.15 + intensity * 0.15),
+          outlineWidth: 1,
+          slicePartitions: 24,
+          stackPartitions: 24,
+        },
+      });
+      teslaAuraRef.current = auraId;
+    }
+  }, [kpIndex]);
 
   // Market hotspots layer
   useEffect(() => {
