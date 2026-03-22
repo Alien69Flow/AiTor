@@ -1,21 +1,14 @@
 import { useEffect, useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
+import type { Earthquake } from "@/hooks/useEarthquakes";
+import type { NasaEvent } from "@/hooks/useNasaEvents";
 
 interface TickerItem {
   text: string;
   severity: "CRITICAL" | "HIGH" | "LOW";
   time: string;
 }
-
-const BASE_TICKER: TickerItem[] = [
-  { text: "BTC breaks $67,000 resistance level amid institutional buying", severity: "HIGH", time: "2M" },
-  { text: "ETH/BTC ratio hits new monthly high as DeFi activity surges", severity: "HIGH", time: "5M" },
-  { text: "Solana network processes 50K TPS in new benchmark test", severity: "LOW", time: "3M" },
-  { text: "SEC announces new framework for crypto asset classification", severity: "CRITICAL", time: "1M" },
-  { text: "ChainGPT AI oracle integration reaches 1M daily queries", severity: "HIGH", time: "4M" },
-  { text: "Web3 DAO governance participation hits all-time high", severity: "HIGH", time: "3M" },
-];
 
 const severityColor = {
   CRITICAL: "bg-destructive/80 text-destructive-foreground",
@@ -25,30 +18,55 @@ const severityColor = {
 
 interface LiveTickerProps {
   spaceWeather?: SpaceWeather;
+  earthquakes?: Earthquake[];
+  nasaEvents?: NasaEvent[];
 }
 
-export function LiveTicker({ spaceWeather }: LiveTickerProps) {
+export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: LiveTickerProps) {
   const [lastUpdate, setLastUpdate] = useState(0);
-  const blipRef = useRef<HTMLAudioElement | null>(null);
   const prevStormRef = useRef(false);
 
-  // Build ticker items dynamically based on NOAA data
-  const tickerItems: TickerItem[] = [...BASE_TICKER];
+  const tickerItems: TickerItem[] = [];
 
+  // NOAA alerts
   if (spaceWeather?.solarStorm) {
-    tickerItems.unshift({
+    tickerItems.push({
       text: `⚡ SOLAR RADIATION DETECTED — Radio: ${spaceWeather.radioBlackout} | Storm: ${spaceWeather.stormLevel} | Geo: ${spaceWeather.geomagneticStorm}`,
-      severity: "CRITICAL",
-      time: "NOW",
+      severity: "CRITICAL", time: "NOW",
+    });
+  }
+  if ((spaceWeather?.kpIndex || 0) > 4) {
+    tickerItems.push({
+      text: `🧲 TESLA CONVERGENCE — Kp Index: ${spaceWeather?.kpIndex?.toFixed(1)} — Magnetic field anomaly active`,
+      severity: "CRITICAL", time: "NOW",
     });
   }
 
-  if ((spaceWeather?.kpIndex || 0) > 4) {
-    tickerItems.unshift({
-      text: `🧲 TESLA CONVERGENCE — Kp Index: ${spaceWeather?.kpIndex?.toFixed(1)} — Magnetic field anomaly active`,
-      severity: "CRITICAL",
-      time: "NOW",
+  // Real earthquake headlines (top 5 by magnitude)
+  const topQuakes = [...earthquakes].sort((a, b) => b.magnitude - a.magnitude).slice(0, 5);
+  topQuakes.forEach(q => {
+    tickerItems.push({
+      text: `🌍 M${q.magnitude.toFixed(1)} earthquake — ${q.place}`,
+      severity: q.magnitude >= 5 ? "CRITICAL" : q.magnitude >= 4 ? "HIGH" : "LOW",
+      time: new Date(q.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
     });
+  });
+
+  // NASA events
+  nasaEvents.slice(0, 3).forEach(evt => {
+    tickerItems.push({
+      text: `⚠️ ${evt.category}: ${evt.title}`,
+      severity: "HIGH",
+      time: evt.date ? new Date(evt.date).toLocaleDateString([], { month: "short", day: "numeric" }) : "Active",
+    });
+  });
+
+  // Fallback if no real data yet
+  if (tickerItems.length === 0) {
+    tickerItems.push(
+      { text: "Connecting to OSINT feeds...", severity: "LOW", time: "..." },
+      { text: "Waiting for USGS seismic data...", severity: "LOW", time: "..." },
+    );
   }
 
   useEffect(() => {
@@ -56,11 +74,10 @@ export function LiveTicker({ spaceWeather }: LiveTickerProps) {
     return () => clearInterval(interval);
   }, []);
 
-  // Radar blip on new critical alert
+  // Radar blip on storm
   useEffect(() => {
     if (spaceWeather?.solarStorm && !prevStormRef.current) {
       try {
-        // Generate a low-frequency radar blip using Web Audio API
         const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
@@ -69,10 +86,8 @@ export function LiveTicker({ spaceWeather }: LiveTickerProps) {
         osc.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.4);
         gain.gain.setValueAtTime(0.12, ctx.currentTime);
         gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.5);
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.start(ctx.currentTime); osc.stop(ctx.currentTime + 0.5);
       } catch { /* audio not available */ }
     }
     prevStormRef.current = spaceWeather?.solarStorm || false;
@@ -80,13 +95,11 @@ export function LiveTicker({ spaceWeather }: LiveTickerProps) {
 
   return (
     <div className="w-full flex items-center gap-3 px-3 py-1 bg-card/60 border-b border-border/10 text-[9px]">
-      {/* LIVE badge */}
       <div className="flex items-center gap-1 shrink-0">
         <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse" />
         <span className="font-heading text-secondary tracking-wider uppercase font-bold text-[9px]">LIVE</span>
       </div>
 
-      {/* Scrolling ticker */}
       <div className="flex-1 overflow-hidden relative">
         <div className="flex items-center gap-5 animate-ticker whitespace-nowrap">
           {[...tickerItems, ...tickerItems].map((item, i) => (
@@ -101,7 +114,6 @@ export function LiveTicker({ spaceWeather }: LiveTickerProps) {
         </div>
       </div>
 
-      {/* Compact stats */}
       <div className="flex items-center gap-3 shrink-0">
         <span className="text-primary font-bold text-[10px] font-mono">{tickerItems.length} SIG</span>
         <span className="text-foreground/50 font-mono text-[10px]">{lastUpdate}s</span>

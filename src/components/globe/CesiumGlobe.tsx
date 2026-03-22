@@ -16,26 +16,22 @@ import {
   ArcGisMapServerImageryProvider,
   IonImageryProvider,
   EllipsoidTerrainProvider,
+  CallbackProperty,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
 import type { UAPSighting } from "@/hooks/useUAPSightings";
+import type { Earthquake } from "@/hooks/useEarthquakes";
+import type { NasaEvent } from "@/hooks/useNasaEvents";
 
 const CESIUM_TOKEN =
   import.meta.env.VITE_CESIUM_TOKEN ||
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJqdGkiOiI0YzgzOGZkOS0zYTdjLTQ0NTctYjkzOS00MGJmOWY4NzBlMmQiLCJpZCI6NDAwMzQxLCJpYXQiOjE3NzI5ODYzODJ9.fDprRtLyVdJxT28_Sc0_-fNfCsw3yyESOQ0IDQefDJM";
 
 const TACTICAL_COLORS: Record<string, string> = {
-  finance: "#FFD700",
-  tech: "#FFD700",
-  uap: "#00FF41",
-  ufo: "#00FF41",
-  intel: "#00FF41",
-  conflict: "#FF4444",
-  geopolitical: "#0088FF",
-  logistics: "#FF8844",
-  cryptozoology: "#FF00FF",
-  convergence: "#FFFFFF",
+  finance: "#FFD700", tech: "#FFD700", uap: "#00FF41", ufo: "#00FF41",
+  intel: "#00FF41", conflict: "#FF4444", geopolitical: "#0088FF",
+  logistics: "#FF8844", cryptozoology: "#FF00FF", convergence: "#FFFFFF",
 };
 
 const HOTSPOT_DATA: HotspotData[] = [
@@ -78,15 +74,22 @@ interface CesiumGlobeProps {
   visibleLayers?: Set<LayerKey>;
   flyTo?: { lat: number; lon: number; alt: number } | null;
   kpIndex?: number;
+  earthquakes?: Earthquake[];
+  nasaEvents?: NasaEvent[];
 }
 
-export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0 }: CesiumGlobeProps) {
+export function CesiumGlobe({
+  onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0,
+  earthquakes = [], nasaEvents = [],
+}: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
   const arcEntityIdsRef = useRef<string[]>([]);
   const teslaAuraRef = useRef<string | null>(null);
+  const quakeEntityIdsRef = useRef<string[]>([]);
+  const nasaEntityIdsRef = useRef<string[]>([]);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -96,7 +99,6 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
   // Initialize viewer once
   useEffect(() => {
     if (!containerRef.current) return;
-
     Ion.defaultAccessToken = CESIUM_TOKEN;
 
     const viewer = new CesiumViewer(containerRef.current, {
@@ -104,56 +106,59 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
       selectionIndicator: false, timeline: false, navigationHelpButton: false,
       creditContainer: document.createElement("div"),
-      skyBox: false,
-      skyAtmosphere: undefined,
+      skyBox: false, skyAtmosphere: undefined,
       terrainProvider: new EllipsoidTerrainProvider(),
       contextOptions: { webgl: { alpha: false } },
     });
 
-    // Black space background
     viewer.scene.backgroundColor = Color.BLACK;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 5.0;
 
-    // Night-side city lights via Cesium Ion Earth at Night (asset 3812)
+    // Night lights
     try {
-      const nightLayer = IonImageryProvider.fromAssetId(3812);
-      nightLayer.then((provider) => {
+      IonImageryProvider.fromAssetId(3812).then((provider) => {
         if (!viewer.isDestroyed()) {
           const layer = viewer.imageryLayers.addImageryProvider(provider);
-          layer.dayAlpha = 0.0;    // invisible on day side
-          layer.nightAlpha = 0.85; // visible on night side
+          layer.dayAlpha = 0.0;
+          layer.nightAlpha = 0.85;
           layer.brightness = 1.8;
         }
-      }).catch((e: any) => console.warn("Night lights layer failed:", e));
-    } catch (e) {
-      console.warn("Night lights init failed:", e);
-    }
+      }).catch((e: any) => console.warn("Night lights failed:", e));
+    } catch (e) { console.warn("Night lights init failed:", e); }
 
-    // ArcGIS satellite imagery (base layer)
+    // ArcGIS satellite imagery
     try {
-      const arcGisProvider = ArcGisMapServerImageryProvider.fromUrl(
+      ArcGisMapServerImageryProvider.fromUrl(
         "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
-      );
-      arcGisProvider.then((provider) => {
+      ).then((provider) => {
         if (!viewer.isDestroyed()) {
           viewer.imageryLayers.removeAll();
           viewer.imageryLayers.addImageryProvider(provider);
-
-          // Re-add night lights on top
           IonImageryProvider.fromAssetId(3812).then((nightProv) => {
             if (!viewer.isDestroyed()) {
               const nl = viewer.imageryLayers.addImageryProvider(nightProv);
-              nl.dayAlpha = 0.0;
-              nl.nightAlpha = 0.85;
-              nl.brightness = 1.8;
+              nl.dayAlpha = 0.0; nl.nightAlpha = 0.85; nl.brightness = 1.8;
             }
           }).catch(() => {});
         }
       });
-    } catch (e) {
-      console.warn("ArcGIS imagery failed, using default:", e);
-    }
+    } catch (e) { console.warn("ArcGIS failed:", e); }
+
+    // Atmosphere halo
+    viewer.entities.add({
+      id: "atmosphere-halo",
+      position: Cartesian3.fromDegrees(0, 0, 0),
+      ellipsoid: {
+        radii: new Cartesian3(6500000, 6500000, 6500000),
+        material: Color.fromCssColorString("#0088FF").withAlpha(0.02),
+        outline: true,
+        outlineColor: Color.fromCssColorString("#00BFFF").withAlpha(0.06),
+        outlineWidth: 1,
+        slicePartitions: 32,
+        stackPartitions: 32,
+      },
+    });
 
     viewerRef.current = viewer;
 
@@ -173,7 +178,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
             const parsed = JSON.parse(sightingData);
             handleHotspotClick({
               lat: parsed.lat, lon: parsed.lon,
-              intensity: parsed.severity === "critical" ? 1 : parsed.severity === "high" ? 0.8 : 0.5,
+              intensity: parsed.severity === "critical" ? 1 : 0.5,
               color: TACTICAL_COLORS[parsed.category] || "#00FF41",
               name: parsed.location, country: parsed.category?.toUpperCase() || "UAP",
               marketVolume: parsed.source || "Unknown", trend: parsed.date_reported || "",
@@ -186,7 +191,6 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       handleHotspotClick(null);
     }, ScreenSpaceEventType.LEFT_CLICK);
 
-    // Initial camera
     viewer.camera.flyTo({
       destination: Cartesian3.fromDegrees(20, 20, 20000000),
       orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
@@ -200,12 +204,11 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
     };
   }, [handleHotspotClick]);
 
-  // Tesla Aura — Kp > 4 renders a pulsing magenta ellipsoid
+  // Tesla Aura — Kp > 4
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    // Remove previous aura
     if (teslaAuraRef.current) {
       const e = viewer.entities.getById(teslaAuraRef.current);
       if (e) viewer.entities.remove(e);
@@ -214,23 +217,145 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
 
     if (kpIndex > 4) {
       const auraId = "tesla-aura";
-      const intensity = Math.min((kpIndex - 4) / 5, 1); // 0 to 1
+      const intensity = Math.min((kpIndex - 4) / 5, 1);
+
+      // North pole aurora
       viewer.entities.add({
         id: auraId,
-        position: Cartesian3.fromDegrees(0, 0, 0),
+        position: Cartesian3.fromDegrees(0, 80, 200000),
         ellipsoid: {
-          radii: new Cartesian3(6800000, 6800000, 6800000),
-          material: Color.fromCssColorString("#FF00FF").withAlpha(0.06 + intensity * 0.08),
+          radii: new Cartesian3(3000000, 3000000, 600000),
+          material: Color.fromCssColorString("#00FFCC").withAlpha(0.04 + intensity * 0.06),
           outline: true,
-          outlineColor: Color.fromCssColorString("#FF00FF").withAlpha(0.15 + intensity * 0.15),
+          outlineColor: Color.fromCssColorString("#FF00FF").withAlpha(0.1 + intensity * 0.12),
           outlineWidth: 1,
           slicePartitions: 24,
-          stackPartitions: 24,
+          stackPartitions: 12,
         },
       });
+
+      // South pole aurora
+      viewer.entities.add({
+        id: auraId + "-south",
+        position: Cartesian3.fromDegrees(0, -80, 200000),
+        ellipsoid: {
+          radii: new Cartesian3(3000000, 3000000, 600000),
+          material: Color.fromCssColorString("#7B2FFF").withAlpha(0.03 + intensity * 0.05),
+          outline: true,
+          outlineColor: Color.fromCssColorString("#00FF41").withAlpha(0.08 + intensity * 0.1),
+          outlineWidth: 1,
+          slicePartitions: 24,
+          stackPartitions: 12,
+        },
+      });
+
       teslaAuraRef.current = auraId;
     }
   }, [kpIndex]);
+
+  // Earthquake entities — pulsing red rings
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    quakeEntityIdsRef.current.forEach(id => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    quakeEntityIdsRef.current = [];
+
+    // Only show significant quakes (mag >= 2.5) to avoid clutter
+    const significant = earthquakes.filter(q => q.magnitude >= 2.5).slice(0, 100);
+
+    significant.forEach((q, i) => {
+      const entityId = `quake-${i}`;
+      const baseRadius = Math.max(20000, q.magnitude * 30000);
+      const startTime = Date.now();
+
+      viewer.entities.add({
+        id: entityId,
+        position: Cartesian3.fromDegrees(q.lon, q.lat, 0),
+        ellipse: {
+          semiMajorAxis: new CallbackProperty(() => {
+            const elapsed = (Date.now() - startTime) % 4000;
+            const pulse = 1 + 0.3 * Math.sin((elapsed / 4000) * Math.PI * 2);
+            return baseRadius * pulse;
+          }, false) as any,
+          semiMinorAxis: new CallbackProperty(() => {
+            const elapsed = (Date.now() - startTime) % 4000;
+            const pulse = 1 + 0.3 * Math.sin((elapsed / 4000) * Math.PI * 2);
+            return baseRadius * pulse;
+          }, false) as any,
+          material: Color.fromCssColorString("#FF4444").withAlpha(
+            Math.min(0.6, q.magnitude / 10)
+          ),
+          outline: true,
+          outlineColor: Color.fromCssColorString("#FF4444").withAlpha(0.8),
+          outlineWidth: 1,
+          height: 0,
+        },
+        label: q.magnitude >= 4.5 ? {
+          text: `${q.magnitude.toFixed(1)}`,
+          font: "9px monospace",
+          fillColor: Color.fromCssColorString("#FF4444"),
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          pixelOffset: new Cartesian2(0, -8),
+          scaleByDistance: new NearFarScalar(1e6, 0.8, 1e8, 0.2),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        } : undefined,
+      });
+      quakeEntityIdsRef.current.push(entityId);
+    });
+  }, [earthquakes]);
+
+  // NASA EONET events — yellow warning points
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    nasaEntityIdsRef.current.forEach(id => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    nasaEntityIdsRef.current = [];
+
+    nasaEvents.forEach((evt, i) => {
+      const entityId = `nasa-${i}`;
+      const isWildfire = evt.category.toLowerCase().includes("wildfire") || evt.category.toLowerCase().includes("fire");
+      const color = isWildfire ? "#FF8844" : "#FFDD00";
+      const emoji = isWildfire ? "🔥" : "⚠️";
+
+      viewer.entities.add({
+        id: entityId,
+        position: Cartesian3.fromDegrees(evt.lon, evt.lat, 0),
+        point: {
+          pixelSize: 7,
+          color: hexToColor(color, 0.85),
+          outlineColor: hexToColor(color, 0.4),
+          outlineWidth: 3,
+          scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: `${emoji} ${evt.title.substring(0, 20)}`,
+          font: "9px monospace",
+          fillColor: hexToColor(color, 0.9),
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          horizontalOrigin: HorizontalOrigin.CENTER,
+          pixelOffset: new Cartesian2(0, -10),
+          scaleByDistance: new NearFarScalar(1e6, 0.8, 1e8, 0.15),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+      });
+      nasaEntityIdsRef.current.push(entityId);
+    });
+  }, [nasaEvents]);
 
   // Market hotspots layer
   useEffect(() => {
@@ -238,30 +363,24 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
     if (!viewer || viewer.isDestroyed()) return;
 
     marketEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
+      const e = viewer.entities.getById(id); if (e) viewer.entities.remove(e);
     });
     arcEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
+      const e = viewer.entities.getById(id); if (e) viewer.entities.remove(e);
     });
     marketEntityIdsRef.current = [];
     arcEntityIdsRef.current = [];
 
-    const showMarkets = !visibleLayers || visibleLayers.has("markets");
-    if (!showMarkets) return;
+    if (visibleLayers && !visibleLayers.has("markets")) return;
 
     HOTSPOT_DATA.forEach((spot, idx) => {
       const entityId = `market-${idx}`;
-      const position = Cartesian3.fromDegrees(spot.lon, spot.lat, 0);
-      const pointSize = 8 + spot.intensity * 12;
       const tacticalColor = TACTICAL_COLORS[spot.type] || spot.color;
-
       viewer.entities.add({
         id: entityId,
-        position,
+        position: Cartesian3.fromDegrees(spot.lon, spot.lat, 0),
         point: {
-          pixelSize: pointSize,
+          pixelSize: 8 + spot.intensity * 12,
           color: hexToColor(tacticalColor, 0.85),
           outlineColor: hexToColor(tacticalColor, 0.4),
           outlineWidth: 3,
@@ -287,9 +406,8 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       if (!HOTSPOT_DATA[a] || !HOTSPOT_DATA[b]) return;
       const start = HOTSPOT_DATA[a], end = HOTSPOT_DATA[b];
       const arcPoints: Cartesian3[] = [];
-      const segments = 50;
-      for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
+      for (let i = 0; i <= 50; i++) {
+        const t = i / 50;
         arcPoints.push(Cartesian3.fromDegrees(
           start.lon + (end.lon - start.lon) * t,
           start.lat + (end.lat - start.lat) * t,
@@ -308,7 +426,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
     });
   }, [visibleLayers]);
 
-  // Sighting entities (UAP + Cryptozoo)
+  // Sighting entities
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
@@ -329,7 +447,6 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
       const colorHex = TACTICAL_COLORS[cat] || "#00FF41";
       const size = SEVERITY_SIZE[s.severity || "signal"] || 6;
       const entityId = `sighting-${s.id}`;
-
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(s.lon, s.lat, 0),
@@ -343,8 +460,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
         },
         label: {
           text: `${cat === "cryptozoology" ? "🦎" : cat === "ufo" ? "🛸" : "◉"} ${s.location?.split(",")[0] || ""}`,
-          font: "10px monospace",
-          fillColor: hexToColor(colorHex, 0.9),
+          font: "10px monospace", fillColor: hexToColor(colorHex, 0.9),
           outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
           verticalOrigin: VerticalOrigin.BOTTOM,
           horizontalOrigin: HorizontalOrigin.CENTER,
@@ -364,7 +480,7 @@ export function CesiumGlobe({ onHotspotClick, sightings = [], visibleLayers, fly
     });
   }, [sightings, visibleLayers]);
 
-  // Fly-to handler
+  // Fly-to
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !flyTo) return;

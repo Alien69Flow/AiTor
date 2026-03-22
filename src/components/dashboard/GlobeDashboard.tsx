@@ -4,6 +4,9 @@ import { GlobeOverlay } from "./GlobeOverlay";
 import { FeedPanel } from "./FeedPanel";
 import { useUAPSightings } from "@/hooks/useUAPSightings";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
+import { useEarthquakes } from "@/hooks/useEarthquakes";
+import { useNasaEvents } from "@/hooks/useNasaEvents";
+import { useCryptoPrices } from "@/hooks/useCryptoPrices";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import { Eye, EyeOff, ChevronDown, ChevronUp } from "lucide-react";
 
@@ -48,6 +51,9 @@ export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<HotspotData | null>(null);
   const { sightings } = useUAPSightings();
   const spaceWeather = useSpaceWeather();
+  const { earthquakes } = useEarthquakes();
+  const { events: nasaEvents } = useNasaEvents();
+  const { prices: cryptoPrices } = useCryptoPrices();
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(new Set(["markets", "uap", "cryptozoo"]));
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; alt: number } | null>(null);
   const [legendCollapsed, setLegendCollapsed] = useState(false);
@@ -59,15 +65,30 @@ export function GlobeDashboard() {
   const toggleLayer = (key: LayerKey) => {
     setVisibleLayers(prev => {
       const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      if (next.has(key)) next.delete(key); else next.add(key);
       return next;
     });
   };
 
   return (
     <div className="flex flex-col flex-1 min-h-0 relative" style={{ background: "#000000" }}>
-      <LiveTicker spaceWeather={spaceWeather} />
+      {/* Crypto ticker bar */}
+      <div className="flex items-center gap-3 px-3 py-1 border-b text-[9px] overflow-x-auto"
+        style={{ background: "rgba(0,0,0,0.85)", borderColor: "rgba(255,255,255,0.04)" }}
+      >
+        {cryptoPrices.map((c) => (
+          <div key={c.id} className="flex items-center gap-1.5 shrink-0">
+            <span className="font-mono font-bold text-[#FFD700]">{c.symbol}</span>
+            <span className="font-mono text-white/70">${c.price.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+            <span className={`font-mono text-[8px] ${c.change24h >= 0 ? "text-[#00FF41]" : "text-[#FF4444]"}`}>
+              {c.change24h >= 0 ? "+" : ""}{c.change24h.toFixed(1)}%
+            </span>
+            <a href="#" className="text-[7px] text-white/15 hover:text-white/40 transition-colors font-mono uppercase">Trade</a>
+          </div>
+        ))}
+      </div>
+
+      <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
       <div className="flex flex-1 min-h-0">
         <div className="flex-1 relative min-w-0">
@@ -84,6 +105,8 @@ export function GlobeDashboard() {
               visibleLayers={visibleLayers}
               flyTo={flyTo}
               kpIndex={spaceWeather.kpIndex}
+              earthquakes={earthquakes}
+              nasaEvents={nasaEvents}
             />
           </Suspense>
 
@@ -91,41 +114,30 @@ export function GlobeDashboard() {
             selectedHotspot={selectedHotspot}
             onClose={() => setSelectedHotspot(null)}
             spaceWeather={spaceWeather}
+            earthquakeCount={earthquakes.length}
+            nasaEventCount={nasaEvents.length}
           />
 
-          {/* Tactical Console — compact glassmorphism */}
+          {/* Tactical Console */}
           <div className="absolute bottom-3 left-3 z-10 w-[160px]">
             <div className="rounded-lg overflow-hidden" style={glassStyle}>
-              {/* Header */}
               <button
                 onClick={() => setLegendCollapsed(!legendCollapsed)}
                 className="w-full flex items-center justify-between px-2.5 py-1.5 hover:bg-white/5 transition-colors"
               >
-                <span className="text-[8px] font-mono uppercase tracking-wider text-white/35">
-                  ⚡ Console
-                </span>
-                {legendCollapsed ? (
-                  <ChevronUp className="w-2.5 h-2.5 text-white/20" />
-                ) : (
-                  <ChevronDown className="w-2.5 h-2.5 text-white/20" />
-                )}
+                <span className="text-[8px] font-mono uppercase tracking-wider text-white/35">⚡ Console</span>
+                {legendCollapsed ? <ChevronUp className="w-2.5 h-2.5 text-white/20" /> : <ChevronDown className="w-2.5 h-2.5 text-white/20" />}
               </button>
 
               {!legendCollapsed && (
                 <>
                   {/* Navigate */}
                   <div className="px-2.5 py-1.5 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
-                    <div className="text-[7px] font-mono uppercase tracking-wider text-white/25 mb-1">
-                      🧭 Navigate
-                    </div>
+                    <div className="text-[7px] font-mono uppercase tracking-wider text-white/25 mb-1">🧭 Navigate</div>
                     <div className="flex gap-0.5 flex-wrap">
                       {FLY_TO_REGIONS.map((r) => (
-                        <button
-                          key={r.label}
-                          onClick={() => setFlyTo({ lat: r.lat, lon: r.lon, alt: r.alt })}
-                          className="px-1 py-0.5 rounded text-[10px] hover:bg-white/10 transition-colors"
-                          title={r.label}
-                        >
+                        <button key={r.label} onClick={() => setFlyTo({ lat: r.lat, lon: r.lon, alt: r.alt })}
+                          className="px-1 py-0.5 rounded text-[10px] hover:bg-white/10 transition-colors" title={r.label}>
                           {r.label}
                         </button>
                       ))}
@@ -135,17 +147,32 @@ export function GlobeDashboard() {
                   {/* Layers */}
                   <div className="px-2.5 py-1.5 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
                     {LAYER_MAP.map((l) => (
-                      <button
-                        key={l.key}
-                        onClick={() => toggleLayer(l.key)}
+                      <button key={l.key} onClick={() => toggleLayer(l.key)}
                         className="flex items-center gap-1 w-full text-left px-1 py-0.5 rounded text-[8px] font-mono transition-colors hover:bg-white/5"
-                        style={{ color: visibleLayers.has(l.key) ? l.color : "rgba(255,255,255,0.15)" }}
-                      >
+                        style={{ color: visibleLayers.has(l.key) ? l.color : "rgba(255,255,255,0.15)" }}>
                         {visibleLayers.has(l.key) ? <Eye className="w-2.5 h-2.5" /> : <EyeOff className="w-2.5 h-2.5" />}
                         <span className="w-1.5 h-1.5 rounded-full" style={{ background: visibleLayers.has(l.key) ? l.color : "#333" }} />
                         <span>{l.emoji} {l.label}</span>
                       </button>
                     ))}
+                  </div>
+
+                  {/* Real-time counters */}
+                  <div className="px-2.5 py-1.5 border-t" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
+                    <div className="space-y-0.5">
+                      <div className="flex items-center justify-between text-[7px] font-mono">
+                        <span className="text-[#FF4444]/60">💥 Quakes 24h</span>
+                        <span className="text-[#FF4444] font-bold">{earthquakes.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[7px] font-mono">
+                        <span className="text-[#FFDD00]/60">⚠️ NASA Events</span>
+                        <span className="text-[#FFDD00] font-bold">{nasaEvents.length}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[7px] font-mono">
+                        <span className="text-[#00FF41]/60">🛸 UAP Reports</span>
+                        <span className="text-[#00FF41] font-bold">{sightings.length}</span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Categories */}
@@ -154,9 +181,7 @@ export function GlobeDashboard() {
                       {TACTICAL_CATEGORIES.map((c) => (
                         <div key={c.key} className="flex items-center gap-1">
                           <span className="w-1 h-1 rounded-full" style={{ background: c.color }} />
-                          <span className="text-[7px] font-mono" style={{ color: c.color + "66" }}>
-                            {c.emoji} {c.label}
-                          </span>
+                          <span className="text-[7px] font-mono" style={{ color: c.color + "66" }}>{c.emoji} {c.label}</span>
                         </div>
                       ))}
                     </div>
@@ -168,9 +193,7 @@ export function GlobeDashboard() {
                       <span className="text-[7px] font-mono text-white/20">
                         Kp: <span style={{ color: spaceWeather.kpIndex > 4 ? "#FF00FF" : "#00FF41" }}>{spaceWeather.kpIndex.toFixed(1)}</span>
                       </span>
-                      <span className="text-[7px] font-mono text-white/15">
-                        {sightings.length} reports
-                      </span>
+                      <span className="text-[7px] font-mono text-white/15">{sightings.length} reports</span>
                     </div>
                   </div>
                 </>
@@ -179,20 +202,20 @@ export function GlobeDashboard() {
           </div>
         </div>
 
-        <FeedPanel />
+        <FeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} />
       </div>
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1 border-t text-[8px]"
-        style={{ background: "rgba(0,0,0,0.85)", borderColor: "rgba(255,255,255,0.04)" }}
-      >
+        style={{ background: "rgba(0,0,0,0.85)", borderColor: "rgba(255,255,255,0.04)" }}>
         <div className="flex items-center gap-1.5">
           <span className="w-1.5 h-1.5 rounded-full bg-[#00FF41] animate-pulse" />
           <span className="text-white/25 font-mono">TACTICAL • ONLINE</span>
         </div>
         <div className="flex items-center gap-3 text-white/15 font-mono">
-          <span>NOAA</span>
-          <span>Firecrawl</span>
+          <span>NOAA ✓</span>
+          <span>USGS ✓</span>
+          <span>NASA ✓</span>
           <span>OSINT</span>
         </div>
       </div>
