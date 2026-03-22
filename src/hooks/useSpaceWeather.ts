@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 export interface SpaceWeather {
   kpIndex: number;
@@ -25,9 +24,48 @@ export function useSpaceWeather(intervalMs = 120_000) {
 
   const fetchData = useCallback(async () => {
     try {
-      const { data: result, error } = await supabase.functions.invoke("noaa-space-weather");
-      if (error) throw error;
-      if (result) setData(result as SpaceWeather);
+      // Direct fetch to NOAA (CORS-friendly public API)
+      const [kpRes, scalesRes] = await Promise.all([
+        fetch("https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json"),
+        fetch("https://services.swpc.noaa.gov/products/noaa-scales.json"),
+      ]);
+
+      let kpIndex = 0;
+      if (kpRes.ok) {
+        const raw = await kpRes.json();
+        if (Array.isArray(raw) && raw.length > 1) {
+          const latest = raw[raw.length - 1];
+          kpIndex = parseFloat(latest[1]) || 0;
+        }
+      }
+
+      let solarStorm = false;
+      let stormLevel = "none";
+      let radioBlackout = "none";
+      let geomagneticStorm = "none";
+
+      if (scalesRes.ok) {
+        const scalesData = await scalesRes.json();
+        if (scalesData?.["0"]) {
+          const current = scalesData["0"];
+          const rScale = current.R?.Scale || "0";
+          const sScale = current.S?.Scale || "0";
+          const gScale = current.G?.Scale || "0";
+          radioBlackout = rScale !== "0" ? `R${rScale}` : "none";
+          stormLevel = sScale !== "0" ? `S${sScale}` : "none";
+          geomagneticStorm = gScale !== "0" ? `G${gScale}` : "none";
+          solarStorm = parseInt(rScale) >= 1 || parseInt(sScale) >= 1 || parseInt(gScale) >= 1;
+        }
+      }
+
+      setData({
+        kpIndex,
+        solarStorm,
+        stormLevel,
+        radioBlackout,
+        geomagneticStorm,
+        timestamp: new Date().toISOString(),
+      });
     } catch (e) {
       console.warn("Space weather fetch failed:", e);
     } finally {
