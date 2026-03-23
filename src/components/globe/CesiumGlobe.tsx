@@ -17,6 +17,7 @@ import {
   IonImageryProvider,
   EllipsoidTerrainProvider,
   CallbackProperty,
+  SkyBox,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -53,7 +54,7 @@ const HOTSPOT_DATA: HotspotData[] = [
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#FF4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
 ];
 
-const ARC_PAIRS = [[0, 5], [3, 8], [11, 13], [14, 6], [9, 1], [7, 12]];
+const ARC_PAIRS = [[0, 5], [3, 8], [11, 13], [14, 6], [7, 12]];
 
 const SEVERITY_SIZE: Record<string, number> = {
   critical: 14, high: 11, medium: 8, low: 6, signal: 5,
@@ -87,7 +88,7 @@ export function CesiumGlobe({
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
   const arcEntityIdsRef = useRef<string[]>([]);
-  const teslaAuraRef = useRef<string | null>(null);
+  const teslaAuraRef = useRef<string[]>([]);
   const quakeEntityIdsRef = useRef<string[]>([]);
   const nasaEntityIdsRef = useRef<string[]>([]);
 
@@ -106,14 +107,42 @@ export function CesiumGlobe({
       geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
       selectionIndicator: false, timeline: false, navigationHelpButton: false,
       creditContainer: document.createElement("div"),
-      skyBox: false, skyAtmosphere: undefined,
       terrainProvider: new EllipsoidTerrainProvider(),
       contextOptions: { webgl: { alpha: false } },
     });
 
+    // Enable built-in Cesium sky with stars and atmosphere
     viewer.scene.backgroundColor = Color.BLACK;
     viewer.scene.globe.enableLighting = true;
-    viewer.scene.globe.atmosphereLightIntensity = 5.0;
+    viewer.scene.globe.atmosphereLightIntensity = 8.0;
+
+    // Enable sky atmosphere (the glow halo around the Earth)
+    if (viewer.scene.skyAtmosphere) {
+      viewer.scene.skyAtmosphere.show = true;
+      viewer.scene.skyAtmosphere.brightnessShift = 0.05;
+      viewer.scene.skyAtmosphere.hueShift = -0.05;
+      viewer.scene.skyAtmosphere.saturationShift = 0.2;
+    }
+
+    // Enable sun and moon
+    if (viewer.scene.sun) viewer.scene.sun.show = true;
+    if (viewer.scene.moon) viewer.scene.moon.show = true;
+
+    // Dense star field skybox
+    try {
+      viewer.scene.skyBox = new SkyBox({
+        sources: {
+          positiveX: "https://cesium.com/public/SandcastleSampleData/skybox_px.jpg",
+          negativeX: "https://cesium.com/public/SandcastleSampleData/skybox_mx.jpg",
+          positiveY: "https://cesium.com/public/SandcastleSampleData/skybox_py.jpg",
+          negativeY: "https://cesium.com/public/SandcastleSampleData/skybox_my.jpg",
+          positiveZ: "https://cesium.com/public/SandcastleSampleData/skybox_pz.jpg",
+          negativeZ: "https://cesium.com/public/SandcastleSampleData/skybox_mz.jpg",
+        },
+      });
+    } catch (e) {
+      console.warn("Skybox init failed, using default stars:", e);
+    }
 
     // Night lights
     try {
@@ -121,8 +150,8 @@ export function CesiumGlobe({
         if (!viewer.isDestroyed()) {
           const layer = viewer.imageryLayers.addImageryProvider(provider);
           layer.dayAlpha = 0.0;
-          layer.nightAlpha = 0.85;
-          layer.brightness = 1.8;
+          layer.nightAlpha = 0.9;
+          layer.brightness = 2.0;
         }
       }).catch((e: any) => console.warn("Night lights failed:", e));
     } catch (e) { console.warn("Night lights init failed:", e); }
@@ -138,27 +167,14 @@ export function CesiumGlobe({
           IonImageryProvider.fromAssetId(3812).then((nightProv) => {
             if (!viewer.isDestroyed()) {
               const nl = viewer.imageryLayers.addImageryProvider(nightProv);
-              nl.dayAlpha = 0.0; nl.nightAlpha = 0.85; nl.brightness = 1.8;
+              nl.dayAlpha = 0.0; nl.nightAlpha = 0.9; nl.brightness = 2.0;
             }
           }).catch(() => {});
         }
       });
     } catch (e) { console.warn("ArcGIS failed:", e); }
 
-    // Atmosphere halo
-    viewer.entities.add({
-      id: "atmosphere-halo",
-      position: Cartesian3.fromDegrees(0, 0, 0),
-      ellipsoid: {
-        radii: new Cartesian3(6500000, 6500000, 6500000),
-        material: Color.fromCssColorString("#0088FF").withAlpha(0.02),
-        outline: true,
-        outlineColor: Color.fromCssColorString("#00BFFF").withAlpha(0.06),
-        outlineWidth: 1,
-        slicePartitions: 32,
-        stackPartitions: 32,
-      },
-    });
+    // NO atmosphere ellipsoid entity — using Cesium's built-in skyAtmosphere instead
 
     viewerRef.current = viewer;
 
@@ -204,53 +220,61 @@ export function CesiumGlobe({
     };
   }, [handleHotspotClick]);
 
-  // Tesla Aura — Kp > 4
+  // Tesla Aurora — dynamic polar rings reacting to Kp
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
 
-    if (teslaAuraRef.current) {
-      const e = viewer.entities.getById(teslaAuraRef.current);
+    // Clean previous aurora entities
+    teslaAuraRef.current.forEach(id => {
+      const e = viewer.entities.getById(id);
       if (e) viewer.entities.remove(e);
-      teslaAuraRef.current = null;
-    }
+    });
+    teslaAuraRef.current = [];
 
-    if (kpIndex > 4) {
-      const auraId = "tesla-aura";
-      const intensity = Math.min((kpIndex - 4) / 5, 1);
+    if (kpIndex <= 3) return;
 
-      // North pole aurora
-      viewer.entities.add({
-        id: auraId,
-        position: Cartesian3.fromDegrees(0, 80, 200000),
-        ellipsoid: {
-          radii: new Cartesian3(3000000, 3000000, 600000),
-          material: Color.fromCssColorString("#00FFCC").withAlpha(0.04 + intensity * 0.06),
-          outline: true,
-          outlineColor: Color.fromCssColorString("#FF00FF").withAlpha(0.1 + intensity * 0.12),
-          outlineWidth: 1,
-          slicePartitions: 24,
-          stackPartitions: 12,
-        },
-      });
+    const intensity = Math.min((kpIndex - 3) / 6, 1);
+    const startTime = Date.now();
 
-      // South pole aurora
-      viewer.entities.add({
-        id: auraId + "-south",
-        position: Cartesian3.fromDegrees(0, -80, 200000),
-        ellipsoid: {
-          radii: new Cartesian3(3000000, 3000000, 600000),
-          material: Color.fromCssColorString("#7B2FFF").withAlpha(0.03 + intensity * 0.05),
-          outline: true,
-          outlineColor: Color.fromCssColorString("#00FF41").withAlpha(0.08 + intensity * 0.1),
-          outlineWidth: 1,
-          slicePartitions: 24,
-          stackPartitions: 12,
-        },
-      });
+    // Create aurora ring bands at both poles
+    const poles = [
+      { lat: 67, suffix: "n", colors: ["#00FFCC", "#7B2FFF", "#00FF41"] },
+      { lat: -67, suffix: "s", colors: ["#7B2FFF", "#00FFCC", "#FF00FF"] },
+    ];
 
-      teslaAuraRef.current = auraId;
-    }
+    poles.forEach(({ lat, suffix, colors }) => {
+      // Multiple thin rings at different latitudes to simulate aurora oval
+      for (let ring = 0; ring < 3; ring++) {
+        const ringLat = lat + (lat > 0 ? -ring * 3 : ring * 3);
+        const entityId = `aurora-${suffix}-${ring}`;
+        const baseRadius = 400000 + ring * 200000;
+        const color = colors[ring];
+
+        viewer.entities.add({
+          id: entityId,
+          position: Cartesian3.fromDegrees(0, ringLat, 80000 + ring * 30000),
+          ellipse: {
+            semiMajorAxis: new CallbackProperty(() => {
+              const elapsed = (Date.now() - startTime) % 6000;
+              const pulse = 1 + 0.15 * Math.sin((elapsed / 6000) * Math.PI * 2 + ring);
+              return baseRadius * pulse;
+            }, false) as any,
+            semiMinorAxis: new CallbackProperty(() => {
+              const elapsed = (Date.now() - startTime) % 6000;
+              const pulse = 1 + 0.15 * Math.sin((elapsed / 6000) * Math.PI * 2 + ring + 1);
+              return baseRadius * 0.6 * pulse;
+            }, false) as any,
+            material: hexToColor(color, 0.03 + intensity * 0.05),
+            outline: true,
+            outlineColor: hexToColor(color, 0.08 + intensity * 0.12),
+            outlineWidth: 1,
+            height: 80000 + ring * 30000,
+          },
+        });
+        teslaAuraRef.current.push(entityId);
+      }
+    });
   }, [kpIndex]);
 
   // Earthquake entities — pulsing red rings
@@ -264,7 +288,6 @@ export function CesiumGlobe({
     });
     quakeEntityIdsRef.current = [];
 
-    // Only show significant quakes (mag >= 2.5) to avoid clutter
     const significant = earthquakes.filter(q => q.magnitude >= 2.5).slice(0, 100);
 
     significant.forEach((q, i) => {
