@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from 'three';
 
-// ARQUITECTURA DE DATOS
+// ARQUITECTURA DE DATOS (Restaurada al 100%)
 export interface UnifiedHotspotData {
   lat: number;
   lon: number;
@@ -16,7 +16,6 @@ export interface UnifiedHotspotData {
   type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node";
 }
 
-// NODOS ESTÁTICOS
 const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 35.7, lon: 51.4, intensity: 1, color: "#ff4444", name: "Tehran", country: "Iran", marketVolume: "$2.1B", trend: "-12%", topTokens: ["USDT", "BTC"], type: "conflict" },
   { lat: 32.0, lon: 34.8, intensity: 0.9, color: "#ff6644", name: "Tel Aviv", country: "Israel", marketVolume: "$8.4B", trend: "+5%", topTokens: ["ETH", "MATIC"], type: "conflict" },
@@ -36,77 +35,60 @@ const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#ff4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
 ];
 
-interface GlobeSceneProps {
-  onHotspotClick?: (data: UnifiedHotspotData | null) => void;
-}
-
-export function GlobeScene({ onHotspotClick }: GlobeSceneProps) {
+export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHotspotData | null) => void }) {
   const globeRef = useRef<any>();
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
 
-  // CARGA DE DATOS Y CONEXIONES (Segura)
   useEffect(() => {
-    // 1. Arcos de Flujo
+    // 1. Arcos de Flujo (Restaurados)
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7]];
     const newArcs = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
       const end = DAO_BASE_HOTSPOTS[b];
       if (!start || !end) return null;
       return {
-        startLat: start.lat,
-        startLng: start.lon,
-        endLat: end.lat,
-        endLng: end.lon,
+        startLat: start.lat, startLng: start.lon,
+        endLat: end.lat, endLng: end.lon,
         color: start.color,
       };
     }).filter(Boolean);
     setArcsData(newArcs);
 
-    // 2. Datos Reales USGS
-    const quakeApiUrl = 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson';
-    fetch(quakeApiUrl)
+    // 2. Datos USGS Real-time (Restaurados)
+    fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson')
       .then(res => res.json())
       .then(data => {
         const quakes = data.features.map((feat: any) => ({
           lat: feat.geometry.coordinates[1],
           lon: feat.geometry.coordinates[0],
           intensity: feat.properties.mag / 9,
-          color: "#ffff00", // Alerta amarilla
+          color: "#ffff00",
           name: `TERREMOTO M${feat.properties.mag} - ${feat.properties.title}`,
-          country: "USGS Real-time",
-          marketVolume: "N/A",
-          trend: "N/A",
-          topTokens: [],
-          type: "quake"
+          country: "USGS Real-time", marketVolume: "N/A", trend: "N/A", topTokens: [], type: "quake"
         }));
         setPointsData([...DAO_BASE_HOTSPOTS, ...quakes]);
       })
       .catch(e => console.error("Error USGS", e));
   }, []);
 
-  // CONFIGURACIÓN DE VISTA (Una vez montado)
   useEffect(() => {
     if (globeRef.current) {
       globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.3 }, 1000);
       globeRef.current.controls().autoRotate = true;
       globeRef.current.controls().autoRotateSpeed = 0.4;
-      globeRef.current.controls().enableZoom = true;
     }
   }, []);
 
-  // GENERADOR DEL CAMPO TESLA (Nativo, sin romper React)
+  // Fix del Campo Tesla: Usamos MeshBasicMaterial para evitar el crash [object Object]
   const teslaAuraObject = useCallback(() => {
     return new THREE.Mesh(
-      new THREE.SphereGeometry(2.35, 64, 64),
-      new THREE.MeshPhongMaterial({
+      new THREE.SphereGeometry(1.15, 32, 32),
+      new THREE.MeshBasicMaterial({ // MeshBasic no necesita luces
         color: "#00aaff",
         transparent: true,
-        opacity: 0.12,
+        opacity: 0.08,
         side: THREE.BackSide,
-        shininess: 50,
-        emissive: "#00aaff",
-        emissiveIntensity: 0.4
       })
     );
   }, []);
@@ -115,16 +97,12 @@ export function GlobeScene({ onHotspotClick }: GlobeSceneProps) {
     <div className="w-full h-full relative flex items-center justify-center bg-black">
       <Globe
         ref={globeRef}
-        
-        // Fotorrealismo y Cosmos usando API Nativa
         globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
         bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
         backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-        
         showGraticules={true}
         graticulesColor="rgba(0, 255, 65, 0.05)"
         
-        // Puntos de Información Unificados
         pointsData={pointsData}
         pointLat="lat"
         pointLng="lon"
@@ -132,7 +110,6 @@ export function GlobeScene({ onHotspotClick }: GlobeSceneProps) {
         pointRadius={(d: any) => d.type === 'quake' ? d.intensity * 0.7 : d.intensity * 0.45}
         onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
         
-        // Etiquetas Textuales (Solo nodos DAO)
         labelsData={pointsData.filter(d => d.type !== 'quake')}
         labelLat="lat"
         labelLng="lon"
@@ -141,7 +118,6 @@ export function GlobeScene({ onHotspotClick }: GlobeSceneProps) {
         labelDotRadius={0}
         labelColor={() => 'rgba(255, 255, 255, 0.8)'}
         
-        // Arcos Láser
         arcsData={arcsData}
         arcStartLat="startLat"
         arcStartLng="startLng"
@@ -153,15 +129,12 @@ export function GlobeScene({ onHotspotClick }: GlobeSceneProps) {
         arcDashAnimateTime={2500}
         arcStroke={0.5}
 
-        // Atmósfera de Neón
         showAtmosphere={true}
         atmosphereColor="#00ff41"
         atmosphereAltitude={0.15}
 
-        // Inyección Segura del Campo Tesla
         customLayerData={[1]}
         customThreeObject={teslaAuraObject}
       />
     </div>
   );
-}
