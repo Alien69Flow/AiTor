@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { HelpCircle, X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-react";
+import { X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-center";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import { supabase } from "@/integrations/supabase/client";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 
 const TACTICAL_COLORS: Record<string, string> = {
-  conflict: "#FF4444", finance: "#FFD700", tech: "#FFD700", geopolitical: "#0088FF",
+  conflict: "#FF4444", 
+  finance: "#FFD700", 
+  tech: "#FFD700", 
+  geopolitical: "#0088FF",
 };
 
 const glassStyle = {
@@ -24,7 +27,7 @@ interface GlobeOverlayProps {
 }
 
 export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquakeCount = 0, nasaEventCount = 0 }: GlobeOverlayProps) {
-  // Dynamic tension: NOAA + earthquakes + NASA events
+  // Lógica de tensión dinámica basada en eventos reales
   const kpContrib = spaceWeather?.kpIndex ? spaceWeather.kpIndex * 8 : 0;
   const stormContrib = spaceWeather?.solarStorm ? 25 : 0;
   const quakeContrib = Math.min(earthquakeCount * 0.1, 15);
@@ -53,6 +56,7 @@ export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquak
 
   return (
     <>
+      {/* Indicador de Tensión Global (Flotante Superior) */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
         <div className="flex items-center gap-2 px-3 py-1 rounded-full" style={glassStyle}>
           <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: tensionColor }} />
@@ -70,6 +74,7 @@ export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquak
         </div>
       </div>
 
+      {/* Popup de Detalles (Ajustado para no solapar con el FeedPanel) */}
       {selectedHotspot && <CountryPopup hotspot={selectedHotspot} onClose={onClose} />}
     </>
   );
@@ -90,7 +95,8 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
   const typeColor = TACTICAL_COLORS[hotspot.type] || "#FFD700";
 
   return (
-    <div className="absolute top-14 right-3 z-20 w-64">
+    /* md:right-[430px] asegura que el popup aparezca a la IZQUIERDA del FeedPanel en escritorio */
+    <div className="absolute top-14 right-3 md:right-[430px] z-50 w-64 animate-in fade-in slide-in-from-right-4 duration-300">
       <div className="rounded-lg overflow-hidden" style={{ ...glassStyle, border: `0.5px solid ${typeColor}22` }}>
         <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: "0.5px solid rgba(255,255,255,0.04)" }}>
           <div className="flex items-center gap-1.5">
@@ -123,7 +129,7 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
         <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)" }}>
           <div className="flex items-center gap-1">
             <AlertTriangle className="w-2.5 h-2.5 text-[#00FF41]/50" />
-            <span className="text-[8px] text-white/20 font-mono">{uapCount} UAP</span>
+            <span className="text-[8px] text-white/20 font-mono">{uapCount} UAP Reports</span>
           </div>
           <Badge variant="outline" className="text-[7px] uppercase font-mono" style={{ color: typeColor, borderColor: typeColor + "33" }}>{hotspot.type}</Badge>
         </div>
