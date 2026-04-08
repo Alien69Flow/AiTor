@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
+import * as THREE from "three";
 
 // ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
@@ -12,10 +13,9 @@ export interface UnifiedHotspotData {
   marketVolume: string;
   trend: string;
   topTokens: string[];
-  type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa";
+  type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa" | "aircraft";
 }
 
-// Alias for backward compat
 export type HotspotData = UnifiedHotspotData;
 
 const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
@@ -47,12 +47,86 @@ const AURORA_RINGS = [
   { lat: -67, lng: 300, maxR: 4, propagationSpeed: 2.5, repeatPeriod: 3500, color: () => "#00ff4166" },
 ];
 
+// Atmosphere glow shader
+function addAtmosphereGlow(scene: THREE.Scene) {
+  const geometry = new THREE.SphereGeometry(101.5, 64, 64);
+  const material = new THREE.ShaderMaterial({
+    vertexShader: `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        vNormal = normalize(normalMatrix * normal);
+        vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying vec3 vNormal;
+      varying vec3 vPosition;
+      void main() {
+        float intensity = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+        vec3 atmosphere = vec3(0.3, 0.6, 1.0) * intensity;
+        float alpha = intensity * 0.6;
+        gl_FragColor = vec4(atmosphere, alpha);
+      }
+    `,
+    blending: THREE.AdditiveBlending,
+    side: THREE.BackSide,
+    transparent: true,
+    depthWrite: false,
+  });
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.name = "atmosphere-glow";
+  scene.add(mesh);
+  return mesh;
+}
+
+// Moon object
+function addMoon(scene: THREE.Scene) {
+  const loader = new THREE.TextureLoader();
+  const moonGeo = new THREE.SphereGeometry(8, 32, 32);
+  const moonMat = new THREE.MeshPhongMaterial({
+    map: loader.load("https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Moon_Farside_LRO.jpg/1024px-Moon_Farside_LRO.jpg"),
+    emissive: new THREE.Color(0x222222),
+  });
+  const moon = new THREE.Mesh(moonGeo, moonMat);
+  moon.position.set(250, 80, -150);
+  moon.name = "moon";
+  scene.add(moon);
+  return moon;
+}
+
+// Sun light
+function addSunLight(scene: THREE.Scene) {
+  const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
+  sunLight.position.set(-300, 100, 200);
+  scene.add(sunLight);
+
+  const ambient = new THREE.AmbientLight(0x334466, 0.4);
+  scene.add(ambient);
+
+  // Sun glow sprite
+  const spriteMat = new THREE.SpriteMaterial({
+    map: new THREE.TextureLoader().load("data:image/svg+xml," + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffee" stop-opacity="1"/><stop offset="30%" stop-color="#ffdd88" stop-opacity="0.6"/><stop offset="100%" stop-color="#ff8800" stop-opacity="0"/></radialGradient><circle cx="64" cy="64" r="64" fill="url(#g)"/></svg>`
+    )),
+    blending: THREE.AdditiveBlending,
+    transparent: true,
+    depthWrite: false,
+  });
+  const sunSprite = new THREE.Sprite(spriteMat);
+  sunSprite.position.set(-300, 100, 200);
+  sunSprite.scale.set(80, 80, 1);
+  scene.add(sunSprite);
+}
+
 export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHotspotData | null) => void }) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const sceneEnhanced = useRef(false);
 
   // Resize observer
   useEffect(() => {
@@ -66,9 +140,37 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
     return () => ro.disconnect();
   }, []);
 
-  // Data: arcs + USGS earthquakes
+  // Enhance Three.js scene after globe loads
+  const enhanceScene = useCallback(() => {
+    if (!globeRef.current || sceneEnhanced.current) return;
+    const scene = globeRef.current.scene();
+    const renderer = globeRef.current.renderer();
+    if (!scene || !renderer) return;
+
+    sceneEnhanced.current = true;
+
+    // Renderer quality
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+    // Remove default lights, add custom
+    const toRemove: THREE.Object3D[] = [];
+    scene.traverse((child: THREE.Object3D) => {
+      if (child instanceof THREE.AmbientLight || child instanceof THREE.DirectionalLight) {
+        toRemove.push(child);
+      }
+    });
+    toRemove.forEach(l => scene.remove(l));
+
+    addSunLight(scene);
+    addAtmosphereGlow(scene);
+    addMoon(scene);
+  }, []);
+
+  // Data: arcs + USGS earthquakes + OpenSky aircraft
   useEffect(() => {
-    const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7]];
+    const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];
     const newArcs = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
       const end = DAO_BASE_HOTSPOTS[b];
@@ -76,79 +178,130 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
       return {
         startLat: start.lat, startLng: start.lon,
         endLat: end.lat, endLng: end.lon,
-        color: [start.color, end.color],
+        color: [start.color + "cc", end.color + "cc"],
       };
     }).filter(Boolean);
     setArcsData(newArcs);
 
+    // USGS Earthquakes
     fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson')
       .then(res => res.json())
       .then(data => {
-        const quakes: UnifiedHotspotData[] = (data.features || []).map((feat: any) => ({
+        const quakes: UnifiedHotspotData[] = (data.features || []).slice(0, 50).map((feat: any) => ({
           lat: feat.geometry.coordinates[1],
           lon: feat.geometry.coordinates[0],
           intensity: (feat.properties.mag || 4) / 9,
           color: "#ffff00",
           name: feat.properties.title || "Earthquake",
           country: "USGS",
-          marketVolume: "N/A",
+          marketVolume: `M${(feat.properties.mag || 0).toFixed(1)}`,
           trend: "N/A",
           topTokens: [] as string[],
           type: "quake" as const,
         }));
-        setPointsData(prev => [...DAO_BASE_HOTSPOTS, ...quakes]);
+        setPointsData(prev => {
+          const base = prev.filter(p => p.type !== 'quake' && p.type !== 'aircraft');
+          return [...base, ...quakes];
+        });
       })
       .catch(e => console.warn("USGS fetch error:", e));
+
+    // OpenSky Network - aircraft positions
+    fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
+      .then(res => res.json())
+      .then(data => {
+        if (!data.states) return;
+        const aircraft: UnifiedHotspotData[] = data.states.slice(0, 80).map((s: any[]) => ({
+          lat: s[6] || 0,
+          lon: s[5] || 0,
+          intensity: 0.15,
+          color: "#ffffff",
+          name: (s[1] || "").trim() || s[0] || "Aircraft",
+          country: s[2] || "Unknown",
+          marketVolume: `${Math.round(s[7] || 0)}m alt`,
+          trend: `${Math.round(s[9] || 0)}m/s`,
+          topTokens: [] as string[],
+          type: "aircraft" as const,
+        })).filter((a: UnifiedHotspotData) => a.lat !== 0 && a.lon !== 0);
+        setPointsData(prev => {
+          const base = prev.filter(p => p.type !== 'aircraft');
+          return [...base, ...aircraft];
+        });
+      })
+      .catch(e => console.warn("OpenSky fetch error:", e));
   }, []);
 
-  // Globe controls
+  // Globe controls + scene enhancement
   useEffect(() => {
     if (!globeRef.current) return;
     const t = setTimeout(() => {
       if (!globeRef.current) return;
-      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.3 }, 1500);
+      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.2 }, 1500);
       const controls = globeRef.current.controls();
       if (controls) {
         controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.4;
+        controls.autoRotateSpeed = 0.35;
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.1;
+        controls.minDistance = 120;
+        controls.maxDistance = 500;
       }
-    }, 500);
+      enhanceScene();
+    }, 800);
     return () => clearTimeout(t);
+  }, [enhanceScene]);
+
+  const getPointColor = useCallback((d: any) => {
+    if (d.type === 'aircraft') return '#ffffff';
+    if (d.type === 'quake') return '#ffff00';
+    return d.color;
+  }, []);
+
+  const getPointAlt = useCallback((d: any) => {
+    if (d.type === 'aircraft') return 0.06;
+    if (d.type === 'quake') return 0.008;
+    return 0.02 + d.intensity * 0.01;
+  }, []);
+
+  const getPointRadius = useCallback((d: any) => {
+    if (d.type === 'aircraft') return 0.08;
+    if (d.type === 'quake') return d.intensity * 0.5;
+    return d.intensity * 0.35;
   }, []);
 
   return (
-    <div ref={containerRef} className="w-full h-full bg-black">
+    <div ref={containerRef} className="w-full h-full" style={{ background: '#000008' }}>
       {dimensions.width > 0 && (
         <Globe
           ref={globeRef}
           width={dimensions.width}
           height={dimensions.height}
 
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+          globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+          backgroundImageUrl="/textures/space-background.jpg"
 
           showGraticules={true}
 
           showAtmosphere={true}
-          atmosphereColor="#00aaff"
-          atmosphereAltitude={0.18}
+          atmosphereColor="#4488ff"
+          atmosphereAltitude={0.25}
 
           pointsData={pointsData}
           pointLat="lat"
           pointLng="lon"
-          pointColor="color"
-          pointAltitude={(d: any) => d.type === 'quake' ? 0.01 : 0.02}
-          pointRadius={(d: any) => d.type === 'quake' ? d.intensity * 0.6 : d.intensity * 0.4}
+          pointColor={getPointColor}
+          pointAltitude={getPointAlt}
+          pointRadius={getPointRadius}
           onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
 
-          labelsData={pointsData.filter(d => d.type !== 'quake')}
+          labelsData={pointsData.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
           labelLat="lat"
           labelLng="lon"
           labelText="name"
-          labelSize={0.4}
-          labelDotRadius={0}
-          labelColor={() => 'rgba(255, 255, 255, 0.7)'}
+          labelSize={0.5}
+          labelDotRadius={0.15}
+          labelColor={() => 'rgba(255, 255, 255, 0.85)'}
           labelResolution={2}
 
           arcsData={arcsData}
@@ -157,10 +310,10 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
           arcEndLat="endLat"
           arcEndLng="endLng"
           arcColor="color"
-          arcDashLength={0.5}
-          arcDashGap={0.3}
-          arcDashAnimateTime={() => 1500 + Math.random() * 2000}
-          arcStroke={0.4}
+          arcDashLength={0.6}
+          arcDashGap={0.25}
+          arcDashAnimateTime={() => 1200 + Math.random() * 2500}
+          arcStroke={0.5}
 
           ringsData={AURORA_RINGS}
           ringLat="lat"
