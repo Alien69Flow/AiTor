@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Globe from "react-globe.gl";
 
 // ARQUITECTURA DE DATOS
@@ -14,6 +14,9 @@ export interface UnifiedHotspotData {
   topTokens: string[];
   type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa";
 }
+
+// Alias for backward compat
+export type HotspotData = UnifiedHotspotData;
 
 const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 35.7, lon: 51.4, intensity: 1, color: "#ff4444", name: "Tehran", country: "Iran", marketVolume: "$2.1B", trend: "-12%", topTokens: ["USDT", "BTC"], type: "conflict" },
@@ -126,7 +129,6 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
 
           showGraticules={true}
-          graticulesColor="rgba(0, 255, 65, 0.05)"
 
           showAtmosphere={true}
           atmosphereColor="#00aaff"
