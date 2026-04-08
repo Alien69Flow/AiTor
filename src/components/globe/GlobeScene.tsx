@@ -136,7 +136,7 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
           pointLat="lat"
           pointLng="lon"
           pointColor="color"
-          pointAltitude={(d: any) => d.type === 'quake' ? 0.01 : 0.02)
+          pointAltitude={(d: any) => d.type === 'quake' ? 0.01 : 0.02}
           pointRadius={(d: any) => d.type === 'quake' ? d.intensity * 0.6 : d.intensity * 0.4}
           onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
 
