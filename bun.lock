@@ -50,7 +50,7 @@
         "react": "^18.3.1",
         "react-day-picker": "^8.10.1",
         "react-dom": "^18.3.1",
-        "react-globe.gl": "^2.27.2",
+        "react-globe.gl": "2.27.2",
         "react-helmet-async": "^2.0.5",
         "react-hook-form": "^7.61.1",
         "react-markdown": "^10.1.0",
@@ -1034,7 +1034,7 @@
 
     "react-fast-compare": ["react-fast-compare@3.2.2", "", {}, "sha512-nsO+KSNgo1SbJqJEYRE9ERzo7YtYbou/OqjSQKxV7jcKox7+usiUVZOAC+XnDOABXggQTno0Y1CpVnuWEc1boQ=="],
 
-    "react-globe.gl": ["react-globe.gl@2.37.1", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/react-globe.gl/-/react-globe.gl-2.37.1.tgz", { "dependencies": { "globe.gl": "^2.45", "prop-types": "15", "react-kapsule": "^2.5" }, "peerDependencies": { "react": "*" } }, "sha512-/YvnaB+ID+WTBTx5Qa67fGkGhco2jPlKg4jbXNTNWSl22/it7GrfByZ4nksgUDy4176VWuHh4BFvQg+hziSk8Q=="],
+    "react-globe.gl": ["react-globe.gl@2.27.2", "https://europe-west1-npm.pkg.dev/lovable-core-prod/sandbox-npm-cache/react-globe.gl/-/react-globe.gl-2.27.2.tgz", { "dependencies": { "globe.gl": "^2.32", "prop-types": "15", "react-kapsule": "2" }, "peerDependencies": { "react": "*" } }, "sha512-DqYZ1n93U50WZBBOpw+q+bFjzG/msQzSnEZDUgyceTmzu1fDXg/Tjeua6VsIhLDLW1uYOGqIkKQz6wbjbA7AWQ=="],
 
     "react-helmet-async": ["react-helmet-async@2.0.5", "", { "dependencies": { "invariant": "^2.2.4", "react-fast-compare": "^3.2.2", "shallowequal": "^1.1.0" }, "peerDependencies": { "react": "^16.6.0 || ^17.0.0 || ^18.0.0" } }, "sha512-rYUYHeus+i27MvFE+Jaa4WsyBKGkL6qVgbJvSBoX8mbsWoABJXdEO0bZyi0F6i+4f0NuIb8AvqPMj3iXFHkMwg=="],
 
