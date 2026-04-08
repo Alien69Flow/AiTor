@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-center";
+import { X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-react";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import { supabase } from "@/integrations/supabase/client";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";

@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import Globe from "react-globe.gl";
-import * as THREE from 'three';
 
-// ARQUITECTURA DE DATOS (Restaurada al 100%)
+// ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
   lat: number;
   lon: number;
@@ -13,8 +12,11 @@ export interface UnifiedHotspotData {
   marketVolume: string;
   trend: string;
   topTokens: string[];
-  type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node";
+  type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa";
 }
+
+// Alias for backward compat
+export type HotspotData = UnifiedHotspotData;
 
 const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 35.7, lon: 51.4, intensity: 1, color: "#ff4444", name: "Tehran", country: "Iran", marketVolume: "$2.1B", trend: "-12%", topTokens: ["USDT", "BTC"], type: "conflict" },
@@ -35,13 +37,37 @@ const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#ff4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
 ];
 
+// Aurora rings for Tesla layer
+const AURORA_RINGS = [
+  { lat: 67, lng: 0, maxR: 6, propagationSpeed: 2, repeatPeriod: 3000, color: () => "#00ffff88" },
+  { lat: 67, lng: 120, maxR: 5, propagationSpeed: 1.5, repeatPeriod: 4000, color: () => "#ff00ff66" },
+  { lat: 67, lng: 240, maxR: 4, propagationSpeed: 2.5, repeatPeriod: 3500, color: () => "#00ff4166" },
+  { lat: -67, lng: 60, maxR: 6, propagationSpeed: 2, repeatPeriod: 3000, color: () => "#00ffff88" },
+  { lat: -67, lng: 180, maxR: 5, propagationSpeed: 1.5, repeatPeriod: 4000, color: () => "#ff00ff66" },
+  { lat: -67, lng: 300, maxR: 4, propagationSpeed: 2.5, repeatPeriod: 3500, color: () => "#00ff4166" },
+];
+
 export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHotspotData | null) => void }) {
   const globeRef = useRef<any>();
+  const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
+  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
+  // Resize observer
   useEffect(() => {
-    // 1. Arcos de Flujo (Restaurados)
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setDimensions({ width, height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Data: arcs + USGS earthquakes
+  useEffect(() => {
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7]];
     const newArcs = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
@@ -50,91 +76,101 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
       return {
         startLat: start.lat, startLng: start.lon,
         endLat: end.lat, endLng: end.lon,
-        color: start.color,
+        color: [start.color, end.color],
       };
     }).filter(Boolean);
     setArcsData(newArcs);
 
-    // 2. Datos USGS Real-time (Restaurados)
     fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson')
       .then(res => res.json())
       .then(data => {
-        const quakes = data.features.map((feat: any) => ({
+        const quakes: UnifiedHotspotData[] = (data.features || []).map((feat: any) => ({
           lat: feat.geometry.coordinates[1],
           lon: feat.geometry.coordinates[0],
-          intensity: feat.properties.mag / 9,
+          intensity: (feat.properties.mag || 4) / 9,
           color: "#ffff00",
-          name: `TERREMOTO M${feat.properties.mag} - ${feat.properties.title}`,
-          country: "USGS Real-time", marketVolume: "N/A", trend: "N/A", topTokens: [], type: "quake"
+          name: feat.properties.title || "Earthquake",
+          country: "USGS",
+          marketVolume: "N/A",
+          trend: "N/A",
+          topTokens: [] as string[],
+          type: "quake" as const,
         }));
-        setPointsData([...DAO_BASE_HOTSPOTS, ...quakes]);
+        setPointsData(prev => [...DAO_BASE_HOTSPOTS, ...quakes]);
       })
-      .catch(e => console.error("Error USGS", e));
+      .catch(e => console.warn("USGS fetch error:", e));
   }, []);
 
+  // Globe controls
   useEffect(() => {
-    if (globeRef.current) {
-      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.3 }, 1000);
-      globeRef.current.controls().autoRotate = true;
-      globeRef.current.controls().autoRotateSpeed = 0.4;
-    }
-  }, []);
-
-  // Fix del Campo Tesla: Usamos MeshBasicMaterial para evitar el crash [object Object]
-  const teslaAuraObject = useCallback(() => {
-    return new THREE.Mesh(
-      new THREE.SphereGeometry(1.15, 32, 32),
-      new THREE.MeshBasicMaterial({ // MeshBasic no necesita luces
-        color: "#00aaff",
-        transparent: true,
-        opacity: 0.08,
-        side: THREE.BackSide,
-      })
-    );
+    if (!globeRef.current) return;
+    const t = setTimeout(() => {
+      if (!globeRef.current) return;
+      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.3 }, 1500);
+      const controls = globeRef.current.controls();
+      if (controls) {
+        controls.autoRotate = true;
+        controls.autoRotateSpeed = 0.4;
+      }
+    }, 500);
+    return () => clearTimeout(t);
   }, []);
 
   return (
-    <div className="w-full h-full relative flex items-center justify-center bg-black">
-      <Globe
-        ref={globeRef}
-        globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-        bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-        backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-        showGraticules={true}
-        graticulesColor="rgba(0, 255, 65, 0.05)"
-        
-        pointsData={pointsData}
-        pointLat="lat"
-        pointLng="lon"
-        pointColor="color"
-        pointRadius={(d: any) => d.type === 'quake' ? d.intensity * 0.7 : d.intensity * 0.45}
-        onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
-        
-        labelsData={pointsData.filter(d => d.type !== 'quake')}
-        labelLat="lat"
-        labelLng="lon"
-        labelText="name"
-        labelSize={0.5}
-        labelDotRadius={0}
-        labelColor={() => 'rgba(255, 255, 255, 0.8)'}
-        
-        arcsData={arcsData}
-        arcStartLat="startLat"
-        arcStartLng="startLng"
-        arcEndLat="endLat"
-        arcEndLng="endLng"
-        arcColor="color"
-        arcDashLength={0.4}
-        arcDashGap={0.2}
-        arcDashAnimateTime={2500}
-        arcStroke={0.5}
+    <div ref={containerRef} className="w-full h-full bg-black">
+      {dimensions.width > 0 && (
+        <Globe
+          ref={globeRef}
+          width={dimensions.width}
+          height={dimensions.height}
 
-        showAtmosphere={true}
-        atmosphereColor="#00ff41"
-        atmosphereAltitude={0.15}
+          globeImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+          bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
 
-        customLayerData={[1]}
-        customThreeObject={teslaAuraObject}
-      />
+          showGraticules={true}
+
+          showAtmosphere={true}
+          atmosphereColor="#00aaff"
+          atmosphereAltitude={0.18}
+
+          pointsData={pointsData}
+          pointLat="lat"
+          pointLng="lon"
+          pointColor="color"
+          pointAltitude={(d: any) => d.type === 'quake' ? 0.01 : 0.02}
+          pointRadius={(d: any) => d.type === 'quake' ? d.intensity * 0.6 : d.intensity * 0.4}
+          onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
+
+          labelsData={pointsData.filter(d => d.type !== 'quake')}
+          labelLat="lat"
+          labelLng="lon"
+          labelText="name"
+          labelSize={0.4}
+          labelDotRadius={0}
+          labelColor={() => 'rgba(255, 255, 255, 0.7)'}
+          labelResolution={2}
+
+          arcsData={arcsData}
+          arcStartLat="startLat"
+          arcStartLng="startLng"
+          arcEndLat="endLat"
+          arcEndLng="endLng"
+          arcColor="color"
+          arcDashLength={0.5}
+          arcDashGap={0.3}
+          arcDashAnimateTime={() => 1500 + Math.random() * 2000}
+          arcStroke={0.4}
+
+          ringsData={AURORA_RINGS}
+          ringLat="lat"
+          ringLng="lng"
+          ringMaxRadius="maxR"
+          ringPropagationSpeed="propagationSpeed"
+          ringRepeatPeriod="repeatPeriod"
+          ringColor="color"
+        />
+      )}
     </div>
   );
+}
