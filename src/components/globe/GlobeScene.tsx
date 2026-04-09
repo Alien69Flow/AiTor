@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
+import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 
 // ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
@@ -37,48 +38,20 @@ const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#ff4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
 ];
 
-// Aurora rings for Tesla layer
-const AURORA_RINGS = [
-  { lat: 67, lng: 0, maxR: 6, propagationSpeed: 2, repeatPeriod: 3000, color: () => "#00ffff88" },
-  { lat: 67, lng: 120, maxR: 5, propagationSpeed: 1.5, repeatPeriod: 4000, color: () => "#ff00ff66" },
-  { lat: 67, lng: 240, maxR: 4, propagationSpeed: 2.5, repeatPeriod: 3500, color: () => "#00ff4166" },
-  { lat: -67, lng: 60, maxR: 6, propagationSpeed: 2, repeatPeriod: 3000, color: () => "#00ffff88" },
-  { lat: -67, lng: 180, maxR: 5, propagationSpeed: 1.5, repeatPeriod: 4000, color: () => "#ff00ff66" },
-  { lat: -67, lng: 300, maxR: 4, propagationSpeed: 2.5, repeatPeriod: 3500, color: () => "#00ff4166" },
-];
-
-// Atmosphere glow shader
-function addAtmosphereGlow(scene: THREE.Scene) {
-  const geometry = new THREE.SphereGeometry(101.5, 64, 64);
-  const material = new THREE.ShaderMaterial({
-    vertexShader: `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      void main() {
-        vNormal = normalize(normalMatrix * normal);
-        vPosition = (modelViewMatrix * vec4(position, 1.0)).xyz;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-      }
-    `,
-    fragmentShader: `
-      varying vec3 vNormal;
-      varying vec3 vPosition;
-      void main() {
-        float intensity = pow(0.72 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
-        vec3 atmosphere = vec3(0.3, 0.6, 1.0) * intensity;
-        float alpha = intensity * 0.6;
-        gl_FragColor = vec4(atmosphere, alpha);
-      }
-    `,
-    blending: THREE.AdditiveBlending,
-    side: THREE.BackSide,
-    transparent: true,
-    depthWrite: false,
-  });
-  const mesh = new THREE.Mesh(geometry, material);
-  mesh.name = "atmosphere-glow";
-  scene.add(mesh);
-  return mesh;
+// Aurora rings for Tesla layer - dynamic based on Kp
+function getAuroraRings(kpIndex: number) {
+  const active = kpIndex >= 4;
+  const baseAlpha = active ? 'cc' : '44';
+  const maxR = active ? 8 : 4;
+  const speed = active ? 3 : 1.5;
+  return [
+    { lat: 67, lng: 0, maxR, propagationSpeed: speed, repeatPeriod: 3000, color: () => `#00ffff${baseAlpha}` },
+    { lat: 67, lng: 120, maxR: maxR * 0.8, propagationSpeed: speed * 0.75, repeatPeriod: 4000, color: () => `#ff00ff${active ? 'aa' : '33'}` },
+    { lat: 67, lng: 240, maxR: maxR * 0.7, propagationSpeed: speed * 1.2, repeatPeriod: 3500, color: () => `#00ff41${active ? '99' : '33'}` },
+    { lat: -67, lng: 60, maxR, propagationSpeed: speed, repeatPeriod: 3000, color: () => `#00ffff${baseAlpha}` },
+    { lat: -67, lng: 180, maxR: maxR * 0.8, propagationSpeed: speed * 0.75, repeatPeriod: 4000, color: () => `#ff00ff${active ? 'aa' : '33'}` },
+    { lat: -67, lng: 300, maxR: maxR * 0.7, propagationSpeed: speed * 1.2, repeatPeriod: 3500, color: () => `#00ff41${active ? '99' : '33'}` },
+  ];
 }
 
 // Moon object
@@ -105,7 +78,6 @@ function addSunLight(scene: THREE.Scene) {
   const ambient = new THREE.AmbientLight(0x334466, 0.4);
   scene.add(ambient);
 
-  // Sun glow sprite
   const spriteMat = new THREE.SpriteMaterial({
     map: new THREE.TextureLoader().load("data:image/svg+xml," + encodeURIComponent(
       `<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128"><radialGradient id="g" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="#ffffee" stop-opacity="1"/><stop offset="30%" stop-color="#ffdd88" stop-opacity="0.6"/><stop offset="100%" stop-color="#ff8800" stop-opacity="0"/></radialGradient><circle cx="64" cy="64" r="64" fill="url(#g)"/></svg>`
@@ -127,6 +99,12 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const sceneEnhanced = useRef(false);
+  const { kpIndex } = useSpaceWeather();
+
+  // Dynamic atmosphere color based on Kp
+  const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
+  const atmosphereAlt = kpIndex >= 4 ? 0.35 : 0.2;
+  const auroraRings = getAuroraRings(kpIndex);
 
   // Resize observer
   useEffect(() => {
@@ -149,7 +127,6 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
 
     sceneEnhanced.current = true;
 
-    // Renderer quality
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -164,7 +141,6 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
     toRemove.forEach(l => scene.remove(l));
 
     addSunLight(scene);
-    addAtmosphereGlow(scene);
     addMoon(scene);
   }, []);
 
@@ -206,7 +182,7 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
       })
       .catch(e => console.warn("USGS fetch error:", e));
 
-    // OpenSky Network - aircraft positions
+    // OpenSky Network
     fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
       .then(res => res.json())
       .then(data => {
@@ -279,13 +255,13 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
 
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-          backgroundImageUrl="/textures/space-background.jpg"
+          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
 
           showGraticules={true}
 
           showAtmosphere={true}
-          atmosphereColor="#4488ff"
-          atmosphereAltitude={0.25}
+          atmosphereColor={atmosphereColor}
+          atmosphereAltitude={atmosphereAlt}
 
           pointsData={pointsData}
           pointLat="lat"
@@ -315,7 +291,7 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
           arcDashAnimateTime={() => 1200 + Math.random() * 2500}
           arcStroke={0.5}
 
-          ringsData={AURORA_RINGS}
+          ringsData={auroraRings}
           ringLat="lat"
           ringLng="lng"
           ringMaxRadius="maxR"
