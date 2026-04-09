@@ -43,10 +43,11 @@ const getImpactLevel = (volume: number): { label: string; className: string } =>
   return { label: "Low", className: "border-muted-foreground/30 text-muted-foreground bg-muted/20" };
 };
 
-const formatVolume = (n: number) => {
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
+const formatVolume = (n: number | null | undefined) => {
+  const val = typeof n === 'number' && !isNaN(n) ? n : 0;
+  if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
+  if (val >= 1e3) return `$${(val / 1e3).toFixed(0)}K`;
+  return `$${val.toFixed(0)}`;
 };
 
 export function SignalsTab() {
