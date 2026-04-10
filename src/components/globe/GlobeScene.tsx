@@ -36,15 +36,18 @@ const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 37.5, lon: 127.0, intensity: 0.3, color: "#00ff41", name: "Seoul", country: "South Korea", marketVolume: "$22.1B", trend: "+11%", topTokens: ["BTC", "ETH", "XRP"], type: "tech" },
   { lat: 55.7, lon: 37.6, intensity: 0.5, color: "#ff6644", name: "Moscow", country: "Russia", marketVolume: "$4.8B", trend: "-8%", topTokens: ["BTC", "USDT"], type: "geopolitical" },
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#ff4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
+  // CONVERGENCE NODE — Zaragoza DAO HQ
+  { lat: 41.65, lon: -0.88, intensity: 1.0, color: "#ffffff", name: "DAO HQ", country: "Zaragoza", marketVolume: "∞", trend: "N/A", topTokens: ["CONVERGENCE"], type: "dao_node" },
 ];
 
-// Aurora rings for Tesla layer - dynamic based on Kp
+// Aurora rings for Tesla layer
 function getAuroraRings(kpIndex: number) {
   const active = kpIndex >= 4;
+  const severe = kpIndex >= 6;
   const baseAlpha = active ? 'cc' : '44';
   const maxR = active ? 8 : 4;
   const speed = active ? 3 : 1.5;
-  return [
+  const rings = [
     { lat: 67, lng: 0, maxR, propagationSpeed: speed, repeatPeriod: 3000, color: () => `#00ffff${baseAlpha}` },
     { lat: 67, lng: 120, maxR: maxR * 0.8, propagationSpeed: speed * 0.75, repeatPeriod: 4000, color: () => `#ff00ff${active ? 'aa' : '33'}` },
     { lat: 67, lng: 240, maxR: maxR * 0.7, propagationSpeed: speed * 1.2, repeatPeriod: 3500, color: () => `#00ff41${active ? '99' : '33'}` },
@@ -52,9 +55,17 @@ function getAuroraRings(kpIndex: number) {
     { lat: -67, lng: 180, maxR: maxR * 0.8, propagationSpeed: speed * 0.75, repeatPeriod: 4000, color: () => `#ff00ff${active ? 'aa' : '33'}` },
     { lat: -67, lng: 300, maxR: maxR * 0.7, propagationSpeed: speed * 1.2, repeatPeriod: 3500, color: () => `#00ff41${active ? '99' : '33'}` },
   ];
+  // Extra equatorial rings for severe storms (Kp > 6)
+  if (severe) {
+    rings.push(
+      { lat: 0, lng: 0, maxR: 5, propagationSpeed: 2, repeatPeriod: 5000, color: () => '#ff00ff55' },
+      { lat: 0, lng: 180, maxR: 4, propagationSpeed: 1.5, repeatPeriod: 6000, color: () => '#00ffff44' },
+    );
+  }
+  return rings;
 }
 
-// Moon object
+// Moon
 function addMoon(scene: THREE.Scene) {
   const loader = new THREE.TextureLoader();
   const moonGeo = new THREE.SphereGeometry(8, 32, 32);
@@ -74,7 +85,6 @@ function addSunLight(scene: THREE.Scene) {
   const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
   sunLight.position.set(-300, 100, 200);
   scene.add(sunLight);
-
   const ambient = new THREE.AmbientLight(0x334466, 0.4);
   scene.add(ambient);
 
@@ -92,7 +102,12 @@ function addSunLight(scene: THREE.Scene) {
   scene.add(sunSprite);
 }
 
-export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHotspotData | null) => void }) {
+interface GlobeSceneProps {
+  onHotspotClick?: (d: UnifiedHotspotData | null) => void;
+  onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
+}
+
+export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
@@ -101,9 +116,9 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
   const sceneEnhanced = useRef(false);
   const { kpIndex } = useSpaceWeather();
 
-  // Dynamic atmosphere color based on Kp
+  // Dynamic atmosphere
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
-  const atmosphereAlt = kpIndex >= 4 ? 0.35 : 0.2;
+  const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.2;
   const auroraRings = getAuroraRings(kpIndex);
 
   // Resize observer
@@ -118,20 +133,19 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
     return () => ro.disconnect();
   }, []);
 
-  // Enhance Three.js scene after globe loads
+  // Enhance Three.js scene
   const enhanceScene = useCallback(() => {
     if (!globeRef.current || sceneEnhanced.current) return;
     const scene = globeRef.current.scene();
     const renderer = globeRef.current.renderer();
     if (!scene || !renderer) return;
-
     sceneEnhanced.current = true;
 
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.2;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    // Remove default lights, add custom
+    // Remove default lights
     const toRemove: THREE.Object3D[] = [];
     scene.traverse((child: THREE.Object3D) => {
       if (child instanceof THREE.AmbientLight || child instanceof THREE.DirectionalLight) {
@@ -144,10 +158,11 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
     addMoon(scene);
   }, []);
 
-  // Data: arcs + USGS earthquakes + OpenSky aircraft
+  // Data: arcs + USGS + OpenSky
   useEffect(() => {
+    // Arcs including Zaragoza convergence arcs
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];
-    const newArcs = pairs.map(([a, b]) => {
+    const newArcs: any[] = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
       const end = DAO_BASE_HOTSPOTS[b];
       if (!start || !end) return null;
@@ -157,6 +172,20 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
         color: [start.color + "cc", end.color + "cc"],
       };
     }).filter(Boolean);
+
+    // White convergence arcs from Zaragoza to major nodes
+    const zaragoza = DAO_BASE_HOTSPOTS[DAO_BASE_HOTSPOTS.length - 1]; // DAO HQ
+    [5, 8, 12, 11].forEach(idx => {
+      const target = DAO_BASE_HOTSPOTS[idx];
+      if (target) {
+        newArcs.push({
+          startLat: zaragoza.lat, startLng: zaragoza.lon,
+          endLat: target.lat, endLng: target.lon,
+          color: ["#ffffff88", "#ffffff33"],
+        });
+      }
+    });
+
     setArcsData(newArcs);
 
     // USGS Earthquakes
@@ -182,16 +211,14 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
       })
       .catch(e => console.warn("USGS fetch error:", e));
 
-    // OpenSky Network
+    // OpenSky
     fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
       .then(res => res.json())
       .then(data => {
         if (!data.states) return;
         const aircraft: UnifiedHotspotData[] = data.states.slice(0, 80).map((s: any[]) => ({
-          lat: s[6] || 0,
-          lon: s[5] || 0,
-          intensity: 0.15,
-          color: "#ffffff",
+          lat: s[6] || 0, lon: s[5] || 0,
+          intensity: 0.15, color: "#ffffff",
           name: (s[1] || "").trim() || s[0] || "Aircraft",
           country: s[2] || "Unknown",
           marketVolume: `${Math.round(s[7] || 0)}m alt`,
@@ -207,7 +234,7 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
       .catch(e => console.warn("OpenSky fetch error:", e));
   }, []);
 
-  // Globe controls + scene enhancement
+  // Globe controls + scene enhancement + navigation callback
   useEffect(() => {
     if (!globeRef.current) return;
     const t = setTimeout(() => {
@@ -223,25 +250,35 @@ export function GlobeScene({ onHotspotClick }: { onHotspotClick?: (d: UnifiedHot
         controls.maxDistance = 500;
       }
       enhanceScene();
+
+      // Expose navigation function
+      if (onReady) {
+        onReady((lat: number, lng: number, altitude: number) => {
+          globeRef.current?.pointOfView({ lat, lng, altitude }, 1500);
+        });
+      }
     }, 800);
     return () => clearTimeout(t);
-  }, [enhanceScene]);
+  }, [enhanceScene, onReady]);
 
   const getPointColor = useCallback((d: any) => {
     if (d.type === 'aircraft') return '#ffffff';
     if (d.type === 'quake') return '#ffff00';
+    if (d.type === 'dao_node') return '#ffffff';
     return d.color;
   }, []);
 
   const getPointAlt = useCallback((d: any) => {
     if (d.type === 'aircraft') return 0.06;
     if (d.type === 'quake') return 0.008;
+    if (d.type === 'dao_node') return 0.03;
     return 0.02 + d.intensity * 0.01;
   }, []);
 
   const getPointRadius = useCallback((d: any) => {
     if (d.type === 'aircraft') return 0.08;
     if (d.type === 'quake') return d.intensity * 0.5;
+    if (d.type === 'dao_node') return 0.6;
     return d.intensity * 0.35;
   }, []);
 
