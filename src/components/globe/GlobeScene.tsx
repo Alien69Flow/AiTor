@@ -286,7 +286,7 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-          nightImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
+          {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
 
           showGraticules={true}
 

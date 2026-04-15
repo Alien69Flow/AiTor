@@ -8,11 +8,12 @@ const glass = "bg-black/60 backdrop-blur-[20px] border-l border-white/[0.06]";
 interface EarthquakeData {
   id: string;
   magnitude: number;
-  location: string;
-  time: string;
+  place: string;
+  time: number | string;
   lat: number;
   lon: number;
   depth: number;
+  url?: string;
 }
 
 interface NasaEvent {
@@ -65,7 +66,7 @@ export function ChatFeedPanel({ earthquakes = [], nasaEvents = [] }: ChatFeedPan
           { label: `M${eq.magnitude.toFixed(1)}`, color: eq.magnitude >= 6 ? "#FF4444" : eq.magnitude >= 5 ? "#FF8844" : "#FFD700" },
           { label: "Seismic", color: "#0088FF" },
         ],
-        text: `${eq.location} — Depth: ${eq.depth}km. Coordinates: ${eq.lat.toFixed(2)}°, ${eq.lon.toFixed(2)}°`,
+        text: `${eq.place} — Depth: ${eq.depth}km. Coordinates: ${eq.lat.toFixed(2)}°, ${eq.lon.toFixed(2)}°`,
         type: "quake",
       });
     });
