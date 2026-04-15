@@ -1,148 +1,77 @@
 
 
-## Plan: Reconstruccion del Dashboard Tactico GLOBE — Ejecucion Paso a Paso
+## Plan: Globe Dashboard — Major Upgrade Pass
 
-Basado en la imagen de referencia (Gemini_G-4.png) y el codigo actual.
+### Issues Identified
 
----
+1. **Globe not interactive** — The `GlobeScene` container has `pointer-events: none` inherited from the left panel wrapper, AND the right `ChatFeedPanel` + `MarketsTerminalMini` overlay areas block pointer events on the globe. The `GlobeScene` div is z-0 while multiple panels sit above it with `pointer-events-auto` covering large areas.
 
-### FASE 1: El Chasis UI (Glassmorphism y Paneles)
+2. **Navigation panel broken** — `NavigatePanel` calls `onNavigate` which triggers `globeNavFn`, but `globeNavFn` is stored via `useState` with a function-wrapper pattern that may lose reference. Additionally, the `onReady` callback fires once during a timeout, but if the Globe re-renders, the ref might be stale.
 
-**Paso 1.1 — Crear TacticalConsole.tsx**
-Nuevo componente con dos secciones colapsables:
-- "GLOBAL TENSION" con Kp value grande y alerta TESLA CONVERGENCE
-- "NOAA SPACE WEATHER" con Realtime Indices (R/S/G scales), Reactive Indices, y mini-grafico Kp procedural (SVG sparkline)
+3. **Markets Terminal blocking globe** — Positioned `absolute bottom-3 right-[330px]` with `z-20`, directly over the globe center area.
 
-Consume `useSpaceWeather()` directamente.
+4. **Markets Terminal data broken** — Maps crypto prices by array index to fake pair names (GVD GSY, USD USDT, etc.) — meaningless data. Column headers are gibberish ("Export", "Ándoo", "Charitto").
 
-Archivo: `src/components/dashboard/TacticalConsole.tsx` (crear)
+5. **Planet lacks night lights / atmosphere layers** — Missing `nightImageUrl` prop for city lights terminator effect. The atmosphere is there but reference image shows more intense layered rings.
 
-**Paso 1.2 — Crear LegendPanel.tsx**
-Panel "LEGEND & LAYERS" con las 7 categorias completas en grid 2-col con dots de color y toggle:
+6. **ChatFeedPanel is static** — Uses hardcoded lorem-ipsum-like text. Should show real OSINT feed from earthquakes, NASA events, and space weather.
 
-| Categoria | Color | Emoji |
-|-----------|-------|-------|
-| Finance/Tech | #FFD700 | 💰 |
-| Intel/UAP | #00FF41 | 🛸 |
-| Conflict | #FF4444 | 💥 |
-| Geopolitical | #0088FF | 🏛️ |
-| Logistics | #FF8844 | 📦 |
-| Cryptozoology | #FF00FF | 🦎 |
-| Convergence | #FFFFFF | ✨ |
-
-Archivo: `src/components/dashboard/LegendPanel.tsx` (crear)
-
-**Paso 1.3 — Crear NavigatePanel.tsx**
-Panel "NAVIGATE" con iconos de banderas/regiones y lista de categorias con status dots verdes. Botones regionales que llaman `globeRef.pointOfView()` (se pasa callback como prop).
-
-Archivo: `src/components/dashboard/NavigatePanel.tsx` (crear)
-
-**Paso 1.4 — Crear MarketsTerminalMini.tsx**
-Panel flotante "MARKETS TERMINAL" con tabs Dashboard/Glint.trade. Tabla con pares (GVD GSY, USD USDT, USD DSTK, NEP USDY) con sparkline mini, precio y cambio%. Usa datos de `useCryptoPrices`.
-
-Archivo: `src/components/dashboard/MarketsTerminalMini.tsx` (crear)
-
-**Paso 1.5 — Crear ChatFeedPanel.tsx**
-Panel derecho con tabs FEED/MARKETS/FLIGHTS + filtros (Markets, High, Low, Category, Country). Lista de posts con avatar, username, badges, texto y "Add a comment..." input. Incluye label "OZONE LAYER: [ONLINE]".
-
-Archivo: `src/components/dashboard/ChatFeedPanel.tsx` (crear)
-
-**Paso 1.6 — Crear OsintTickerBar.tsx**
-Barra inferior "OSINT FEED & TICKER" con:
-- Icono expand a la izquierda
-- Headlines con prefijo [ALERT] y source/time a la derecha
-- "OZONE LAYER: [ONLINE]" badge verde a la derecha
-- Scroll continuo tipo marquee
-
-Archivo: `src/components/dashboard/OsintTickerBar.tsx` (crear)
-
-**Paso 1.7 — Reescribir GlobeDashboard.tsx**
-Layout principal con el globo `absolute inset-0` y paneles flotantes posicionados:
-
-```text
-+--[Crypto Ticker]--[LIVE ticker]---------------+
-|                                                |
-| [TacticalConsole]     [TENSION badge]  [Chat   |
-| [NOAAPanel]                            Feed    |
-|              GLOBE 3D                  Panel]  |
-| [LegendPanel]                                  |
-| [NavigatePanel]    [MarketsTerminalMini]        |
-|                                                |
-+--[OsintTickerBar]----[OZONE: ONLINE]-----------+
-+--[TACTICAL · OSINT]---[NASA✓ USGS✓ NOAA✓]-----+
-```
-
-Elimina los paneles inline actuales (Tension/Layers simples) y los reemplaza por los nuevos componentes. Mantiene GlobeScene, GlobeOverlay, crypto ticker superior y LiveTicker sin cambios.
-
-Archivo: `src/components/dashboard/GlobeDashboard.tsx` (reescribir)
+7. **Right panel too wide** — `w-[320px] lg:w-[360px]` takes too much space from the globe view.
 
 ---
 
-### FASE 2: Motor 3D y Entorno Espacial
+### Changes
 
-**Paso 2.1 — Anadir night lights (terminador dia/noche)**
-Agregar prop `nightImageUrl` al componente Globe para mostrar city lights en la cara oscura:
-```
-nightImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
-```
-Esto es nativo de react-globe.gl y crea el efecto terminator automaticamente.
+**File 1: `src/components/globe/GlobeScene.tsx`**
+- Add `nightImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"` for day/night terminator with city lights
+- Increase `atmosphereAltitude` base to 0.25 (currently 0.2) for more visible halo
+- Ensure `enableZoom`, `enableRotate`, `enablePan` are not blocked — verify controls setup doesn't restrict zoom range too much (`minDistance: 120` → `101` to allow closer zoom)
 
-**Paso 2.2 — Mejorar atmosfera Tesla**
-- Cuando Kp > 6: `atmosphereAltitude = 0.45`, anadir anillos ecuatoriales extra
-- Gradiente mas intenso magenta/cyan en anillos polares para Kp > 5
+**File 2: `src/components/dashboard/GlobeDashboard.tsx`**
+- Move `MarketsTerminalMini` from bottom-center to inside the right panel (below ChatFeedPanel tabs) or make it a small overlay at bottom-right that doesn't block globe center
+- Ensure globe container div has `pointer-events-auto` and panels use `pointer-events-none` on wrappers with `pointer-events-auto` only on the panel content itself (already partially done, but the right panel blocks the entire right side)
+- Reduce right panel to `w-[280px]` and make it scrollable
+- Fix the center bottom menu bar position so it doesn't overlap with globe interaction
 
-**Paso 2.3 — Anadir nodo Convergence Zaragoza**
-Punto blanco (#FFFFFF) en lat:41.65, lon:-0.88 tipo "dao_node" con arcos blancos conectando a nodos principales.
+**File 3: `src/components/dashboard/MarketsTerminalMini.tsx`**
+- Fix column headers to proper labels: "Pair", "Trend", "Price", "Change"
+- Map real crypto data properly: show BTC, ETH, SOL, BNB with actual prices instead of fake pair names
+- Fix sparkline to reflect actual price direction based on `change24h`
 
-Archivos: `src/components/globe/GlobeScene.tsx` (modificar)
+**File 4: `src/components/dashboard/ChatFeedPanel.tsx`**
+- Replace static lorem-ipsum posts with real-time data from earthquakes and NASA events passed as props
+- Add props for `earthquakes` and `nasaEvents`
+- Show actual earthquake alerts, NASA event warnings, and space weather alerts as feed items
+- Keep the search/filter UI but populate with real data
 
----
+**File 5: `src/components/dashboard/NavigatePanel.tsx`**
+- Verify `onNavigate` prop is correctly wired. The issue may be that `globeNavFn` stored via `useState` loses the closure. Fix by using `useRef` for the navigation function instead of `useState`.
 
-### FASE 3: Ingesta de Datos
-
-**Paso 3.1 — Crear useRealTimeData.ts**
-Hook orquestador que combina todos los hooks y expone:
-- `mapLayers`: puntos para el globo separados por tipo
-- `eventMarkers`: marcadores categorizados por las 7 categorias de la leyenda
-- `tickerItems`: items formateados para el OSINT ticker
-- `stats`: contadores por categoria para los badges de la leyenda
-
-Consume: `useEarthquakes`, `useNasaEvents`, `useCryptoPrices`, `useSpaceWeather`, `useUAPSightings`
-
-Archivo: `src/hooks/useRealTimeData.ts` (crear)
-
-**Paso 3.2 — Conectar datos reales a los paneles**
-- LegendPanel muestra contadores reales por categoria
-- OsintTickerBar consume tickerItems reales
-- MarketsTerminalMini muestra pares con precios reales
-- ChatFeedPanel consume feed de earthquakes + NASA events
-
-Archivos: Todos los componentes de Fase 1 (actualizacion menor)
+**File 6: `src/components/dashboard/GlobeDashboard.tsx` (navigation fix)**
+- Change `globeNavFn` from `useState` to `useRef` to prevent stale closures:
+  ```
+  const globeNavRef = useRef<(lat, lng, alt) => void>()
+  ```
+- Pass `globeNavRef.current` in `handleNavigate`
 
 ---
 
-### Orden de ejecucion recomendado
+### Execution Order
 
-1. Paso 1.1 (TacticalConsole) + 1.2 (LegendPanel) — paneles izquierdos
-2. Paso 1.3 (NavigatePanel) + 1.4 (MarketsTerminalMini) — paneles inferiores
-3. Paso 1.5 (ChatFeedPanel) + 1.6 (OsintTickerBar) — panel derecho + barra inferior
-4. Paso 1.7 (GlobeDashboard rewrite) — ensamblaje final
-5. Paso 2.1-2.3 (Motor 3D) — mejoras visuales
-6. Paso 3.1-3.2 (Datos) — conexion de APIs reales
+1. Fix globe interactivity (GlobeDashboard pointer-events + right panel sizing)
+2. Fix navigation (useRef instead of useState for globeNavFn)
+3. Add night lights to GlobeScene
+4. Fix MarketsTerminalMini data and headers
+5. Make ChatFeedPanel consume real data
+6. Reposition MarketsTerminalMini to not block globe
 
-### Archivos totales
+### Files Modified
 
-| Archivo | Accion |
-|---------|--------|
-| `src/components/dashboard/TacticalConsole.tsx` | Crear |
-| `src/components/dashboard/LegendPanel.tsx` | Crear |
-| `src/components/dashboard/NavigatePanel.tsx` | Crear |
-| `src/components/dashboard/MarketsTerminalMini.tsx` | Crear |
-| `src/components/dashboard/ChatFeedPanel.tsx` | Crear |
-| `src/components/dashboard/OsintTickerBar.tsx` | Crear |
-| `src/components/dashboard/GlobeDashboard.tsx` | Reescribir |
-| `src/components/globe/GlobeScene.tsx` | Modificar |
-| `src/hooks/useRealTimeData.ts` | Crear |
-
-No se tocan: `client.ts`, `types.ts`, `.env`, ResizeObserver, estructura base de GlobeScene.
+| File | Action |
+|------|--------|
+| `src/components/globe/GlobeScene.tsx` | Add nightImageUrl, adjust controls |
+| `src/components/dashboard/GlobeDashboard.tsx` | Fix pointer-events, nav ref, panel layout |
+| `src/components/dashboard/MarketsTerminalMini.tsx` | Fix data mapping and headers |
+| `src/components/dashboard/ChatFeedPanel.tsx` | Real-time feed from APIs |
+| `src/components/dashboard/NavigatePanel.tsx` | Minor — already correct, fix is in parent |
 
