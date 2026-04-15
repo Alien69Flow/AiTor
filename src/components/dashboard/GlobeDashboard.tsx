@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { LiveTicker } from "./LiveTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
 import { GlobeScene, UnifiedHotspotData } from "../globe/GlobeScene";
@@ -17,7 +17,7 @@ export function GlobeDashboard() {
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(
     new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"])
   );
-  const [globeNavFn, setGlobeNavFn] = useState<((lat: number, lng: number, alt: number) => void) | null>(null);
+  const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => {
     setVisibleLayers(prev => {
@@ -28,8 +28,12 @@ export function GlobeDashboard() {
   }, []);
 
   const handleNavigate = useCallback((lat: number, lng: number, altitude: number) => {
-    globeNavFn?.(lat, lng, altitude);
-  }, [globeNavFn]);
+    globeNavRef.current?.(lat, lng, altitude);
+  }, []);
+
+  const handleGlobeReady = useCallback((navFn: (lat: number, lng: number, altitude: number) => void) => {
+    globeNavRef.current = navFn;
+  }, []);
 
   return (
     <div className="flex flex-col flex-1 min-h-0 relative bg-black overflow-hidden">
@@ -51,11 +55,11 @@ export function GlobeDashboard() {
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 relative">
-        {/* GLOBE 3D — full background */}
-        <div className="absolute inset-0 z-0">
+        {/* GLOBE 3D — full background, pointer-events enabled */}
+        <div className="absolute inset-0 z-0 pointer-events-auto">
           <GlobeScene
             onHotspotClick={setSelectedHotspot}
-            onReady={(navFn) => setGlobeNavFn(() => navFn)}
+            onReady={handleGlobeReady}
           />
         </div>
 
@@ -68,7 +72,7 @@ export function GlobeDashboard() {
           nasaEventCount={nasaEvents.length}
         />
 
-        {/* LEFT PANELS */}
+        {/* LEFT PANELS — pointer-events-none wrapper, auto on each panel */}
         <div className="absolute top-3 left-3 z-30 space-y-2 pointer-events-none">
           <div className="pointer-events-auto">
             <TacticalConsole />
@@ -81,12 +85,12 @@ export function GlobeDashboard() {
           </div>
         </div>
 
-        {/* CENTER BOTTOM: Navigation menu + Audio + Capa Tesla */}
-        <div className="absolute bottom-3 left-[270px] z-20 pointer-events-auto">
+        {/* CENTER BOTTOM: Nav menu + Audio */}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
           <div className="bg-black/60 backdrop-blur-[20px] border border-white/[0.06] rounded-lg px-4 py-2 flex items-center gap-4">
             <Volume2 className="w-3.5 h-3.5 text-white/25 cursor-pointer hover:text-white/50" />
             {["Markets", "Feed", "Alerts", "Movers", "Global Tension"].map(item => (
-              <span key={item} className="text-[9px] font-mono text-white/30 hover:text-white/60 cursor-pointer">
+              <span key={item} className="text-[9px] font-mono text-white/30 hover:text-white/60 cursor-pointer whitespace-nowrap">
                 {item === "Markets" ? "🏦" : item === "Feed" ? "📰" : item === "Alerts" ? "🔔" : item === "Movers" ? "📈" : "🌐"} {item}
               </span>
             ))}
@@ -97,14 +101,11 @@ export function GlobeDashboard() {
           </div>
         </div>
 
-        {/* BOTTOM RIGHT: Markets Terminal */}
-        <div className="absolute bottom-3 right-[330px] lg:right-[370px] z-20 pointer-events-auto hidden md:block">
-          <MarketsTerminalMini />
-        </div>
-
-        {/* RIGHT PANEL: Chat Feed */}
-        <div className="absolute right-0 top-0 h-full z-20 pointer-events-auto hidden md:block">
-          <ChatFeedPanel />
+        {/* RIGHT PANEL: Chat Feed — narrower, only panel area blocks events */}
+        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none hidden md:block">
+          <div className="pointer-events-auto h-full">
+            <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} />
+          </div>
         </div>
       </div>
 
