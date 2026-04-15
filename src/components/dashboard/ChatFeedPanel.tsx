@@ -1,58 +1,105 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Search, Grid3X3, Eye, Send, Newspaper } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 
 const glass = "bg-black/60 backdrop-blur-[20px] border-l border-white/[0.06]";
 
-interface FeedPost {
+interface EarthquakeData {
+  id: string;
+  magnitude: number;
+  location: string;
+  time: string;
+  lat: number;
+  lon: number;
+  depth: number;
+}
+
+interface NasaEvent {
+  id: string;
+  title: string;
+  category: string;
+  date: string;
+  lat?: number;
+  lon?: number;
+}
+
+interface ChatFeedPanelProps {
+  earthquakes?: EarthquakeData[];
+  nasaEvents?: NasaEvent[];
+}
+
+interface FeedItem {
   avatar: string;
-  username: string;
+  source: string;
   timeAgo: string;
   badges: { label: string; color: string }[];
   text: string;
-  mentions?: string[];
+  type: "quake" | "nasa" | "alert";
 }
 
-const STATIC_POSTS: FeedPost[] = [
-  {
-    avatar: "👤",
-    username: "laathifier",
-    timeAgo: "700",
-    badges: [{ label: "Bot Shews", color: "#0088FF" }, { label: "Reid", color: "#FF4444" }],
-    text: "👍 3 bear en · Seapm: These news leam near of 37°. From 19r 5$s diseases. rootpaor' prosters how hera to spoat on how Wab Tobe consulations. For nooftoes, YouTube Tesla Portal aircrafts players...",
-    mentions: ["rootpaor"],
-  },
-  {
-    avatar: "🧑‍💻",
-    username: "eater_gat",
-    timeAgo: "Bot Kiíowe",
-    badges: [{ label: "Bot Kiíowe", color: "#0088FF" }, { label: "Reid", color: "#FF4444" }],
-    text: "Maja notte conlists to paxr a parpr nor becpnore on Sininy flo ass camplons, of matso-ear marseries, senoed peallser · er shanges tile tdos. 'krotseol' These ponths ha names, osíexus the more penoy...",
-  },
-  {
-    avatar: "🔮",
-    username: "marcat",
-    timeAgo: "7 oboorers ago",
-    badges: [{ label: "Soxd", color: "#FFD700" }],
-    text: "Torior aotider: \"Senses as his place Plari: \"loi' to Tie hees.\" oo pelise toe, be by my past or as pleace of dioeore our-iane. We rextrearelly Tear this ttre...",
-  },
-];
-
-export function ChatFeedPanel() {
+export function ChatFeedPanel({ earthquakes = [], nasaEvents = [] }: ChatFeedPanelProps) {
   const [activeTab, setActiveTab] = useState<"feed" | "markets" | "flights">("feed");
-  const [activeFilter, setActiveFilter] = useState("Markets");
+  const [activeFilter, setActiveFilter] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const tabs = [
     { key: "feed", label: "FEED" },
     { key: "markets", label: "MARKETS" },
-    { key: "flights", label: "FLIGHTS (1)" },
+    { key: "flights", label: "FLIGHTS" },
   ] as const;
 
-  const filters = ["Markets", "High", "Low", "Category", "Country"];
+  const filters = ["All", "Quakes", "NASA", "Alerts"];
+
+  // Build real feed items from live data
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [];
+
+    // Earthquakes
+    earthquakes.slice(0, 10).forEach(eq => {
+      items.push({
+        avatar: "🌍",
+        source: "USGS",
+        timeAgo: new Date(eq.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        badges: [
+          { label: `M${eq.magnitude.toFixed(1)}`, color: eq.magnitude >= 6 ? "#FF4444" : eq.magnitude >= 5 ? "#FF8844" : "#FFD700" },
+          { label: "Seismic", color: "#0088FF" },
+        ],
+        text: `${eq.location} — Depth: ${eq.depth}km. Coordinates: ${eq.lat.toFixed(2)}°, ${eq.lon.toFixed(2)}°`,
+        type: "quake",
+      });
+    });
+
+    // NASA events
+    nasaEvents.slice(0, 8).forEach(ev => {
+      items.push({
+        avatar: "🛰️",
+        source: "NASA EONET",
+        timeAgo: new Date(ev.date).toLocaleDateString([], { month: "short", day: "numeric" }),
+        badges: [
+          { label: ev.category, color: "#00FF41" },
+          { label: "NASA", color: "#0088FF" },
+        ],
+        text: ev.title,
+        type: "nasa",
+      });
+    });
+
+    // Sort by most recent
+    return items.slice(0, 15);
+  }, [earthquakes, nasaEvents]);
+
+  const filteredItems = useMemo(() => {
+    let items = feedItems;
+    if (activeFilter === "Quakes") items = items.filter(i => i.type === "quake");
+    if (activeFilter === "NASA") items = items.filter(i => i.type === "nasa");
+    if (activeFilter === "Alerts") items = items.filter(i => i.badges.some(b => b.color === "#FF4444"));
+    if (searchQuery) items = items.filter(i => i.text.toLowerCase().includes(searchQuery.toLowerCase()));
+    return items;
+  }, [feedItems, activeFilter, searchQuery]);
 
   return (
-    <div className={`${glass} w-[320px] lg:w-[360px] flex flex-col h-full`}>
+    <div className={`${glass} w-[280px] flex flex-col h-full`}>
       {/* Tabs */}
       <div className="flex border-b border-white/[0.06]">
         {tabs.map(t => (
@@ -79,7 +126,12 @@ export function ChatFeedPanel() {
         </div>
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3 text-white/20" />
-          <Input placeholder="Search..." className="h-6 pl-7 text-[9px] bg-white/[0.03] border-white/[0.06] text-white/60 placeholder:text-white/15" />
+          <Input
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="h-6 pl-7 text-[9px] bg-white/[0.03] border-white/[0.06] text-white/60 placeholder:text-white/15"
+          />
         </div>
       </div>
 
@@ -106,15 +158,20 @@ export function ChatFeedPanel() {
 
       {/* Feed Posts */}
       <div className="flex-1 overflow-y-auto">
-        {STATIC_POSTS.map((post, i) => (
+        {filteredItems.length === 0 && (
+          <div className="px-3 py-6 text-center text-[9px] font-mono text-white/20">
+            No events matching filter
+          </div>
+        )}
+        {filteredItems.map((post, i) => (
           <div key={i} className="px-3 py-3 border-b border-white/[0.04]">
             <div className="flex items-start gap-2">
-              <div className="w-8 h-8 rounded-full bg-white/[0.05] flex items-center justify-center text-sm shrink-0">
+              <div className="w-7 h-7 rounded-full bg-white/[0.05] flex items-center justify-center text-sm shrink-0">
                 {post.avatar}
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className="text-[11px] font-bold text-white/90">{post.username}</span>
+                  <span className="text-[10px] font-bold text-white/90">{post.source}</span>
                   <span className="text-[8px] text-white/20">{post.timeAgo}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
@@ -124,21 +181,17 @@ export function ChatFeedPanel() {
                     </Badge>
                   ))}
                 </div>
-                <p className="text-[10px] text-white/60 leading-relaxed mt-1.5">{post.text}</p>
+                <p className="text-[9px] text-white/60 leading-relaxed mt-1">{post.text}</p>
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 mt-2 ml-10">
-              <Search className="w-3 h-3 text-white/15" />
-              <span className="text-[9px] text-white/20">Add a comment...</span>
             </div>
           </div>
         ))}
 
-        {/* Tickes counter */}
+        {/* Live count */}
         <div className="px-3 py-2 flex items-center gap-2">
-          <span className="text-base">💎</span>
-          <span className="text-[9px] font-mono text-white/30">Tickes</span>
-          <span className="text-[9px] font-mono text-white/15">100</span>
+          <span className="text-base">📡</span>
+          <span className="text-[9px] font-mono text-white/30">Live Events</span>
+          <span className="text-[9px] font-mono text-white/15">{feedItems.length}</span>
         </div>
       </div>
     </div>

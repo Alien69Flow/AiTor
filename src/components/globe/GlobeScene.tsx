@@ -36,11 +36,9 @@ const DAO_BASE_HOTSPOTS: UnifiedHotspotData[] = [
   { lat: 37.5, lon: 127.0, intensity: 0.3, color: "#00ff41", name: "Seoul", country: "South Korea", marketVolume: "$22.1B", trend: "+11%", topTokens: ["BTC", "ETH", "XRP"], type: "tech" },
   { lat: 55.7, lon: 37.6, intensity: 0.5, color: "#ff6644", name: "Moscow", country: "Russia", marketVolume: "$4.8B", trend: "-8%", topTokens: ["BTC", "USDT"], type: "geopolitical" },
   { lat: 48.7, lon: 37.5, intensity: 0.8, color: "#ff4444", name: "Donetsk", country: "Ukraine", marketVolume: "$0.1B", trend: "-25%", topTokens: ["USDT"], type: "conflict" },
-  // CONVERGENCE NODE — Zaragoza DAO HQ
   { lat: 41.65, lon: -0.88, intensity: 1.0, color: "#ffffff", name: "DAO HQ", country: "Zaragoza", marketVolume: "∞", trend: "N/A", topTokens: ["CONVERGENCE"], type: "dao_node" },
 ];
 
-// Aurora rings for Tesla layer
 function getAuroraRings(kpIndex: number) {
   const active = kpIndex >= 4;
   const severe = kpIndex >= 6;
@@ -55,7 +53,6 @@ function getAuroraRings(kpIndex: number) {
     { lat: -67, lng: 180, maxR: maxR * 0.8, propagationSpeed: speed * 0.75, repeatPeriod: 4000, color: () => `#ff00ff${active ? 'aa' : '33'}` },
     { lat: -67, lng: 300, maxR: maxR * 0.7, propagationSpeed: speed * 1.2, repeatPeriod: 3500, color: () => `#00ff41${active ? '99' : '33'}` },
   ];
-  // Extra equatorial rings for severe storms (Kp > 6)
   if (severe) {
     rings.push(
       { lat: 0, lng: 0, maxR: 5, propagationSpeed: 2, repeatPeriod: 5000, color: () => '#ff00ff55' },
@@ -65,7 +62,6 @@ function getAuroraRings(kpIndex: number) {
   return rings;
 }
 
-// Moon
 function addMoon(scene: THREE.Scene) {
   const loader = new THREE.TextureLoader();
   const moonGeo = new THREE.SphereGeometry(8, 32, 32);
@@ -80,7 +76,6 @@ function addMoon(scene: THREE.Scene) {
   return moon;
 }
 
-// Sun light
 function addSunLight(scene: THREE.Scene) {
   const sunLight = new THREE.DirectionalLight(0xffffff, 1.8);
   sunLight.position.set(-300, 100, 200);
@@ -114,11 +109,12 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const sceneEnhanced = useRef(false);
+  const onReadyRef = useRef(onReady);
+  onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
 
-  // Dynamic atmosphere
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
-  const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.2;
+  const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
 
   // Resize observer
@@ -133,7 +129,6 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
     return () => ro.disconnect();
   }, []);
 
-  // Enhance Three.js scene
   const enhanceScene = useCallback(() => {
     if (!globeRef.current || sceneEnhanced.current) return;
     const scene = globeRef.current.scene();
@@ -145,7 +140,6 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
     renderer.toneMappingExposure = 1.2;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-    // Remove default lights
     const toRemove: THREE.Object3D[] = [];
     scene.traverse((child: THREE.Object3D) => {
       if (child instanceof THREE.AmbientLight || child instanceof THREE.DirectionalLight) {
@@ -160,7 +154,6 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
 
   // Data: arcs + USGS + OpenSky
   useEffect(() => {
-    // Arcs including Zaragoza convergence arcs
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];
     const newArcs: any[] = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
@@ -173,8 +166,7 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
       };
     }).filter(Boolean);
 
-    // White convergence arcs from Zaragoza to major nodes
-    const zaragoza = DAO_BASE_HOTSPOTS[DAO_BASE_HOTSPOTS.length - 1]; // DAO HQ
+    const zaragoza = DAO_BASE_HOTSPOTS[DAO_BASE_HOTSPOTS.length - 1];
     [5, 8, 12, 11].forEach(idx => {
       const target = DAO_BASE_HOTSPOTS[idx];
       if (target) {
@@ -188,7 +180,6 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
 
     setArcsData(newArcs);
 
-    // USGS Earthquakes
     fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson')
       .then(res => res.json())
       .then(data => {
@@ -211,7 +202,6 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
       })
       .catch(e => console.warn("USGS fetch error:", e));
 
-    // OpenSky
     fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
       .then(res => res.json())
       .then(data => {
@@ -246,20 +236,23 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
         controls.autoRotateSpeed = 0.35;
         controls.enableDamping = true;
         controls.dampingFactor = 0.1;
-        controls.minDistance = 120;
+        controls.enableZoom = true;
+        controls.enableRotate = true;
+        controls.enablePan = true;
+        controls.minDistance = 101;
         controls.maxDistance = 500;
       }
       enhanceScene();
 
-      // Expose navigation function
-      if (onReady) {
-        onReady((lat: number, lng: number, altitude: number) => {
+      // Expose navigation function via ref to avoid stale closures
+      if (onReadyRef.current) {
+        onReadyRef.current((lat: number, lng: number, altitude: number) => {
           globeRef.current?.pointOfView({ lat, lng, altitude }, 1500);
         });
       }
     }, 800);
     return () => clearTimeout(t);
-  }, [enhanceScene, onReady]);
+  }, [enhanceScene]);
 
   const getPointColor = useCallback((d: any) => {
     if (d.type === 'aircraft') return '#ffffff';
@@ -293,6 +286,7 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+          nightImageUrl="//unpkg.com/three-globe/example/img/earth-night.jpg"
 
           showGraticules={true}
 
