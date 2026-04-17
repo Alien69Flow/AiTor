@@ -8,12 +8,21 @@ import { NavigatePanel } from "./NavigatePanel";
 import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
-import { useRealTimeData } from "@/hooks/useRealTimeData";
+import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
 import { Volume2 } from "lucide-react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
-  const { earthquakes, nasaEvents, cryptoPrices, spaceWeather, counts } = useRealTimeData();
+  const {
+    earthquakes,
+    nasaEvents,
+    cryptoPrices,
+    spaceWeather,
+    counts,
+    eventMarkers,
+    tickerItems,
+    events: osintEvents,
+  } = useUnifiedIntel();
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(
     new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"])
   );
