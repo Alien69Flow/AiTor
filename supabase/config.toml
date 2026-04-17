@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.crypto-price]
 verify_jwt = false
+
+[functions.osint-aggregator]
+verify_jwt = false
