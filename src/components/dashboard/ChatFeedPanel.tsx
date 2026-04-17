@@ -25,9 +25,21 @@ interface NasaEvent {
   lon?: number;
 }
 
+interface OsintEvent {
+  id: string;
+  title: string;
+  url: string;
+  source: string;
+  category: string;
+  severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  summary?: string;
+  timestamp: string;
+}
+
 interface ChatFeedPanelProps {
   earthquakes?: EarthquakeData[];
   nasaEvents?: NasaEvent[];
+  osintEvents?: OsintEvent[];
 }
 
 interface FeedItem {
@@ -36,10 +48,11 @@ interface FeedItem {
   timeAgo: string;
   badges: { label: string; color: string }[];
   text: string;
-  type: "quake" | "nasa" | "alert";
+  type: "quake" | "nasa" | "alert" | "osint";
+  url?: string;
 }
 
-export function ChatFeedPanel({ earthquakes = [], nasaEvents = [] }: ChatFeedPanelProps) {
+export function ChatFeedPanel({ earthquakes = [], nasaEvents = [], osintEvents = [] }: ChatFeedPanelProps) {
   const [activeTab, setActiveTab] = useState<"feed" | "markets" | "flights">("feed");
   const [activeFilter, setActiveFilter] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
@@ -50,7 +63,7 @@ export function ChatFeedPanel({ earthquakes = [], nasaEvents = [] }: ChatFeedPan
     { key: "flights", label: "FLIGHTS" },
   ] as const;
 
-  const filters = ["All", "Quakes", "NASA", "Alerts"];
+  const filters = ["All", "OSINT", "Quakes", "NASA", "Alerts"];
 
   // Build real feed items from live data
   const feedItems = useMemo<FeedItem[]>(() => {
