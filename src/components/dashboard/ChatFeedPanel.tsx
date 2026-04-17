@@ -70,6 +70,30 @@ export function ChatFeedPanel({ earthquakes = [], nasaEvents = [], osintEvents =
     const items: FeedItem[] = [];
 
     // Earthquakes
+  const feedItems = useMemo<FeedItem[]>(() => {
+    const items: FeedItem[] = [];
+
+    // OSINT (Firecrawl) — top priority by severity
+    osintEvents.slice(0, 12).forEach((e) => {
+      const sevColor =
+        e.severity === "CRITICAL" ? "#FF4444" :
+        e.severity === "HIGH" ? "#FF8844" :
+        e.severity === "MEDIUM" ? "#FFD700" : "#888888";
+      items.push({
+        avatar: "📡",
+        source: e.source.toUpperCase(),
+        timeAgo: new Date(e.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        badges: [
+          { label: e.severity, color: sevColor },
+          { label: e.category.toUpperCase(), color: "#00FF41" },
+        ],
+        text: e.title + (e.summary ? ` — ${e.summary}` : ""),
+        type: "osint",
+        url: e.url,
+      });
+    });
+
+    // Earthquakes
     earthquakes.slice(0, 10).forEach(eq => {
       items.push({
         avatar: "🌍",
@@ -99,12 +123,12 @@ export function ChatFeedPanel({ earthquakes = [], nasaEvents = [], osintEvents =
       });
     });
 
-    // Sort by most recent
-    return items.slice(0, 15);
-  }, [earthquakes, nasaEvents]);
+    return items.slice(0, 30);
+  }, [earthquakes, nasaEvents, osintEvents]);
 
   const filteredItems = useMemo(() => {
     let items = feedItems;
+    if (activeFilter === "OSINT") items = items.filter(i => i.type === "osint");
     if (activeFilter === "Quakes") items = items.filter(i => i.type === "quake");
     if (activeFilter === "NASA") items = items.filter(i => i.type === "nasa");
     if (activeFilter === "Alerts") items = items.filter(i => i.badges.some(b => b.color === "#FF4444"));
