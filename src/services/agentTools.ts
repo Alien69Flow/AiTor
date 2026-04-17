@@ -1,9 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
 
-const GITHUB_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/github-proxy`;
-const SEARCH_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/firecrawl-search`;
-const CRYPTO_PRICE_URL = `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co/functions/v1/crypto-price`;
-
 // --- Helpers ---
 
 function parseRepoUrl(input: string): { owner: string; repo: string } | null {
@@ -15,32 +11,27 @@ function parseRepoUrl(input: string): { owner: string; repo: string } | null {
 }
 
 async function githubFetch(action: string, params: Record<string, unknown>) {
-  const response = await fetch(GITHUB_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-    },
-    body: JSON.stringify({ action, ...params }),
+  const { data, error } = await supabase.functions.invoke("github-proxy", {
+    body: { action, ...params },
   });
-  if (!response.ok) return null;
-  return response.json();
+  if (error) {
+    console.error("github-proxy error:", error.message);
+    return null;
+  }
+  return data;
 }
 
 // --- Tool: Web Search (Firecrawl) ---
 
 export async function fetchWebContext(query: string): Promise<string | null> {
   try {
-    const response = await fetch(SEARCH_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({ query, options: { limit: 5, lang: "es" } }),
+    const { data, error } = await supabase.functions.invoke("firecrawl-search", {
+      body: { query, options: { limit: 5, lang: "es" } },
     });
-    if (!response.ok) return null;
-    const data = await response.json();
+    if (error) {
+      console.error("firecrawl-search error:", error.message);
+      return null;
+    }
     const results = data?.data || [];
     if (results.length === 0) return null;
     return results.map((r: any, i: number) =>
@@ -163,16 +154,13 @@ export async function applyGitHubChanges(
 
 export async function fetchCryptoPrice(coinIds: string[]): Promise<string | null> {
   try {
-    const response = await fetch(CRYPTO_PRICE_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-      },
-      body: JSON.stringify({ coinIds }),
+    const { data, error } = await supabase.functions.invoke("crypto-price", {
+      body: { coinIds },
     });
-    if (!response.ok) return null;
-    const data = await response.json();
+    if (error) {
+      console.error("crypto-price error:", error.message);
+      return null;
+    }
     if (!data?.prices) return null;
 
     let ctx = "## Precios Crypto en Tiempo Real\n\n";
@@ -204,7 +192,6 @@ export interface DetectedTools {
 export function detectTools(content: string): DetectedTools {
   const result: DetectedTools = { webSearch: null, githubAnalysis: null, githubEdit: null, cryptoPrice: null };
 
-  // GitHub URL detection
   const ghMatch = content.match(GITHUB_URL_REGEX);
   if (ghMatch) {
     const editKeywords = /\b(edita|modifica|cambia|update|edit|fix|refactor|añade|add|crea|create)\b/i;
@@ -217,7 +204,6 @@ export function detectTools(content: string): DetectedTools {
     return result;
   }
 
-  // Crypto price detection
   if (CRYPTO_KEYWORDS.test(content)) {
     const coinMap: Record<string, string> = {
       bitcoin: "bitcoin", btc: "bitcoin", ethereum: "ethereum", eth: "ethereum",
@@ -235,7 +221,6 @@ export function detectTools(content: string): DetectedTools {
     }
   }
 
-  // Web search detection (only if no other tool matched)
   if (!result.cryptoPrice && WEB_SEARCH_KEYWORDS.test(content)) {
     result.webSearch = content;
   }

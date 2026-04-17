@@ -100,9 +100,10 @@ function addSunLight(scene: THREE.Scene) {
 interface GlobeSceneProps {
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
+  externalMarkers?: UnifiedHotspotData[];
 }
 
-export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
+export function GlobeScene({ onHotspotClick, onReady, externalMarkers }: GlobeSceneProps) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
@@ -180,28 +181,7 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
 
     setArcsData(newArcs);
 
-    fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson')
-      .then(res => res.json())
-      .then(data => {
-        const quakes: UnifiedHotspotData[] = (data.features || []).slice(0, 50).map((feat: any) => ({
-          lat: feat.geometry.coordinates[1],
-          lon: feat.geometry.coordinates[0],
-          intensity: (feat.properties.mag || 4) / 9,
-          color: "#ffff00",
-          name: feat.properties.title || "Earthquake",
-          country: "USGS",
-          marketVolume: `M${(feat.properties.mag || 0).toFixed(1)}`,
-          trend: "N/A",
-          topTokens: [] as string[],
-          type: "quake" as const,
-        }));
-        setPointsData(prev => {
-          const base = prev.filter(p => p.type !== 'quake' && p.type !== 'aircraft');
-          return [...base, ...quakes];
-        });
-      })
-      .catch(e => console.warn("USGS fetch error:", e));
-
+    // OpenSky aircraft layer (independent, lightweight ambient signal)
     fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
       .then(res => res.json())
       .then(data => {
@@ -223,6 +203,16 @@ export function GlobeScene({ onHotspotClick, onReady }: GlobeSceneProps) {
       })
       .catch(e => console.warn("OpenSky fetch error:", e));
   }, []);
+
+  // Unified external markers (USGS/NASA/UAP/OSINT) coming from useUnifiedIntel
+  useEffect(() => {
+    if (!externalMarkers) return;
+    setPointsData(prev => {
+      const aircraft = prev.filter(p => p.type === 'aircraft');
+      const baseDao = DAO_BASE_HOTSPOTS;
+      return [...baseDao, ...externalMarkers, ...aircraft];
+    });
+  }, [externalMarkers]);
 
   // Globe controls + scene enhancement + navigation callback
   useEffect(() => {
