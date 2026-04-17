@@ -69,10 +69,6 @@ export function ChatFeedPanel({ earthquakes = [], nasaEvents = [], osintEvents =
   const feedItems = useMemo<FeedItem[]>(() => {
     const items: FeedItem[] = [];
 
-    // Earthquakes
-  const feedItems = useMemo<FeedItem[]>(() => {
-    const items: FeedItem[] = [];
-
     // OSINT (Firecrawl) — top priority by severity
     osintEvents.slice(0, 12).forEach((e) => {
       const sevColor =
