@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface OsintNewsItem {
   title: string;
@@ -26,25 +27,11 @@ export function useOsintFeed(refreshInterval = 300000) {
   const fetchNews = useCallback(async () => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const anonKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
-      const response = await fetch(
-        `${supabaseUrl}/functions/v1/firecrawl-osint`,
-        {
-          headers: {
-            Authorization: `Bearer ${anonKey}`,
-            'Content-Type': 'application/json',
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const data = await response.json();
+      const { data, error } = await supabase.functions.invoke('firecrawl-osint');
+      if (error) throw error;
 
       setState({
-        news: data.news || [],
+        news: data?.news || [],
         isLoading: false,
         error: null,
         lastUpdate: new Date(),
