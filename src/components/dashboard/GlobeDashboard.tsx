@@ -69,6 +69,7 @@ export function GlobeDashboard() {
           <GlobeScene
             onHotspotClick={setSelectedHotspot}
             onReady={handleGlobeReady}
+            externalMarkers={eventMarkers}
           />
         </div>
 
@@ -113,13 +114,13 @@ export function GlobeDashboard() {
         {/* RIGHT PANEL: Chat Feed — narrower, only panel area blocks events */}
         <div className="absolute right-0 top-0 h-full z-20 pointer-events-none hidden md:block">
           <div className="pointer-events-auto h-full">
-            <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} />
+            <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
           </div>
         </div>
       </div>
 
       {/* OSINT Ticker Bar */}
-      <OsintTickerBar earthquakes={earthquakes} nasaEvents={nasaEvents} />
+      <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
       {/* Status Bar */}
       <div className="flex items-center justify-between px-4 py-1 border-t border-white/[0.04] text-[8px] bg-black/90 font-mono text-white/20 z-30">
