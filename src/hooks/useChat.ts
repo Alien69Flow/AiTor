@@ -18,8 +18,7 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
-
-const SYSTEM_PROMPT = `Eres AI Tor.v69, un asistente de inteligencia artificial avanzado. Tu propósito es ayudar a los usuarios con cualquier pregunta o tarea que puedan tener. Sé útil, accesible y amable en todas tus respuestas.`;
+const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -42,7 +41,7 @@ export function useChat() {
   }, [messages]);
 
   const sendMessage = useCallback(
-    async (content: string, _model: string, _imageData?: string) => {
+    async (content: string, model: string, imageData?: string) => {
       if (!content.trim()) return;
 
       const userMessage: Message = {
@@ -50,70 +49,104 @@ export function useChat() {
         role: "user",
         content,
         timestamp: new Date(),
+        ...(imageData && { imageData }),
       };
 
-      setMessages((prev) => [...prev, userMessage]);
+      const baseMessages = [...messages, userMessage];
+      setMessages(baseMessages);
       setIsLoading(true);
 
-      try {
-        const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-        if (!apiKey) {
-          toast.error("API key de Gemini no configurada");
-          setIsLoading(false);
-          return;
-        }
+      const assistantId = crypto.randomUUID();
+      let assistantText = "";
+      let assistantStarted = false;
 
-        const conversationHistory = messages.map((m) => ({
-          role: m.role === "user" ? "user" : "model",
-          parts: [{ text: m.content }],
-        }));
-
-        const payload = {
-          contents: [
-            {
-              role: "user",
-              parts: [{ text: SYSTEM_PROMPT }],
-            },
-            ...conversationHistory,
-            {
-              role: "user",
-              parts: [{ text: content }],
-            },
-          ],
-        };
-
-        const response = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(payload),
+      const upsertAssistant = (chunk: string) => {
+        assistantText += chunk;
+        setMessages((prev) => {
+          if (!assistantStarted) {
+            assistantStarted = true;
+            return [
+              ...prev,
+              {
+                id: assistantId,
+                role: "assistant",
+                content: assistantText,
+                timestamp: new Date(),
+              },
+            ];
           }
-        );
+          return prev.map((m) =>
+            m.id === assistantId ? { ...m, content: assistantText } : m
+          );
+        });
+      };
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          console.error("Gemini API error:", errorData);
-          toast.error("Error al conectar con Gemini");
+      try {
+        const resp = await fetch(CHAT_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: baseMessages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              ...(m.imageData && { imageData: m.imageData }),
+            })),
+          }),
+        });
+
+        if (!resp.ok || !resp.body) {
+          if (resp.status === 429) {
+            toast.error("Límite de peticiones alcanzado. Intenta de nuevo en unos segundos.");
+          } else if (resp.status === 402) {
+            toast.error("Créditos agotados. Añade saldo en tu workspace.");
+          } else {
+            toast.error("Error al conectar con el oráculo");
+          }
           setIsLoading(false);
           return;
         }
 
-        const data = await response.json();
-        const assistantText =
-          data.candidates?.[0]?.content?.parts?.[0]?.text || "No response";
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let done = false;
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: "assistant",
-            content: assistantText,
-            timestamp: new Date(),
-          },
-        ]);
+        while (!done) {
+          const { done: streamDone, value } = await reader.read();
+          if (streamDone) break;
+          buffer += decoder.decode(value, { stream: true });
+
+          let nl: number;
+          while ((nl = buffer.indexOf("\n")) !== -1) {
+            let line = buffer.slice(0, nl);
+            buffer = buffer.slice(nl + 1);
+            if (line.endsWith("\r")) line = line.slice(0, -1);
+            if (!line || line.startsWith(":")) continue;
+            if (!line.startsWith("data: ")) continue;
+
+            const json = line.slice(6).trim();
+            if (json === "[DONE]") {
+              done = true;
+              break;
+            }
+            try {
+              const parsed = JSON.parse(json);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) upsertAssistant(delta);
+            } catch {
+              buffer = line + "\n" + buffer;
+              break;
+            }
+          }
+        }
+
+        if (!assistantStarted) {
+          toast.error("Sin respuesta del oráculo");
+        }
       } catch (error: any) {
         console.error("Chat error:", error);
         toast.error(error.message || "Error de conexión");
