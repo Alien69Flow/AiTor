@@ -2,6 +2,14 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
+import {
+  createAtmosphereShell,
+  createAuroraCurtains,
+  createVanAllenBelts,
+  createMagneticFlux,
+  createTelluricGrid,
+  getGIBSCloudTexture,
+} from "./layers/HighFidelityLayers";
 
 // ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
@@ -113,6 +121,11 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
   const sceneEnhanced = useRef(false);
+  const auroraRef = useRef<THREE.Group | null>(null);
+  const atmosphereRef = useRef<THREE.Mesh | null>(null);
+  const vanAllenRef = useRef<THREE.Group | null>(null);
+  const telluricRef = useRef<THREE.Group | null>(null);
+  const magneticRef = useRef<THREE.Group | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
