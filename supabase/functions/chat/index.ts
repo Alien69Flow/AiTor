@@ -317,6 +317,38 @@ async function routeToAnthropic(model: string, processedMessages: unknown[]) {
   });
 }
 
+function classifyProviderError(status: number, errorText: string) {
+  const normalized = errorText.toLowerCase();
+
+  if (status === 429) {
+    return { status: 429, body: { error: "Rate limits exceeded, please try again later." } };
+  }
+
+  if (
+    status === 402 ||
+    (status === 403 && (
+      normalized.includes("doesn't have any credits") ||
+      normalized.includes("does not have permission") ||
+      normalized.includes("purchase") ||
+      normalized.includes("licenses yet")
+    ))
+  ) {
+    return { status: 402, body: { error: "Payment required, please add credits to your workspace." } };
+  }
+
+  if (status === 401 || (status === 403 && normalized.includes("api key"))) {
+    return { status: 401, body: { error: "Provider authentication failed." } };
+  }
+
+  return {
+    status: 502,
+    body: {
+      error: "AI provider unavailable",
+      fallback: true,
+    },
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -366,29 +398,17 @@ Deno.serve(async (req) => {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI provider error:", { 
-        status: response.status, 
+      console.error("AI provider error:", {
+        status: response.status,
         model,
         body: errorText.slice(0, 500),
-        timestamp: new Date().toISOString() 
+        timestamp: new Date().toISOString()
       });
-      
-      if (response.status === 429) {
-        return new Response(
-          JSON.stringify({ error: "Rate limits exceeded, please try again later." }), 
-          { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: "Payment required, please add credits to your workspace." }), 
-          { status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
-      
+
+      const classified = classifyProviderError(response.status, errorText);
       return new Response(
-        JSON.stringify({ error: "An error occurred processing your request" }), 
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        JSON.stringify(classified.body),
+        { status: classified.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
