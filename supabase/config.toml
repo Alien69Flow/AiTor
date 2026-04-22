@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.osint-aggregator]
 verify_jwt = false
+
+[functions.cesium-tiles]
+verify_jwt = false
