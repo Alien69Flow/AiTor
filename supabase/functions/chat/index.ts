@@ -324,15 +324,16 @@ function classifyProviderError(status: number, errorText: string) {
     return { status: 429, body: { error: "Rate limits exceeded, please try again later." } };
   }
 
-  if (
-    status === 402 ||
-    (status === 403 && (
-      normalized.includes("doesn't have any credits") ||
-      normalized.includes("does not have permission") ||
-      normalized.includes("purchase") ||
-      normalized.includes("licenses yet")
-    ))
-  ) {
+  const looksLikeBilling =
+    normalized.includes("credit balance is too low") ||
+    normalized.includes("doesn't have any credits") ||
+    normalized.includes("insufficient credits") ||
+    normalized.includes("plans & billing") ||
+    normalized.includes("purchase") ||
+    normalized.includes("licenses yet") ||
+    normalized.includes("does not have permission");
+
+  if (status === 402 || ((status === 400 || status === 403) && looksLikeBilling)) {
     return { status: 402, body: { error: "Payment required, please add credits to your workspace." } };
   }
 
