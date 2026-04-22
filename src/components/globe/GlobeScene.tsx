@@ -129,8 +129,25 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
+  const [cesiumTileUrl, setCesiumTileUrl] = useState<string | null>(null);
 
-  const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
+  // Fetch Cesium Ion tile endpoint once (Bing Aerial via edge proxy)
+  useEffect(() => {
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    if (!projectId) return;
+    fetch(`https://${projectId}.supabase.co/functions/v1/cesium-tiles`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.url && data?.accessToken) {
+          // Equirectangular composite: pick zoom 4 for hi-res base
+          // Cesium Ion returns tile URL templates; we just keep token for runtime tile use
+          setCesiumTileUrl(`${data.url}?access_token=${data.accessToken}`);
+        }
+      })
+      .catch((e) => console.warn("Cesium tile proxy unavailable:", e));
+  }, []);
+
+  const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
 
