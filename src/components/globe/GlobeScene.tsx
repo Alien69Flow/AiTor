@@ -162,6 +162,31 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
 
     addSunLight(scene);
     addMoon(scene);
+
+    // Meteosat-style cloud layer (semi-transparent sphere wrapping the globe)
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = "anonymous";
+    const cloudsGeo = new THREE.SphereGeometry(100.6, 64, 64);
+    const cloudsMat = new THREE.MeshPhongMaterial({
+      map: loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png"),
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
+    cloudsMesh.name = "meteosat_clouds";
+    scene.add(cloudsMesh);
+    cloudsMeshRef.current = cloudsMesh;
+
+    // Animate cloud rotation (slow drift, like real atmosphere)
+    let frame = 0;
+    const animateClouds = () => {
+      if (cloudsMeshRef.current) {
+        cloudsMeshRef.current.rotation.y += 0.0003;
+      }
+      frame = requestAnimationFrame(animateClouds);
+    };
+    animateClouds();
   }, []);
 
   // Data: arcs + USGS + OpenSky
@@ -242,6 +267,17 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
         controls.enablePan = true;
         controls.minDistance = 101;
         controls.maxDistance = 500;
+        // Track altitude changes for zoom-aware texture swapping
+        controls.addEventListener("change", () => {
+          const pov = globeRef.current?.pointOfView();
+          if (pov && typeof pov.altitude === "number") {
+            setAltitude(prev => {
+              const next = pov.altitude;
+              // throttle: only update if change > 0.15 to avoid texture thrashing
+              return Math.abs(next - prev) > 0.15 ? next : prev;
+            });
+          }
+        });
       }
       enhanceScene();
 
@@ -254,6 +290,13 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     }, 800);
     return () => clearTimeout(t);
   }, [enhanceScene]);
+
+  // Toggle clouds visibility
+  useEffect(() => {
+    if (cloudsMeshRef.current) {
+      cloudsMeshRef.current.visible = cloudsEnabled;
+    }
+  }, [cloudsEnabled]);
 
   const getPointColor = useCallback((d: any) => {
     if (d.type === 'aircraft') return '#ffffff';

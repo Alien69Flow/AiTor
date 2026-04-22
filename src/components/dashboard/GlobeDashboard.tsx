@@ -26,6 +26,7 @@ export function GlobeDashboard() {
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(
     new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"])
   );
+  const [cloudsEnabled, setCloudsEnabled] = useState(true);
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => {
@@ -70,6 +71,7 @@ export function GlobeDashboard() {
             onHotspotClick={setSelectedHotspot}
             onReady={handleGlobeReady}
             externalMarkers={eventMarkers}
+            cloudsEnabled={cloudsEnabled}
           />
         </div>
 
@@ -88,7 +90,13 @@ export function GlobeDashboard() {
             <TacticalConsole />
           </div>
           <div className="pointer-events-auto">
-            <LegendPanel visibleLayers={visibleLayers} onToggleLayer={toggleLayer} counts={counts} />
+            <LegendPanel
+              visibleLayers={visibleLayers}
+              onToggleLayer={toggleLayer}
+              counts={counts}
+              cloudsEnabled={cloudsEnabled}
+              onToggleClouds={() => setCloudsEnabled(v => !v)}
+            />
           </div>
           <div className="pointer-events-auto">
             <NavigatePanel onNavigate={handleNavigate} />
