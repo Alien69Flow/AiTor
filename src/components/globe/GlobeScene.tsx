@@ -180,10 +180,25 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
     const cloudsGeo = new THREE.SphereGeometry(100.6, 64, 64);
+    // Try real-time NASA GIBS first; fallback to static cloud map on error
+    const gibsUrl = getGIBSCloudTexture();
+    const cloudTex = loader.load(
+      gibsUrl,
+      undefined,
+      undefined,
+      () => {
+        // GIBS failed (CORS / date), swap to static
+        const fallback = loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png");
+        if (cloudsMeshRef.current) {
+          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).map = fallback;
+          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).needsUpdate = true;
+        }
+      },
+    );
     const cloudsMat = new THREE.MeshPhongMaterial({
-      map: loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png"),
+      map: cloudTex,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.5,
       depthWrite: false,
     });
     const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
@@ -191,16 +206,46 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     scene.add(cloudsMesh);
     cloudsMeshRef.current = cloudsMesh;
 
+    // ── High-fidelity layers (Rango 1) ─────────────────────────
+    const atmosphere = createAtmosphereShell(1, atmosphereColor);
+    scene.add(atmosphere);
+    atmosphereRef.current = atmosphere;
+
+    const auroras = createAuroraCurtains(kpIndex);
+    scene.add(auroras);
+    auroraRef.current = auroras;
+
+    const vanAllen = createVanAllenBelts();
+    scene.add(vanAllen);
+    vanAllenRef.current = vanAllen;
+
+    const telluric = createTelluricGrid();
+    scene.add(telluric);
+    telluricRef.current = telluric;
+
+    const magnetic = createMagneticFlux();
+    scene.add(magnetic);
+    magneticRef.current = magnetic;
+
     // Animate cloud rotation (slow drift, like real atmosphere)
     let frame = 0;
     const animateClouds = () => {
       if (cloudsMeshRef.current) {
         cloudsMeshRef.current.rotation.y += 0.0003;
       }
+      if (auroraRef.current) {
+        auroraRef.current.rotation.y += 0.0006;
+      }
+      if (vanAllenRef.current) {
+        vanAllenRef.current.rotation.y -= 0.0004;
+      }
+      if (telluricRef.current) {
+        telluricRef.current.rotation.y += 0.0002;
+      }
       frame = requestAnimationFrame(animateClouds);
     };
     animateClouds();
-  }, []);
+  }, [atmosphereColor, kpIndex]);
 
   // Data: arcs + USGS + OpenSky
   useEffect(() => {
