@@ -404,8 +404,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           width={dimensions.width}
           height={dimensions.height}
 
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-          {...(globeImageUrl ? { globeImageUrl } : {})}
+          globeImageUrl={globeImageUrl}
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
