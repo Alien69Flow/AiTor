@@ -101,14 +101,17 @@ interface GlobeSceneProps {
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
+  cloudsEnabled?: boolean;
 }
 
-export function GlobeScene({ onHotspotClick, onReady, externalMarkers }: GlobeSceneProps) {
+export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEnabled = true }: GlobeSceneProps) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [altitude, setAltitude] = useState(2.2);
+  const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
   const sceneEnhanced = useRef(false);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
@@ -117,6 +120,14 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers }: GlobeSc
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
+
+  // Zoom-aware NASA Blue Marble resolution (Google Earth style)
+  // altitude < 0.6 = ultra-close, < 1.2 = close, else default
+  const globeImageUrl = altitude < 0.6
+    ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
+    : altitude < 1.2
+    ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
+    : "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
 
   // Resize observer
   useEffect(() => {
