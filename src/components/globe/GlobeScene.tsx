@@ -2,6 +2,14 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
+import {
+  createAtmosphereShell,
+  createAuroraCurtains,
+  createVanAllenBelts,
+  createMagneticFlux,
+  createTelluricGrid,
+  getGIBSCloudTexture,
+} from "./layers/HighFidelityLayers";
 
 // ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
@@ -113,17 +121,41 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
   const sceneEnhanced = useRef(false);
+  const auroraRef = useRef<THREE.Group | null>(null);
+  const atmosphereRef = useRef<THREE.Mesh | null>(null);
+  const vanAllenRef = useRef<THREE.Group | null>(null);
+  const telluricRef = useRef<THREE.Group | null>(null);
+  const magneticRef = useRef<THREE.Group | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
+  const [cesiumTileUrl, setCesiumTileUrl] = useState<string | null>(null);
 
-  const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ff41";
+  // Fetch Cesium Ion tile endpoint once (Bing Aerial via edge proxy)
+  useEffect(() => {
+    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+    if (!projectId) return;
+    fetch(`https://${projectId}.supabase.co/functions/v1/cesium-tiles`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data?.url && data?.accessToken) {
+          // Equirectangular composite: pick zoom 4 for hi-res base
+          // Cesium Ion returns tile URL templates; we just keep token for runtime tile use
+          setCesiumTileUrl(`${data.url}?access_token=${data.accessToken}`);
+        }
+      })
+      .catch((e) => console.warn("Cesium tile proxy unavailable:", e));
+  }, []);
+
+  const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
 
   // Zoom-aware NASA Blue Marble resolution (Google Earth style)
   // altitude < 0.6 = ultra-close, < 1.2 = close, else default
-  const globeImageUrl = altitude < 0.6
+  const globeImageUrl = cesiumTileUrl
+    ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
+    : altitude < 0.6
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
     : altitude < 1.2
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
@@ -167,10 +199,25 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
     const cloudsGeo = new THREE.SphereGeometry(100.6, 64, 64);
+    // Try real-time NASA GIBS first; fallback to static cloud map on error
+    const gibsUrl = getGIBSCloudTexture();
+    const cloudTex = loader.load(
+      gibsUrl,
+      undefined,
+      undefined,
+      () => {
+        // GIBS failed (CORS / date), swap to static
+        const fallback = loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png");
+        if (cloudsMeshRef.current) {
+          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).map = fallback;
+          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).needsUpdate = true;
+        }
+      },
+    );
     const cloudsMat = new THREE.MeshPhongMaterial({
-      map: loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png"),
+      map: cloudTex,
       transparent: true,
-      opacity: 0.55,
+      opacity: 0.5,
       depthWrite: false,
     });
     const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
@@ -178,16 +225,46 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     scene.add(cloudsMesh);
     cloudsMeshRef.current = cloudsMesh;
 
+    // ── High-fidelity layers (Rango 1) ─────────────────────────
+    const atmosphere = createAtmosphereShell(1, atmosphereColor);
+    scene.add(atmosphere);
+    atmosphereRef.current = atmosphere;
+
+    const auroras = createAuroraCurtains(kpIndex);
+    scene.add(auroras);
+    auroraRef.current = auroras;
+
+    const vanAllen = createVanAllenBelts();
+    scene.add(vanAllen);
+    vanAllenRef.current = vanAllen;
+
+    const telluric = createTelluricGrid();
+    scene.add(telluric);
+    telluricRef.current = telluric;
+
+    const magnetic = createMagneticFlux();
+    scene.add(magnetic);
+    magneticRef.current = magnetic;
+
     // Animate cloud rotation (slow drift, like real atmosphere)
     let frame = 0;
     const animateClouds = () => {
       if (cloudsMeshRef.current) {
         cloudsMeshRef.current.rotation.y += 0.0003;
       }
+      if (auroraRef.current) {
+        auroraRef.current.rotation.y += 0.0006;
+      }
+      if (vanAllenRef.current) {
+        vanAllenRef.current.rotation.y -= 0.0004;
+      }
+      if (telluricRef.current) {
+        telluricRef.current.rotation.y += 0.0002;
+      }
       frame = requestAnimationFrame(animateClouds);
     };
     animateClouds();
-  }, []);
+  }, [atmosphereColor, kpIndex]);
 
   // Data: arcs + USGS + OpenSky
   useEffect(() => {
@@ -327,7 +404,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           width={dimensions.width}
           height={dimensions.height}
 
-          globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+          globeImageUrl={globeImageUrl}
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
