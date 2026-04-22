@@ -203,7 +203,15 @@ async function routeToGrok(model: string, processedMessages: unknown[]) {
     throw new Error("GROK_API_KEY is not configured");
   }
 
-  const xaiModel = model.replace("xai/", "");
+  // Map our internal IDs to actual xAI model names
+  const xaiModelMap: Record<string, string> = {
+    "grok-2": "grok-2-latest",
+    "grok-2-latest": "grok-2-latest",
+    "grok-3": "grok-3",
+    "grok-4": "grok-4",
+  };
+  const requested = model.replace("xai/", "");
+  const xaiModel = xaiModelMap[requested] ?? requested;
 
   return await fetch("https://api.x.ai/v1/chat/completions", {
     method: "POST",
@@ -361,6 +369,7 @@ Deno.serve(async (req) => {
       console.error("AI provider error:", { 
         status: response.status, 
         model,
+        body: errorText.slice(0, 500),
         timestamp: new Date().toISOString() 
       });
       
