@@ -153,7 +153,9 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
 
   // Zoom-aware NASA Blue Marble resolution (Google Earth style)
   // altitude < 0.6 = ultra-close, < 1.2 = close, else default
-  const globeImageUrl = altitude < 0.6
+  const globeImageUrl = cesiumTileUrl
+    ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
+    : altitude < 0.6
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
     : altitude < 1.2
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
@@ -403,6 +405,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           height={dimensions.height}
 
           globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+          {...(globeImageUrl ? { globeImageUrl } : {})}
           bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
           backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
