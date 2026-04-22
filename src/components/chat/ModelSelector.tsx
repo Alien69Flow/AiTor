@@ -25,6 +25,15 @@ const ORACLE_TYPE_BADGES: Record<string, { label: string; className: string }> =
   external: { label: "API", className: "border-muted-foreground/40 text-muted-foreground bg-muted/30" },
 };
 
+// Dynamic glow color per oracle type — used for trigger button & active item
+const ORACLE_GLOW: Record<string, { glow: string; ring: string; iconBg: string }> = {
+  primary:    { glow: "shadow-[0_0_20px_rgba(105,175,0,0.35)]", ring: "ring-1 ring-[#69af00]/40",  iconBg: "bg-[#69af00]/15" },
+  advanced:   { glow: "shadow-[0_0_22px_rgba(255,215,0,0.4)]",  ring: "ring-1 ring-[#FFD700]/45", iconBg: "bg-[#FFD700]/15" },
+  blockchain: { glow: "shadow-[0_0_18px_rgba(0,255,255,0.35)]", ring: "ring-1 ring-cyan-400/40",  iconBg: "bg-cyan-400/10" },
+  external:   { glow: "shadow-[0_0_18px_rgba(255,0,255,0.3)]",  ring: "ring-1 ring-fuchsia-400/40", iconBg: "bg-fuchsia-400/10" },
+};
+const getGlow = (type?: string) => ORACLE_GLOW[type || "primary"] || ORACLE_GLOW.primary;
+
 const SPEED_CONFIG: Record<string, { label: string; bars: number; className: string }> = {
   instant: { label: "~0.3s", bars: 4, className: "text-secondary" },
   fast: { label: "~1s", bars: 3, className: "text-secondary" },
@@ -68,6 +77,7 @@ const getQuality = (id: string): number => {
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
   const selected = AI_MODELS.find(m => m.id === value);
+  const selGlow = getGlow(selected?.oracleType);
 
   // Keyboard navigation
   useEffect(() => {
@@ -82,8 +92,16 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex items-center gap-2 h-8 px-3 rounded-full border border-border/60 bg-card/40 hover:bg-card/70 hover:border-primary/30 transition-all duration-200 text-xs font-mono group">
-          <span className="text-sm">{selected ? getIcon(selected) : "🔮"}</span>
+        <button className={cn(
+          "flex items-center gap-2 h-9 px-3 rounded-full font-mono text-xs group",
+          "bg-black/40 backdrop-blur-xl border border-white/10",
+          "hover:bg-black/60 hover:border-white/20 transition-all duration-300",
+          selGlow.glow, selGlow.ring,
+        )}>
+          <span className={cn(
+            "w-6 h-6 rounded-full flex items-center justify-center text-sm transition-transform duration-300 group-hover:scale-110",
+            selGlow.iconBg
+          )}>{selected ? getIcon(selected) : "🔮"}</span>
           <span className="text-foreground/80 truncate max-w-[100px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
           {selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
             <Badge variant="outline" className={cn("text-[7px] px-1.5 py-0 h-3.5 font-mono", ORACLE_TYPE_BADGES[selected.oracleType].className)}>
@@ -97,7 +115,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[380px] p-0 bg-popover backdrop-blur-md border-border shadow-lg animate-in zoom-in-95 fade-in duration-200"
+        className="w-[380px] p-0 bg-black/70 backdrop-blur-2xl border border-white/10 shadow-2xl shadow-black/50 animate-in zoom-in-95 fade-in duration-200"
         align="center"
         sideOffset={8}
       >
@@ -128,6 +146,7 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                   }>
                     {models.map(model => {
                       const isSelected = model.id === value;
+                      const glow = getGlow(model.oracleType);
                       return (
                         <CommandItem
                           key={model.id}
@@ -137,13 +156,13 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                           className={cn(
                             "flex items-center gap-3 py-3 px-2 rounded-lg cursor-pointer transition-all duration-150",
                             !model.available && "opacity-35 cursor-not-allowed",
-                            isSelected && "bg-primary/10 border border-primary/25",
-                            !isSelected && model.available && "hover:bg-muted/15"
+                            isSelected && cn("bg-white/5 border border-white/15", glow.glow),
+                            !isSelected && model.available && "hover:bg-white/[0.04] border border-transparent"
                           )}
                         >
                           <div className={cn(
-                            "w-9 h-9 rounded-lg border flex items-center justify-center text-base shrink-0 transition-all duration-200",
-                            isSelected ? "bg-primary/15 border-primary/30" : "bg-muted/20 border-border/50"
+                            "w-9 h-9 rounded-lg border flex items-center justify-center text-base shrink-0 transition-all duration-300",
+                            isSelected ? cn(glow.iconBg, glow.ring, "border-transparent") : "bg-white/[0.03] border-white/10"
                           )}>
                             {getIcon(model)}
                           </div>
