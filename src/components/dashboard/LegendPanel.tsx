@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronUp, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { ChevronUp, ChevronDown, Eye, EyeOff, Cloud, CloudOff } from "lucide-react";
 
 export type LayerKey = "finance" | "intel" | "conflict" | "geopolitical" | "logistics" | "cryptozoo" | "convergence";
 
@@ -26,9 +26,11 @@ interface LegendPanelProps {
   visibleLayers: Set<LayerKey>;
   onToggleLayer: (key: LayerKey) => void;
   counts?: Record<LayerKey, number>;
+  cloudsEnabled?: boolean;
+  onToggleClouds?: () => void;
 }
 
-export function LegendPanel({ visibleLayers, onToggleLayer, counts }: LegendPanelProps) {
+export function LegendPanel({ visibleLayers, onToggleLayer, counts, cloudsEnabled, onToggleClouds }: LegendPanelProps) {
   const [open, setOpen] = useState(true);
 
   return (
@@ -63,6 +65,27 @@ export function LegendPanel({ visibleLayers, onToggleLayer, counts }: LegendPane
               </button>
             ))}
           </div>
+          {onToggleClouds && (
+            <div className="mt-2 pt-2 border-t border-white/[0.06]">
+              <button
+                onClick={onToggleClouds}
+                className="w-full flex items-center justify-between text-[9px] font-mono group hover:bg-white/[0.03] rounded px-1 py-1 transition-colors"
+              >
+                <span className="flex items-center gap-1.5">
+                  {cloudsEnabled
+                    ? <Cloud className="w-3 h-3 text-[#00FFFF]" />
+                    : <CloudOff className="w-3 h-3 text-white/20" />
+                  }
+                  <span style={{ color: cloudsEnabled ? "#00FFFF" : "#555" }}>
+                    Meteosat Clouds
+                  </span>
+                </span>
+                <span className="text-[7px] text-white/25 uppercase tracking-wider">
+                  {cloudsEnabled ? "LIVE" : "OFF"}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
