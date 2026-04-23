@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, Radio, Eye, MapPin, Clock, ExternalLink, RefreshCw, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchUapSightingsRows, isUapSightingsTableMissing } from "@/lib/uap-sightings";
 import { toast } from "sonner";
 
 type Sighting = {
@@ -60,22 +61,15 @@ export function UFOMonitorTab() {
 
   const fetchSightings = async () => {
     try {
-      const { data, error } = await supabase
-        .from('uap_sightings')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (error) throw error;
+      const data = await fetchUapSightingsRows();
 
       if (data && data.length > 0) {
-        setSightings(data as Sighting[]);
+        setSightings((data.slice(0, 50) as Sighting[]));
       } else {
         // Use fallback data if DB is empty
         setSightings(FALLBACK_SIGHTINGS.map((s, i) => ({ ...s, id: `fallback-${i}` })));
       }
-    } catch (err) {
-      console.error('Error fetching sightings:', err);
+    } catch {
       setSightings(FALLBACK_SIGHTINGS.map((s, i) => ({ ...s, id: `fallback-${i}` })));
     } finally {
       setLoading(false);
@@ -83,6 +77,11 @@ export function UFOMonitorTab() {
   };
 
   const refreshFeed = async () => {
+    if (isUapSightingsTableMissing()) {
+      toast.info('La tabla UAP aún no existe; usando feed local temporal');
+      return;
+    }
+
     setRefreshing(true);
     try {
       const { data, error } = await supabase.functions.invoke('ufo-feed');
@@ -94,8 +93,7 @@ export function UFOMonitorTab() {
       } else {
         toast.error(data?.error || 'Error actualizando feed');
       }
-    } catch (err) {
-      console.error('Error refreshing feed:', err);
+    } catch {
       toast.error('Error conectando con fuentes de datos');
     } finally {
       setRefreshing(false);

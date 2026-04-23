@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback } from "react";
-import { supabase } from "@/integrations/supabase/client";
 
 export type IntelCategory =
   | "finance"
@@ -41,10 +40,29 @@ export function useOsintIntel(refreshMs = 600_000, categories?: IntelCategory[])
   const fetchIntel = useCallback(async () => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
-      const { data, error } = await supabase.functions.invoke("osint-aggregator", {
-        body: { categories, limit: 5 },
+      const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
+      const publishableKey =
+        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ?? import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+      if (!projectId || !publishableKey) {
+        throw new Error("Backend not configured");
+      }
+
+      const response = await fetch(`https://${projectId}.supabase.co/functions/v1/osint-aggregator`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: publishableKey,
+          Authorization: `Bearer ${publishableKey}`,
+        },
+        body: JSON.stringify({ categories, limit: 5 }),
       });
-      if (error) throw error;
+
+      const data = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(data?.error || `Request failed with ${response.status}`);
+      }
+
       setState({
         events: data?.events || [],
         isLoading: false,
@@ -52,8 +70,6 @@ export function useOsintIntel(refreshMs = 600_000, categories?: IntelCategory[])
         lastUpdate: new Date(),
       });
     } catch (err) {
-      // Edge function CORS / network failure — degrade silently, don't break the UI
-      console.warn("[useOsintIntel] aggregator unavailable (non-fatal):", err instanceof Error ? err.message : err);
       setState((s) => ({
         ...s,
         isLoading: false,

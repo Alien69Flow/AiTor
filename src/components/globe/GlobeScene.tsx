@@ -320,9 +320,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           const base = prev.filter(p => p.type !== 'aircraft');
           return [...base, ...aircraft];
         });
-      } catch (e) {
-        // CORS / abort / offline — globe continues without aircraft layer
-        console.warn("[OpenSky] unavailable (non-fatal):", e instanceof Error ? e.message : e);
+      } catch {
       } finally {
         clearTimeout(timeoutId);
       }
