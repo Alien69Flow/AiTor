@@ -52,8 +52,6 @@ export function useOsintIntel(refreshMs = 600_000, categories?: IntelCategory[])
         lastUpdate: new Date(),
       });
     } catch (err) {
-      // Edge function CORS / network failure — degrade silently, don't break the UI
-      console.warn("[useOsintIntel] aggregator unavailable (non-fatal):", err instanceof Error ? err.message : err);
       setState((s) => ({
         ...s,
         isLoading: false,
