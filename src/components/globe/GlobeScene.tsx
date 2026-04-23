@@ -294,11 +294,18 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
 
     setArcsData(newArcs);
 
-    // OpenSky aircraft layer (independent, lightweight ambient signal)
-    fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60')
-      .then(res => res.json())
-      .then(data => {
-        if (!data.states) return;
+    // OpenSky aircraft layer — non-blocking. CORS/network failures must NOT break the globe.
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
+    (async () => {
+      try {
+        const res = await fetch(
+          'https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60',
+          { signal: controller.signal },
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data?.states) return;
         const aircraft: UnifiedHotspotData[] = data.states.slice(0, 80).map((s: any[]) => ({
           lat: s[6] || 0, lon: s[5] || 0,
           intensity: 0.15, color: "#ffffff",
@@ -313,8 +320,17 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           const base = prev.filter(p => p.type !== 'aircraft');
           return [...base, ...aircraft];
         });
-      })
-      .catch(e => console.warn("OpenSky fetch error:", e));
+      } catch (e) {
+        // CORS / abort / offline — globe continues without aircraft layer
+        console.warn("[OpenSky] unavailable (non-fatal):", e instanceof Error ? e.message : e);
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    })();
+    return () => {
+      clearTimeout(timeoutId);
+      controller.abort();
+    };
   }, []);
 
   // Unified external markers (USGS/NASA/UAP/OSINT) coming from useUnifiedIntel

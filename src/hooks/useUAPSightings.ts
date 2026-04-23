@@ -21,42 +21,57 @@ export function useUAPSightings() {
 
   useEffect(() => {
     const fetchSightings = async () => {
-      const { data, error } = await supabase
-        .from("uap_sightings")
-        .select("*")
-        .not("lat", "is", null)
-        .not("lon", "is", null)
-        .order("date_reported", { ascending: false });
+      try {
+        const { data, error } = await supabase
+          .from("uap_sightings")
+          .select("*")
+          .not("lat", "is", null)
+          .not("lon", "is", null)
+          .order("date_reported", { ascending: false });
 
-      if (!error && data) {
-        setSightings(data as UAPSighting[]);
+        if (error) {
+          // Table missing / RLS / 404 — silently degrade, globe keeps rendering
+          console.warn("[useUAPSightings] table unavailable:", error.message);
+        } else if (data) {
+          setSightings(data as UAPSighting[]);
+        }
+      } catch (e) {
+        console.warn("[useUAPSightings] fetch failed (non-fatal):", e);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     };
 
     fetchSightings();
 
-    // Realtime subscription
-    const channel = supabase
-      .channel("uap-globe")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "uap_sightings" },
-        (payload) => {
-          if (payload.eventType === "INSERT") {
-            const newRow = payload.new as UAPSighting;
-            if (newRow.lat != null && newRow.lon != null) {
-              setSightings((prev) => [newRow, ...prev]);
+    // Realtime subscription (wrapped — fails silently if table missing)
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+    try {
+      channel = supabase
+        .channel("uap-globe")
+        .on(
+          "postgres_changes",
+          { event: "*", schema: "public", table: "uap_sightings" },
+          (payload) => {
+            if (payload.eventType === "INSERT") {
+              const newRow = payload.new as UAPSighting;
+              if (newRow.lat != null && newRow.lon != null) {
+                setSightings((prev) => [newRow, ...prev]);
+              }
+            } else if (payload.eventType === "DELETE") {
+              setSightings((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
             }
-          } else if (payload.eventType === "DELETE") {
-            setSightings((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    } catch (e) {
+      console.warn("[useUAPSightings] realtime unavailable:", e);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        try { supabase.removeChannel(channel); } catch {}
+      }
     };
   }, []);
 
