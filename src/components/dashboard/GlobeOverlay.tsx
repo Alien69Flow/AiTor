@@ -2,8 +2,8 @@ import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
 import { X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-react";
 import type { HotspotData } from "@/components/globe/GlobeScene";
-import { supabase } from "@/integrations/supabase/client";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
+import { fetchUapSightingsCount } from "@/lib/uap-sightings";
 
 const TACTICAL_COLORS: Record<string, string> = {
   conflict: "#FF4444", 
@@ -85,8 +85,8 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
 
   useEffect(() => {
     const fetchUAP = async () => {
-      const { count } = await supabase.from("uap_sightings").select("*", { count: "exact", head: true });
-      setUapCount(count || 0);
+      const count = await fetchUapSightingsCount();
+      setUapCount(count);
     };
     fetchUAP();
   }, [hotspot]);

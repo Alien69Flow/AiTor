@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchUapSightingsRows, isUapSightingsTableMissing, type UapSightingRow } from "@/lib/uap-sightings";
 
 export interface UAPSighting {
   id: string;
@@ -22,27 +23,20 @@ export function useUAPSightings() {
   useEffect(() => {
     const fetchSightings = async () => {
       try {
-        const { data, error } = await supabase
-          .from("uap_sightings")
-          .select("*")
-          .not("lat", "is", null)
-          .not("lon", "is", null)
-          .order("date_reported", { ascending: false });
-
-        if (error) {
-          // Table missing / RLS / 404 — silently degrade, globe keeps rendering
-          console.warn("[useUAPSightings] table unavailable:", error.message);
-        } else if (data) {
-          setSightings(data as UAPSighting[]);
-        }
-      } catch (e) {
-        console.warn("[useUAPSightings] fetch failed (non-fatal):", e);
+        const data = await fetchUapSightingsRows();
+        setSightings(data as UAPSighting[]);
+      } catch {
+        setSightings([]);
       } finally {
         setLoading(false);
       }
     };
 
     fetchSightings();
+
+    if (isUapSightingsTableMissing()) {
+      return;
+    }
 
     // Realtime subscription (wrapped — fails silently if table missing)
     let channel: ReturnType<typeof supabase.channel> | null = null;
@@ -54,9 +48,9 @@ export function useUAPSightings() {
           { event: "*", schema: "public", table: "uap_sightings" },
           (payload) => {
             if (payload.eventType === "INSERT") {
-              const newRow = payload.new as UAPSighting;
+              const newRow = payload.new as UapSightingRow;
               if (newRow.lat != null && newRow.lon != null) {
-                setSightings((prev) => [newRow, ...prev]);
+                setSightings((prev) => [newRow as UAPSighting, ...prev]);
               }
             } else if (payload.eventType === "DELETE") {
               setSightings((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
@@ -64,8 +58,8 @@ export function useUAPSightings() {
           }
         )
         .subscribe();
-    } catch (e) {
-      console.warn("[useUAPSightings] realtime unavailable:", e);
+    } catch {
+      channel = null;
     }
 
     return () => {
