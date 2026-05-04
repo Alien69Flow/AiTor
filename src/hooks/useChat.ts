@@ -19,6 +19,9 @@ export interface Conversation {
 
 const STORAGE_KEY = "aitor_chat_memory";
 const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+const PENDING_KEY = "aitor_chat_pending";
+const MAX_RETRIES = 3;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -55,6 +58,13 @@ export function useChat() {
       const baseMessages = [...messages, userMessage];
       setMessages(baseMessages);
       setIsLoading(true);
+      // Persist pending so we can recover if the page reloads mid-request
+      try {
+        localStorage.setItem(
+          PENDING_KEY,
+          JSON.stringify({ content, model, imageData, ts: Date.now() })
+        );
+      } catch {}
 
       const assistantId = crypto.randomUUID();
       let assistantText = "";
@@ -81,32 +91,81 @@ export function useChat() {
         });
       };
 
-      try {
-        const resp = await fetch(CHAT_URL, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-          },
-          body: JSON.stringify({
-            model,
-            messages: baseMessages.map((m) => ({
-              role: m.role,
-              content: m.content,
-              ...(m.imageData && { imageData: m.imageData }),
-            })),
-          }),
-        });
+      let waitingToastId: string | number | undefined;
+      const showWaiting = () => {
+        if (waitingToastId === undefined) {
+          waitingToastId = toast.loading("Oráculo en espera — reconectando...");
+        }
+      };
+      const dismissWaiting = () => {
+        if (waitingToastId !== undefined) {
+          toast.dismiss(waitingToastId);
+          waitingToastId = undefined;
+        }
+      };
 
-        if (!resp.ok || !resp.body) {
-          if (resp.status === 429) {
-            toast.error("Límite de peticiones alcanzado. Intenta de nuevo en unos segundos.");
-          } else if (resp.status === 402) {
-            toast.error("Créditos agotados. Añade saldo en tu workspace.");
-          } else {
-            toast.error("Error al conectar con el oráculo");
+      const requestWithRetry = async (): Promise<Response | null> => {
+        for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+          try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
+            const resp = await fetch(CHAT_URL, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              signal: controller.signal,
+              body: JSON.stringify({
+                model,
+                messages: baseMessages.map((m) => ({
+                  role: m.role,
+                  content: m.content,
+                  ...(m.imageData && { imageData: m.imageData }),
+                })),
+              }),
+            });
+            clearTimeout(timeoutId);
+
+            // 429/402 = no retry, surface immediately
+            if (resp.status === 429) {
+              toast.error("Límite de peticiones alcanzado. Intenta de nuevo en unos segundos.");
+              return null;
+            }
+            if (resp.status === 402) {
+              toast.error("Créditos agotados. Añade saldo en tu workspace.");
+              return null;
+            }
+            // 5xx / 503 (paused backend) → retry with backoff
+            if (!resp.ok || !resp.body) {
+              if (resp.status >= 500 && attempt < MAX_RETRIES - 1) {
+                showWaiting();
+                await sleep(1500 * (attempt + 1));
+                continue;
+              }
+              toast.error("Error al conectar con el oráculo");
+              return null;
+            }
+            dismissWaiting();
+            return resp;
+          } catch (err: any) {
+            // network / timeout / supabase paused — retry
+            if (attempt < MAX_RETRIES - 1) {
+              showWaiting();
+              await sleep(1500 * (attempt + 1));
+              continue;
+            }
+            throw err;
           }
+        }
+        return null;
+      };
+
+      try {
+        const resp = await requestWithRetry();
+        if (!resp) {
           setIsLoading(false);
+          dismissWaiting();
           return;
         }
 
@@ -148,9 +207,11 @@ export function useChat() {
           toast.error("Sin respuesta del oráculo");
         }
       } catch (error: any) {
-        console.error("Chat error:", error);
-        toast.error(error.message || "Error de conexión");
+        console.warn("Chat error after retries:", error?.message);
+        toast.error("Oráculo en espera — backend pausado. Reintenta en unos segundos.");
       } finally {
+        dismissWaiting();
+        try { localStorage.removeItem(PENDING_KEY); } catch {}
         setIsLoading(false);
       }
     },
