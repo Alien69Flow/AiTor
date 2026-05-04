@@ -110,13 +110,18 @@ interface GlobeSceneProps {
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
   cloudsEnabled?: boolean;
+  weatherEnabled?: boolean;
 }
 
-export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEnabled = true }: GlobeSceneProps) {
+const OWM_API_KEY = "4965fa96ab53cebf682ae8f2d1a35480";
+const ZARAGOZA = { lat: 41.65, lon: -0.88 };
+
+export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEnabled = true, weatherEnabled = true }: GlobeSceneProps) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
+  const [weatherHeat, setWeatherHeat] = useState<{ lat: number; lng: number; weight: number }[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
@@ -389,6 +394,50 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     }
   }, [cloudsEnabled]);
 
+  // OpenWeather precipitation/cloud density — sample a grid centered on Zaragoza
+  useEffect(() => {
+    if (!weatherEnabled) {
+      setWeatherHeat([]);
+      return;
+    }
+    const controller = new AbortController();
+    const grid: { lat: number; lon: number }[] = [];
+    const step = 2.5;
+    const span = 12;
+    for (let dLat = -span; dLat <= span; dLat += step) {
+      for (let dLon = -span; dLon <= span; dLon += step) {
+        grid.push({ lat: ZARAGOZA.lat + dLat, lon: ZARAGOZA.lon + dLon });
+      }
+    }
+    (async () => {
+      try {
+        const results = await Promise.all(
+          grid.map(async (p) => {
+            try {
+              const r = await fetch(
+                `https://api.openweathermap.org/data/2.5/weather?lat=${p.lat}&lon=${p.lon}&appid=${OWM_API_KEY}&units=metric`,
+                { signal: controller.signal },
+              );
+              if (!r.ok) return null;
+              const d = await r.json();
+              const clouds = d?.clouds?.all ?? 0;
+              const rain = d?.rain?.["1h"] ?? d?.rain?.["3h"] ?? 0;
+              const weight = Math.min(1, clouds / 100 + rain / 5);
+              if (weight <= 0.05) return null;
+              return { lat: p.lat, lng: p.lon, weight };
+            } catch {
+              return null;
+            }
+          }),
+        );
+        setWeatherHeat(results.filter(Boolean) as any);
+      } catch {
+        // silent fallback
+      }
+    })();
+    return () => controller.abort();
+  }, [weatherEnabled]);
+
   const getPointColor = useCallback((d: any) => {
     if (d.type === 'aircraft') return '#ffffff';
     if (d.type === 'quake') return '#ffff00';
@@ -464,6 +513,17 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           ringPropagationSpeed="propagationSpeed"
           ringRepeatPeriod="repeatPeriod"
           ringColor="color"
+
+          {...{
+            heatmapsData: weatherEnabled && weatherHeat.length ? [weatherHeat] : [],
+            heatmapPointLat: "lat",
+            heatmapPointLng: "lng",
+            heatmapPointWeight: "weight",
+            heatmapBandwidth: 1.6,
+            heatmapColorSaturation: 2.4,
+            heatmapBaseAltitude: 0.005,
+            heatmapTopAltitude: 0.04,
+          } as any}
         />
       )}
     </div>
