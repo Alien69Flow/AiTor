@@ -27,6 +27,7 @@ export function GlobeDashboard() {
     new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"])
   );
   const [cloudsEnabled, setCloudsEnabled] = useState(true);
+  const [weatherEnabled, setWeatherEnabled] = useState(true);
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => {
@@ -72,6 +73,7 @@ export function GlobeDashboard() {
             onReady={handleGlobeReady}
             externalMarkers={eventMarkers}
             cloudsEnabled={cloudsEnabled}
+            weatherEnabled={weatherEnabled}
           />
         </div>
 
@@ -96,6 +98,8 @@ export function GlobeDashboard() {
               counts={counts}
               cloudsEnabled={cloudsEnabled}
               onToggleClouds={() => setCloudsEnabled(v => !v)}
+              weatherEnabled={weatherEnabled}
+              onToggleWeather={() => setWeatherEnabled(v => !v)}
             />
           </div>
           <div className="pointer-events-auto">
