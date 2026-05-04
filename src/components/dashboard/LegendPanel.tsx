@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { ChevronUp, ChevronDown, Eye, EyeOff, Cloud, CloudOff } from "lucide-react";
+import { ChevronUp, ChevronDown, Cloud, CloudOff, Activity, Satellite, Radio, CloudRain } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 
 export type LayerKey = "finance" | "intel" | "conflict" | "geopolitical" | "logistics" | "cryptozoo" | "convergence";
 
@@ -20,7 +21,14 @@ export const LEGEND_CATEGORIES: LegendCategory[] = [
   { key: "convergence", label: "Convergence", color: "#FFFFFF", emoji: "✨" },
 ];
 
-const glass = "bg-black/60 backdrop-blur-[20px] border border-white/[0.06] rounded-lg";
+const glass = "bg-black/70 backdrop-blur-[20px] border border-white/[0.08] rounded-md font-mono";
+
+const DATA_SOURCES = [
+  { key: "usgs", label: "USGS Quakes", color: "#ffff00", Icon: Activity },
+  { key: "nasa", label: "NASA EONET", color: "#00ff41", Icon: Satellite },
+  { key: "noaa", label: "NOAA Kp Index", color: "#FF00FF", Icon: Radio },
+  { key: "owm", label: "OpenWeather Precip.", color: "#00FFFF", Icon: CloudRain },
+] as const;
 
 interface LegendPanelProps {
   visibleLayers: Set<LayerKey>;
@@ -28,61 +36,102 @@ interface LegendPanelProps {
   counts?: Record<LayerKey, number>;
   cloudsEnabled?: boolean;
   onToggleClouds?: () => void;
+  weatherEnabled?: boolean;
+  onToggleWeather?: () => void;
 }
 
-export function LegendPanel({ visibleLayers, onToggleLayer, counts, cloudsEnabled, onToggleClouds }: LegendPanelProps) {
+export function LegendPanel({ visibleLayers, onToggleLayer, counts, cloudsEnabled, onToggleClouds, weatherEnabled, onToggleWeather }: LegendPanelProps) {
   const [open, setOpen] = useState(true);
 
   return (
-    <div className={`${glass} w-[260px] overflow-hidden`}>
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2">
-        <span className="text-[9px] font-mono uppercase tracking-wider text-white/30">⚙ LEGEND & LAYERS</span>
-        {open ? <ChevronUp className="w-3 h-3 text-white/20" /> : <ChevronDown className="w-3 h-3 text-white/20" />}
+    <div className={`${glass} w-[280px] overflow-hidden`}>
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2 border-b border-white/[0.06]">
+        <span className="text-[10px] uppercase tracking-[0.15em] text-white/50">▣ LEGEND & LAYERS</span>
+        {open ? <ChevronUp className="w-3 h-3 text-white/30" /> : <ChevronDown className="w-3 h-3 text-white/30" />}
       </button>
       {open && (
-        <div className="px-3 pb-3">
-          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+        <div className="px-3 pb-3 pt-2 space-y-3">
+          {/* Categories */}
+          <div>
+            <div className="text-[8px] uppercase tracking-wider text-white/25 mb-1.5">Categories</div>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-1">
             {LEGEND_CATEGORIES.map(cat => (
               <button
                 key={cat.key}
                 onClick={() => onToggleLayer(cat.key)}
-                className="flex items-center gap-1.5 text-[9px] font-mono group"
+                className="flex items-center gap-1.5 text-[9px] hover:bg-white/[0.04] rounded px-1 py-0.5 transition-colors"
               >
-                {visibleLayers.has(cat.key)
-                  ? <Eye className="w-3 h-3 text-[#00FF41]" />
-                  : <EyeOff className="w-3 h-3 text-white/15" />
-                }
                 <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ background: visibleLayers.has(cat.key) ? cat.color : "#333" }}
+                  className="w-1.5 h-1.5 rounded-full shrink-0 transition-all"
+                  style={{
+                    background: visibleLayers.has(cat.key) ? cat.color : "#222",
+                    boxShadow: visibleLayers.has(cat.key) ? `0 0 6px ${cat.color}` : "none",
+                  }}
                 />
-                <span style={{ color: visibleLayers.has(cat.key) ? cat.color : "#444" }}>
+                <span
+                  className="truncate"
+                  style={{ color: visibleLayers.has(cat.key) ? cat.color : "#444" }}
+                >
                   {cat.label}
                 </span>
                 {counts && counts[cat.key] > 0 && (
-                  <span className="text-[7px] text-white/20 ml-auto">{counts[cat.key]}</span>
+                  <span className="text-[7px] text-white/30 ml-auto">{counts[cat.key]}</span>
                 )}
               </button>
             ))}
+            </div>
           </div>
+
+          {/* Live Data Sources */}
+          <div className="border-t border-white/[0.06] pt-2">
+            <div className="text-[8px] uppercase tracking-wider text-white/25 mb-1.5">Live Data Sources</div>
+            <div className="space-y-1">
+              {DATA_SOURCES.map(src => {
+                const isOwm = src.key === "owm";
+                const enabled = isOwm ? !!weatherEnabled : true;
+                return (
+                  <div key={src.key} className="flex items-center justify-between gap-2 px-1 py-0.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <src.Icon className="w-3 h-3 shrink-0" style={{ color: enabled ? src.color : "#444" }} />
+                      <span className="text-[9px] truncate" style={{ color: enabled ? src.color : "#555" }}>
+                        {src.label}
+                      </span>
+                    </div>
+                    {isOwm && onToggleWeather ? (
+                      <Switch
+                        checked={!!weatherEnabled}
+                        onCheckedChange={onToggleWeather}
+                        className="scale-[0.6] origin-right data-[state=checked]:bg-[#00FFFF]/60"
+                      />
+                    ) : (
+                      <span className="text-[7px] uppercase tracking-wider text-[#00FF41]/70">●LIVE</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {onToggleClouds && (
-            <div className="mt-2 pt-2 border-t border-white/[0.06]">
+            <div className="border-t border-white/[0.06] pt-2">
               <button
                 onClick={onToggleClouds}
-                className="w-full flex items-center justify-between text-[9px] font-mono group hover:bg-white/[0.03] rounded px-1 py-1 transition-colors"
+                className="w-full flex items-center justify-between text-[9px] hover:bg-white/[0.04] rounded px-1 py-1 transition-colors"
               >
                 <span className="flex items-center gap-1.5">
                   {cloudsEnabled
                     ? <Cloud className="w-3 h-3 text-[#00FFFF]" />
-                    : <CloudOff className="w-3 h-3 text-white/20" />
+                    : <CloudOff className="w-3 h-3 text-white/25" />
                   }
                   <span style={{ color: cloudsEnabled ? "#00FFFF" : "#555" }}>
                     Meteosat Clouds
                   </span>
                 </span>
-                <span className="text-[7px] text-white/25 uppercase tracking-wider">
-                  {cloudsEnabled ? "LIVE" : "OFF"}
-                </span>
+                <Switch
+                  checked={!!cloudsEnabled}
+                  onCheckedChange={onToggleClouds}
+                  className="scale-[0.6] origin-right data-[state=checked]:bg-[#00FFFF]/60"
+                />
               </button>
             </div>
           )}
