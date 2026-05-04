@@ -402,7 +402,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     }
     const controller = new AbortController();
     const grid: { lat: number; lon: number }[] = [];
-    const step = 2.5;
+    const step = 4; // sparser grid → 49 points (7x7) stays well under OWM 60/min free tier
     const span = 12;
     for (let dLat = -span; dLat <= span; dLat += step) {
       for (let dLon = -span; dLon <= span; dLon += step) {
@@ -423,14 +423,16 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
               const clouds = d?.clouds?.all ?? 0;
               const rain = d?.rain?.["1h"] ?? d?.rain?.["3h"] ?? 0;
               const weight = Math.min(1, clouds / 100 + rain / 5);
-              if (weight <= 0.05) return null;
+              if (weight <= 0.02) return null;
               return { lat: p.lat, lng: p.lon, weight };
             } catch {
               return null;
             }
           }),
         );
-        setWeatherHeat(results.filter(Boolean) as any);
+        const heat = results.filter(Boolean) as { lat: number; lng: number; weight: number }[];
+        console.info(`[Weather] OpenWeather heatmap loaded: ${heat.length}/${grid.length} cells`);
+        setWeatherHeat(heat);
       } catch {
         // silent fallback
       }
@@ -519,10 +521,10 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
             heatmapPointLat: "lat",
             heatmapPointLng: "lng",
             heatmapPointWeight: "weight",
-            heatmapBandwidth: 1.6,
-            heatmapColorSaturation: 2.4,
-            heatmapBaseAltitude: 0.005,
-            heatmapTopAltitude: 0.04,
+            heatmapBandwidth: 2.5,
+            heatmapColorSaturation: 3.0,
+            heatmapBaseAltitude: 0.01,
+            heatmapTopAltitude: 0.08,
           } as any}
         />
       )}

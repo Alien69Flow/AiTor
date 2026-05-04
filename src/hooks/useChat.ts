@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export interface Message {
   id: string;
@@ -18,7 +19,19 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
-const CHAT_URL = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/chat`;
+// Build the chat URL from the supabase client to avoid `undefined` env vars at runtime.
+// `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` are not always present in the
+// deployed bundle, but the auto-generated client always carries the correct values.
+const SUPABASE_URL = (supabase as any)?.supabaseUrl
+  || (import.meta.env.VITE_SUPABASE_URL as string)
+  || (import.meta.env.VITE_SUPABASE_PROJECT_ID
+    ? `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co`
+    : "");
+const SUPABASE_KEY = (supabase as any)?.supabaseKey
+  || (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+  || (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
+  || "";
+const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const PENDING_KEY = "aitor_chat_pending";
 const MAX_RETRIES = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -113,7 +126,8 @@ export function useChat() {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+                apikey: SUPABASE_KEY,
               },
               signal: controller.signal,
               body: JSON.stringify({
