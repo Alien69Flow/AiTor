@@ -122,11 +122,14 @@ export function useChat() {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
+            // Use the user session JWT when available; fall back to the publishable key.
+            const { data: sessionData } = await supabase.auth.getSession();
+            const accessToken = sessionData?.session?.access_token || SUPABASE_KEY;
             const resp = await fetch(CHAT_URL, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${SUPABASE_KEY}`,
+                Authorization: `Bearer ${accessToken}`,
                 apikey: SUPABASE_KEY,
               },
               signal: controller.signal,
