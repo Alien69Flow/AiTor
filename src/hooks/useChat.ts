@@ -122,20 +122,19 @@ export function useChat() {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
-            // Only attach Authorization when we have a real user JWT.
-            // The new `sb_publishable_*` key is NOT a JWT and the gateway will
-            // reject it with UNAUTHORIZED_INVALID_JWT_FORMAT. The `chat` function
-            // has verify_jwt = false, so `apikey` alone is sufficient.
+            // Gateway requires Authorization. The publishable key works as a
+            // bearer credential for functions with verify_jwt = false, BUT only
+            // when the value begins with `Bearer `. If a real user session
+            // exists, prefer the JWT.
             const { data: sessionData } = await supabase.auth.getSession();
-            const accessToken = sessionData?.session?.access_token;
-            const headers: Record<string, string> = {
-              "Content-Type": "application/json",
-              apikey: SUPABASE_KEY,
-            };
-            if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+            const bearer = sessionData?.session?.access_token || SUPABASE_KEY;
             const resp = await fetch(CHAT_URL, {
               method: "POST",
-              headers,
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${bearer}`,
+                apikey: SUPABASE_KEY,
+              },
               signal: controller.signal,
               body: JSON.stringify({
                 model,
