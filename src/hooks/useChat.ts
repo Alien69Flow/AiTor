@@ -31,6 +31,7 @@ const SUPABASE_KEY = (supabase as any)?.supabaseKey
   || (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
   || (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
   || "";
+const SUPABASE_ANON_JWT = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const PENDING_KEY = "aitor_chat_pending";
 const MAX_RETRIES = 3;
@@ -122,12 +123,16 @@ export function useChat() {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
-            // Gateway requires Authorization. The publishable key works as a
-            // bearer credential for functions with verify_jwt = false, BUT only
-            // when the value begins with `Bearer `. If a real user session
-            // exists, prefer the JWT.
+            // The gateway expects a JWT in Authorization. The publishable key
+            // (`sb_publishable_*`) is not a JWT, so only use a real session token
+            // or the anon JWT. Keep the publishable key in `apikey`.
             const { data: sessionData } = await supabase.auth.getSession();
-            const bearer = sessionData?.session?.access_token || SUPABASE_KEY;
+            const bearer = sessionData?.session?.access_token || SUPABASE_ANON_JWT;
+
+            if (!bearer) {
+              throw new Error("Missing anon JWT for edge function authorization");
+            }
+
             const resp = await fetch(CHAT_URL, {
               method: "POST",
               headers: {
