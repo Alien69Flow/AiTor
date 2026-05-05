@@ -122,19 +122,17 @@ export function useChat() {
           try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 30000);
-            // Gateway requires an Authorization header. Use the user JWT when
-            // available; otherwise sign in anonymously to obtain a real JWT.
-            let { data: sessionData } = await supabase.auth.getSession();
-            let accessToken = sessionData?.session?.access_token;
-            if (!accessToken) {
-              const { data: anon } = await supabase.auth.signInAnonymously();
-              accessToken = anon?.session?.access_token;
-            }
+            // Gateway requires Authorization. The publishable key works as a
+            // bearer credential for functions with verify_jwt = false, BUT only
+            // when the value begins with `Bearer `. If a real user session
+            // exists, prefer the JWT.
+            const { data: sessionData } = await supabase.auth.getSession();
+            const bearer = sessionData?.session?.access_token || SUPABASE_KEY;
             const resp = await fetch(CHAT_URL, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
-                Authorization: `Bearer ${accessToken || SUPABASE_KEY}`,
+                Authorization: `Bearer ${bearer}`,
                 apikey: SUPABASE_KEY,
               },
               signal: controller.signal,
