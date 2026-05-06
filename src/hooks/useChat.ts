@@ -19,24 +19,19 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
-// Build the chat URL from the supabase client to avoid `undefined` env vars at runtime.
-// `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` are not always present in the
-// deployed bundle, but the auto-generated client always carries the correct values.
-const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string)
-  || (import.meta.env.VITE_SUPABASE_PROJECT_ID
-    ? `https://${import.meta.env.VITE_SUPABASE_PROJECT_ID}.supabase.co`
-    : "")
-  || (supabase as any)?.supabaseUrl
-  || "";
-const SUPABASE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
-  || (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
-  || (supabase as any)?.supabaseKey
-  || "";
-// In this project the publishable key is a legacy JWT, so it works as Bearer too.
-// Only treat it as a JWT if it looks like one (starts with "eyJ").
+// The chat edge function lives in the `wkdtvrxavkhbifjtvvdw` project, not the one
+// referenced by the auto-generated supabase client. Hardcode the correct URL +
+// legacy anon JWT as fallbacks so the request always carries a valid Bearer JWT.
+const FALLBACK_URL = "https://wkdtvrxavkhbifjtvvdw.supabase.co";
+const FALLBACK_ANON_JWT =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8";
+
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string) || FALLBACK_URL;
 const SUPABASE_ANON_JWT =
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  (SUPABASE_KEY.startsWith("eyJ") ? SUPABASE_KEY : "");
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || FALLBACK_ANON_JWT;
+// apikey header — JWT works fine here too.
+const SUPABASE_KEY = SUPABASE_ANON_JWT;
 
 if (import.meta.env.DEV) {
   console.log("[useChat] env loaded:", {
