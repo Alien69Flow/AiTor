@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Globe, GitBranch, Loader2, Cpu } from "lucide-react";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 const THINKING_PHASES = [
   "Procesando consulta...",

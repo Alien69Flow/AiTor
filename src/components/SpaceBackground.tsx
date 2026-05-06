@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import cosmicBg from '@/assets/cosmic-background.jpg';
+import cosmicBg from '@/assets/cosmic-background.webp';
 
 interface Star {
   x: number;

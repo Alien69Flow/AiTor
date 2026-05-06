@@ -5,7 +5,7 @@ import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus } from "luci
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 interface ChatHeaderProps {
   selectedModel: string;

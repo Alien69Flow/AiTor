@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 const CAPABILITIES = [
   { icon: Search, title: "Búsqueda Web", desc: "Información en tiempo real con Firecrawl", prompt: "Busca en la web: últimas noticias sobre crypto y DeFi" },

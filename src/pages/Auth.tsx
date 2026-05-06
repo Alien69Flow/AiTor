@@ -9,7 +9,7 @@ import { Helmet } from "react-helmet-async";
 import { z } from "zod";
 import { Separator } from "@/components/ui/separator";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 import { Mail, Lock, ArrowRight, Loader2, Wallet } from "lucide-react";
 
 const authSchema = z.object({
