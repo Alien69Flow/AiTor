@@ -3,7 +3,7 @@ import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } 
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 import type { TabId } from "@/pages/Index";
 
 const SECTIONS: { id: TabId; label: string; icon: typeof Bot }[] = [

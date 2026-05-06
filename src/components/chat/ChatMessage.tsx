@@ -3,7 +3,7 @@ import type { Message } from "@/hooks/useChat";
 import { User, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import alienflowLogo from "@/assets/alienflow-logo.png";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 interface ChatMessageProps {
   message: Message;
