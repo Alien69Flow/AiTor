@@ -32,7 +32,19 @@ const SUPABASE_KEY = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
   || (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
   || (supabase as any)?.supabaseKey
   || "";
-const SUPABASE_ANON_JWT = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || "";
+// In this project the publishable key is a legacy JWT, so it works as Bearer too.
+// Only treat it as a JWT if it looks like one (starts with "eyJ").
+const SUPABASE_ANON_JWT =
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
+  (SUPABASE_KEY.startsWith("eyJ") ? SUPABASE_KEY : "");
+
+if (import.meta.env.DEV) {
+  console.log("[useChat] env loaded:", {
+    url: SUPABASE_URL,
+    keyPrefix: SUPABASE_KEY.slice(0, 8),
+    hasJwt: !!SUPABASE_ANON_JWT,
+  });
+}
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const PENDING_KEY = "aitor_chat_pending";
 const MAX_RETRIES = 3;
@@ -128,10 +140,13 @@ export function useChat() {
             // (`sb_publishable_*`) is not a JWT, so only use a real session token
             // or the anon JWT. Keep the publishable key in `apikey`.
             const { data: sessionData } = await supabase.auth.getSession();
-            const bearer = sessionData?.session?.access_token || SUPABASE_ANON_JWT;
+            const bearer =
+              sessionData?.session?.access_token ||
+              SUPABASE_ANON_JWT ||
+              SUPABASE_KEY;
 
             if (!bearer) {
-              throw new Error("Missing anon JWT for edge function authorization");
+              throw new Error("Missing auth token for edge function");
             }
 
             const resp = await fetch(CHAT_URL, {
