@@ -26,6 +26,3 @@ verify_jwt = false
 
 [functions.cesium-tiles]
 verify_jwt = false
-
-[functions.secrets-diag]
-verify_jwt = false
