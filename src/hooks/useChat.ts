@@ -30,7 +30,6 @@ if (import.meta.env.DEV) {
   console.log("[useChat] env loaded:", {
     url: SUPABASE_URL,
     keyPrefix: SUPABASE_KEY.slice(0, 8),
-    hasJwt: !!SUPABASE_ANON_JWT,
   });
 }
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
@@ -129,9 +128,7 @@ export function useChat() {
             // or the anon JWT. Keep the publishable key in `apikey`.
             const { data: sessionData } = await supabase.auth.getSession();
             const bearer =
-              sessionData?.session?.access_token ||
-              SUPABASE_ANON_JWT ||
-              SUPABASE_KEY;
+              sessionData?.session?.access_token || SUPABASE_KEY;
 
             if (!bearer) {
               throw new Error("Missing auth token for edge function");
