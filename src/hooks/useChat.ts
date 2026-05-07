@@ -19,19 +19,12 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
-// The chat edge function lives in the `wkdtvrxavkhbifjtvvdw` project, not the one
-// referenced by the auto-generated supabase client. Hardcode the correct URL +
-// legacy anon JWT as fallbacks so the request always carries a valid Bearer JWT.
-const FALLBACK_URL = "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-const FALLBACK_ANON_JWT =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8";
-
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) || FALLBACK_URL;
-const SUPABASE_ANON_JWT =
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || FALLBACK_ANON_JWT;
-// apikey header — JWT works fine here too.
-const SUPABASE_KEY = SUPABASE_ANON_JWT;
+// Use the project the auto-generated client points to — single source of truth.
+const SUPABASE_URL = "https://avuflwehgtcstrejqdyh.supabase.co";
+const SUPABASE_KEY =
+  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
+  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
+  "";
 
 if (import.meta.env.DEV) {
   console.log("[useChat] env loaded:", {
