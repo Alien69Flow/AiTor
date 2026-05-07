@@ -1,4 +1,4 @@
-project_id = "wkdtvrxavkhbifjtvvdw"
+project_id = "avuflwehgtcstrejqdyh"
 
 [functions.chat]
 verify_jwt = false
@@ -25,7 +25,4 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cesium-tiles]
-verify_jwt = false
-
-[functions.secrets-diag]
 verify_jwt = false
