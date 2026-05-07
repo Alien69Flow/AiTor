@@ -20,7 +20,9 @@ export interface Conversation {
 
 const STORAGE_KEY = "aitor_chat_memory";
 // Use the project the auto-generated client points to — single source of truth.
-const SUPABASE_URL = "https://avuflwehgtcstrejqdyh.supabase.co";
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string) ||
+  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
 const SUPABASE_KEY =
   (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
