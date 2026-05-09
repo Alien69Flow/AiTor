@@ -23,10 +23,13 @@ const STORAGE_KEY = "aitor_chat_memory";
 const SUPABASE_URL =
   (import.meta.env.VITE_SUPABASE_URL as string) ||
   "https://wkdtvrxavkhbifjtvvdw.supabase.co";
+// Public anon JWT for the Lovable Cloud project. Safe to embed (publishable).
+const FALLBACK_ANON =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8";
 const SUPABASE_KEY =
   (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  "";
+  FALLBACK_ANON;
 
 if (import.meta.env.DEV) {
   console.log("[useChat] env loaded:", {
@@ -128,13 +131,14 @@ export function useChat() {
             // The gateway expects a JWT in Authorization. The publishable key
             // (`sb_publishable_*`) is not a JWT, so only use a real session token
             // or the anon JWT. Keep the publishable key in `apikey`.
+            // Chat edge function is public (verify_jwt=false). Always pass a
+            // bearer (session if logged in, otherwise anon JWT) so the
+            // gateway accepts the request.
             const { data: sessionData } = await supabase.auth.getSession();
             const bearer =
-              sessionData?.session?.access_token || SUPABASE_KEY;
-
-            if (!bearer) {
-              throw new Error("Missing auth token for edge function");
-            }
+              sessionData?.session?.access_token ||
+              SUPABASE_KEY ||
+              FALLBACK_ANON;
 
             const resp = await fetch(CHAT_URL, {
               method: "POST",
