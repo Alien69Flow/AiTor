@@ -113,7 +113,9 @@ interface GlobeSceneProps {
   weatherEnabled?: boolean;
 }
 
-const OWM_API_KEY = "4965fa96ab53cebf682ae8f2d1a35480";
+// OpenWeather is proxied through the `openweather` edge function so the API key
+// stays server-side. The previously hardcoded key has been rotated/retired.
+const OWM_PROXY_URL = `${(import.meta.env.VITE_SUPABASE_URL as string) || "https://wkdtvrxavkhbifjtvvdw.supabase.co"}/functions/v1/openweather`;
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
 export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEnabled = true, weatherEnabled = true }: GlobeSceneProps) {
