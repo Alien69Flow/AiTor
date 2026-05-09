@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.cesium-tiles]
 verify_jwt = false
+
+[functions.openweather]
+verify_jwt = false
