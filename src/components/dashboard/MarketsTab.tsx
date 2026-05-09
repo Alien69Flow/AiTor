@@ -22,6 +22,9 @@ interface Market {
 
 const CATEGORIES = ["All", "Politics", "Crypto", "Sports", "Tech", "Culture", "World"];
 
+// Polymarket referral / affiliate code. Replace `aitor` with the official DAO referral when issued.
+const POLYMARKET_REF = "aitor";
+
 const formatVolume = (n: number | null | undefined) => {
   const val = typeof n === 'number' && !isNaN(n) ? n : 0;
   if (val >= 1e6) return `$${(val / 1e6).toFixed(1)}M`;
@@ -161,7 +164,7 @@ export function MarketsTab() {
                   </div>
                   {market.slug && (
                     <a
-                      href={`https://polymarket.com/event/${market.slug}`}
+                      href={`https://polymarket.com/event/${market.slug}?ref=${POLYMARKET_REF}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="flex items-center gap-1 text-[9px] font-mono text-primary/60 hover:text-primary transition-colors"
