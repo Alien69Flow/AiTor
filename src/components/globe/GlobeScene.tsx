@@ -413,26 +413,19 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
     }
     (async () => {
       try {
-        const results = await Promise.all(
-          grid.map(async (p) => {
-            try {
-              const r = await fetch(
-                `https://api.openweathermap.org/data/2.5/weather?lat=${p.lat}&lon=${p.lon}&appid=${OWM_API_KEY}&units=metric`,
-                { signal: controller.signal },
-              );
-              if (!r.ok) return null;
-              const d = await r.json();
-              const clouds = d?.clouds?.all ?? 0;
-              const rain = d?.rain?.["1h"] ?? d?.rain?.["3h"] ?? 0;
-              const weight = Math.min(1, clouds / 100 + rain / 5);
-              if (weight <= 0.02) return null;
-              return { lat: p.lat, lng: p.lon, weight };
-            } catch {
-              return null;
-            }
-          }),
-        );
-        const heat = results.filter(Boolean) as { lat: number; lng: number; weight: number }[];
+        const pts = grid.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
+        const r = await fetch(`${OWM_PROXY_URL}?points=${encodeURIComponent(pts)}`, {
+          signal: controller.signal,
+        });
+        if (!r.ok) return;
+        const arr = (await r.json()) as Array<{ lat: number; lon: number; clouds: number; rain: number }>;
+        const heat = arr
+          .map((d) => {
+            const weight = Math.min(1, (d.clouds ?? 0) / 100 + (d.rain ?? 0) / 5);
+            if (weight <= 0.02) return null;
+            return { lat: d.lat, lng: d.lon, weight };
+          })
+          .filter(Boolean) as { lat: number; lng: number; weight: number }[];
         console.info(`[Weather] OpenWeather heatmap loaded: ${heat.length}/${grid.length} cells`);
         setWeatherHeat(heat);
       } catch {
