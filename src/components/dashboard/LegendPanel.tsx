@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronUp, ChevronDown, Cloud, CloudOff, Activity, Satellite, Radio, CloudRain, Flame, Plane, TrendingUp, Wind } from "lucide-react";
+import { ChevronUp, ChevronDown, Cloud, Activity, Satellite, Radio, CloudRain, Flame, Plane, TrendingUp, Wind } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 export type LayerKey = "finance" | "intel" | "conflict" | "geopolitical" | "logistics" | "cryptozoo" | "convergence";
