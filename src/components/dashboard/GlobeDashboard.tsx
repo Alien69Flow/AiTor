@@ -28,6 +28,9 @@ export function GlobeDashboard() {
   );
   const [cloudsEnabled, setCloudsEnabled] = useState(true);
   const [weatherEnabled, setWeatherEnabled] = useState(true);
+  const [firesEnabled, setFiresEnabled] = useState(true);
+  const [aircraftEnabled, setAircraftEnabled] = useState(true);
+  const [marketsEnabled, setMarketsEnabled] = useState(true);
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => {
@@ -74,6 +77,9 @@ export function GlobeDashboard() {
             externalMarkers={eventMarkers}
             cloudsEnabled={cloudsEnabled}
             weatherEnabled={weatherEnabled}
+            firesEnabled={firesEnabled}
+            aircraftEnabled={aircraftEnabled}
+            marketsEnabled={marketsEnabled}
           />
         </div>
 
@@ -100,6 +106,12 @@ export function GlobeDashboard() {
               onToggleClouds={() => setCloudsEnabled(v => !v)}
               weatherEnabled={weatherEnabled}
               onToggleWeather={() => setWeatherEnabled(v => !v)}
+              firesEnabled={firesEnabled}
+              onToggleFires={() => setFiresEnabled(v => !v)}
+              aircraftEnabled={aircraftEnabled}
+              onToggleAircraft={() => setAircraftEnabled(v => !v)}
+              marketsEnabled={marketsEnabled}
+              onToggleMarkets={() => setMarketsEnabled(v => !v)}
             />
           </div>
           <div className="pointer-events-auto">
