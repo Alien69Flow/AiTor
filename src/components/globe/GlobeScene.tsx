@@ -111,6 +111,9 @@ interface GlobeSceneProps {
   externalMarkers?: UnifiedHotspotData[];
   cloudsEnabled?: boolean;
   weatherEnabled?: boolean;
+  firesEnabled?: boolean;
+  aircraftEnabled?: boolean;
+  marketsEnabled?: boolean;
 }
 
 // OpenWeather is proxied through the `openweather` edge function so the API key
@@ -118,12 +121,22 @@ interface GlobeSceneProps {
 const OWM_PROXY_URL = `${(import.meta.env.VITE_SUPABASE_URL as string) || "https://wkdtvrxavkhbifjtvvdw.supabase.co"}/functions/v1/openweather`;
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
-export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEnabled = true, weatherEnabled = true }: GlobeSceneProps) {
+export function GlobeScene({
+  onHotspotClick,
+  onReady,
+  externalMarkers,
+  cloudsEnabled = true,
+  weatherEnabled = true,
+  firesEnabled = true,
+  aircraftEnabled = true,
+  marketsEnabled = true,
+}: GlobeSceneProps) {
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [weatherHeat, setWeatherHeat] = useState<{ lat: number; lng: number; weight: number }[]>([]);
+  const weatherTargetRef = useRef<{ lat: number; lng: number; weight: number }[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
@@ -400,6 +413,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
   useEffect(() => {
     if (!weatherEnabled) {
       setWeatherHeat([]);
+      weatherTargetRef.current = [];
       return;
     }
     const controller = new AbortController();
@@ -411,7 +425,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
         grid.push({ lat: ZARAGOZA.lat + dLat, lon: ZARAGOZA.lon + dLon });
       }
     }
-    (async () => {
+    const fetchHeat = async () => {
       try {
         const pts = grid.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
         const r = await fetch(`${OWM_PROXY_URL}?points=${encodeURIComponent(pts)}`, {
@@ -419,21 +433,51 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
         });
         if (!r.ok) return;
         const arr = (await r.json()) as Array<{ lat: number; lon: number; clouds: number; rain: number }>;
-        const heat = arr
+        const target = arr
           .map((d) => {
-            const weight = Math.min(1, (d.clouds ?? 0) / 100 + (d.rain ?? 0) / 5);
+            // Rain (mm/h) drives intensity, clouds modulate the floor.
+            const rain = d.rain ?? 0;
+            const clouds = (d.clouds ?? 0) / 100;
+            const weight = Math.min(1, clouds * 0.45 + Math.log1p(rain) * 0.55);
             if (weight <= 0.02) return null;
             return { lat: d.lat, lng: d.lon, weight };
           })
           .filter(Boolean) as { lat: number; lng: number; weight: number }[];
-        console.info(`[Weather] OpenWeather heatmap loaded: ${heat.length}/${grid.length} cells`);
-        setWeatherHeat(heat);
+        weatherTargetRef.current = target;
+        console.info(`[Weather] OpenWeather heatmap target: ${target.length}/${grid.length} cells`);
       } catch {
         // silent fallback
       }
-    })();
-    return () => controller.abort();
+    };
+    fetchHeat();
+    const refresh = setInterval(fetchHeat, 60_000);
+    // Smooth interpolation toward target (~30 fps via setInterval, cheap)
+    const lerp = setInterval(() => {
+      const target = weatherTargetRef.current;
+      if (!target.length) return;
+      setWeatherHeat((prev) => {
+        const key = (p: { lat: number; lng: number }) => `${p.lat.toFixed(2)}|${p.lng.toFixed(2)}`;
+        const prevMap = new Map(prev.map((p) => [key(p), p.weight]));
+        return target.map((t) => {
+          const cur = prevMap.get(key(t)) ?? 0;
+          return { lat: t.lat, lng: t.lng, weight: cur + (t.weight - cur) * 0.08 };
+        });
+      });
+    }, 80);
+    return () => {
+      controller.abort();
+      clearInterval(refresh);
+      clearInterval(lerp);
+    };
   }, [weatherEnabled]);
+
+  // Apply layer toggles by filtering points
+  const visiblePoints = pointsData.filter((p: any) => {
+    if (p.type === 'aircraft') return aircraftEnabled;
+    if (p.type === 'nasa') return firesEnabled;
+    if (p.type === 'finance') return marketsEnabled;
+    return true;
+  });
 
   const getPointColor = useCallback((d: any) => {
     if (d.type === 'aircraft') return '#ffffff';
@@ -475,7 +519,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           atmosphereColor={atmosphereColor}
           atmosphereAltitude={atmosphereAlt}
 
-          pointsData={pointsData}
+          pointsData={visiblePoints}
           pointLat="lat"
           pointLng="lon"
           pointColor={getPointColor}
@@ -483,7 +527,7 @@ export function GlobeScene({ onHotspotClick, onReady, externalMarkers, cloudsEna
           pointRadius={getPointRadius}
           onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
 
-          labelsData={pointsData.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
+          labelsData={visiblePoints.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
           labelLat="lat"
           labelLng="lon"
           labelText="name"
