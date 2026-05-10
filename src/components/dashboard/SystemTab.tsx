@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { Settings, Wallet, Key, Shield, User, Radio } from "lucide-react";
+import { Settings, Wallet, Key, Shield, User, Radio, Sparkles } from "lucide-react";
 import { OsintConsole } from "./OsintConsole";
+import { PricingModal } from "./PricingModal";
 
 type Tab = "dao" | "osint";
 
 export function SystemTab() {
   const [tab, setTab] = useState<Tab>("osint");
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   return (
     <div className="flex-1 flex flex-col">
@@ -31,6 +33,13 @@ export function SystemTab() {
         >
           <Settings className="h-3.5 w-3.5" />
           DAO
+        </button>
+        <button
+          onClick={() => setPricingOpen(true)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-heading tracking-widest uppercase rounded-md border border-[#69af00]/40 text-[#69af00] hover:bg-[#69af00]/10 transition-colors"
+        >
+          <Sparkles className="h-3 w-3" />
+          Upgrade
         </button>
       </div>
 
@@ -70,6 +79,7 @@ export function SystemTab() {
           </div>
         </div>
       )}
+      <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} />
     </div>
   );
 }
