@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ChevronUp, ChevronDown, Cloud, CloudOff, Activity, Satellite, Radio, CloudRain } from "lucide-react";
+import { ChevronUp, ChevronDown, Cloud, CloudOff, Activity, Satellite, Radio, CloudRain, Flame, Plane, TrendingUp, Wind } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 
 export type LayerKey = "finance" | "intel" | "conflict" | "geopolitical" | "logistics" | "cryptozoo" | "convergence";
@@ -38,10 +38,31 @@ interface LegendPanelProps {
   onToggleClouds?: () => void;
   weatherEnabled?: boolean;
   onToggleWeather?: () => void;
+  firesEnabled?: boolean;
+  onToggleFires?: () => void;
+  aircraftEnabled?: boolean;
+  onToggleAircraft?: () => void;
+  marketsEnabled?: boolean;
+  onToggleMarkets?: () => void;
 }
 
-export function LegendPanel({ visibleLayers, onToggleLayer, counts, cloudsEnabled, onToggleClouds, weatherEnabled, onToggleWeather }: LegendPanelProps) {
+export function LegendPanel({
+  visibleLayers, onToggleLayer, counts,
+  cloudsEnabled, onToggleClouds,
+  weatherEnabled, onToggleWeather,
+  firesEnabled, onToggleFires,
+  aircraftEnabled, onToggleAircraft,
+  marketsEnabled, onToggleMarkets,
+}: LegendPanelProps) {
   const [open, setOpen] = useState(true);
+
+  const overlayToggles: Array<{ key: string; label: string; color: string; Icon: any; enabled: boolean; onToggle?: () => void }> = [
+    { key: "atm",   label: "Atmósfera (OWM)",   color: "#00FFFF", Icon: Wind,       enabled: !!weatherEnabled,  onToggle: onToggleWeather },
+    { key: "clds",  label: "Nubes (GIBS)",      color: "#88DDFF", Icon: Cloud,      enabled: !!cloudsEnabled,   onToggle: onToggleClouds },
+    { key: "fire",  label: "Incendios (EONET)", color: "#FF6644", Icon: Flame,      enabled: !!firesEnabled,    onToggle: onToggleFires },
+    { key: "air",   label: "Tráfico (OpenSky)", color: "#FFFFFF", Icon: Plane,      enabled: !!aircraftEnabled, onToggle: onToggleAircraft },
+    { key: "mkts",  label: "Mercados (Poly)",   color: "#FFD700", Icon: TrendingUp, enabled: !!marketsEnabled,  onToggle: onToggleMarkets },
+  ];
 
   return (
     <div className={`${glass} w-[280px] overflow-hidden`}>
@@ -112,29 +133,28 @@ export function LegendPanel({ visibleLayers, onToggleLayer, counts, cloudsEnable
             </div>
           </div>
 
-          {onToggleClouds && (
-            <div className="border-t border-white/[0.06] pt-2">
-              <button
-                onClick={onToggleClouds}
-                className="w-full flex items-center justify-between text-[9px] hover:bg-white/[0.04] rounded px-1 py-1 transition-colors"
-              >
-                <span className="flex items-center gap-1.5">
-                  {cloudsEnabled
-                    ? <Cloud className="w-3 h-3 text-[#00FFFF]" />
-                    : <CloudOff className="w-3 h-3 text-white/25" />
-                  }
-                  <span style={{ color: cloudsEnabled ? "#00FFFF" : "#555" }}>
-                    Meteosat Clouds
+          {/* Overlay toggles */}
+          <div className="border-t border-white/[0.06] pt-2">
+            <div className="text-[8px] uppercase tracking-wider text-white/25 mb-1.5">Overlay Layers</div>
+            <div className="space-y-0.5">
+              {overlayToggles.map(t => (
+                <div key={t.key} className="flex items-center justify-between gap-2 px-1 py-0.5">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <t.Icon className="w-3 h-3 shrink-0" style={{ color: t.enabled ? t.color : "#444" }} />
+                    <span className="text-[9px] truncate" style={{ color: t.enabled ? t.color : "#555" }}>
+                      {t.label}
+                    </span>
                   </span>
-                </span>
-                <Switch
-                  checked={!!cloudsEnabled}
-                  onCheckedChange={onToggleClouds}
-                  className="scale-[0.6] origin-right data-[state=checked]:bg-[#00FFFF]/60"
-                />
-              </button>
+                  <Switch
+                    checked={t.enabled}
+                    onCheckedChange={() => t.onToggle?.()}
+                    disabled={!t.onToggle}
+                    className="scale-[0.6] origin-right data-[state=checked]:bg-[#00FFFF]/60"
+                  />
+                </div>
+              ))}
             </div>
-          )}
+          </div>
         </div>
       )}
     </div>
