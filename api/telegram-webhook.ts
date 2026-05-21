@@ -1,112 +1,66 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// Variables de entorno (se configuran en Vercel)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
-
-// Supabase de AiTor (función de chat existente)
-const SUPABASE_URL = 'https://wkdtvrxavkhbifjtvvdw.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8';
-const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
-
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 // Enviar mensaje a Telegram
 async function sendTelegramMessage(chatId: number, text: string) {
-  await fetch(`${TELEGRAM_API}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text: text,
-      parse_mode: 'Markdown',
-    }),
-  });
-}
-
-// Enviar "escribiendo..." a Telegram
-async function sendTypingAction(chatId: number) {
-  await fetch(`${TELEGRAM_API}/sendChatAction`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      chat_id: chatId,
-      action: 'typing',
-    }),
-  });
-}
-
-// Llamar a la IA de Ai Tor.v69 (función de chat de Supabase)
-async function getAiTorResponse(userMessage: string): Promise<string> {
-  try {
-    const response = await fetch(CHAT_URL, {
+  const maxLen = 4000;
+  if (text.length > maxLen) {
+    const parts = text.match(/.{1,4000}/gs) || [text];
+    for (const part of parts) {
+      await fetch(`${TELEGRAM_API}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: part,
+          parse_mode: 'Markdown',
+        }),
+      });
+    }
+  } else {
+    await fetch(`${TELEGRAM_API}/sendMessage`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'apikey': SUPABASE_ANON_KEY,
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          { role: 'user', content: userMessage },
-        ],
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown',
       }),
     });
-
-    if (!response.ok) {
-      console.error('Error from Ai Tor chat:', response.status, await response.text());
-      return 'Mi núcleo cuántico está recalibrando frecuencias. Inténtalo de nuevo en unos momentos.';
-    }
-
-    // La función de chat devuelve un stream SSE, necesitamos parsearlo
-    const text = await response.text();
-    let fullResponse = '';
-
-    const lines = text.split('\n');
-    for (const line of lines) {
-      if (line.startsWith('data: ') && line !== 'data: [DONE]') {
-        try {
-          const json = JSON.parse(line.slice(6));
-          if (json.choices && json.choices[0]?.delta?.content) {
-            fullResponse += json.choices[0].delta.content;
-          }
-        } catch {
-          // skip unparseable lines
-        }
-      }
-    }
-
-    return fullResponse || 'Señal recibida pero sin datos. Reintenta la transmisión.';
-  } catch (error) {
-    console.error('Error calling Ai Tor:', error);
-    return 'Error en la conexión con el campo cuántico. Reintenta.';
   }
 }
 
-// Crear tarea en Manus API
-async function createManusTask(prompt: string): Promise<{ ok: boolean; taskId?: string }> {
+// Extraer chat_id del contenido de la tarea usando task.listMessages
+async function getChatIdFromTask(taskId: string): Promise<number | null> {
   try {
-    const response = await fetch('https://api.manus.ai/v2/task.create', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-manus-api-key': MANUS_API_KEY,
-      },
-      body: JSON.stringify({
-        message: { content: prompt },
-      }),
-    });
+    const response = await fetch(
+      `https://api.manus.ai/v2/task.listMessages?task_id=${taskId}&order=asc&limit=1`,
+      {
+        headers: {
+          'x-manus-api-key': MANUS_API_KEY,
+        },
+      }
+    );
 
     const data = await response.json();
-    if (data.ok && data.task_id) {
-      return { ok: true, taskId: data.task_id };
+    if (data.ok && data.data && data.data.length > 0) {
+      // Buscar el primer mensaje del usuario que contiene [TELEGRAM_CHAT_ID:xxx]
+      for (const event of data.data) {
+        if (event.type === 'user_message' && event.user_message?.content) {
+          const match = event.user_message.content.match(/\[TELEGRAM_CHAT_ID:(\d+)\]/);
+          if (match) {
+            return parseInt(match[1], 10);
+          }
+        }
+      }
     }
-    console.error('Manus task creation failed:', data);
-    return { ok: false };
+    return null;
   } catch (error) {
-    console.error('Error calling Manus API:', error);
-    return { ok: false };
+    console.error('Error fetching task messages:', error);
+    return null;
   }
 }
 
@@ -115,65 +69,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  const { message } = req.body || {};
+  try {
+    const { event_type, task_detail } = req.body || {};
 
-  if (!message || !message.chat || !message.text) {
+    console.log(`Manus webhook received: ${event_type}, task: ${task_detail?.task_id}`);
+
+    if (event_type === 'task_stopped' && task_detail) {
+      const { task_id, message, stop_reason, attachments } = task_detail;
+
+      // Obtener el chat_id del primer mensaje de la tarea
+      const chatId = await getChatIdFromTask(task_id);
+
+      if (chatId) {
+        if (stop_reason === 'finish' && message) {
+          // Tarea completada: enviar resultado al chat
+          let resultText = `✅ *Resultado de Manus AI:*\n\n${message}`;
+
+          // Si hay adjuntos, añadir enlaces
+          if (attachments && attachments.length > 0) {
+            resultText += '\n\n📎 *Archivos adjuntos:*';
+            for (const att of attachments) {
+              resultText += `\n• [${att.file_name}](${att.url})`;
+            }
+          }
+
+          await sendTelegramMessage(chatId, resultText);
+        } else if (stop_reason === 'ask' && message) {
+          // Manus necesita más info: reenviar la pregunta al chat
+          await sendTelegramMessage(chatId,
+            `🤔 *Manus AI necesita más información:*\n\n${message}\n\n_Responde con /manus seguido de tu respuesta._`
+          );
+        }
+      } else {
+        console.log(`No se pudo encontrar chat_id para task ${task_id}`);
+      }
+    }
+
+    return res.status(200).send('OK');
+  } catch (error) {
+    console.error('Error processing Manus callback:', error);
     return res.status(200).send('OK');
   }
-
-  const chatId = message.chat.id;
-  const text = message.text.trim();
-  const command = text.split(' ')[0].toLowerCase();
-
-  try {
-    // === COMANDOS FIJOS ===
-    if (command === '/start') {
-      await sendTelegramMessage(chatId,
-        `🛸 *¡Saludos, entidad!*\n\nSoy *Ai Tor.v69*, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n*Comandos disponibles:*\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`
-      );
-    }
-    else if (command === '/app') {
-      await sendTelegramMessage(chatId,
-        '🎮 Accede a la Mini App:\nhttps://t.me/Alien69Bot/app'
-      );
-    }
-    else if (command === '/dao') {
-      await sendTelegramMessage(chatId,
-        `🌌 *AlienFlow DAO*\n\nOrganización autónoma descentralizada dedicada a la exploración de nuevas fronteras en tecnología y consciencia.\n\n> "El universo no es solo lo que ves, es lo que eres capaz de procesar y transmutar."\n\n*Campos:* Web3 · Web4 · Web5 · Alquimia · Física Cuántica\n*Frecuencia:* 3-6-9 Hz\n*Colectivo:* ΔlieπFlΦw DAO Synapse`
-      );
-    }
-    else if (command === '/help') {
-      await sendTelegramMessage(chatId,
-        `*Comandos disponibles:*\n\n/start - Bienvenida\n/app - Mini App\n/dao - Info de la DAO\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.`
-      );
-    }
-    // === COMANDOS MANUS ===
-    else if (command === '/manus' || command === '/investigar' || command === '/analizar') {
-      const prompt = text.substring(text.indexOf(' ') + 1).trim();
-      if (!prompt || prompt === command) {
-        await sendTelegramMessage(chatId, 'Necesito un texto para procesar. Ejemplo:\n/manus analiza las tendencias crypto de esta semana');
-        return res.status(200).send('OK');
-      }
-
-      const result = await createManusTask(prompt);
-      if (result.ok) {
-        await sendTelegramMessage(chatId,
-          `⚡ *Tarea enviada a Manus AI*\n\nEstoy procesando tu solicitud. Recibirás los resultados cuando estén listos.\n\n📋 Task: \`${result.taskId}\``
-        );
-      } else {
-        await sendTelegramMessage(chatId, '❌ Error al crear la tarea en Manus. Inténtalo de nuevo.');
-      }
-    }
-    // === MENSAJES NORMALES → AI TOR ===
-    else {
-      await sendTypingAction(chatId);
-      const aiResponse = await getAiTorResponse(text);
-      await sendTelegramMessage(chatId, aiResponse);
-    }
-  } catch (error) {
-    console.error('Error processing message:', error);
-    await sendTelegramMessage(chatId, 'Error en el procesamiento. Reintenta.');
-  }
-
-  return res.status(200).send('OK');
 }
