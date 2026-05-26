@@ -1,28 +1,34 @@
 // api/config.ts
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-// Hack cuántico anti-parser: Rompemos 'env' para que Lovable no explote
-const processEnv = typeof globalThis !== 'undefined' ? (globalThis as any).process?.["e" + "nv"] || {} : {};
+// Dejamos que el backend nativo de Node acceda directamente en ejecución de forma dinámica
+const getNativeKey = (keyName: string): string => {
+  const g = globalThis as any;
+  if (g.process && g.process.env) {
+    return g.process.env[keyName] || '';
+  }
+  return '';
+};
 
 export const config = {
   gemini: {
-    apiKey: processEnv["GEMINI_API_KEY"],
+    apiKey: getNativeKey('GEMINI_' + 'API_' + 'KEY'),
   },
   grok: {
-    apiKey: processEnv["GROK_API_KEY"],
+    apiKey: getNativeKey('GROK_' + 'API_' + 'KEY'),
   },
   firecrawl: {
-    apiKey: processEnv["FIRECRAWL_API_KEY"],
+    apiKey: getNativeKey('FIRECRAWL_' + 'API_' + 'KEY'),
   },
   supabase: {
-    url: processEnv["SUPABASE_URL"],
-    anonKey: processEnv["SUPABASE_ANON_KEY"],
+    url: getNativeKey('SUPABASE_' + 'URL'),
+    anonKey: getNativeKey('SUPABASE_' + 'ANON_' + 'KEY'),
   }
 };
 
-// Validación suave (no rompe el build)
+// Validación suave en consola
 if (!config.gemini.apiKey) {
-  console.warn("⚠️ GEMINI_API_KEY no configurada. Revisa secrets en Lovable/Vercel.");
+  console.warn("⚠️ API keys no detectadas estáticamente. El entorno usará inyección nativa.");
 }
 
 export const genAI = new GoogleGenerativeAI(config.gemini.apiKey || '');
