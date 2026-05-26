@@ -12,27 +12,16 @@ const PORT = process.env.PORT || 4000;
 app.use(cors());
 app.use(express.json());
 
-// Ruta de salud
 app.get('/health', (req, res) => {
   res.json({ 
-    status: 'Ai Tor ΔlieπFlΦw $pac€ DAO ONLINE',
-    timestamp: new Date().toISOString(),
-    version: '0.1.0-agentic'
-  });
-});
-
-// Aquí irán las rutas de workflows, agents, etc.
-app.get('/api/status', (req, res) => {
-  res.json({
-    llms: ['gemini', 'grok'],
-    tools: ['firecrawl'],
-    mode: 'agentic'
+    status: '✅ Ai Tor ΔlieπFlΦw $pac€ DAO ONLINE',
+    mode: 'agentic',
+    llms: ['gemini', 'grok']
   });
 });
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 Ai Tor Server corriendo en http://localhost:${PORT}`);
-  console.log(`🔥 ΔlieπFlΦw $pac€ DAO Mode: ACTIVATED\n`);
+  console.log(`🚀 Ai Tor Backend corriendo en puerto ${PORT}`);
 });
 
 export default app;
