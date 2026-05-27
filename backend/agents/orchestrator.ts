@@ -2,11 +2,12 @@ import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
 import { ManusAgent } from "./manus";
+import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
 // Inicializamos un modelo general para las respuestas ordinarias
 const llmGeneral = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-flash", // Más rápido y barato para el chat del día a día
+  modelName: "gemini-2.5-flash", 
   temperature: 0.7,
 });
 
@@ -25,6 +26,18 @@ export class SwarmOrchestrator {
 
     // 2. El Supervisor toma el control y decide la ruta estratégica
     const route = await SupervisorAgent.routeRequest(userInput);
+
+    // =========================================================================
+    // 🔏 CANDADO DE MONETIZACIÓN TIERRADA (FREEMIUM / REGISTRO / SUSCRIPCIÓN)
+    // =========================================================================
+    const access = await MonetizationManager.checkAccess(chatId, route);
+    if (!access.allowed) {
+      const rejectionMsg = access.reason || "Límite de créditos alcanzado por hoy.";
+      // Registramos el aviso en la memoria del bot para que sepa por qué se detuvo
+      ThreadManager.addMessage(chatId, "assistant", rejectionMsg);
+      return rejectionMsg; // Frenamos la ejecución antes de llamar a los LLM caros
+    }
+
     let finalResponse = "";
 
     // 3. Enrutamiento dinámico según la decisión del Supervisor
@@ -65,6 +78,12 @@ export class SwarmOrchestrator {
         break;
       }
     }
+
+    // =========================================================================
+    // 💳 COBRO DEL CONSUMO DIARIO
+    // =========================================================================
+    // Una vez que la IA ha respondido con éxito, le cargamos el coste a su cuenta
+    await MonetizationManager.deductCredits(chatId, route);
 
     // 4. Guardamos la respuesta del sistema en la memoria para el próximo turno
     ThreadManager.addMessage(chatId, "assistant", finalResponse);
