@@ -1,7 +1,27 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
-import { Layers, X, Cloud, Radio, Flame, Plane, TrendingUp, Zap, Shield, Activity } from "lucide-react";
+import {
+  Layers,
+  X,
+  Cloud,
+  Radio,
+  Flame,
+  Plane,
+  TrendingUp,
+  Zap,
+  Shield,
+  Activity,
+  Radar,
+  Satellite,
+  Cpu,
+  Database,
+  Signal,
+  Gauge,
+  Wifi,
+  Crosshair,
+  RadioTower,
+} from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 import {
   createAtmosphereShell,
@@ -12,7 +32,6 @@ import {
   getGIBSCloudTexture,
 } from "./layers/HighFidelityLayers";
 
-// ARQUITECTURA DE DATOS
 export interface UnifiedHotspotData {
   lat: number;
   lon: number;
@@ -119,6 +138,88 @@ interface GlobeSceneProps {
 
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
+// Mock real-time indices for telemetry display
+const MOCK_LIVE_INDICES = [
+  { id: "BTC-SPOT", value: "94,521", delta: "+2.34%", status: "stable" },
+  { id: "ETH-SPOT", value: "3,847", delta: "+1.12%", status: "stable" },
+  { id: "SOL-SPOT", value: "178.32", delta: "-0.45%", status: "warn" },
+  { id: "GEO-CN1", value: "8.2", delta: "0.00", status: "stable" },
+  { id: "GEO-CN2", value: "3.1", delta: "+0.10", status: "warn" },
+  { id: "CNFLT-IX", value: "47", delta: "+5", status: "alert" },
+  { id: "NK-MIL", value: "ACTIVE", delta: "", status: "alert" },
+  { id: "US-MIL", value: "STANDBY", delta: "", status: "stable" },
+  { id: "RADAR-N1", value: "ONLINE", delta: "", status: "stable" },
+];
+
+// Mock data feeds
+const MOCK_FEEDS = [
+  { sourceId: "OSINT-INTL-01", label: "INTEL NETWORK", status: "live", color: "#00ff41" },
+  { sourceId: "NASA-FIRMS-02", label: "THERMAL IMAGERY", status: "live", color: "#ff6b35" },
+  { sourceId: "USGS-SEIS-03", label: "SEISMIC ARRAY", status: "live", color: "#facc15" },
+  { sourceId: "OPSKY-RDR-04", label: "FLIGHT TRACKER", status: "standby", color: "#38bdf8" },
+];
+
+// LED Segment indicator component
+const LedSegment = ({ active, color, size = "md" }: { active: boolean; color?: string; size?: "sm" | "md" | "lg" }) => {
+  const sizeClasses = size === "sm" ? "w-2 h-4" : size === "lg" ? "w-4 h-6" : "w-3 h-5";
+  return (
+    <div
+      className={`${sizeClasses} rounded-sm transition-all duration-300`}
+      style={{
+        backgroundColor: active ? (color || '#00ff41') : 'rgba(39, 39, 42, 0.5)',
+        boxShadow: active ? `0 0 10px ${color || '#00ff41'}, 0 0 20px ${color || '#00ff41'}60, inset 0 0 8px rgba(255,255,255,0.3)` : 'none',
+      }}
+    />
+  );
+};
+
+// Blinking LED indicator
+const BlinkingLed = ({ color, size = "sm", active = true }: { color: string; size?: "sm" | "md"; active?: boolean }) => (
+  <div
+    className={`rounded-full ${active ? 'animate-pulse' : ''} ${size === "sm" ? "w-1.5 h-1.5" : "w-2 h-2"}`}
+    style={{
+      backgroundColor: active ? color : 'rgba(39, 39, 42, 0.5)',
+      boxShadow: active ? `0 0 6px ${color}, 0 0 12px ${color}60` : 'none',
+    }}
+  />
+);
+
+// Tactical corner decorations for panels
+const TacticalCorners = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
+  const s = size === "sm" ? "w-2 h-2" : size === "lg" ? "w-4 h-4" : "w-3 h-3";
+  return (
+    <>
+      <div className={`absolute top-0 left-0 ${s} border-t border-l border-emerald-500/40`} />
+      <div className={`absolute top-0 right-0 ${s} border-t border-r border-emerald-500/40`} />
+      <div className={`absolute bottom-0 left-0 ${s} border-b border-l border-emerald-500/40`} />
+      <div className={`absolute bottom-0 right-0 ${s} border-b border-r border-emerald-500/40`} />
+    </>
+  );
+};
+
+// Scanner sweep animation overlay
+const ScannerSweep = () => (
+  <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
+    <div
+      className="absolute w-full h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
+      style={{
+        animation: 'scanSweep 4s linear infinite',
+        top: '0%',
+      }}
+    />
+  </div>
+);
+
+// CRT scanline overlay
+const CRTOverlay = () => (
+  <div
+    className="absolute inset-0 pointer-events-none opacity-[0.02] z-50"
+    style={{
+      background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.4) 2px, rgba(0,0,0,0.4) 4px)',
+    }}
+  />
+);
+
 export function GlobeScene({
   onHotspotClick,
   onReady,
@@ -129,7 +230,6 @@ export function GlobeScene({
   aircraftEnabled: aircraftEnabledProp = true,
   marketsEnabled: marketsEnabledProp = true,
 }: GlobeSceneProps) {
-  // Local toggle states (UI-only, no API calls)
   const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
   const [localCloudsEnabled, setLocalCloudsEnabled] = useState(cloudsEnabledProp);
   const [localWeatherEnabled, setLocalWeatherEnabled] = useState(weatherEnabledProp);
@@ -137,8 +237,9 @@ export function GlobeScene({
   const [localFiresEnabled, setLocalFiresEnabled] = useState(firesEnabledProp);
   const [localAircraftEnabled, setLocalAircraftEnabled] = useState(aircraftEnabledProp);
   const [localMarketsEnabled, setLocalMarketsEnabled] = useState(marketsEnabledProp);
+  const [blinkState, setBlinkState] = useState(true);
+  const [activeTab, setActiveTab] = useState<'FEED' | 'MARKETS' | 'FLIGHTS'>('FEED');
 
-  // Derive effective toggle states from local UI state
   const cloudsEnabled = localCloudsEnabled;
   const weatherEnabled = localWeatherEnabled;
   const firesEnabled = localFiresEnabled;
@@ -163,18 +264,22 @@ export function GlobeScene({
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
 
+  // Blink animation
+  useEffect(() => {
+    const interval = setInterval(() => setBlinkState(s => !s), 700);
+    return () => clearInterval(interval);
+  }, []);
+
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
 
-  // Zoom-aware NASA Blue Marble resolution
   const globeImageUrl = altitude < 0.6
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
     : altitude < 1.2
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
     : "//unpkg.com/three-globe/example/img/earth-blue-marble.jpg";
 
-  // Resize observer
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -208,37 +313,23 @@ export function GlobeScene({
     addSunLight(scene);
     addMoon(scene);
 
-    // Meteosat-style cloud layer (semi-transparent sphere wrapping the globe)
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = "anonymous";
     const cloudsGeo = new THREE.SphereGeometry(100.6, 64, 64);
-    // Try real-time NASA GIBS first; fallback to static cloud map on error
     const gibsUrl = getGIBSCloudTexture();
-    const cloudTex = loader.load(
-      gibsUrl,
-      undefined,
-      undefined,
-      () => {
-        // GIBS failed (CORS / date), swap to static
-        const fallback = loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png");
-        if (cloudsMeshRef.current) {
-          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).map = fallback;
-          (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).needsUpdate = true;
-        }
-      },
-    );
-    const cloudsMat = new THREE.MeshPhongMaterial({
-      map: cloudTex,
-      transparent: true,
-      opacity: 0.5,
-      depthWrite: false,
+    const cloudTex = loader.load(gibsUrl, undefined, undefined, () => {
+      const fallback = loader.load("https://unpkg.com/three-globe/example/img/earth-clouds.png");
+      if (cloudsMeshRef.current) {
+        (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).map = fallback;
+        (cloudsMeshRef.current.material as THREE.MeshPhongMaterial).needsUpdate = true;
+      }
     });
+    const cloudsMat = new THREE.MeshPhongMaterial({ map: cloudTex, transparent: true, opacity: 0.5, depthWrite: false });
     const cloudsMesh = new THREE.Mesh(cloudsGeo, cloudsMat);
     cloudsMesh.name = "meteosat_clouds";
     scene.add(cloudsMesh);
     cloudsMeshRef.current = cloudsMesh;
 
-    // ── High-fidelity layers (Rango 1) ─────────────────────────
     const atmosphereShell = createAtmosphereShell(1, atmosphereColor);
     scene.add(atmosphereShell);
     atmosphereShellRef.current = atmosphereShell;
@@ -259,102 +350,56 @@ export function GlobeScene({
     scene.add(magnetic);
     magneticRef.current = magnetic;
 
-    // Animate cloud rotation (slow drift, like real atmosphere)
-    let frame = 0;
     const animateClouds = () => {
-      if (cloudsMeshRef.current) {
-        cloudsMeshRef.current.rotation.y += 0.0003;
-      }
-      if (auroraRef.current) {
-        auroraRef.current.rotation.y += 0.0006;
-      }
-      if (vanAllenRef.current) {
-        vanAllenRef.current.rotation.y -= 0.0004;
-      }
-      if (telluricRef.current) {
-        telluricRef.current.rotation.y += 0.0002;
-      }
-      frame = requestAnimationFrame(animateClouds);
+      if (cloudsMeshRef.current) cloudsMeshRef.current.rotation.y += 0.0003;
+      if (auroraRef.current) auroraRef.current.rotation.y += 0.0006;
+      if (vanAllenRef.current) vanAllenRef.current.rotation.y -= 0.0004;
+      if (telluricRef.current) telluricRef.current.rotation.y += 0.0002;
+      requestAnimationFrame(animateClouds);
     };
     animateClouds();
   }, [atmosphereColor, kpIndex]);
 
-  // Data: arcs + USGS + OpenSky
   useEffect(() => {
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];
     const newArcs: any[] = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
       const end = DAO_BASE_HOTSPOTS[b];
       if (!start || !end) return null;
-      return {
-        startLat: start.lat, startLng: start.lon,
-        endLat: end.lat, endLng: end.lon,
-        color: [start.color + "cc", end.color + "cc"],
-      };
+      return { startLat: start.lat, startLng: start.lon, endLat: end.lat, endLng: end.lon, color: [start.color + "cc", end.color + "cc"] };
     }).filter(Boolean);
 
     const zaragoza = DAO_BASE_HOTSPOTS[DAO_BASE_HOTSPOTS.length - 1];
     [5, 8, 12, 11].forEach(idx => {
       const target = DAO_BASE_HOTSPOTS[idx];
-      if (target) {
-        newArcs.push({
-          startLat: zaragoza.lat, startLng: zaragoza.lon,
-          endLat: target.lat, endLng: target.lon,
-          color: ["#ffffff88", "#ffffff33"],
-        });
-      }
+      if (target) newArcs.push({ startLat: zaragoza.lat, startLng: zaragoza.lon, endLat: target.lat, endLng: target.lon, color: ["#00ff4188", "#00ff4133"] });
     });
-
     setArcsData(newArcs);
 
-    // OpenSky aircraft layer — non-blocking. CORS/network failures must NOT break the globe.
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 6000);
     (async () => {
       try {
-        const res = await fetch(
-          'https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60',
-          { signal: controller.signal },
-        );
+        const res = await fetch('https://opensky-network.org/api/states/all?lamin=20&lamax=60&lomin=-30&lomax=60', { signal: controller.signal });
         if (!res.ok) return;
         const data = await res.json();
         if (!data?.states) return;
         const aircraft: UnifiedHotspotData[] = data.states.slice(0, 80).map((s: any[]) => ({
-          lat: s[6] || 0, lon: s[5] || 0,
-          intensity: 0.15, color: "#ffffff",
-          name: (s[1] || "").trim() || s[0] || "Aircraft",
-          country: s[2] || "Unknown",
-          marketVolume: `${Math.round(s[7] || 0)}m alt`,
-          trend: `${Math.round(s[9] || 0)}m/s`,
-          topTokens: [] as string[],
-          type: "aircraft" as const,
+          lat: s[6] || 0, lon: s[5] || 0, intensity: 0.15, color: "#ffffff",
+          name: (s[1] || "").trim() || s[0] || "Aircraft", country: s[2] || "Unknown",
+          marketVolume: `${Math.round(s[7] || 0)}m alt`, trend: `${Math.round(s[9] || 0)}m/s`, topTokens: [], type: "aircraft" as const,
         })).filter((a: UnifiedHotspotData) => a.lat !== 0 && a.lon !== 0);
-        setPointsData(prev => {
-          const base = prev.filter(p => p.type !== 'aircraft');
-          return [...base, ...aircraft];
-        });
-      } catch {
-      } finally {
-        clearTimeout(timeoutId);
-      }
+        setPointsData(prev => [...prev.filter(p => p.type !== 'aircraft'), ...aircraft]);
+      } catch {} finally { clearTimeout(timeoutId); }
     })();
-    return () => {
-      clearTimeout(timeoutId);
-      controller.abort();
-    };
+    return () => { clearTimeout(timeoutId); controller.abort(); };
   }, []);
 
-  // Unified external markers (USGS/NASA/UAP/OSINT) coming from useUnifiedIntel
   useEffect(() => {
     if (!externalMarkers) return;
-    setPointsData(prev => {
-      const aircraft = prev.filter(p => p.type === 'aircraft');
-      const baseDao = DAO_BASE_HOTSPOTS;
-      return [...baseDao, ...externalMarkers, ...aircraft];
-    });
+    setPointsData(prev => [...DAO_BASE_HOTSPOTS, ...externalMarkers, ...prev.filter(p => p.type === 'aircraft')]);
   }, [externalMarkers]);
 
-  // Globe controls + scene enhancement + navigation callback
   useEffect(() => {
     if (!globeRef.current) return;
     const t = setTimeout(() => {
@@ -362,72 +407,33 @@ export function GlobeScene({
       globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.2 }, 1500);
       const controls = globeRef.current.controls();
       if (controls) {
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.35;
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.1;
-        controls.enableZoom = true;
-        controls.enableRotate = true;
-        controls.enablePan = true;
-        controls.minDistance = 101;
-        controls.maxDistance = 500;
-        // Track altitude changes for zoom-aware texture swapping
+        controls.autoRotate = true; controls.autoRotateSpeed = 0.35;
+        controls.enableDamping = true; controls.dampingFactor = 0.1;
+        controls.enableZoom = true; controls.enableRotate = true; controls.enablePan = true;
+        controls.minDistance = 101; controls.maxDistance = 500;
         controls.addEventListener("change", () => {
           const pov = globeRef.current?.pointOfView();
-          if (pov && typeof pov.altitude === "number") {
-            setAltitude(prev => {
-              const next = pov.altitude;
-              // throttle: only update if change > 0.15 to avoid texture thrashing
-              return Math.abs(next - prev) > 0.15 ? next : prev;
-            });
-          }
+          if (pov && typeof pov.altitude === "number") setAltitude(prev => Math.abs(pov.altitude - prev) > 0.15 ? pov.altitude : prev);
         });
       }
       enhanceScene();
-
-      // Expose navigation function via ref to avoid stale closures
-      if (onReadyRef.current) {
-        onReadyRef.current((lat: number, lng: number, altitude: number) => {
-          globeRef.current?.pointOfView({ lat, lng, altitude }, 1500);
-        });
-      }
+      if (onReadyRef.current) onReadyRef.current((lat, lng, alt) => globeRef.current?.pointOfView({ lat, lng, altitude: alt }, 1500));
     }, 800);
     return () => clearTimeout(t);
   }, [enhanceScene]);
 
-  // Toggle clouds visibility
-  useEffect(() => {
-    if (cloudsMeshRef.current) {
-      cloudsMeshRef.current.visible = cloudsEnabled;
-    }
-  }, [cloudsEnabled]);
+  useEffect(() => { if (cloudsMeshRef.current) cloudsMeshRef.current.visible = cloudsEnabled; }, [cloudsEnabled]);
+  useEffect(() => { if (atmosphereShellRef.current) atmosphereShellRef.current.visible = localAtmosphereEnabled; }, [localAtmosphereEnabled]);
 
-  // Toggle atmosphere shell visibility
   useEffect(() => {
-    if (atmosphereShellRef.current) {
-      atmosphereShellRef.current.visible = localAtmosphereEnabled;
-    }
-  }, [localAtmosphereEnabled]);
-
-  // Mock weather heat data (UI-only, no API calls)
-  useEffect(() => {
-    if (!weatherEnabled) {
-      setWeatherHeat([]);
-      return;
-    }
-    // Generate mock heat data around Zaragoza
-    const mockHeat = [];
-    for (let i = 0; i < 15; i++) {
-      mockHeat.push({
-        lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
-        lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
-        weight: Math.random() * 0.6 + 0.2,
-      });
-    }
-    setWeatherHeat(mockHeat);
+    if (!weatherEnabled) { setWeatherHeat([]); return; }
+    setWeatherHeat(Array.from({ length: 15 }, () => ({
+      lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
+      lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
+      weight: Math.random() * 0.6 + 0.2,
+    })));
   }, [weatherEnabled]);
 
-  // Apply layer toggles by filtering points
   const visiblePoints = pointsData.filter((p: any) => {
     if (p.type === 'aircraft') return aircraftEnabled;
     if (p.type === 'nasa') return firesEnabled;
@@ -435,289 +441,375 @@ export function GlobeScene({
     return true;
   });
 
-  const getPointColor = useCallback((d: any) => {
-    if (d.type === 'aircraft') return '#ffffff';
-    if (d.type === 'quake') return '#ffff00';
-    if (d.type === 'dao_node') return '#ffffff';
-    return d.color;
-  }, []);
+  const getPointColor = useCallback((d: any) => d.type === 'aircraft' ? '#ffffff' : d.type === 'quake' ? '#facc15' : d.type === 'dao_node' ? '#ffffff' : d.color, []);
+  const getPointAlt = useCallback((d: any) => d.type === 'aircraft' ? 0.06 : d.type === 'quake' ? 0.008 : d.type === 'dao_node' ? 0.03 : 0.02 + d.intensity * 0.01, []);
+  const getPointRadius = useCallback((d: any) => d.type === 'aircraft' ? 0.08 : d.type === 'quake' ? d.intensity * 0.5 : d.type === 'dao_node' ? 0.6 : d.intensity * 0.35, []);
 
-  const getPointAlt = useCallback((d: any) => {
-    if (d.type === 'aircraft') return 0.06;
-    if (d.type === 'quake') return 0.008;
-    if (d.type === 'dao_node') return 0.03;
-    return 0.02 + d.intensity * 0.01;
-  }, []);
-
-  const getPointRadius = useCallback((d: any) => {
-    if (d.type === 'aircraft') return 0.08;
-    if (d.type === 'quake') return d.intensity * 0.5;
-    if (d.type === 'dao_node') return 0.6;
-    return d.intensity * 0.35;
-  }, []);
-
-  // Toggle component for both mobile and desktop
-  const LayerToggle = ({
-    icon: Icon,
-    label,
-    checked,
-    onChange
-  }: {
-    icon: React.ElementType;
-    label: string;
-    checked: boolean;
-    onChange: (v: boolean) => void
-  }) => (
+  // Tactical Toggle Button
+  const TacticalToggle = ({ icon: Icon, label, checked, onChange, ledColor }: { icon: React.ElementType; label: string; checked: boolean; onChange: (v: boolean) => void; ledColor?: string }) => (
     <button
       onClick={() => onChange(!checked)}
-      className={`
-        flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
-        transition-all duration-200 border
-        ${checked
-          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
-          : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:border-zinc-600'
-        }
-      `}
+      className={`relative flex items-center gap-2 px-3 py-2 text-[10px] font-medium uppercase tracking-wider transition-all duration-200 border bg-zinc-950/40 backdrop-blur-md ${
+        checked ? 'border-emerald-500/30 text-emerald-400' : 'border-zinc-700/30 text-zinc-500 hover:text-zinc-400'
+      }`}
+      style={{ fontFamily: "'JetBrains Mono', monospace" }}
     >
-      <Icon className={`w-4 h-4 ${checked ? 'text-emerald-400' : 'text-zinc-500'}`} />
-      <span>{label}</span>
-      <div className={`ml-auto w-2 h-2 rounded-full ${checked ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-emerald-500/30" />
+      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-emerald-500/30" />
+      <Icon className={`w-3.5 h-3.5 ${checked ? 'text-emerald-400' : 'text-zinc-600'}`} />
+      <span className="flex-1 text-left">{label}</span>
+      <div className={`w-2 h-2 rounded-full transition-all ${checked ? 'animate-pulse' : ''}`}
+        style={{ backgroundColor: checked ? (ledColor || '#00ff41') : '#27272a', boxShadow: checked ? `0 0 6px ${ledColor || '#00ff41'}` : 'none' }}
+      />
+    </button>
+  );
+
+  // Telemetry Data Card
+  const TelemetryCard = ({ id, value, delta, status }: { id: string; value: string; delta: string; status: string }) => (
+    <div className="relative flex flex-col gap-0.5 p-1.5 bg-zinc-900/60 border border-emerald-500/10 backdrop-blur-sm">
+      <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-emerald-500/30" />
+      <div className="absolute bottom-0 right-0 w-1 h-1 border-b border-r border-emerald-500/30" />
+      <span className="text-[7px] uppercase tracking-widest text-zinc-600" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{id}</span>
+      <div className="flex items-center justify-between gap-1">
+        <span className="text-xs font-semibold text-zinc-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
+        <BlinkingLed color={status === 'stable' ? '#00ff41' : status === 'warn' ? '#facc15' : '#ef4444'} />
+      </div>
+      {delta && <span className={`text-[8px] ${delta.startsWith('+') ? 'text-emerald-400' : delta.startsWith('-') ? 'text-red-400' : 'text-zinc-500'}`}>{delta}</span>}
+    </div>
+  );
+
+  // Feed Source Item
+  const FeedSourceItem = ({ sourceId, label, status, color }: { sourceId: string; label: string; status: string; color: string }) => (
+    <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800/50">
+      <div className="w-0.5 h-full rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[7px] text-zinc-600 uppercase tracking-wider truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>SOURCE ID: {sourceId}</div>
+        <div className="text-[9px] text-zinc-300 truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{label}</div>
+      </div>
+      <BlinkingLed color={status === 'live' ? '#00ff41' : '#facc15'} active={status === 'live'} />
+    </div>
+  );
+
+  // Tactical Tab Button
+  const TacticalTab = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
+    <button
+      onClick={onClick}
+      className={`relative px-3 py-1.5 text-[9px] uppercase tracking-wider border transition-all duration-200 ${
+        active ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700/30 text-zinc-500 hover:border-zinc-600'
+      }`}
+      style={{ fontFamily: "'JetBrains Mono', monospace" }}
+    >
+      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-emerald-500/30" />
+      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-emerald-500/30" />
+      {label}
+    </button>
+  );
+
+  // Filter Pill with tech corners
+  const FilterPill = ({ label, active }: { label: string; active?: boolean }) => (
+    <button className={`relative px-2 py-1 text-[8px] uppercase tracking-wider border transition-all duration-200 ${
+      active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700/20 text-zinc-500 hover:border-zinc-600'
+    }`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-emerald-500/30" />
+      <div className="absolute bottom-0 right-0 w-1 h-1 border-b border-r border-emerald-500/30" />
+      {label}
     </button>
   );
 
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
-      {/* Globe container - absolute inset */}
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
+      <CRTOverlay />
+
+      {/* Globe container */}
       <div ref={containerRef} className="absolute inset-0 z-10">
         {dimensions.width > 0 && (
           <Globe
             ref={globeRef}
             width={dimensions.width}
             height={dimensions.height}
-
             globeImageUrl={globeImageUrl}
             bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
             backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-          {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
-
-          showGraticules={true}
-
-          showAtmosphere={true}
-          atmosphereColor={atmosphereColor}
-          atmosphereAltitude={atmosphereAlt}
-
-          pointsData={visiblePoints}
-          pointLat="lat"
-          pointLng="lon"
-          pointColor={getPointColor}
-          pointAltitude={getPointAlt}
-          pointRadius={getPointRadius}
-          onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
-
-          labelsData={visiblePoints.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
-          labelLat="lat"
-          labelLng="lon"
-          labelText="name"
-          labelSize={0.5}
-          labelDotRadius={0.15}
-          labelColor={() => 'rgba(255, 255, 255, 0.85)'}
-          labelResolution={2}
-
-          arcsData={arcsData}
-          arcStartLat="startLat"
-          arcStartLng="startLng"
-          arcEndLat="endLat"
-          arcEndLng="endLng"
-          arcColor="color"
-          arcDashLength={0.6}
-          arcDashGap={0.25}
-          arcDashAnimateTime={() => 1200 + Math.random() * 2500}
-          arcStroke={0.5}
-
-          ringsData={auroraRings}
-          ringLat="lat"
-          ringLng="lng"
-          ringMaxRadius="maxR"
-          ringPropagationSpeed="propagationSpeed"
-          ringRepeatPeriod="repeatPeriod"
-          ringColor="color"
-
-          {...{
-            heatmapsData: weatherEnabled && weatherHeat.length ? [weatherHeat] : [],
-            heatmapPointLat: "lat",
-            heatmapPointLng: "lng",
-            heatmapPointWeight: "weight",
-            heatmapBandwidth: 2.5,
-            heatmapColorSaturation: 3.0,
-            heatmapBaseAltitude: 0.01,
-            heatmapTopAltitude: 0.08,
-          } as any}
-        />
-      )}
+            {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
+            showGraticules={true}
+            showAtmosphere={true}
+            atmosphereColor={atmosphereColor}
+            atmosphereAltitude={atmosphereAlt}
+            pointsData={visiblePoints}
+            pointLat="lat"
+            pointLng="lon"
+            pointColor={getPointColor}
+            pointAltitude={getPointAlt}
+            pointRadius={getPointRadius}
+            onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
+            labelsData={visiblePoints.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
+            labelLat="lat"
+            labelLng="lon"
+            labelText="name"
+            labelSize={0.4}
+            labelDotRadius={0.1}
+            labelColor={() => 'rgba(0, 255, 65, 0.9)'}
+            labelResolution={2}
+            arcsData={arcsData}
+            arcStartLat="startLat"
+            arcStartLng="startLng"
+            arcEndLat="endLat"
+            arcEndLng="endLng"
+            arcColor="color"
+            arcDashLength={0.4}
+            arcDashGap={0.2}
+            arcDashAnimateTime={() => 800 + Math.random() * 2000}
+            arcStroke={0.4}
+            ringsData={auroraRings}
+            ringLat="lat"
+            ringLng="lng"
+            ringMaxRadius="maxR"
+            ringPropagationSpeed="propagationSpeed"
+            ringRepeatPeriod="repeatPeriod"
+            ringColor="color"
+            {...{
+              heatmapsData: weatherEnabled && weatherHeat.length ? [weatherHeat] : [],
+              heatmapPointLat: "lat",
+              heatmapPointLng: "lng",
+              heatmapPointWeight: "weight",
+              heatmapBandwidth: 2.5,
+              heatmapColorSaturation: 3.0,
+              heatmapBaseAltitude: 0.01,
+              heatmapTopAltitude: 0.08,
+            } as any}
+          />
+        )}
       </div>
 
-      {/* Desktop: Side panels (hidden on mobile) */}
-      <div className="hidden lg:flex flex-col gap-3 absolute top-4 left-4 z-20 max-w-xs">
-        {/* Space Weather Panel */}
-        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
-          <div className="flex items-center gap-2 mb-3">
-            <Zap className="w-4 h-4 text-cyan-400" />
-            <span className="text-sm font-semibold text-zinc-200">Space Weather</span>
+      {/* DESKTOP: Left Panel - Telemetry Console */}
+      <div className="hidden lg:flex flex-col gap-2 absolute top-3 left-3 z-20 w-72">
+        {/* Global Tension Header */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-3">
+          <TacticalCorners />
+          <ScannerSweep />
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Crosshair className="w-4 h-4 text-emerald-400" />
+              <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">GLOBAL TENSION</span>
+            </div>
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-900/50 border border-emerald-500/20">
+              <Wifi className="w-3 h-3 text-emerald-400" />
+              <span className={`text-[8px] uppercase tracking-wider ${blinkState ? 'text-emerald-400' : 'text-emerald-400/40'}`}
+                style={{ textShadow: blinkState ? '0 0 8px #00ff41' : 'none' }}
+              >[ONLINE]</span>
+            </div>
           </div>
-          <div className="space-y-2">
-            <div className="flex justify-between text-xs">
-              <span className="text-zinc-400">Kp Index</span>
-              <span className={`font-mono ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                {kpIndex.toFixed(1)}
-              </span>
-            </div>
-            <div className="flex justify-between text-xs">
-              <span className="text-zinc-400">Activity</span>
-              <span className={`font-medium ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                {kpIndex >= 5 ? 'SEVERE' : kpIndex >= 3 ? 'ACTIVE' : 'QUIET'}
-              </span>
-            </div>
+
+          {/* LED Segment Indicator */}
+          <div className="flex items-center justify-center gap-1 mb-2">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <LedSegment key={i} active={i === 0} color="#00ff41" size="lg" />
+            ))}
+          </div>
+          <div className="text-center text-[8px] uppercase tracking-widest text-zinc-500">
+            [TELEMETRY: ESTABLE]
+          </div>
+          <div className="text-center text-[9px] text-zinc-600 mt-1">
+            Kp Index: <span className="text-emerald-400 font-semibold">{kpIndex.toFixed(1)}</span>
           </div>
         </div>
 
-        {/* Layer Controls */}
-        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
-          <div className="flex items-center gap-2 mb-3">
-            <Layers className="w-4 h-4 text-emerald-400" />
-            <span className="text-sm font-semibold text-zinc-200">Layers</span>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <LayerToggle icon={Shield} label="Atmosphere" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
-            <LayerToggle icon={Cloud} label="Weather" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
-            <LayerToggle icon={Flame} label="Fires" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
-            <LayerToggle icon={Plane} label="Aircraft" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop: Legend panel (hidden on mobile) */}
-      <div className="hidden lg:block absolute bottom-4 left-4 z-20">
-        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md max-w-xs">
-          <div className="flex items-center gap-2 mb-3">
-            <Activity className="w-4 h-4 text-emerald-400" />
-            <span className="text-sm font-semibold text-zinc-200">Legend</span>
-          </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              <span className="text-zinc-300">Conflict</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-zinc-300">Finance</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-cyan-400" />
-              <span className="text-zinc-300">Tech</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-yellow-400" />
-              <span className="text-zinc-300">Earthquake</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-white" />
-              <span className="text-zinc-300">DAO Node</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-orange-400" />
-              <span className="text-zinc-300">Geopolitical</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Desktop: Market stats (hidden on mobile) */}
-      <div className="hidden lg:block absolute top-4 right-4 z-20">
-        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
+        {/* SENSING LIVE DATA STREAM */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
           <div className="flex items-center gap-2 mb-2">
-            <TrendingUp className="w-4 h-4 text-emerald-400" />
-            <span className="text-sm font-semibold text-zinc-200">Hotspots</span>
+            <Signal className="w-3 h-3 text-cyan-400 animate-pulse" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-cyan-400">SENSING LIVE DATA STREAM</span>
           </div>
-          <div className="text-2xl font-mono font-bold text-emerald-400">{visiblePoints.length}</div>
-          <div className="text-xs text-zinc-400">active nodes</div>
+          <div className="grid grid-cols-3 gap-1">
+            {MOCK_LIVE_INDICES.slice(0, 6).map((item, i) => (
+              <TelemetryCard key={i} {...item} />
+            ))}
+          </div>
+        </div>
+
+        {/* ARCHIVED TELEMETRY */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
+          <div className="flex items-center gap-2 mb-2">
+            <Database className="w-3 h-3 text-zinc-500" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-zinc-500">ARCHIVED TELEMETRY</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {MOCK_LIVE_INDICES.slice(6).map((item, i) => (
+              <TelemetryCard key={i} {...item} />
+            ))}
+          </div>
+        </div>
+
+        {/* Layer Control */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="w-3 h-3 text-emerald-400" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">LAYER CONTROL</span>
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <TacticalToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} ledColor="#00ffff" />
+            <TacticalToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} ledColor="#38bdf8" />
+            <TacticalToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} ledColor="#ff6b35" />
+            <TacticalToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} ledColor="#ffffff" />
+            <TacticalToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} ledColor="#71717a" />
+            <TacticalToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} ledColor="#00ff41" />
+          </div>
         </div>
       </div>
 
-      {/* Mobile: Floating layers button */}
-      <button
-        onClick={() => setMobilePanelOpen(!mobilePanelOpen)}
-        className="block lg:hidden absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-zinc-900/90 border border-emerald-500/30 backdrop-blur-md flex items-center justify-center shadow-lg shadow-emerald-500/10 transition-transform duration-200 active:scale-95"
-      >
+      {/* DESKTOP: Right Panel - Feeds Console */}
+      <div className="hidden lg:flex flex-col gap-2 absolute top-3 right-3 z-20 w-64">
+        {/* Node Status */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-3">
+          <TacticalCorners />
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <Cpu className="w-3 h-3 text-emerald-400" />
+              <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">NODE STATUS</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <div className={`w-2 h-2 rounded-full ${blinkState ? 'bg-emerald-400' : 'bg-emerald-400/40'}`}
+                style={{ boxShadow: blinkState ? '0 0 8px #00ff41' : 'none' }}
+              />
+              <span className="text-[7px] text-emerald-400 uppercase">ACTIVE</span>
+            </div>
+          </div>
+          <div className="text-4xl font-bold text-emerald-400" style={{ textShadow: '0 0 20px #00ff4140, 0 0 40px #00ff4120' }}>
+            {visiblePoints.length}
+          </div>
+          <div className="text-[8px] uppercase tracking-widest text-zinc-500">ACTIVE DATA NODES</div>
+        </div>
+
+        {/* Data Feeds */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
+          <div className="flex items-center gap-2 mb-2">
+            <Satellite className="w-3 h-3 text-cyan-400" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-cyan-400">DATA FEEDS</span>
+          </div>
+          <div className="space-y-1">
+            {MOCK_FEEDS.map((feed, i) => (
+              <FeedSourceItem key={i} {...feed} />
+            ))}
+          </div>
+        </div>
+
+        {/* Data Filters */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
+          <div className="flex items-center gap-2 mb-2">
+            <Gauge className="w-3 h-3 text-emerald-400" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">DATA FILTERS</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {['OSINT', 'NASA', 'QUAKES', 'FLIGHTS', 'MARKETS'].map((f, i) => (
+              <FilterPill key={i} label={f} active={i < 3} />
+            ))}
+          </div>
+        </div>
+
+        {/* Tactical Tabs */}
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
+          <TacticalCorners size="sm" />
+          <div className="flex gap-1 mb-2">
+            {(['FEED', 'MARKETS', 'FLIGHTS'] as const).map((tab) => (
+              <TacticalTab key={tab} label={tab} active={activeTab === tab} onClick={() => setActiveTab(tab)} />
+            ))}
+          </div>
+          <div className="text-[8px] text-zinc-500 uppercase tracking-wider">
+            {activeTab === 'FEED' && 'Real-time intelligence stream active'}
+            {activeTab === 'MARKETS' && 'Global market data pipeline online'}
+            {activeTab === 'FLIGHTS' && 'Aircraft tracking radar enabled'}
+          </div>
+        </div>
+      </div>
+
+      {/* DESKTOP: Bottom - Telemetry Matrix */}
+      <div className="hidden lg:block absolute bottom-3 left-3 z-20">
+        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5 w-72">
+          <TacticalCorners size="sm" />
+          <div className="flex items-center gap-2 mb-2">
+            <Activity className="w-3 h-3 text-emerald-400" />
+            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">TELEMETRY MATRIX</span>
+          </div>
+          <div className="grid grid-cols-3 gap-1">
+            {[
+              { label: 'CONFLICT', color: '#ef4444', glow: '#ff0000' },
+              { label: 'FINANCE', color: '#facc15', glow: '#facc15' },
+              { label: 'TECH', color: '#22d3ee', glow: '#00ffff' },
+              { label: 'GEOPOL', color: '#f97316', glow: '#ff8800' },
+              { label: 'QUAKE', color: '#facc15', glow: '#ffdd00' },
+              { label: 'DAO NODE', color: '#ffffff', glow: '#ffffff' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-1.5 p-1.5 bg-zinc-900/60 border border-emerald-500/10">
+                <div className="w-2.5 h-2.5 rounded-full"
+                  style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.glow}, 0 0 16px ${item.glow}40` }}
+                />
+                <span className="text-[7px] uppercase tracking-wider text-zinc-400">{item.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* MOBILE: Floating layers button */}
+      <button onClick={() => setMobilePanelOpen(!mobilePanelOpen)}
+        className="block lg:hidden absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-zinc-900/90 border border-emerald-500/30 backdrop-blur-md flex items-center justify-center shadow-lg shadow-emerald-500/10 transition-transform active:scale-95">
         <Layers className="w-6 h-6 text-emerald-400" />
       </button>
 
-      {/* Mobile: Bottom Sheet */}
-      <div
-        className={`
-          block lg:hidden absolute bottom-0 left-0 right-0 z-40
-          bg-zinc-950/95 border-t border-zinc-800 rounded-t-2xl backdrop-blur-lg
-          transition-transform duration-300 ease-out
-          ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full'}
-        `}
-      >
-        {/* Drag handle */}
-        <div className="flex justify-center py-3">
-          <div className="w-10 h-1 bg-zinc-600 rounded-full" />
-        </div>
-
-        {/* Header */}
+      {/* MOBILE: Bottom Sheet */}
+      <div className={`block lg:hidden absolute bottom-0 left-0 right-0 z-40 bg-zinc-950/95 border-t border-emerald-500/20 backdrop-blur-lg transition-transform duration-300 ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+        <div className="flex justify-center py-3"><div className="w-10 h-1 bg-zinc-600 rounded-full" /></div>
         <div className="flex items-center justify-between px-4 pb-3 border-b border-zinc-800">
           <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-emerald-400" />
-            <span className="text-base font-semibold text-zinc-200">Layer Controls</span>
+            <Radar className="w-5 h-5 text-emerald-400" />
+            <span className="text-sm font-semibold text-zinc-200">TACTICAL CONTROL</span>
           </div>
-          <button
-            onClick={() => setMobilePanelOpen(false)}
-            className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
-          >
-            <X className="w-5 h-5 text-zinc-400" />
-          </button>
+          <button onClick={() => setMobilePanelOpen(false)} className="p-1.5 rounded hover:bg-zinc-800"><X className="w-5 h-5 text-zinc-400" /></button>
         </div>
 
-        {/* Space Weather (compact) */}
         <div className="px-4 py-3 border-b border-zinc-800">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Zap className="w-4 h-4 text-cyan-400" />
-              <span className="text-sm text-zinc-300">Space Weather</span>
+              <Crosshair className="w-4 h-4 text-emerald-400" />
+              <span className="text-xs text-zinc-300">GLOBAL TENSION</span>
             </div>
-            <div className="flex items-center gap-3">
-              <span className={`font-mono text-sm ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
-                Kp {kpIndex.toFixed(1)}
-              </span>
-              <span className={`text-xs font-medium px-2 py-0.5 rounded ${
-                kpIndex >= 5 ? 'bg-red-500/20 text-red-400' :
-                kpIndex >= 3 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'
-              }`}>
-                {kpIndex >= 5 ? 'SEVERE' : kpIndex >= 3 ? 'ACTIVE' : 'QUIET'}
-              </span>
+            <div className="flex items-center gap-2">
+              <div className="flex gap-0.5">{Array.from({ length: 3 }).map((_, i) => <LedSegment key={i} active={i === 0} color="#00ff41" size="sm" />)}</div>
+              <span className="text-sm text-emerald-400 font-semibold">Kp {kpIndex.toFixed(1)}</span>
             </div>
           </div>
         </div>
 
-        {/* Layer toggles grid */}
         <div className="grid grid-cols-2 gap-2 p-4">
-          <LayerToggle icon={Shield} label="Atmosphere" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
-          <LayerToggle icon={Cloud} label="Weather" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
-          <LayerToggle icon={Flame} label="Fires" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
-          <LayerToggle icon={Plane} label="Aircraft" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
-          <LayerToggle icon={Radio} label="Clouds" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} />
-          <LayerToggle icon={TrendingUp} label="Markets" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} />
+          <TacticalToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
+          <TacticalToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
+          <TacticalToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
+          <TacticalToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
+          <TacticalToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} />
+          <TacticalToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} />
         </div>
 
-        {/* Active points count */}
         <div className="px-4 pb-6">
-          <div className="flex items-center justify-between py-2 px-3 bg-zinc-800/50 rounded-lg">
-            <span className="text-xs text-zinc-400">Active Nodes</span>
-            <span className="font-mono text-sm text-emerald-400">{visiblePoints.length}</span>
+          <div className="flex items-center justify-between py-2 px-3 bg-zinc-800/50 border border-emerald-500/20">
+            <span className="text-[10px] text-zinc-400 uppercase">Active Nodes</span>
+            <span className="text-xl font-bold text-emerald-400" style={{ textShadow: '0 0 12px #00ff4140' }}>{visiblePoints.length}</span>
           </div>
         </div>
       </div>
+
+      {/* Animation styles */}
+      <style>{`
+        @keyframes scanSweep {
+          0% { top: 0%; opacity: 1; }
+          50% { opacity: 0.5; }
+          100% { top: 100%; opacity: 0; }
+        }
+      `}</style>
     </div>
   );
 }
