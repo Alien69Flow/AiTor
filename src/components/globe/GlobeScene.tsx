@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
+import { Layers, X, Cloud, Radio, Flame, Plane, TrendingUp, Zap, Shield, Activity } from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 import {
   createAtmosphereShell,
@@ -116,66 +117,58 @@ interface GlobeSceneProps {
   marketsEnabled?: boolean;
 }
 
-// OpenWeather is proxied through the `openweather` edge function so the API key
-// stays server-side. The previously hardcoded key has been rotated/retired.
-const OWM_PROXY_URL = `${(import.meta.env.VITE_SUPABASE_URL as string) || "https://wkdtvrxavkhbifjtvvdw.supabase.co"}/functions/v1/openweather`;
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
 export function GlobeScene({
   onHotspotClick,
   onReady,
   externalMarkers,
-  cloudsEnabled = true,
-  weatherEnabled = true,
-  firesEnabled = true,
-  aircraftEnabled = true,
-  marketsEnabled = true,
+  cloudsEnabled: cloudsEnabledProp = true,
+  weatherEnabled: weatherEnabledProp = true,
+  firesEnabled: firesEnabledProp = true,
+  aircraftEnabled: aircraftEnabledProp = true,
+  marketsEnabled: marketsEnabledProp = true,
 }: GlobeSceneProps) {
+  // Local toggle states (UI-only, no API calls)
+  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [localCloudsEnabled, setLocalCloudsEnabled] = useState(cloudsEnabledProp);
+  const [localWeatherEnabled, setLocalWeatherEnabled] = useState(weatherEnabledProp);
+  const [localAtmosphereEnabled, setLocalAtmosphereEnabled] = useState(true);
+  const [localFiresEnabled, setLocalFiresEnabled] = useState(firesEnabledProp);
+  const [localAircraftEnabled, setLocalAircraftEnabled] = useState(aircraftEnabledProp);
+  const [localMarketsEnabled, setLocalMarketsEnabled] = useState(marketsEnabledProp);
+
+  // Derive effective toggle states from local UI state
+  const cloudsEnabled = localCloudsEnabled;
+  const weatherEnabled = localWeatherEnabled;
+  const firesEnabled = localFiresEnabled;
+  const aircraftEnabled = localAircraftEnabled;
+  const marketsEnabled = localMarketsEnabled;
+
   const globeRef = useRef<any>();
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
   const [weatherHeat, setWeatherHeat] = useState<{ lat: number; lng: number; weight: number }[]>([]);
-  const weatherTargetRef = useRef<{ lat: number; lng: number; weight: number }[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
   const sceneEnhanced = useRef(false);
   const auroraRef = useRef<THREE.Group | null>(null);
-  const atmosphereRef = useRef<THREE.Mesh | null>(null);
   const vanAllenRef = useRef<THREE.Group | null>(null);
   const telluricRef = useRef<THREE.Group | null>(null);
   const magneticRef = useRef<THREE.Group | null>(null);
+  const atmosphereShellRef = useRef<THREE.Mesh | null>(null);
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
-  const [cesiumTileUrl, setCesiumTileUrl] = useState<string | null>(null);
-
-  // Fetch Cesium Ion tile endpoint once (Bing Aerial via edge proxy)
-  useEffect(() => {
-    const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-    if (!projectId) return;
-    fetch(`https://${projectId}.supabase.co/functions/v1/cesium-tiles`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data?.url && data?.accessToken) {
-          // Equirectangular composite: pick zoom 4 for hi-res base
-          // Cesium Ion returns tile URL templates; we just keep token for runtime tile use
-          setCesiumTileUrl(`${data.url}?access_token=${data.accessToken}`);
-        }
-      })
-      .catch((e) => console.warn("Cesium tile proxy unavailable:", e));
-  }, []);
 
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
 
-  // Zoom-aware NASA Blue Marble resolution (Google Earth style)
-  // altitude < 0.6 = ultra-close, < 1.2 = close, else default
-  const globeImageUrl = cesiumTileUrl
-    ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
-    : altitude < 0.6
+  // Zoom-aware NASA Blue Marble resolution
+  const globeImageUrl = altitude < 0.6
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/74000/74218/world.200412.3x21600x10800.jpg"
     : altitude < 1.2
     ? "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
@@ -246,9 +239,9 @@ export function GlobeScene({
     cloudsMeshRef.current = cloudsMesh;
 
     // ── High-fidelity layers (Rango 1) ─────────────────────────
-    const atmosphere = createAtmosphereShell(1, atmosphereColor);
-    scene.add(atmosphere);
-    atmosphereRef.current = atmosphere;
+    const atmosphereShell = createAtmosphereShell(1, atmosphereColor);
+    scene.add(atmosphereShell);
+    atmosphereShellRef.current = atmosphereShell;
 
     const auroras = createAuroraCurtains(kpIndex);
     scene.add(auroras);
@@ -409,66 +402,29 @@ export function GlobeScene({
     }
   }, [cloudsEnabled]);
 
-  // OpenWeather precipitation/cloud density — sample a grid centered on Zaragoza
+  // Toggle atmosphere shell visibility
+  useEffect(() => {
+    if (atmosphereShellRef.current) {
+      atmosphereShellRef.current.visible = localAtmosphereEnabled;
+    }
+  }, [localAtmosphereEnabled]);
+
+  // Mock weather heat data (UI-only, no API calls)
   useEffect(() => {
     if (!weatherEnabled) {
       setWeatherHeat([]);
-      weatherTargetRef.current = [];
       return;
     }
-    const controller = new AbortController();
-    const grid: { lat: number; lon: number }[] = [];
-    const step = 4; // sparser grid → 49 points (7x7) stays well under OWM 60/min free tier
-    const span = 12;
-    for (let dLat = -span; dLat <= span; dLat += step) {
-      for (let dLon = -span; dLon <= span; dLon += step) {
-        grid.push({ lat: ZARAGOZA.lat + dLat, lon: ZARAGOZA.lon + dLon });
-      }
-    }
-    const fetchHeat = async () => {
-      try {
-        const pts = grid.map((p) => `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`).join(";");
-        const r = await fetch(`${OWM_PROXY_URL}?points=${encodeURIComponent(pts)}`, {
-          signal: controller.signal,
-        });
-        if (!r.ok) return;
-        const arr = (await r.json()) as Array<{ lat: number; lon: number; clouds: number; rain: number }>;
-        const target = arr
-          .map((d) => {
-            // Rain (mm/h) drives intensity, clouds modulate the floor.
-            const rain = d.rain ?? 0;
-            const clouds = (d.clouds ?? 0) / 100;
-            const weight = Math.min(1, clouds * 0.45 + Math.log1p(rain) * 0.55);
-            if (weight <= 0.02) return null;
-            return { lat: d.lat, lng: d.lon, weight };
-          })
-          .filter(Boolean) as { lat: number; lng: number; weight: number }[];
-        weatherTargetRef.current = target;
-        console.info(`[Weather] OpenWeather heatmap target: ${target.length}/${grid.length} cells`);
-      } catch {
-        // silent fallback
-      }
-    };
-    fetchHeat();
-    const refresh = setInterval(fetchHeat, 60_000);
-    // Smooth interpolation toward target (~30 fps via setInterval, cheap)
-    const lerp = setInterval(() => {
-      const target = weatherTargetRef.current;
-      if (!target.length) return;
-      setWeatherHeat((prev) => {
-        const key = (p: { lat: number; lng: number }) => `${p.lat.toFixed(2)}|${p.lng.toFixed(2)}`;
-        const prevMap = new Map(prev.map((p) => [key(p), p.weight]));
-        return target.map((t) => {
-          const cur = prevMap.get(key(t)) ?? 0;
-          return { lat: t.lat, lng: t.lng, weight: cur + (t.weight - cur) * 0.08 };
-        });
+    // Generate mock heat data around Zaragoza
+    const mockHeat = [];
+    for (let i = 0; i < 15; i++) {
+      mockHeat.push({
+        lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
+        lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
+        weight: Math.random() * 0.6 + 0.2,
       });
-    }, 80);
-    return () => {
-      controller.abort();
-      clearInterval(refresh);
-      clearInterval(lerp);
-    };
+    }
+    setWeatherHeat(mockHeat);
   }, [weatherEnabled]);
 
   // Apply layer toggles by filtering points
@@ -500,17 +456,48 @@ export function GlobeScene({
     return d.intensity * 0.35;
   }, []);
 
-  return (
-    <div ref={containerRef} className="w-full h-full" style={{ background: '#000008' }}>
-      {dimensions.width > 0 && (
-        <Globe
-          ref={globeRef}
-          width={dimensions.width}
-          height={dimensions.height}
+  // Toggle component for both mobile and desktop
+  const LayerToggle = ({
+    icon: Icon,
+    label,
+    checked,
+    onChange
+  }: {
+    icon: React.ElementType;
+    label: string;
+    checked: boolean;
+    onChange: (v: boolean) => void
+  }) => (
+    <button
+      onClick={() => onChange(!checked)}
+      className={`
+        flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
+        transition-all duration-200 border
+        ${checked
+          ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400'
+          : 'bg-zinc-800/50 border-zinc-700/50 text-zinc-400 hover:border-zinc-600'
+        }
+      `}
+    >
+      <Icon className={`w-4 h-4 ${checked ? 'text-emerald-400' : 'text-zinc-500'}`} />
+      <span>{label}</span>
+      <div className={`ml-auto w-2 h-2 rounded-full ${checked ? 'bg-emerald-400' : 'bg-zinc-600'}`} />
+    </button>
+  );
 
-          globeImageUrl={globeImageUrl}
-          bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-          backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+  return (
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
+      {/* Globe container - absolute inset */}
+      <div ref={containerRef} className="absolute inset-0 z-10">
+        {dimensions.width > 0 && (
+          <Globe
+            ref={globeRef}
+            width={dimensions.width}
+            height={dimensions.height}
+
+            globeImageUrl={globeImageUrl}
+            bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
+            backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
           {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
 
           showGraticules={true}
@@ -567,6 +554,170 @@ export function GlobeScene({
           } as any}
         />
       )}
+      </div>
+
+      {/* Desktop: Side panels (hidden on mobile) */}
+      <div className="hidden lg:flex flex-col gap-3 absolute top-4 left-4 z-20 max-w-xs">
+        {/* Space Weather Panel */}
+        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
+          <div className="flex items-center gap-2 mb-3">
+            <Zap className="w-4 h-4 text-cyan-400" />
+            <span className="text-sm font-semibold text-zinc-200">Space Weather</span>
+          </div>
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-400">Kp Index</span>
+              <span className={`font-mono ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                {kpIndex.toFixed(1)}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs">
+              <span className="text-zinc-400">Activity</span>
+              <span className={`font-medium ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                {kpIndex >= 5 ? 'SEVERE' : kpIndex >= 3 ? 'ACTIVE' : 'QUIET'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Layer Controls */}
+        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
+          <div className="flex items-center gap-2 mb-3">
+            <Layers className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-semibold text-zinc-200">Layers</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <LayerToggle icon={Shield} label="Atmosphere" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
+            <LayerToggle icon={Cloud} label="Weather" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
+            <LayerToggle icon={Flame} label="Fires" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
+            <LayerToggle icon={Plane} label="Aircraft" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: Legend panel (hidden on mobile) */}
+      <div className="hidden lg:block absolute bottom-4 left-4 z-20">
+        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md max-w-xs">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-semibold text-zinc-200">Legend</span>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <span className="text-zinc-300">Conflict</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-zinc-300">Finance</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-cyan-400" />
+              <span className="text-zinc-300">Tech</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-yellow-400" />
+              <span className="text-zinc-300">Earthquake</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-white" />
+              <span className="text-zinc-300">DAO Node</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-orange-400" />
+              <span className="text-zinc-300">Geopolitical</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Desktop: Market stats (hidden on mobile) */}
+      <div className="hidden lg:block absolute top-4 right-4 z-20">
+        <div className="bg-zinc-900/80 border border-zinc-700/50 rounded-xl p-4 backdrop-blur-md">
+          <div className="flex items-center gap-2 mb-2">
+            <TrendingUp className="w-4 h-4 text-emerald-400" />
+            <span className="text-sm font-semibold text-zinc-200">Hotspots</span>
+          </div>
+          <div className="text-2xl font-mono font-bold text-emerald-400">{visiblePoints.length}</div>
+          <div className="text-xs text-zinc-400">active nodes</div>
+        </div>
+      </div>
+
+      {/* Mobile: Floating layers button */}
+      <button
+        onClick={() => setMobilePanelOpen(!mobilePanelOpen)}
+        className="block lg:hidden absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-zinc-900/90 border border-emerald-500/30 backdrop-blur-md flex items-center justify-center shadow-lg shadow-emerald-500/10 transition-transform duration-200 active:scale-95"
+      >
+        <Layers className="w-6 h-6 text-emerald-400" />
+      </button>
+
+      {/* Mobile: Bottom Sheet */}
+      <div
+        className={`
+          block lg:hidden absolute bottom-0 left-0 right-0 z-40
+          bg-zinc-950/95 border-t border-zinc-800 rounded-t-2xl backdrop-blur-lg
+          transition-transform duration-300 ease-out
+          ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full'}
+        `}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center py-3">
+          <div className="w-10 h-1 bg-zinc-600 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pb-3 border-b border-zinc-800">
+          <div className="flex items-center gap-2">
+            <Layers className="w-5 h-5 text-emerald-400" />
+            <span className="text-base font-semibold text-zinc-200">Layer Controls</span>
+          </div>
+          <button
+            onClick={() => setMobilePanelOpen(false)}
+            className="p-1.5 rounded-lg hover:bg-zinc-800 transition-colors"
+          >
+            <X className="w-5 h-5 text-zinc-400" />
+          </button>
+        </div>
+
+        {/* Space Weather (compact) */}
+        <div className="px-4 py-3 border-b border-zinc-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-cyan-400" />
+              <span className="text-sm text-zinc-300">Space Weather</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <span className={`font-mono text-sm ${kpIndex >= 5 ? 'text-red-400' : kpIndex >= 3 ? 'text-yellow-400' : 'text-emerald-400'}`}>
+                Kp {kpIndex.toFixed(1)}
+              </span>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                kpIndex >= 5 ? 'bg-red-500/20 text-red-400' :
+                kpIndex >= 3 ? 'bg-yellow-500/20 text-yellow-400' : 'bg-emerald-500/20 text-emerald-400'
+              }`}>
+                {kpIndex >= 5 ? 'SEVERE' : kpIndex >= 3 ? 'ACTIVE' : 'QUIET'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Layer toggles grid */}
+        <div className="grid grid-cols-2 gap-2 p-4">
+          <LayerToggle icon={Shield} label="Atmosphere" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
+          <LayerToggle icon={Cloud} label="Weather" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
+          <LayerToggle icon={Flame} label="Fires" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
+          <LayerToggle icon={Plane} label="Aircraft" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
+          <LayerToggle icon={Radio} label="Clouds" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} />
+          <LayerToggle icon={TrendingUp} label="Markets" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} />
+        </div>
+
+        {/* Active points count */}
+        <div className="px-4 pb-6">
+          <div className="flex items-center justify-between py-2 px-3 bg-zinc-800/50 rounded-lg">
+            <span className="text-xs text-zinc-400">Active Nodes</span>
+            <span className="font-mono text-sm text-emerald-400">{visiblePoints.length}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
