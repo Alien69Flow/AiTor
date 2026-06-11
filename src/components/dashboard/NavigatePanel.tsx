@@ -18,7 +18,7 @@ const REGIONS: Region[] = [
   { label: "Oceania", flag: "🇦🇺", lat: -25, lng: 135, altitude: 2.2 },
 ];
 
-const glass = "bg-black/60 backdrop-blur-[20px] border border-white/[0.06] rounded-lg";
+const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl";
 
 interface NavigatePanelProps {
   onNavigate?: (lat: number, lng: number, altitude: number) => void;
@@ -29,16 +29,16 @@ export function NavigatePanel({ onNavigate }: NavigatePanelProps) {
 
   return (
     <div className={`${glass} w-[260px] overflow-hidden`}>
-      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2">
-        <span className="text-[9px] font-mono uppercase tracking-wider text-white/30">
-          <Compass className="w-3 h-3 inline mr-1" />NAVIGATE
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-2.5">
+        <span className="text-[9px] uppercase tracking-wider text-slate-400 font-medium">
+          <Compass className="w-3 h-3 inline mr-1.5" />Navigate
         </span>
-        {open ? <ChevronUp className="w-3 h-3 text-white/20" /> : <ChevronDown className="w-3 h-3 text-white/20" />}
+        {open ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
       </button>
       {open && (
-        <div className="px-3 pb-3 space-y-2">
+        <div className="px-3.5 pb-3.5 space-y-2.5">
           {/* Region flags row */}
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-2">
             {REGIONS.map(r => (
               <button
                 key={r.label}
@@ -52,28 +52,21 @@ export function NavigatePanel({ onNavigate }: NavigatePanelProps) {
           </div>
 
           {/* Category status list */}
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {[
-              { label: "Markets", color: "#00FF41" },
-              { label: "Receptoor", color: "#00FF41" },
-              { label: "Cryptooon", color: "#00FF41" },
-              { label: "Flameus", color: "#FFD700" },
-              { label: "Noertior", color: "#00FF41" },
-              { label: "Cryptfiaa", color: "#00FF41" },
-              { label: "Convergence", color: "#FFFFFF" },
+              { label: "Markets", color: "#34d399" },
+              { label: "Receptoor", color: "#34d399" },
+              { label: "Cryptooon", color: "#34d399" },
+              { label: "Flameus", color: "#fbbf24" },
+              { label: "Noertior", color: "#34d399" },
+              { label: "Cryptfiaa", color: "#34d399" },
+              { label: "Convergence", color: "#e2e8f0" },
             ].map((item) => (
-              <div key={item.label} className="flex items-center gap-1.5 text-[8px] font-mono">
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: item.color }} />
-                <span className="text-white/40">{item.label}</span>
+              <div key={item.label} className="flex items-center gap-2 text-[8px] px-2 py-1 bg-slate-800/20 border border-slate-700/20 rounded-lg">
+                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color, boxShadow: `0 0 6px ${item.color}60` }} />
+                <span className="text-slate-400">{item.label}</span>
               </div>
             ))}
-          </div>
-
-          <div className="flex items-center gap-1 text-[7px] font-mono text-white/15">
-            <span>Acvt</span>
-            <span>■</span>
-            <span>■</span>
-            <span className="ml-auto">· 0 reports</span>
           </div>
         </div>
       )}

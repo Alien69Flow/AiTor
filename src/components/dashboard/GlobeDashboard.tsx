@@ -51,13 +51,13 @@ export function GlobeDashboard() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 relative bg-black overflow-hidden">
-      {/* Crypto Ticker Superior */}
-      <div className="flex items-center gap-4 px-3 py-1 border-b border-white/[0.04] text-[10px] overflow-x-auto bg-black/90 no-scrollbar z-20">
+      {/* Crypto Ticker */}
+      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20">
         {cryptoPrices.map((c) => (
           <div key={c.id} className="flex items-center gap-1.5 shrink-0">
-            <span className="font-mono font-bold text-[#FFD700]">{c.symbol}</span>
-            <span className="font-mono text-white/60">${c.price.toLocaleString()}</span>
-            <span className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-[#00FF41]" : "text-[#FF4444]"}`}>
+            <span className="font-mono font-bold text-amber-400">{c.symbol}</span>
+            <span className="font-mono text-slate-400">${c.price.toLocaleString()}</span>
+            <span className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {c.change24h >= 0 ? "+" : ""}{c.change24h.toFixed(1)}%
             </span>
           </div>
@@ -69,7 +69,7 @@ export function GlobeDashboard() {
 
       {/* Main content area */}
       <div className="flex flex-1 min-h-0 relative">
-        {/* GLOBE 3D — full background, pointer-events enabled */}
+        {/* GLOBE 3D */}
         <div className="absolute inset-0 z-0 pointer-events-auto">
           <GlobeScene
             onHotspotClick={setSelectedHotspot}
@@ -92,8 +92,8 @@ export function GlobeDashboard() {
           nasaEventCount={nasaEvents.length}
         />
 
-        {/* LEFT PANELS — pointer-events-none wrapper, auto on each panel */}
-        <div className="absolute top-3 left-3 z-30 space-y-2 pointer-events-none">
+        {/* LEFT PANELS */}
+        <div className="absolute top-3 left-3 z-30 space-y-2.5 pointer-events-none">
           <div className="pointer-events-auto">
             <TacticalConsole />
           </div>
@@ -121,21 +121,21 @@ export function GlobeDashboard() {
 
         {/* CENTER BOTTOM: Nav menu + Audio */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="bg-black/60 backdrop-blur-[20px] border border-white/[0.06] rounded-lg px-4 py-2 flex items-center gap-4">
-            <Volume2 className="w-3.5 h-3.5 text-white/25 cursor-pointer hover:text-white/50" />
+          <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-4">
+            <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300" />
             {["Markets", "Feed", "Alerts", "Movers", "Global Tension"].map(item => (
-              <span key={item} className="text-[9px] font-mono text-white/30 hover:text-white/60 cursor-pointer whitespace-nowrap">
+              <span key={item} className="text-[9px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer whitespace-nowrap transition-colors">
                 {item === "Markets" ? "🏦" : item === "Feed" ? "📰" : item === "Alerts" ? "🔔" : item === "Movers" ? "📈" : "🌐"} {item}
               </span>
             ))}
-            <div className="flex items-center gap-1 ml-2 border-l border-white/[0.06] pl-3">
-              <span className="text-[9px] font-mono text-white/30">⚡ Capa Tesla</span>
-              <span className="text-[10px] font-mono font-bold text-[#FF00FF]">Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
+            <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
+              <span className="text-[9px] font-mono text-slate-500">Tesla Layer</span>
+              <span className="text-[10px] font-mono font-bold text-purple-400">Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
             </div>
           </div>
         </div>
 
-        {/* RIGHT PANEL: Chat Feed — narrower, only panel area blocks events */}
+        {/* RIGHT PANEL: Chat Feed */}
         <div className="absolute right-0 top-0 h-full z-20 pointer-events-none hidden md:block">
           <div className="pointer-events-auto h-full">
             <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
@@ -147,9 +147,13 @@ export function GlobeDashboard() {
       <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between px-4 py-1 border-t border-white/[0.04] text-[8px] bg-black/90 font-mono text-white/20 z-30">
-        <div>TACTICAL · OSINT INTERFACE V2.0</div>
-        <div className="flex gap-3"><span>NASA ✓</span><span>USGS ✓</span><span>NOAA ✓</span></div>
+      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30">
+        <div className="text-slate-500">AEROSPACE · OSINT INTERFACE V2.0</div>
+        <div className="flex gap-3">
+          <span className="text-emerald-400">NASA ✓</span>
+          <span className="text-emerald-400">USGS ✓</span>
+          <span className="text-emerald-400">NOAA ✓</span>
+        </div>
       </div>
     </div>
   );

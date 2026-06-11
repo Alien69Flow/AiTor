@@ -9,7 +9,6 @@ import {
   Flame,
   Plane,
   TrendingUp,
-  Zap,
   Shield,
   Activity,
   Radar,
@@ -20,7 +19,6 @@ import {
   Gauge,
   Wifi,
   Crosshair,
-  RadioTower,
 } from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 import {
@@ -159,66 +157,19 @@ const MOCK_FEEDS = [
   { sourceId: "OPSKY-RDR-04", label: "FLIGHT TRACKER", status: "standby", color: "#38bdf8" },
 ];
 
-// LED Segment indicator component
-const LedSegment = ({ active, color, size = "md" }: { active: boolean; color?: string; size?: "sm" | "md" | "lg" }) => {
-  const sizeClasses = size === "sm" ? "w-2 h-4" : size === "lg" ? "w-4 h-6" : "w-3 h-5";
+// LED indicator with halo glow (reserved for status micro-indicators)
+const LedIndicator = ({ color, active = true, size = "sm" }: { color: string; active?: boolean; size?: "sm" | "md" | "lg" }) => {
+  const dim = size === "sm" ? "w-1.5 h-1.5" : size === "lg" ? "w-3 h-3" : "w-2 h-2";
   return (
     <div
-      className={`${sizeClasses} rounded-sm transition-all duration-300`}
+      className={`rounded-full transition-all duration-300 ${dim} ${active ? 'animate-pulse' : ''}`}
       style={{
-        backgroundColor: active ? (color || '#00ff41') : 'rgba(39, 39, 42, 0.5)',
-        boxShadow: active ? `0 0 10px ${color || '#00ff41'}, 0 0 20px ${color || '#00ff41'}60, inset 0 0 8px rgba(255,255,255,0.3)` : 'none',
+        backgroundColor: active ? color : 'rgba(71, 85, 105, 0.4)',
+        boxShadow: active ? `0 0 8px ${color}80, 0 0 16px ${color}40` : 'none',
       }}
     />
   );
 };
-
-// Blinking LED indicator
-const BlinkingLed = ({ color, size = "sm", active = true }: { color: string; size?: "sm" | "md"; active?: boolean }) => (
-  <div
-    className={`rounded-full ${active ? 'animate-pulse' : ''} ${size === "sm" ? "w-1.5 h-1.5" : "w-2 h-2"}`}
-    style={{
-      backgroundColor: active ? color : 'rgba(39, 39, 42, 0.5)',
-      boxShadow: active ? `0 0 6px ${color}, 0 0 12px ${color}60` : 'none',
-    }}
-  />
-);
-
-// Tactical corner decorations for panels
-const TacticalCorners = ({ size = "md" }: { size?: "sm" | "md" | "lg" }) => {
-  const s = size === "sm" ? "w-2 h-2" : size === "lg" ? "w-4 h-4" : "w-3 h-3";
-  return (
-    <>
-      <div className={`absolute top-0 left-0 ${s} border-t border-l border-emerald-500/40`} />
-      <div className={`absolute top-0 right-0 ${s} border-t border-r border-emerald-500/40`} />
-      <div className={`absolute bottom-0 left-0 ${s} border-b border-l border-emerald-500/40`} />
-      <div className={`absolute bottom-0 right-0 ${s} border-b border-r border-emerald-500/40`} />
-    </>
-  );
-};
-
-// Scanner sweep animation overlay
-const ScannerSweep = () => (
-  <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
-    <div
-      className="absolute w-full h-px bg-gradient-to-r from-transparent via-emerald-400 to-transparent"
-      style={{
-        animation: 'scanSweep 4s linear infinite',
-        top: '0%',
-      }}
-    />
-  </div>
-);
-
-// CRT scanline overlay
-const CRTOverlay = () => (
-  <div
-    className="absolute inset-0 pointer-events-none opacity-[0.02] z-50"
-    style={{
-      background: 'repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.4) 2px, rgba(0,0,0,0.4) 4px)',
-    }}
-  />
-);
 
 export function GlobeScene({
   onHotspotClick,
@@ -445,80 +396,73 @@ export function GlobeScene({
   const getPointAlt = useCallback((d: any) => d.type === 'aircraft' ? 0.06 : d.type === 'quake' ? 0.008 : d.type === 'dao_node' ? 0.03 : 0.02 + d.intensity * 0.01, []);
   const getPointRadius = useCallback((d: any) => d.type === 'aircraft' ? 0.08 : d.type === 'quake' ? d.intensity * 0.5 : d.type === 'dao_node' ? 0.6 : d.intensity * 0.35, []);
 
-  // Tactical Toggle Button
-  const TacticalToggle = ({ icon: Icon, label, checked, onChange, ledColor }: { icon: React.ElementType; label: string; checked: boolean; onChange: (v: boolean) => void; ledColor?: string }) => (
+  // Glass Toggle Button
+  const GlassToggle = ({ icon: Icon, label, checked, onChange, ledColor }: { icon: React.ElementType; label: string; checked: boolean; onChange: (v: boolean) => void; ledColor?: string }) => (
     <button
       onClick={() => onChange(!checked)}
-      className={`relative flex items-center gap-2 px-3 py-2 text-[10px] font-medium uppercase tracking-wider transition-all duration-200 border bg-zinc-950/40 backdrop-blur-md ${
-        checked ? 'border-emerald-500/30 text-emerald-400' : 'border-zinc-700/30 text-zinc-500 hover:text-zinc-400'
+      className={`flex items-center gap-2.5 px-3 py-2 rounded-xl text-[10px] font-medium uppercase tracking-wider transition-all duration-200 border backdrop-blur-lg ${
+        checked
+          ? 'bg-slate-800/40 border-slate-600/50 text-slate-200 shadow-[0_0_12px_rgba(100,116,139,0.1)]'
+          : 'bg-slate-900/30 border-slate-700/30 text-slate-500 hover:text-slate-400 hover:border-slate-600/40'
       }`}
-      style={{ fontFamily: "'JetBrains Mono', monospace" }}
     >
-      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-emerald-500/30" />
-      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-emerald-500/30" />
-      <Icon className={`w-3.5 h-3.5 ${checked ? 'text-emerald-400' : 'text-zinc-600'}`} />
+      <Icon className={`w-3.5 h-3.5 ${checked ? 'text-slate-300' : 'text-slate-600'}`} />
       <span className="flex-1 text-left">{label}</span>
-      <div className={`w-2 h-2 rounded-full transition-all ${checked ? 'animate-pulse' : ''}`}
-        style={{ backgroundColor: checked ? (ledColor || '#00ff41') : '#27272a', boxShadow: checked ? `0 0 6px ${ledColor || '#00ff41'}` : 'none' }}
-      />
+      <LedIndicator color={ledColor || '#00ff41'} active={checked} size="sm" />
     </button>
   );
 
-  // Telemetry Data Card
-  const TelemetryCard = ({ id, value, delta, status }: { id: string; value: string; delta: string; status: string }) => (
-    <div className="relative flex flex-col gap-0.5 p-1.5 bg-zinc-900/60 border border-emerald-500/10 backdrop-blur-sm">
-      <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-emerald-500/30" />
-      <div className="absolute bottom-0 right-0 w-1 h-1 border-b border-r border-emerald-500/30" />
-      <span className="text-[7px] uppercase tracking-widest text-zinc-600" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{id}</span>
+  // Glass Telemetry Card
+  const GlassCard = ({ id, value, delta, status }: { id: string; value: string; delta: string; status: string }) => (
+    <div className="flex flex-col gap-0.5 p-2 bg-slate-800/30 border border-slate-700/30 rounded-xl backdrop-blur-sm">
+      <span className="text-[7px] uppercase tracking-widest text-slate-500 font-mono">{id}</span>
       <div className="flex items-center justify-between gap-1">
-        <span className="text-xs font-semibold text-zinc-200" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{value}</span>
-        <BlinkingLed color={status === 'stable' ? '#00ff41' : status === 'warn' ? '#facc15' : '#ef4444'} />
+        <span className="text-xs font-semibold text-white/90 font-mono">{value}</span>
+        <LedIndicator color={status === 'stable' ? '#34d399' : status === 'warn' ? '#fbbf24' : '#f87171'} size="sm" />
       </div>
-      {delta && <span className={`text-[8px] ${delta.startsWith('+') ? 'text-emerald-400' : delta.startsWith('-') ? 'text-red-400' : 'text-zinc-500'}`}>{delta}</span>}
+      {delta && <span className={`text-[8px] font-mono ${delta.startsWith('+') ? 'text-emerald-400' : delta.startsWith('-') ? 'text-red-400' : 'text-slate-500'}`}>{delta}</span>}
     </div>
   );
 
-  // Feed Source Item
-  const FeedSourceItem = ({ sourceId, label, status, color }: { sourceId: string; label: string; status: string; color: string }) => (
-    <div className="flex items-center gap-2 px-2 py-1.5 bg-zinc-900/50 border border-zinc-800/50">
-      <div className="w-0.5 h-full rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 6px ${color}` }} />
+  // Glass Feed Source Item
+  const GlassFeedItem = ({ sourceId, label, status, color }: { sourceId: string; label: string; status: string; color: string }) => (
+    <div className="flex items-center gap-2.5 px-3 py-2 bg-slate-800/30 border border-slate-700/30 rounded-xl backdrop-blur-sm">
+      <div className="w-0.5 h-full rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}60` }} />
       <div className="flex-1 min-w-0">
-        <div className="text-[7px] text-zinc-600 uppercase tracking-wider truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>SOURCE ID: {sourceId}</div>
-        <div className="text-[9px] text-zinc-300 truncate" style={{ fontFamily: "'JetBrains Mono', monospace" }}>{label}</div>
+        <div className="text-[7px] text-slate-500 uppercase tracking-wider truncate font-mono">SOURCE: {sourceId}</div>
+        <div className="text-[9px] text-slate-300 truncate">{label}</div>
       </div>
-      <BlinkingLed color={status === 'live' ? '#00ff41' : '#facc15'} active={status === 'live'} />
+      <LedIndicator color={status === 'live' ? '#34d399' : '#fbbf24'} active={status === 'live'} size="sm" />
     </div>
   );
 
-  // Tactical Tab Button
-  const TacticalTab = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
+  // Glass Tab Button
+  const GlassTab = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
     <button
       onClick={onClick}
-      className={`relative px-3 py-1.5 text-[9px] uppercase tracking-wider border transition-all duration-200 ${
-        active ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700/30 text-zinc-500 hover:border-zinc-600'
+      className={`px-3 py-1.5 text-[9px] uppercase tracking-wider rounded-lg border transition-all duration-200 ${
+        active
+          ? 'bg-slate-700/40 border-slate-500/50 text-white/90 shadow-[0_0_12px_rgba(100,116,139,0.12)]'
+          : 'bg-slate-900/30 border-slate-700/30 text-slate-500 hover:border-slate-600/40'
       }`}
-      style={{ fontFamily: "'JetBrains Mono', monospace" }}
     >
-      <div className="absolute top-0 left-0 w-1.5 h-1.5 border-t border-l border-emerald-500/30" />
-      <div className="absolute bottom-0 right-0 w-1.5 h-1.5 border-b border-r border-emerald-500/30" />
       {label}
     </button>
   );
 
-  // Filter Pill with tech corners
-  const FilterPill = ({ label, active }: { label: string; active?: boolean }) => (
-    <button className={`relative px-2 py-1 text-[8px] uppercase tracking-wider border transition-all duration-200 ${
-      active ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400' : 'bg-zinc-900/50 border-zinc-700/20 text-zinc-500 hover:border-zinc-600'
-    }`} style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-      <div className="absolute top-0 left-0 w-1 h-1 border-t border-l border-emerald-500/30" />
-      <div className="absolute bottom-0 right-0 w-1 h-1 border-b border-r border-emerald-500/30" />
+  // Glass Filter Pill
+  const GlassPill = ({ label, active }: { label: string; active?: boolean }) => (
+    <button className={`px-2.5 py-1 text-[8px] uppercase tracking-wider rounded-lg border transition-all duration-200 ${
+      active
+        ? 'bg-slate-700/30 border-slate-500/40 text-white/80'
+        : 'bg-slate-900/30 border-slate-700/25 text-slate-500 hover:border-slate-600/40'
+    }`}>
       {label}
     </button>
   );
 
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black" style={{ fontFamily: "'JetBrains Mono', monospace" }}>
-      <CRTOverlay />
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
 
       {/* Globe container */}
       <div ref={containerRef} className="absolute inset-0 z-10">
@@ -581,145 +525,132 @@ export function GlobeScene({
         )}
       </div>
 
-      {/* DESKTOP: Left Panel - Telemetry Console */}
-      <div className="hidden lg:flex flex-col gap-2 absolute top-3 left-3 z-20 w-72">
+      {/* DESKTOP: Left Panel - Aerospace Console */}
+      <div className="hidden lg:flex flex-col gap-2.5 absolute top-3 left-3 z-20 w-72">
         {/* Global Tension Header */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-3">
-          <TacticalCorners />
-          <ScannerSweep />
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Crosshair className="w-4 h-4 text-emerald-400" />
-              <span className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">GLOBAL TENSION</span>
+              <Crosshair className="w-4 h-4 text-slate-400" />
+              <span className="text-[10px] uppercase tracking-[0.15em] text-white/80 font-medium">Global Tension</span>
             </div>
-            <div className="flex items-center gap-1 px-2 py-0.5 bg-zinc-900/50 border border-emerald-500/20">
-              <Wifi className="w-3 h-3 text-emerald-400" />
-              <span className={`text-[8px] uppercase tracking-wider ${blinkState ? 'text-emerald-400' : 'text-emerald-400/40'}`}
-                style={{ textShadow: blinkState ? '0 0 8px #00ff41' : 'none' }}
-              >[ONLINE]</span>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800/50 border border-slate-600/30 rounded-lg">
+              <Wifi className="w-3 h-3 text-slate-400" />
+              <span className={`text-[8px] uppercase tracking-wider font-mono ${blinkState ? 'text-emerald-400' : 'text-emerald-400/30'}`}>ONLINE</span>
             </div>
           </div>
 
-          {/* LED Segment Indicator */}
-          <div className="flex items-center justify-center gap-1 mb-2">
+          {/* LED Segment Bar */}
+          <div className="flex items-center justify-center gap-1.5 mb-2">
             {Array.from({ length: 5 }).map((_, i) => (
-              <LedSegment key={i} active={i === 0} color="#00ff41" size="lg" />
+              <LedIndicator key={i} color="#34d399" active={i === 0} size="lg" />
             ))}
           </div>
-          <div className="text-center text-[8px] uppercase tracking-widest text-zinc-500">
-            [TELEMETRY: ESTABLE]
+          <div className="text-center text-[8px] uppercase tracking-widest text-slate-500">
+            Telemetry: Nominal
           </div>
-          <div className="text-center text-[9px] text-zinc-600 mt-1">
-            Kp Index: <span className="text-emerald-400 font-semibold">{kpIndex.toFixed(1)}</span>
+          <div className="text-center text-[9px] text-slate-400 mt-1">
+            Kp Index: <span className="text-white/90 font-semibold font-mono">{kpIndex.toFixed(1)}</span>
           </div>
         </div>
 
-        {/* SENSING LIVE DATA STREAM */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Signal className="w-3 h-3 text-cyan-400 animate-pulse" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-cyan-400">SENSING LIVE DATA STREAM</span>
+        {/* LIVE DATA STREAM */}
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Signal className="w-3 h-3 text-sky-400 animate-pulse" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-sky-400 font-medium">Live Data Stream</span>
           </div>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {MOCK_LIVE_INDICES.slice(0, 6).map((item, i) => (
-              <TelemetryCard key={i} {...item} />
+              <GlassCard key={i} {...item} />
             ))}
           </div>
         </div>
 
         {/* ARCHIVED TELEMETRY */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Database className="w-3 h-3 text-zinc-500" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-zinc-500">ARCHIVED TELEMETRY</span>
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Database className="w-3 h-3 text-slate-500" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-slate-500 font-medium">Archived Telemetry</span>
           </div>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {MOCK_LIVE_INDICES.slice(6).map((item, i) => (
-              <TelemetryCard key={i} {...item} />
+              <GlassCard key={i} {...item} />
             ))}
           </div>
         </div>
 
         {/* Layer Control */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Layers className="w-3 h-3 text-emerald-400" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">LAYER CONTROL</span>
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Layers className="w-3 h-3 text-slate-400" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Layer Control</span>
           </div>
-          <div className="grid grid-cols-2 gap-1">
-            <TacticalToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} ledColor="#00ffff" />
-            <TacticalToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} ledColor="#38bdf8" />
-            <TacticalToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} ledColor="#ff6b35" />
-            <TacticalToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} ledColor="#ffffff" />
-            <TacticalToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} ledColor="#71717a" />
-            <TacticalToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} ledColor="#00ff41" />
+          <div className="grid grid-cols-2 gap-1.5">
+            <GlassToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} ledColor="#22d3ee" />
+            <GlassToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} ledColor="#38bdf8" />
+            <GlassToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} ledColor="#fb923c" />
+            <GlassToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} ledColor="#e2e8f0" />
+            <GlassToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} ledColor="#94a3b8" />
+            <GlassToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} ledColor="#34d399" />
           </div>
         </div>
       </div>
 
       {/* DESKTOP: Right Panel - Feeds Console */}
-      <div className="hidden lg:flex flex-col gap-2 absolute top-3 right-3 z-20 w-64">
+      <div className="hidden lg:flex flex-col gap-2.5 absolute top-3 right-3 z-20 w-64">
         {/* Node Status */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-3">
-          <TacticalCorners />
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">
-              <Cpu className="w-3 h-3 text-emerald-400" />
-              <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">NODE STATUS</span>
+              <Cpu className="w-3 h-3 text-slate-400" />
+              <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Node Status</span>
             </div>
-            <div className="flex items-center gap-1">
-              <div className={`w-2 h-2 rounded-full ${blinkState ? 'bg-emerald-400' : 'bg-emerald-400/40'}`}
-                style={{ boxShadow: blinkState ? '0 0 8px #00ff41' : 'none' }}
-              />
-              <span className="text-[7px] text-emerald-400 uppercase">ACTIVE</span>
+            <div className="flex items-center gap-1.5">
+              <LedIndicator color="#34d399" active={blinkState} size="md" />
+              <span className="text-[7px] text-slate-400 uppercase">ACTIVE</span>
             </div>
           </div>
-          <div className="text-4xl font-bold text-emerald-400" style={{ textShadow: '0 0 20px #00ff4140, 0 0 40px #00ff4120' }}>
+          <div className="text-3xl font-bold text-white/90">
             {visiblePoints.length}
           </div>
-          <div className="text-[8px] uppercase tracking-widest text-zinc-500">ACTIVE DATA NODES</div>
+          <div className="text-[8px] uppercase tracking-widest text-slate-500">Active Data Nodes</div>
         </div>
 
         {/* Data Feeds */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Satellite className="w-3 h-3 text-cyan-400" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-cyan-400">DATA FEEDS</span>
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Satellite className="w-3 h-3 text-sky-400" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-sky-400 font-medium">Data Feeds</span>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             {MOCK_FEEDS.map((feed, i) => (
-              <FeedSourceItem key={i} {...feed} />
+              <GlassFeedItem key={i} {...feed} />
             ))}
           </div>
         </div>
 
         {/* Data Filters */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Gauge className="w-3 h-3 text-emerald-400" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">DATA FILTERS</span>
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Gauge className="w-3 h-3 text-slate-400" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Data Filters</span>
           </div>
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {['OSINT', 'NASA', 'QUAKES', 'FLIGHTS', 'MARKETS'].map((f, i) => (
-              <FilterPill key={i} label={f} active={i < 3} />
+              <GlassPill key={i} label={f} active={i < 3} />
             ))}
           </div>
         </div>
 
-        {/* Tactical Tabs */}
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5">
-          <TacticalCorners size="sm" />
-          <div className="flex gap-1 mb-2">
+        {/* Feed Tabs */}
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
+          <div className="flex gap-1.5 mb-2">
             {(['FEED', 'MARKETS', 'FLIGHTS'] as const).map((tab) => (
-              <TacticalTab key={tab} label={tab} active={activeTab === tab} onClick={() => setActiveTab(tab)} />
+              <GlassTab key={tab} label={tab} active={activeTab === tab} onClick={() => setActiveTab(tab)} />
             ))}
           </div>
-          <div className="text-[8px] text-zinc-500 uppercase tracking-wider">
+          <div className="text-[8px] text-slate-500 uppercase tracking-wider">
             {activeTab === 'FEED' && 'Real-time intelligence stream active'}
             {activeTab === 'MARKETS' && 'Global market data pipeline online'}
             {activeTab === 'FLIGHTS' && 'Aircraft tracking radar enabled'}
@@ -729,26 +660,25 @@ export function GlobeScene({
 
       {/* DESKTOP: Bottom - Telemetry Matrix */}
       <div className="hidden lg:block absolute bottom-3 left-3 z-20">
-        <div className="relative bg-zinc-950/40 border border-emerald-500/20 backdrop-blur-md p-2.5 w-72">
-          <TacticalCorners size="sm" />
-          <div className="flex items-center gap-2 mb-2">
-            <Activity className="w-3 h-3 text-emerald-400" />
-            <span className="text-[8px] uppercase tracking-[0.15em] text-emerald-400">TELEMETRY MATRIX</span>
+        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3 w-72">
+          <div className="flex items-center gap-2 mb-2.5">
+            <Activity className="w-3 h-3 text-slate-400" />
+            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Telemetry Matrix</span>
           </div>
-          <div className="grid grid-cols-3 gap-1">
+          <div className="grid grid-cols-3 gap-1.5">
             {[
-              { label: 'CONFLICT', color: '#ef4444', glow: '#ff0000' },
-              { label: 'FINANCE', color: '#facc15', glow: '#facc15' },
-              { label: 'TECH', color: '#22d3ee', glow: '#00ffff' },
-              { label: 'GEOPOL', color: '#f97316', glow: '#ff8800' },
-              { label: 'QUAKE', color: '#facc15', glow: '#ffdd00' },
-              { label: 'DAO NODE', color: '#ffffff', glow: '#ffffff' },
+              { label: 'CONFLICT', color: '#ef4444' },
+              { label: 'FINANCE', color: '#fbbf24' },
+              { label: 'TECH', color: '#22d3ee' },
+              { label: 'GEOPOL', color: '#f97316' },
+              { label: 'QUAKE', color: '#facc15' },
+              { label: 'DAO NODE', color: '#e2e8f0' },
             ].map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 p-1.5 bg-zinc-900/60 border border-emerald-500/10">
-                <div className="w-2.5 h-2.5 rounded-full"
-                  style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.glow}, 0 0 16px ${item.glow}40` }}
+              <div key={i} className="flex items-center gap-1.5 p-2 bg-slate-800/30 border border-slate-700/30 rounded-xl">
+                <div className="w-2.5 h-2.5 rounded-full shrink-0"
+                  style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.color}80, 0 0 16px ${item.color}40` }}
                 />
-                <span className="text-[7px] uppercase tracking-wider text-zinc-400">{item.label}</span>
+                <span className="text-[7px] uppercase tracking-wider text-slate-400">{item.label}</span>
               </div>
             ))}
           </div>
@@ -757,59 +687,51 @@ export function GlobeScene({
 
       {/* MOBILE: Floating layers button */}
       <button onClick={() => setMobilePanelOpen(!mobilePanelOpen)}
-        className="block lg:hidden absolute bottom-6 right-6 z-30 w-14 h-14 rounded-full bg-zinc-900/90 border border-emerald-500/30 backdrop-blur-md flex items-center justify-center shadow-lg shadow-emerald-500/10 transition-transform active:scale-95">
-        <Layers className="w-6 h-6 text-emerald-400" />
+        className="block lg:hidden absolute bottom-6 right-6 z-30 w-14 h-14 rounded-2xl bg-slate-900/60 border border-slate-600/40 backdrop-blur-xl flex items-center justify-center shadow-lg shadow-black/30 transition-transform active:scale-95">
+        <Layers className="w-6 h-6 text-slate-300" />
       </button>
 
       {/* MOBILE: Bottom Sheet */}
-      <div className={`block lg:hidden absolute bottom-0 left-0 right-0 z-40 bg-zinc-950/95 border-t border-emerald-500/20 backdrop-blur-lg transition-transform duration-300 ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full'}`}>
-        <div className="flex justify-center py-3"><div className="w-10 h-1 bg-zinc-600 rounded-full" /></div>
-        <div className="flex items-center justify-between px-4 pb-3 border-b border-zinc-800">
+      <div className={`block lg:hidden absolute bottom-0 left-0 right-0 z-40 bg-slate-900/80 border-t border-slate-700/40 backdrop-blur-2xl rounded-t-3xl transition-transform duration-300 ${mobilePanelOpen ? 'translate-y-0' : 'translate-y-full'}`}>
+        <div className="flex justify-center py-3"><div className="w-10 h-1 bg-slate-600 rounded-full" /></div>
+        <div className="flex items-center justify-between px-5 pb-3 border-b border-slate-700/30">
           <div className="flex items-center gap-2">
-            <Radar className="w-5 h-5 text-emerald-400" />
-            <span className="text-sm font-semibold text-zinc-200">TACTICAL CONTROL</span>
+            <Radar className="w-5 h-5 text-slate-400" />
+            <span className="text-sm font-semibold text-white/90">Layer Control</span>
           </div>
-          <button onClick={() => setMobilePanelOpen(false)} className="p-1.5 rounded hover:bg-zinc-800"><X className="w-5 h-5 text-zinc-400" /></button>
+          <button onClick={() => setMobilePanelOpen(false)} className="p-1.5 rounded-lg hover:bg-slate-700/40"><X className="w-5 h-5 text-slate-400" /></button>
         </div>
 
-        <div className="px-4 py-3 border-b border-zinc-800">
+        <div className="px-5 py-3 border-b border-slate-700/30">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Crosshair className="w-4 h-4 text-emerald-400" />
-              <span className="text-xs text-zinc-300">GLOBAL TENSION</span>
+              <Crosshair className="w-4 h-4 text-slate-400" />
+              <span className="text-xs text-slate-300">Global Tension</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex gap-0.5">{Array.from({ length: 3 }).map((_, i) => <LedSegment key={i} active={i === 0} color="#00ff41" size="sm" />)}</div>
-              <span className="text-sm text-emerald-400 font-semibold">Kp {kpIndex.toFixed(1)}</span>
+              <div className="flex gap-1">{Array.from({ length: 3 }).map((_, i) => <LedIndicator key={i} color="#34d399" active={i === 0} size="sm" />)}</div>
+              <span className="text-sm text-white/90 font-semibold font-mono">Kp {kpIndex.toFixed(1)}</span>
             </div>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-2 p-4">
-          <TacticalToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} />
-          <TacticalToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} />
-          <TacticalToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} />
-          <TacticalToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} />
-          <TacticalToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} />
-          <TacticalToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} />
+          <GlassToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} ledColor="#22d3ee" />
+          <GlassToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} ledColor="#38bdf8" />
+          <GlassToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} ledColor="#fb923c" />
+          <GlassToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} ledColor="#e2e8f0" />
+          <GlassToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} ledColor="#94a3b8" />
+          <GlassToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} ledColor="#34d399" />
         </div>
 
-        <div className="px-4 pb-6">
-          <div className="flex items-center justify-between py-2 px-3 bg-zinc-800/50 border border-emerald-500/20">
-            <span className="text-[10px] text-zinc-400 uppercase">Active Nodes</span>
-            <span className="text-xl font-bold text-emerald-400" style={{ textShadow: '0 0 12px #00ff4140' }}>{visiblePoints.length}</span>
+        <div className="px-5 pb-6">
+          <div className="flex items-center justify-between py-2.5 px-3.5 bg-slate-800/40 border border-slate-700/30 rounded-xl">
+            <span className="text-[10px] text-slate-400 uppercase">Active Nodes</span>
+            <span className="text-xl font-bold text-white/90 font-mono">{visiblePoints.length}</span>
           </div>
         </div>
       </div>
 
-      {/* Animation styles */}
-      <style>{`
-        @keyframes scanSweep {
-          0% { top: 0%; opacity: 1; }
-          50% { opacity: 0.5; }
-          100% { top: 100%; opacity: 0; }
-        }
-      `}</style>
     </div>
   );
 }

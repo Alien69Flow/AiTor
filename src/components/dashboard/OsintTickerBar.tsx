@@ -17,7 +17,6 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
     return () => clearInterval(id);
   }, []);
 
-  // Prefer unified ticker items; fallback to legacy USGS/NASA when not provided
   const headlines: TickerItem[] = tickerItems.length > 0 ? tickerItems : (() => {
     const fallback: TickerItem[] = [];
     [...earthquakes].sort((a, b) => b.magnitude - a.magnitude).slice(0, 5).forEach(q => {
@@ -43,17 +42,17 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
   })();
 
   const tagColor = (sev?: TickerItem["severity"]) => {
-    if (sev === "CRITICAL") return "#FF4444";
-    if (sev === "HIGH") return "#FF8844";
-    if (sev === "MEDIUM") return "#FFD700";
-    return "#FF4444";
+    if (sev === "CRITICAL") return "#f87171";
+    if (sev === "HIGH") return "#fb923c";
+    if (sev === "MEDIUM") return "#fbbf24";
+    return "#f87171";
   };
 
   return (
-    <div className="bg-black/80 backdrop-blur-[15px] border-t border-white/[0.06] px-3 py-1.5 flex items-center gap-3 z-30">
+    <div className="bg-slate-900/60 backdrop-blur-xl border-t border-slate-700/30 px-3 py-1.5 flex items-center gap-3 z-30">
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="text-[8px] font-mono text-[#FF4444] font-bold">▸</span>
-        <span className="text-[8px] font-mono uppercase tracking-wider text-white/30">OSINT FEED & TICKER</span>
+        <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-sky-400" />
+        <span className="text-[8px] font-mono uppercase tracking-wider text-slate-400">OSINT FEED</span>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
@@ -61,16 +60,16 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
           {[...headlines, ...headlines].map((h, i) => (
             <div key={i} className="flex items-center gap-2 shrink-0">
               <span className="text-[9px] font-mono font-bold" style={{ color: tagColor(h.severity) }}>{h.tag}</span>
-              <span className="text-[9px] font-mono text-white/50">{h.text}</span>
-              <span className="text-[8px] font-mono text-white/15">{h.source} … {h.time}</span>
+              <span className="text-[9px] font-mono text-slate-400">{h.text}</span>
+              <span className="text-[8px] font-mono text-slate-600">{h.source} … {h.time}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[8px] font-mono text-white/25">OZONE LAYER:</span>
-        <span className="text-[8px] font-mono text-[#00FF41] font-bold">[ONLINE]</span>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <span className="text-[8px] font-mono text-slate-500">STATUS:</span>
+        <span className="text-[8px] font-mono text-emerald-400 font-bold">ONLINE</span>
       </div>
     </div>
   );

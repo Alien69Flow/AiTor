@@ -1,21 +1,15 @@
 import { useState, useEffect } from "react";
 import { Badge } from "@/components/ui/badge";
-import { X, TrendingUp, TrendingDown, MapPin, AlertTriangle, Zap } from "lucide-react";
+import { X, TrendingUp, TrendingDown, MapPin, TriangleAlert as AlertTriangle, Zap } from "lucide-react";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 import { fetchUapSightingsCount } from "@/lib/uap-sightings";
 
-const TACTICAL_COLORS: Record<string, string> = {
-  conflict: "#FF4444", 
-  finance: "#FFD700", 
-  tech: "#FFD700", 
-  geopolitical: "#0088FF",
-};
-
-const glassStyle = {
-  background: "rgba(0,0,0,0.5)",
-  backdropFilter: "blur(20px)",
-  border: "0.5px solid rgba(255,255,255,0.06)",
+const TYPE_COLORS: Record<string, string> = {
+  conflict: "#f87171",
+  finance: "#fbbf24",
+  tech: "#fbbf24",
+  geopolitical: "#60a5fa",
 };
 
 interface GlobeOverlayProps {
@@ -27,7 +21,6 @@ interface GlobeOverlayProps {
 }
 
 export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquakeCount = 0, nasaEventCount = 0 }: GlobeOverlayProps) {
-  // Lógica de tensión dinámica basada en eventos reales
   const kpContrib = spaceWeather?.kpIndex ? spaceWeather.kpIndex * 8 : 0;
   const stormContrib = spaceWeather?.solarStorm ? 25 : 0;
   const quakeContrib = Math.min(earthquakeCount * 0.1, 15);
@@ -50,31 +43,31 @@ export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquak
     return () => clearInterval(interval);
   }, []);
 
-  const tensionColor = tensionLevel > 70 ? "#FF4444" : tensionLevel > 40 ? "#FFD700" : "#00FF41";
+  const tensionColor = tensionLevel > 70 ? "#f87171" : tensionLevel > 40 ? "#fbbf24" : "#34d399";
   const tensionStatus = tensionLevel > 70 ? "CRITICAL" : tensionLevel > 40 ? "ELEVATED" : "NORMAL";
   const kpActive = (spaceWeather?.kpIndex || 0) > 4;
 
   return (
     <>
-      {/* Indicador de Tensión Global (Flotante Superior) */}
+      {/* Global Tension Indicator (Floating Top Center) */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-        <div className="flex items-center gap-2 px-3 py-1 rounded-full" style={glassStyle}>
-          <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: tensionColor }} />
-          <span className="text-[9px] font-mono text-white/30 uppercase tracking-wider">Tension</span>
-          <span className="text-xs font-bold font-mono" style={{ color: tensionColor }}>{Math.round(tensionLevel)}</span>
+        <div className="flex items-center gap-2.5 px-4 py-1.5 rounded-2xl bg-slate-900/50 backdrop-blur-xl border border-slate-700/40">
+          <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: tensionColor, boxShadow: `0 0 8px ${tensionColor}80` }} />
+          <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Tension</span>
+          <span className="text-xs font-bold font-mono text-white/90" style={{ color: tensionColor }}>{Math.round(tensionLevel)}</span>
           <span className="text-[8px] font-mono uppercase" style={{ color: tensionColor }}>{tensionStatus}</span>
           {kpActive && (
-            <span className="flex items-center gap-0.5 text-[8px] font-mono text-[#FF00FF]">
+            <span className="flex items-center gap-0.5 text-[8px] font-mono text-purple-400">
               <Zap className="w-2.5 h-2.5" /> Kp{spaceWeather?.kpIndex?.toFixed(0)}
             </span>
           )}
           {earthquakeCount > 0 && (
-            <span className="text-[8px] font-mono text-[#FF4444]/60">💥{earthquakeCount}</span>
+            <span className="text-[8px] font-mono text-red-400/60">{earthquakeCount}</span>
           )}
         </div>
       </div>
 
-      {/* Popup de Detalles (Ajustado para no solapar con el FeedPanel) */}
+      {/* Detail Popup */}
       {selectedHotspot && <CountryPopup hotspot={selectedHotspot} onClose={onClose} />}
     </>
   );
@@ -92,46 +85,45 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
   }, [hotspot]);
 
   const trendPositive = hotspot.trend.startsWith("+");
-  const typeColor = TACTICAL_COLORS[hotspot.type] || "#FFD700";
+  const typeColor = TYPE_COLORS[hotspot.type] || "#fbbf24";
 
   return (
-    /* md:right-[430px] asegura que el popup aparezca a la IZQUIERDA del FeedPanel en escritorio */
     <div className="absolute top-14 right-3 md:right-[430px] z-50 w-64 animate-in fade-in slide-in-from-right-4 duration-300">
-      <div className="rounded-lg overflow-hidden" style={{ ...glassStyle, border: `0.5px solid ${typeColor}22` }}>
-        <div className="flex items-center justify-between px-3 py-1.5" style={{ borderBottom: "0.5px solid rgba(255,255,255,0.04)" }}>
+      <div className="rounded-2xl overflow-hidden bg-slate-900/60 backdrop-blur-xl border border-slate-700/40" style={{ borderColor: `${typeColor}33` }}>
+        <div className="flex items-center justify-between px-3.5 py-2 border-b border-slate-700/25">
           <div className="flex items-center gap-1.5">
             <MapPin className="w-3 h-3" style={{ color: typeColor }} />
-            <span className="text-xs font-bold text-white">{hotspot.name}</span>
-            <span className="text-[9px] text-white/30">{hotspot.country}</span>
+            <span className="text-xs font-bold text-white/90">{hotspot.name}</span>
+            <span className="text-[9px] text-slate-500">{hotspot.country}</span>
           </div>
-          <button onClick={onClose} className="p-0.5 hover:bg-white/10 rounded transition-colors">
-            <X className="w-3 h-3 text-white/30" />
+          <button onClick={onClose} className="p-0.5 hover:bg-slate-700/40 rounded-lg transition-colors">
+            <X className="w-3 h-3 text-slate-400" />
           </button>
         </div>
-        <div className="px-3 py-2 space-y-1.5">
+        <div className="px-3.5 py-2.5 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] text-white/25 uppercase font-mono">Vol</span>
-            <span className="text-xs font-mono font-bold text-white">{hotspot.marketVolume}</span>
+            <span className="text-[9px] text-slate-500 uppercase font-mono">Vol</span>
+            <span className="text-xs font-mono font-bold text-white/90">{hotspot.marketVolume}</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[9px] text-white/25 uppercase font-mono">24h</span>
+            <span className="text-[9px] text-slate-500 uppercase font-mono">24h</span>
             <div className="flex items-center gap-1">
-              {trendPositive ? <TrendingUp className="w-3 h-3 text-[#00FF41]" /> : <TrendingDown className="w-3 h-3 text-[#FF4444]" />}
-              <span className={`text-xs font-mono font-bold ${trendPositive ? "text-[#00FF41]" : "text-[#FF4444]"}`}>{hotspot.trend}</span>
+              {trendPositive ? <TrendingUp className="w-3 h-3 text-emerald-400" /> : <TrendingDown className="w-3 h-3 text-red-400" />}
+              <span className={`text-xs font-mono font-bold ${trendPositive ? "text-emerald-400" : "text-red-400"}`}>{hotspot.trend}</span>
             </div>
           </div>
           <div className="flex gap-1 flex-wrap">
             {hotspot.topTokens.map((t) => (
-              <Badge key={t} variant="outline" className="text-[8px] px-1 py-0 h-3.5 bg-white/5 text-white/50 border-white/8">{t}</Badge>
+              <Badge key={t} variant="outline" className="text-[8px] px-1 py-0 h-3.5 rounded-md bg-slate-800/30 text-slate-400 border-slate-600/30">{t}</Badge>
             ))}
           </div>
         </div>
-        <div className="px-3 py-1.5 flex items-center justify-between" style={{ borderTop: "0.5px solid rgba(255,255,255,0.04)" }}>
+        <div className="px-3.5 py-2 flex items-center justify-between border-t border-slate-700/25">
           <div className="flex items-center gap-1">
-            <AlertTriangle className="w-2.5 h-2.5 text-[#00FF41]/50" />
-            <span className="text-[8px] text-white/20 font-mono">{uapCount} UAP Reports</span>
+            <AlertTriangle className="w-2.5 h-2.5 text-emerald-400/50" />
+            <span className="text-[8px] text-slate-500 font-mono">{uapCount} UAP Reports</span>
           </div>
-          <Badge variant="outline" className="text-[7px] uppercase font-mono" style={{ color: typeColor, borderColor: typeColor + "33" }}>{hotspot.type}</Badge>
+          <Badge variant="outline" className="text-[7px] uppercase font-mono rounded-md" style={{ color: typeColor, borderColor: typeColor + "33" }}>{hotspot.type}</Badge>
         </div>
       </div>
     </div>
