@@ -1,8 +1,14 @@
 # 🤖 AI Tor.v69 | Neural Intelligence Core
-Agentics Intel HUB OSINT RAG WorkFlows
+Agentics Intel HUB + OSINT + RAG + WorkFlows
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Alien69Flow/Alien69Flow/main/Alien.gif" width="100" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-In%20Development-blueviolet" alt="Status" />
+  <img src="https://img.shields.io/badge/Stack-React%20%7C%20Vite%20%7C%20TypeScript-blue" alt="Tech Stack" />
+  <img src="https://img.shields.io/badge/Network-Web3%20%7C%20TON%20%7C%20EVM-lightgrey" alt="Network" />
 </p>
 
 Este es el núcleo cerebral de **AlienFlowSpace DAO**. Una inteligencia neuronal híbrida diseñada para gestionar la DAO, analizar flujos financieros y unificar la física de neutrinos con la Web 3-4-5.
