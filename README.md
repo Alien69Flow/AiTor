@@ -24,7 +24,7 @@ Este es el núcleo cerebral de **AlienFlowSpace DAO**. Una inteligencia neuronal
 - **[Auth_ID] Secure Access:** Integración con `useAuth.ts` para soberanía digital y control de roles.
 - **DAO Governance:** Análisis autónomo de propuestas y tesorería.
 - **Globe Interface:** Capa de visualización atmosférica y geoespacial en 5D.
-- **Quantum Ledger:** Integración DEX & Polymarket para flujos financieros en entornos de alta presión (Anti-NetError System).
+- **Quantum Ledger:** Integración DEX & Polymarket para flujos financieros en entornos de alta presión.
 - **Aliens Hub:** Cryptozologia y UAPS / Gestión y visualización de la base de datos de identidades con NFTs del ecosistema.
 
 ## 👽 Conexión Alien
