@@ -9,7 +9,7 @@ import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
-import { Volume2, TrendingUp, Newspaper, Bell, BarChart3, Globe as GlobeIcon, Zap } from "lucide-react";
+import { Volume2, TrendingUp, Newspaper, Bell, ChartBar as BarChart3, Globe as GlobeIcon, Zap } from "lucide-react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
