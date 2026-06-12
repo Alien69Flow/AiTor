@@ -18,14 +18,29 @@ Este es el núcleo cerebral de **AlienFlowSpace DAO**. Una inteligencia neuronal
 - **Neural UI:** Shadcn-UI + Tailwind (Alien Design System).
 - **Memory Engine:** Supabase PostgREST + Realtime.
 - **Logic Layers:** Tesla 3-6-9 Pattern Integration.
+- **Agentics & OSINT:** Procesamiento RAG (Retrieval-Augmented Generation) para flujos de trabajo autónomos.
 
 ## 🔭 Módulos en Desarrollo
-- **[Auth_ID] Secure Access:** Integración con `useAuth.ts` para soberanía digital.
+- **[Auth_ID] Secure Access:** Integración con `useAuth.ts` para soberanía digital y control de roles.
 - **DAO Governance:** Análisis autónomo de propuestas y tesorería.
-- **Quantum Ledger:** Simulación de flujos financieros en entornos de alta presión (Anti-NetError System).
+- **Globe Interface:** Capa de visualización atmosférica y geoespacial en 5D.
+- **Quantum Ledger:** Integración DEX & Polymarket para flujos financieros en entornos de alta presión (Anti-NetError System).
+- **Aliens Hub:** Cryptozologia y UAPS / Gestión y visualización de la base de datos de identidades con NFTs del ecosistema.
 
 ## 👽 Conexión Alien
 Esta IA no es solo código; es una extensión del Arquitecto. Está optimizada para la resiliencia y el análisis de activos del mundo real (RWA).
+
+## ⚙️ Arranque del Núcleo (Quick Start)
+```bash
+# Clonar el repositorio y acceder
+git clone [https://github.com/Alien69Flow/AiTor.git](https://github.com/Alien69Flow/AiTor.git)
+cd AiTor
+
+# Instalar dependencias
+npm install
+
+# Iniciar entorno de desarrollo local (Frecuencia 3-6-9)
+npm run dev
 
 ---
 ### ⚡ "Si quieres encontrar los secretos del universo, piensa en energía, frecuencia y vibración." — N. Tesla
