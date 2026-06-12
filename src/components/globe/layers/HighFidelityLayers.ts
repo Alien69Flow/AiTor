@@ -5,7 +5,7 @@ const GLOBE_RADIUS = 100;
 // ─── Atmospheric Shader (cyan/violet halo, fresnel-based) ──────────
 export function createAtmosphereShell(intensity = 1, accent = "#00ffff") {
   const color = new THREE.Color(accent);
-  const geo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.18, 64, 64);
+  const geo = new THREE.SphereGeometry(GLOBE_RADIUS * 1.22, 64, 64);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: color },
@@ -28,9 +28,9 @@ export function createAtmosphereShell(intensity = 1, accent = "#00ffff") {
       varying vec3 vNormal;
       varying vec3 vPos;
       void main() {
-        float fresnel = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 3.0);
+        float fresnel = pow(1.0 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
         vec3 mix1 = mix(uColor, uViolet, fresnel);
-        gl_FragColor = vec4(mix1, fresnel * uIntensity * 0.85);
+        gl_FragColor = vec4(mix1, fresnel * uIntensity * 1.1);
       }
     `,
     blending: THREE.AdditiveBlending,
@@ -48,13 +48,13 @@ export function createAuroraCurtains(kpIndex: number) {
   const group = new THREE.Group();
   group.name = "polar_auroras";
   const intensity = Math.min(1, kpIndex / 9);
-  const particleCount = Math.floor(800 + intensity * 2200);
+  const particleCount = Math.floor(1200 + intensity * 3000);
 
   [{ pole: 1, hue: 0.45 }, { pole: -1, hue: 0.35 }].forEach(({ pole, hue }) => {
     const positions = new Float32Array(particleCount * 3);
     const colors = new Float32Array(particleCount * 3);
     for (let i = 0; i < particleCount; i++) {
-      const lat = (65 + Math.random() * 18) * pole; // 65–83° band
+      const lat = (60 + Math.random() * 25) * pole; // 60–85° band
       const lon = Math.random() * 360 - 180;
       const altR = GLOBE_RADIUS * (1.04 + Math.random() * 0.08);
       const phi = (90 - lat) * (Math.PI / 180);
@@ -72,7 +72,7 @@ export function createAuroraCurtains(kpIndex: number) {
       size: 0.55,
       vertexColors: true,
       transparent: true,
-      opacity: 0.35 + intensity * 0.4,
+      opacity: 0.45 + intensity * 0.5,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
@@ -89,8 +89,9 @@ export function createVanAllenBelts() {
   group.name = "van_allen_belts";
 
   const beltDefs = [
-    { radius: GLOBE_RADIUS * 1.45, tube: 6, color: 0x00ffff, opacity: 0.18 },
-    { radius: GLOBE_RADIUS * 1.85, tube: 10, color: 0xff00ff, opacity: 0.14 },
+    { radius: GLOBE_RADIUS * 1.45, tube: 7, color: 0x00ffff, opacity: 0.25 },
+    { radius: GLOBE_RADIUS * 1.65, tube: 5, color: 0x00ff88, opacity: 0.18 },
+    { radius: GLOBE_RADIUS * 1.85, tube: 10, color: 0xff00ff, opacity: 0.20 },
   ];
 
   beltDefs.forEach((b) => {

@@ -89,7 +89,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
   }, [spaceWeather?.solarStorm]);
 
   return (
-    <div className="w-full flex items-center gap-3 px-3 py-1 bg-slate-900/50 backdrop-blur-xl border-b border-slate-700/25 text-[9px]">
+    <div className="w-full flex items-center gap-3 px-3 py-1 bg-slate-950/50 backdrop-blur-xl border-b border-slate-700/25 text-[9px]">
       <div className="flex items-center gap-1.5 shrink-0">
         <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" style={{ boxShadow: '0 0 8px #38bdf880' }} />
         <span className="text-sky-400 tracking-wider uppercase font-bold text-[9px]">LIVE</span>

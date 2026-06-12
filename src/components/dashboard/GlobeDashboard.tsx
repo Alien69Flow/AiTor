@@ -9,7 +9,7 @@ import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
-import { Volume2 } from "lucide-react";
+import { Volume2, TrendingUp, Newspaper, Bell, BarChart3, Globe as GlobeIcon, Zap } from "lucide-react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
@@ -49,14 +49,16 @@ export function GlobeDashboard() {
     globeNavRef.current = navFn;
   }, []);
 
+  const kpColor = spaceWeather.kpIndex >= 5 ? "#ef4444" : spaceWeather.kpIndex >= 4 ? "#fbbf24" : "#34d399";
+
   return (
-    <div className="flex flex-col flex-1 min-h-0 relative bg-black overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 bg-black overflow-hidden">
       {/* Crypto Ticker */}
       <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20">
         {cryptoPrices.map((c) => (
           <div key={c.id} className="flex items-center gap-1.5 shrink-0">
             <span className="font-mono font-bold text-amber-400">{c.symbol}</span>
-            <span className="font-mono text-slate-400">${c.price.toLocaleString()}</span>
+            <span className="font-mono text-[#b4c5b0]">${c.price.toLocaleString()}</span>
             <span className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {c.change24h >= 0 ? "+" : ""}{c.change24h.toFixed(1)}%
             </span>
@@ -67,79 +69,87 @@ export function GlobeDashboard() {
       {/* Live Ticker */}
       <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
-      {/* Main content area */}
-      <div className="flex flex-1 min-h-0 relative">
-        {/* GLOBE 3D */}
-        <div className="absolute inset-0 z-0 pointer-events-auto">
-          <GlobeScene
-            onHotspotClick={setSelectedHotspot}
-            onReady={handleGlobeReady}
-            externalMarkers={eventMarkers}
+      {/* 3-Column HUD Layout */}
+      <div className="flex flex-1 min-h-0">
+        {/* LEFT SIDEBAR — 265px fixed */}
+        <div className="hidden lg:flex w-[265px] shrink-0 flex-col gap-2 p-2 overflow-y-auto no-scrollbar z-30">
+          <TacticalConsole />
+          <LegendPanel
+            visibleLayers={visibleLayers}
+            onToggleLayer={toggleLayer}
+            counts={counts}
             cloudsEnabled={cloudsEnabled}
+            onToggleClouds={() => setCloudsEnabled(v => !v)}
             weatherEnabled={weatherEnabled}
+            onToggleWeather={() => setWeatherEnabled(v => !v)}
             firesEnabled={firesEnabled}
+            onToggleFires={() => setFiresEnabled(v => !v)}
             aircraftEnabled={aircraftEnabled}
+            onToggleAircraft={() => setAircraftEnabled(v => !v)}
             marketsEnabled={marketsEnabled}
+            onToggleMarkets={() => setMarketsEnabled(v => !v)}
           />
+          <NavigatePanel onNavigate={handleNavigate} />
         </div>
 
-        {/* OVERLAY: Tension badge + hotspot popup */}
-        <GlobeOverlay
-          selectedHotspot={selectedHotspot}
-          onClose={() => setSelectedHotspot(null)}
-          spaceWeather={spaceWeather}
-          earthquakeCount={earthquakes.length}
-          nasaEventCount={nasaEvents.length}
-        />
-
-        {/* LEFT PANELS */}
-        <div className="absolute top-3 left-3 z-30 space-y-2.5 pointer-events-none">
-          <div className="pointer-events-auto">
-            <TacticalConsole />
-          </div>
-          <div className="pointer-events-auto">
-            <LegendPanel
-              visibleLayers={visibleLayers}
-              onToggleLayer={toggleLayer}
-              counts={counts}
+        {/* CENTER COLUMN — Globe fills this entirely */}
+        <div className="flex-1 relative min-w-0 overflow-hidden">
+          {/* Globe 3D Canvas */}
+          <div className="absolute inset-0 pointer-events-auto">
+            <GlobeScene
+              onHotspotClick={setSelectedHotspot}
+              onReady={handleGlobeReady}
+              externalMarkers={eventMarkers}
               cloudsEnabled={cloudsEnabled}
-              onToggleClouds={() => setCloudsEnabled(v => !v)}
               weatherEnabled={weatherEnabled}
-              onToggleWeather={() => setWeatherEnabled(v => !v)}
               firesEnabled={firesEnabled}
-              onToggleFires={() => setFiresEnabled(v => !v)}
               aircraftEnabled={aircraftEnabled}
-              onToggleAircraft={() => setAircraftEnabled(v => !v)}
               marketsEnabled={marketsEnabled}
-              onToggleMarkets={() => setMarketsEnabled(v => !v)}
             />
           </div>
-          <div className="pointer-events-auto">
-            <NavigatePanel onNavigate={handleNavigate} />
-          </div>
-        </div>
 
-        {/* CENTER BOTTOM: Nav menu + Audio */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-4">
-            <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300" />
-            {["Markets", "Feed", "Alerts", "Movers", "Global Tension"].map(item => (
-              <span key={item} className="text-[9px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer whitespace-nowrap transition-colors">
-                {item === "Markets" ? "🏦" : item === "Feed" ? "📰" : item === "Alerts" ? "🔔" : item === "Movers" ? "📈" : "🌐"} {item}
-              </span>
-            ))}
-            <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
-              <span className="text-[9px] font-mono text-slate-500">Tesla Layer</span>
-              <span className="text-[10px] font-mono font-bold text-purple-400">Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
+          {/* Tension badge + hotspot popup — centered over globe only */}
+          <GlobeOverlay
+            selectedHotspot={selectedHotspot}
+            onClose={() => setSelectedHotspot(null)}
+            spaceWeather={spaceWeather}
+            earthquakeCount={earthquakes.length}
+            nasaEventCount={nasaEvents.length}
+          />
+
+          {/* Floating Markets Terminal Widget */}
+          <div className="absolute bottom-16 right-4 z-30">
+            <MarketsTerminalMini />
+          </div>
+
+          {/* Bottom Nav Bar — centered over globe */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+            <div className="bg-slate-950/60 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-2xl shadow-blue-900/10">
+              <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300 transition-colors" />
+              {[
+                { label: "Markets", Icon: TrendingUp },
+                { label: "Feed", Icon: Newspaper },
+                { label: "Alerts", Icon: Bell },
+                { label: "Movers", Icon: BarChart3 },
+                { label: "Global Tension", Icon: GlobeIcon },
+              ].map(({ label, Icon }) => (
+                <button key={label} className="flex items-center gap-1 text-[9px] font-mono text-[#b4c5b0] hover:text-white/90 cursor-pointer whitespace-nowrap transition-colors">
+                  <Icon className="w-3 h-3" />
+                  {label}
+                </button>
+              ))}
+              <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
+                <Zap className="w-3 h-3" style={{ color: kpColor }} />
+                <span className="text-[9px] font-mono text-[#b4c5b0]">Capa Tesla</span>
+                <span className="text-[10px] font-mono font-bold" style={{ color: kpColor }}>Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* RIGHT PANEL: Chat Feed */}
-        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none hidden md:block">
-          <div className="pointer-events-auto h-full">
-            <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
-          </div>
+        {/* RIGHT SIDEBAR — 280px fixed */}
+        <div className="hidden md:flex w-[280px] shrink-0 flex-col z-20">
+          <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
         </div>
       </div>
 

@@ -10,14 +10,7 @@ import {
   Plane,
   TrendingUp,
   Shield,
-  Activity,
   Radar,
-  Satellite,
-  Cpu,
-  Database,
-  Signal,
-  Gauge,
-  Wifi,
   Crosshair,
 } from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
@@ -136,27 +129,6 @@ interface GlobeSceneProps {
 
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
-// Mock real-time indices for telemetry display
-const MOCK_LIVE_INDICES = [
-  { id: "BTC-SPOT", value: "94,521", delta: "+2.34%", status: "stable" },
-  { id: "ETH-SPOT", value: "3,847", delta: "+1.12%", status: "stable" },
-  { id: "SOL-SPOT", value: "178.32", delta: "-0.45%", status: "warn" },
-  { id: "GEO-CN1", value: "8.2", delta: "0.00", status: "stable" },
-  { id: "GEO-CN2", value: "3.1", delta: "+0.10", status: "warn" },
-  { id: "CNFLT-IX", value: "47", delta: "+5", status: "alert" },
-  { id: "NK-MIL", value: "ACTIVE", delta: "", status: "alert" },
-  { id: "US-MIL", value: "STANDBY", delta: "", status: "stable" },
-  { id: "RADAR-N1", value: "ONLINE", delta: "", status: "stable" },
-];
-
-// Mock data feeds
-const MOCK_FEEDS = [
-  { sourceId: "OSINT-INTL-01", label: "INTEL NETWORK", status: "live", color: "#00ff41" },
-  { sourceId: "NASA-FIRMS-02", label: "THERMAL IMAGERY", status: "live", color: "#ff6b35" },
-  { sourceId: "USGS-SEIS-03", label: "SEISMIC ARRAY", status: "live", color: "#facc15" },
-  { sourceId: "OPSKY-RDR-04", label: "FLIGHT TRACKER", status: "standby", color: "#38bdf8" },
-];
-
 // LED indicator with halo glow (reserved for status micro-indicators)
 const LedIndicator = ({ color, active = true, size = "sm" }: { color: string; active?: boolean; size?: "sm" | "md" | "lg" }) => {
   const dim = size === "sm" ? "w-1.5 h-1.5" : size === "lg" ? "w-3 h-3" : "w-2 h-2";
@@ -188,8 +160,6 @@ export function GlobeScene({
   const [localFiresEnabled, setLocalFiresEnabled] = useState(firesEnabledProp);
   const [localAircraftEnabled, setLocalAircraftEnabled] = useState(aircraftEnabledProp);
   const [localMarketsEnabled, setLocalMarketsEnabled] = useState(marketsEnabledProp);
-  const [blinkState, setBlinkState] = useState(true);
-  const [activeTab, setActiveTab] = useState<'FEED' | 'MARKETS' | 'FLIGHTS'>('FEED');
 
   const cloudsEnabled = localCloudsEnabled;
   const weatherEnabled = localWeatherEnabled;
@@ -214,12 +184,6 @@ export function GlobeScene({
   const onReadyRef = useRef(onReady);
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
-
-  // Blink animation
-  useEffect(() => {
-    const interval = setInterval(() => setBlinkState(s => !s), 700);
-    return () => clearInterval(interval);
-  }, []);
 
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
@@ -412,57 +376,8 @@ export function GlobeScene({
     </button>
   );
 
-  // Glass Telemetry Card
-  const GlassCard = ({ id, value, delta, status }: { id: string; value: string; delta: string; status: string }) => (
-    <div className="flex flex-col gap-0.5 p-2 bg-slate-800/30 border border-slate-700/30 rounded-xl backdrop-blur-sm">
-      <span className="text-[7px] uppercase tracking-widest text-slate-500 font-mono">{id}</span>
-      <div className="flex items-center justify-between gap-1">
-        <span className="text-xs font-semibold text-white/90 font-mono">{value}</span>
-        <LedIndicator color={status === 'stable' ? '#34d399' : status === 'warn' ? '#fbbf24' : '#f87171'} size="sm" />
-      </div>
-      {delta && <span className={`text-[8px] font-mono ${delta.startsWith('+') ? 'text-emerald-400' : delta.startsWith('-') ? 'text-red-400' : 'text-slate-500'}`}>{delta}</span>}
-    </div>
-  );
-
-  // Glass Feed Source Item
-  const GlassFeedItem = ({ sourceId, label, status, color }: { sourceId: string; label: string; status: string; color: string }) => (
-    <div className="flex items-center gap-2.5 px-3 py-2 bg-slate-800/30 border border-slate-700/30 rounded-xl backdrop-blur-sm">
-      <div className="w-0.5 h-full rounded-full" style={{ backgroundColor: color, boxShadow: `0 0 8px ${color}60` }} />
-      <div className="flex-1 min-w-0">
-        <div className="text-[7px] text-slate-500 uppercase tracking-wider truncate font-mono">SOURCE: {sourceId}</div>
-        <div className="text-[9px] text-slate-300 truncate">{label}</div>
-      </div>
-      <LedIndicator color={status === 'live' ? '#34d399' : '#fbbf24'} active={status === 'live'} size="sm" />
-    </div>
-  );
-
-  // Glass Tab Button
-  const GlassTab = ({ label, active, onClick }: { label: string; active: boolean; onClick: () => void }) => (
-    <button
-      onClick={onClick}
-      className={`px-3 py-1.5 text-[9px] uppercase tracking-wider rounded-lg border transition-all duration-200 ${
-        active
-          ? 'bg-slate-700/40 border-slate-500/50 text-white/90 shadow-[0_0_12px_rgba(100,116,139,0.12)]'
-          : 'bg-slate-900/30 border-slate-700/30 text-slate-500 hover:border-slate-600/40'
-      }`}
-    >
-      {label}
-    </button>
-  );
-
-  // Glass Filter Pill
-  const GlassPill = ({ label, active }: { label: string; active?: boolean }) => (
-    <button className={`px-2.5 py-1 text-[8px] uppercase tracking-wider rounded-lg border transition-all duration-200 ${
-      active
-        ? 'bg-slate-700/30 border-slate-500/40 text-white/80'
-        : 'bg-slate-900/30 border-slate-700/25 text-slate-500 hover:border-slate-600/40'
-    }`}>
-      {label}
-    </button>
-  );
-
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
+    <div className="relative w-full h-full overflow-hidden bg-black">
 
       {/* Globe container */}
       <div ref={containerRef} className="absolute inset-0 z-10">
@@ -473,7 +388,7 @@ export function GlobeScene({
             height={dimensions.height}
             globeImageUrl={globeImageUrl}
             bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
-            backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
+            backgroundImageUrl="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/ESO_-_Milky_Way.jpg/1280px-ESO_-_Milky_Way.jpg"
             {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
             showGraticules={true}
             showAtmosphere={true}
@@ -523,166 +438,6 @@ export function GlobeScene({
             } as any}
           />
         )}
-      </div>
-
-      {/* DESKTOP: Left Panel - Aerospace Console */}
-      <div className="hidden lg:flex flex-col gap-2.5 absolute top-3 left-3 z-20 w-72">
-        {/* Global Tension Header */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <Crosshair className="w-4 h-4 text-slate-400" />
-              <span className="text-[10px] uppercase tracking-[0.15em] text-white/80 font-medium">Global Tension</span>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 bg-slate-800/50 border border-slate-600/30 rounded-lg">
-              <Wifi className="w-3 h-3 text-slate-400" />
-              <span className={`text-[8px] uppercase tracking-wider font-mono ${blinkState ? 'text-emerald-400' : 'text-emerald-400/30'}`}>ONLINE</span>
-            </div>
-          </div>
-
-          {/* LED Segment Bar */}
-          <div className="flex items-center justify-center gap-1.5 mb-2">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <LedIndicator key={i} color="#34d399" active={i === 0} size="lg" />
-            ))}
-          </div>
-          <div className="text-center text-[8px] uppercase tracking-widest text-slate-500">
-            Telemetry: Nominal
-          </div>
-          <div className="text-center text-[9px] text-slate-400 mt-1">
-            Kp Index: <span className="text-white/90 font-semibold font-mono">{kpIndex.toFixed(1)}</span>
-          </div>
-        </div>
-
-        {/* LIVE DATA STREAM */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Signal className="w-3 h-3 text-sky-400 animate-pulse" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-sky-400 font-medium">Live Data Stream</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {MOCK_LIVE_INDICES.slice(0, 6).map((item, i) => (
-              <GlassCard key={i} {...item} />
-            ))}
-          </div>
-        </div>
-
-        {/* ARCHIVED TELEMETRY */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Database className="w-3 h-3 text-slate-500" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-slate-500 font-medium">Archived Telemetry</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {MOCK_LIVE_INDICES.slice(6).map((item, i) => (
-              <GlassCard key={i} {...item} />
-            ))}
-          </div>
-        </div>
-
-        {/* Layer Control */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Layers className="w-3 h-3 text-slate-400" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Layer Control</span>
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            <GlassToggle icon={Shield} label="ATMOS" checked={localAtmosphereEnabled} onChange={setLocalAtmosphereEnabled} ledColor="#22d3ee" />
-            <GlassToggle icon={Cloud} label="WEATHER" checked={localWeatherEnabled} onChange={setLocalWeatherEnabled} ledColor="#38bdf8" />
-            <GlassToggle icon={Flame} label="FIRES" checked={localFiresEnabled} onChange={setLocalFiresEnabled} ledColor="#fb923c" />
-            <GlassToggle icon={Plane} label="AIRCRAFT" checked={localAircraftEnabled} onChange={setLocalAircraftEnabled} ledColor="#e2e8f0" />
-            <GlassToggle icon={Radio} label="CLOUDS" checked={localCloudsEnabled} onChange={setLocalCloudsEnabled} ledColor="#94a3b8" />
-            <GlassToggle icon={TrendingUp} label="MARKETS" checked={localMarketsEnabled} onChange={setLocalMarketsEnabled} ledColor="#34d399" />
-          </div>
-        </div>
-      </div>
-
-      {/* DESKTOP: Right Panel - Feeds Console */}
-      <div className="hidden lg:flex flex-col gap-2.5 absolute top-3 right-3 z-20 w-64">
-        {/* Node Status */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3.5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <Cpu className="w-3 h-3 text-slate-400" />
-              <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Node Status</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <LedIndicator color="#34d399" active={blinkState} size="md" />
-              <span className="text-[7px] text-slate-400 uppercase">ACTIVE</span>
-            </div>
-          </div>
-          <div className="text-3xl font-bold text-white/90">
-            {visiblePoints.length}
-          </div>
-          <div className="text-[8px] uppercase tracking-widest text-slate-500">Active Data Nodes</div>
-        </div>
-
-        {/* Data Feeds */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Satellite className="w-3 h-3 text-sky-400" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-sky-400 font-medium">Data Feeds</span>
-          </div>
-          <div className="space-y-1.5">
-            {MOCK_FEEDS.map((feed, i) => (
-              <GlassFeedItem key={i} {...feed} />
-            ))}
-          </div>
-        </div>
-
-        {/* Data Filters */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Gauge className="w-3 h-3 text-slate-400" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Data Filters</span>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {['OSINT', 'NASA', 'QUAKES', 'FLIGHTS', 'MARKETS'].map((f, i) => (
-              <GlassPill key={i} label={f} active={i < 3} />
-            ))}
-          </div>
-        </div>
-
-        {/* Feed Tabs */}
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3">
-          <div className="flex gap-1.5 mb-2">
-            {(['FEED', 'MARKETS', 'FLIGHTS'] as const).map((tab) => (
-              <GlassTab key={tab} label={tab} active={activeTab === tab} onClick={() => setActiveTab(tab)} />
-            ))}
-          </div>
-          <div className="text-[8px] text-slate-500 uppercase tracking-wider">
-            {activeTab === 'FEED' && 'Real-time intelligence stream active'}
-            {activeTab === 'MARKETS' && 'Global market data pipeline online'}
-            {activeTab === 'FLIGHTS' && 'Aircraft tracking radar enabled'}
-          </div>
-        </div>
-      </div>
-
-      {/* DESKTOP: Bottom - Telemetry Matrix */}
-      <div className="hidden lg:block absolute bottom-3 left-3 z-20">
-        <div className="bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-3 w-72">
-          <div className="flex items-center gap-2 mb-2.5">
-            <Activity className="w-3 h-3 text-slate-400" />
-            <span className="text-[8px] uppercase tracking-[0.12em] text-white/70 font-medium">Telemetry Matrix</span>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {[
-              { label: 'CONFLICT', color: '#ef4444' },
-              { label: 'FINANCE', color: '#fbbf24' },
-              { label: 'TECH', color: '#22d3ee' },
-              { label: 'GEOPOL', color: '#f97316' },
-              { label: 'QUAKE', color: '#facc15' },
-              { label: 'DAO NODE', color: '#e2e8f0' },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-1.5 p-2 bg-slate-800/30 border border-slate-700/30 rounded-xl">
-                <div className="w-2.5 h-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: item.color, boxShadow: `0 0 8px ${item.color}80, 0 0 16px ${item.color}40` }}
-                />
-                <span className="text-[7px] uppercase tracking-wider text-slate-400">{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       {/* MOBILE: Floating layers button */}
