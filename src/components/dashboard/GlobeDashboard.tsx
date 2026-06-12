@@ -51,7 +51,7 @@ export function GlobeDashboard() {
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-black overflow-hidden">
       {/* Crypto Ticker */}
-      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20">
+      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20 shrink-0">
         {cryptoPrices.map((c) => (
           <div key={c.id} className="flex items-center gap-1.5 shrink-0">
             <span className="font-mono font-bold text-amber-400">{c.symbol}</span>
@@ -64,12 +64,14 @@ export function GlobeDashboard() {
       </div>
 
       {/* Live Ticker */}
-      <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
+      <div className="shrink-0">
+        <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
+      </div>
 
-      {/* 3-Column HUD Layout */}
-      <div className="flex flex-1 min-h-0">
-        {/* LEFT SIDEBAR — 265px fixed */}
-        <div className="hidden lg:flex w-[265px] shrink-0 flex-col gap-2 p-2 overflow-y-auto no-scrollbar z-30">
+      {/* 3-Column HUD Layout — this row must fill remaining height */}
+      <div className="flex flex-1 min-h-0 relative">
+        {/* LEFT SIDEBAR — 265px fixed, above globe */}
+        <div className="hidden lg:flex w-[265px] shrink-0 flex-col gap-2 p-2 overflow-y-auto no-scrollbar z-20">
           <TacticalConsole />
           <LegendPanel
             visibleLayers={visibleLayers}
@@ -89,23 +91,20 @@ export function GlobeDashboard() {
           <NavigatePanel onNavigate={handleNavigate} />
         </div>
 
-        {/* CENTER COLUMN — Globe fills this entirely */}
-        <div className="flex-1 relative min-w-0 overflow-hidden">
-          {/* Globe 3D Canvas */}
-          <div className="absolute inset-0 pointer-events-auto">
-            <GlobeScene
-              onHotspotClick={setSelectedHotspot}
-              onReady={handleGlobeReady}
-              externalMarkers={eventMarkers}
-              cloudsEnabled={cloudsEnabled}
-              weatherEnabled={weatherEnabled}
-              firesEnabled={firesEnabled}
-              aircraftEnabled={aircraftEnabled}
-              marketsEnabled={marketsEnabled}
-            />
-          </div>
+        {/* CENTER COLUMN — Globe canvas fills this entirely */}
+        <div className="flex-1 min-w-0 relative">
+          <GlobeScene
+            onHotspotClick={setSelectedHotspot}
+            onReady={handleGlobeReady}
+            externalMarkers={eventMarkers}
+            cloudsEnabled={cloudsEnabled}
+            weatherEnabled={weatherEnabled}
+            firesEnabled={firesEnabled}
+            aircraftEnabled={aircraftEnabled}
+            marketsEnabled={marketsEnabled}
+          />
 
-          {/* Tension badge + hotspot popup — centered over globe only */}
+          {/* Tension badge — centered over globe only */}
           <GlobeOverlay
             selectedHotspot={selectedHotspot}
             onClose={() => setSelectedHotspot(null)}
@@ -115,22 +114,24 @@ export function GlobeDashboard() {
           />
 
           {/* Floating Markets Terminal Widget */}
-          <div className="absolute bottom-16 right-4 z-30">
+          <div className="absolute bottom-4 right-4 z-20">
             <MarketsTerminalMini />
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR — 280px fixed */}
+        {/* RIGHT SIDEBAR — 280px fixed, above globe */}
         <div className="hidden md:flex w-[280px] shrink-0 flex-col z-20">
           <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
         </div>
       </div>
 
       {/* OSINT Ticker Bar */}
-      <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
+      <div className="shrink-0">
+        <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
+      </div>
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30">
+      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30 shrink-0">
         <div className="text-slate-500">AEROSPACE · OSINT INTERFACE V2.0</div>
         <div className="flex gap-3">
           <span className="text-emerald-400">NASA ✓</span>
