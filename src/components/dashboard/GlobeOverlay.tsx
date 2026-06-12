@@ -43,7 +43,7 @@ export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquak
     return () => clearInterval(interval);
   }, []);
 
-  const tensionColor = tensionLevel > 70 ? "#ef4444" : tensionLevel > 40 ? "#fbbf24" : "#34d399";
+  const tensionColor = tensionLevel > 70 ? "#f87171" : tensionLevel > 40 ? "#fbbf24" : "#34d399";
   const tensionStatus = tensionLevel > 70 ? "CRITICAL" : tensionLevel > 40 ? "ELEVATED" : "NORMAL";
   const kpActive = (spaceWeather?.kpIndex || 0) > 4;
 
@@ -51,9 +51,9 @@ export function GlobeOverlay({ selectedHotspot, onClose, spaceWeather, earthquak
     <>
       {/* Global Tension Indicator (Floating Top Center) */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-        <div className="flex items-center gap-2.5 px-5 py-2 rounded-2xl bg-slate-950/60 backdrop-blur-2xl border border-slate-700/40 shadow-2xl shadow-blue-900/10">
+        <div className="flex items-center gap-2.5 px-4 py-1.5 rounded-2xl bg-slate-900/50 backdrop-blur-xl border border-slate-700/40">
           <span className="w-2 h-2 rounded-full animate-pulse" style={{ background: tensionColor, boxShadow: `0 0 8px ${tensionColor}80` }} />
-          <span className="text-[9px] font-mono text-[#b4c5b0] uppercase tracking-wider">Tension</span>
+          <span className="text-[9px] font-mono text-slate-400 uppercase tracking-wider">Tension</span>
           <span className="text-xs font-bold font-mono text-white/90" style={{ color: tensionColor }}>{Math.round(tensionLevel)}</span>
           <span className="text-[8px] font-mono uppercase" style={{ color: tensionColor }}>{tensionStatus}</span>
           {kpActive && (
@@ -88,8 +88,8 @@ function CountryPopup({ hotspot, onClose }: { hotspot: HotspotData; onClose?: ()
   const typeColor = TYPE_COLORS[hotspot.type] || "#fbbf24";
 
   return (
-    <div className="absolute top-14 right-3 z-50 w-64 animate-in fade-in slide-in-from-right-4 duration-300">
-      <div className="rounded-2xl overflow-hidden bg-slate-950/60 backdrop-blur-2xl border border-slate-700/40 shadow-2xl shadow-blue-900/10" style={{ borderColor: `${typeColor}33` }}>
+    <div className="absolute top-14 right-3 md:right-[430px] z-50 w-64 animate-in fade-in slide-in-from-right-4 duration-300">
+      <div className="rounded-2xl overflow-hidden bg-slate-900/60 backdrop-blur-xl border border-slate-700/40" style={{ borderColor: `${typeColor}33` }}>
         <div className="flex items-center justify-between px-3.5 py-2 border-b border-slate-700/25">
           <div className="flex items-center gap-1.5">
             <MapPin className="w-3 h-3" style={{ color: typeColor }} />

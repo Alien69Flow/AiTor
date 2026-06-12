@@ -9,6 +9,7 @@ import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
+import { Volume2 } from "lucide-react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
@@ -49,13 +50,13 @@ export function GlobeDashboard() {
   }, []);
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-black overflow-hidden">
+    <div className="flex flex-col flex-1 min-h-0 relative bg-black overflow-hidden">
       {/* Crypto Ticker */}
-      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20 shrink-0">
+      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20">
         {cryptoPrices.map((c) => (
           <div key={c.id} className="flex items-center gap-1.5 shrink-0">
             <span className="font-mono font-bold text-amber-400">{c.symbol}</span>
-            <span className="font-mono text-[#b4c5b0]">${c.price.toLocaleString()}</span>
+            <span className="font-mono text-slate-400">${c.price.toLocaleString()}</span>
             <span className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-emerald-400" : "text-red-400"}`}>
               {c.change24h >= 0 ? "+" : ""}{c.change24h.toFixed(1)}%
             </span>
@@ -64,35 +65,12 @@ export function GlobeDashboard() {
       </div>
 
       {/* Live Ticker */}
-      <div className="shrink-0">
-        <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
-      </div>
+      <LiveTicker spaceWeather={spaceWeather} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
-      {/* 3-Column HUD Layout — this row must fill remaining height */}
+      {/* Main content area */}
       <div className="flex flex-1 min-h-0 relative">
-        {/* LEFT SIDEBAR — 265px fixed, above globe */}
-        <div className="hidden lg:flex w-[265px] shrink-0 flex-col gap-2 p-2 overflow-y-auto no-scrollbar z-20">
-          <TacticalConsole />
-          <LegendPanel
-            visibleLayers={visibleLayers}
-            onToggleLayer={toggleLayer}
-            counts={counts}
-            cloudsEnabled={cloudsEnabled}
-            onToggleClouds={() => setCloudsEnabled(v => !v)}
-            weatherEnabled={weatherEnabled}
-            onToggleWeather={() => setWeatherEnabled(v => !v)}
-            firesEnabled={firesEnabled}
-            onToggleFires={() => setFiresEnabled(v => !v)}
-            aircraftEnabled={aircraftEnabled}
-            onToggleAircraft={() => setAircraftEnabled(v => !v)}
-            marketsEnabled={marketsEnabled}
-            onToggleMarkets={() => setMarketsEnabled(v => !v)}
-          />
-          <NavigatePanel onNavigate={handleNavigate} />
-        </div>
-
-        {/* CENTER COLUMN — Globe canvas fills this entirely */}
-        <div className="flex-1 min-w-0 relative">
+        {/* GLOBE 3D */}
+        <div className="absolute inset-0 z-0 pointer-events-auto">
           <GlobeScene
             onHotspotClick={setSelectedHotspot}
             onReady={handleGlobeReady}
@@ -103,35 +81,73 @@ export function GlobeDashboard() {
             aircraftEnabled={aircraftEnabled}
             marketsEnabled={marketsEnabled}
           />
+        </div>
 
-          {/* Tension badge — centered over globe only */}
-          <GlobeOverlay
-            selectedHotspot={selectedHotspot}
-            onClose={() => setSelectedHotspot(null)}
-            spaceWeather={spaceWeather}
-            earthquakeCount={earthquakes.length}
-            nasaEventCount={nasaEvents.length}
-          />
+        {/* OVERLAY: Tension badge + hotspot popup */}
+        <GlobeOverlay
+          selectedHotspot={selectedHotspot}
+          onClose={() => setSelectedHotspot(null)}
+          spaceWeather={spaceWeather}
+          earthquakeCount={earthquakes.length}
+          nasaEventCount={nasaEvents.length}
+        />
 
-          {/* Floating Markets Terminal Widget */}
-          <div className="absolute bottom-4 right-4 z-20">
-            <MarketsTerminalMini />
+        {/* LEFT PANELS */}
+        <div className="absolute top-3 left-3 z-30 space-y-2.5 pointer-events-none">
+          <div className="pointer-events-auto">
+            <TacticalConsole />
+          </div>
+          <div className="pointer-events-auto">
+            <LegendPanel
+              visibleLayers={visibleLayers}
+              onToggleLayer={toggleLayer}
+              counts={counts}
+              cloudsEnabled={cloudsEnabled}
+              onToggleClouds={() => setCloudsEnabled(v => !v)}
+              weatherEnabled={weatherEnabled}
+              onToggleWeather={() => setWeatherEnabled(v => !v)}
+              firesEnabled={firesEnabled}
+              onToggleFires={() => setFiresEnabled(v => !v)}
+              aircraftEnabled={aircraftEnabled}
+              onToggleAircraft={() => setAircraftEnabled(v => !v)}
+              marketsEnabled={marketsEnabled}
+              onToggleMarkets={() => setMarketsEnabled(v => !v)}
+            />
+          </div>
+          <div className="pointer-events-auto">
+            <NavigatePanel onNavigate={handleNavigate} />
           </div>
         </div>
 
-        {/* RIGHT SIDEBAR — 280px fixed, above globe */}
-        <div className="hidden md:flex w-[280px] shrink-0 flex-col z-20">
-          <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
+        {/* CENTER BOTTOM: Nav menu + Audio */}
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
+          <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-4">
+            <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300" />
+            {["Markets", "Feed", "Alerts", "Movers", "Global Tension"].map(item => (
+              <span key={item} className="text-[9px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer whitespace-nowrap transition-colors">
+                {item === "Markets" ? "🏦" : item === "Feed" ? "📰" : item === "Alerts" ? "🔔" : item === "Movers" ? "📈" : "🌐"} {item}
+              </span>
+            ))}
+            <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
+              <span className="text-[9px] font-mono text-slate-500">Tesla Layer</span>
+              <span className="text-[10px] font-mono font-bold text-purple-400">Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT PANEL: Chat Feed */}
+        <div className="absolute right-0 top-0 h-full z-20 pointer-events-none hidden md:block">
+          <div className="pointer-events-auto h-full">
+            <ChatFeedPanel earthquakes={earthquakes} nasaEvents={nasaEvents} osintEvents={osintEvents} />
+          </div>
         </div>
       </div>
 
       {/* OSINT Ticker Bar */}
-      <div className="shrink-0">
-        <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
-      </div>
+      <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
       {/* Status Bar */}
-      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30 shrink-0">
+      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30">
         <div className="text-slate-500">AEROSPACE · OSINT INTERFACE V2.0</div>
         <div className="flex gap-3">
           <span className="text-emerald-400">NASA ✓</span>

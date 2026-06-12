@@ -18,7 +18,7 @@ const REGIONS: Region[] = [
   { label: "Oceania", flag: "🇦🇺", lat: -25, lng: 135, altitude: 2.2 },
 ];
 
-const glass = "bg-slate-950/40 backdrop-blur-[24px] border border-slate-700/50 rounded-2xl shadow-2xl shadow-blue-900/10";
+const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl";
 
 interface NavigatePanelProps {
   onNavigate?: (lat: number, lng: number, altitude: number) => void;
@@ -30,7 +30,7 @@ export function NavigatePanel({ onNavigate }: NavigatePanelProps) {
   return (
     <div className={`${glass} w-[260px] overflow-hidden`}>
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-4 py-2.5">
-        <span className="text-[9px] uppercase tracking-wider text-[#b4c5b0] font-medium">
+        <span className="text-[9px] uppercase tracking-wider text-slate-400 font-medium">
           <Compass className="w-3 h-3 inline mr-1.5" />Navigate
         </span>
         {open ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
@@ -64,7 +64,7 @@ export function NavigatePanel({ onNavigate }: NavigatePanelProps) {
             ].map((item) => (
               <div key={item.label} className="flex items-center gap-2 text-[8px] px-2 py-1 bg-slate-800/20 border border-slate-700/20 rounded-lg">
                 <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: item.color, boxShadow: `0 0 6px ${item.color}60` }} />
-                <span className="text-[#b4c5b0]">{item.label}</span>
+                <span className="text-slate-400">{item.label}</span>
               </div>
             ))}
           </div>

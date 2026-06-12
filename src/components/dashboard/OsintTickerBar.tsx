@@ -49,10 +49,10 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
   };
 
   return (
-    <div className="bg-slate-950/80 backdrop-blur-xl border-t border-slate-700/25 px-3 py-1.5 flex items-center gap-3 z-30">
+    <div className="bg-slate-900/60 backdrop-blur-xl border-t border-slate-700/30 px-3 py-1.5 flex items-center gap-3 z-30">
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="text-[#fb923c]">▸</span>
-        <span className="text-[8px] font-mono uppercase tracking-wider text-[#b4c5b0]">OSINT FEED & TICKER</span>
+        <span className="w-1.5 h-1.5 rounded-full animate-pulse bg-sky-400" />
+        <span className="text-[8px] font-mono uppercase tracking-wider text-slate-400">OSINT FEED</span>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
@@ -60,7 +60,7 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
           {[...headlines, ...headlines].map((h, i) => (
             <div key={i} className="flex items-center gap-2 shrink-0">
               <span className="text-[9px] font-mono font-bold" style={{ color: tagColor(h.severity) }}>{h.tag}</span>
-              <span className="text-[9px] font-mono text-[#b4c5b0]">{h.text}</span>
+              <span className="text-[9px] font-mono text-slate-400">{h.text}</span>
               <span className="text-[8px] font-mono text-slate-600">{h.source} … {h.time}</span>
             </div>
           ))}
@@ -68,9 +68,8 @@ export function OsintTickerBar({ tickerItems = [], earthquakes = [], nasaEvents 
       </div>
 
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" style={{ boxShadow: "0 0 6px #34d39980" }} />
-        <span className="text-[8px] font-mono text-slate-500">OZONE LAYER:</span>
-        <span className="text-[8px] font-mono text-emerald-400 font-bold">[ONLINE]</span>
+        <span className="text-[8px] font-mono text-slate-500">STATUS:</span>
+        <span className="text-[8px] font-mono text-emerald-400 font-bold">ONLINE</span>
       </div>
     </div>
   );
