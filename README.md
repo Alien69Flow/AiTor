@@ -1,5 +1,5 @@
-# 🤖 AI Tor.v69
-Agentics WorkFlows RAG | Neural Intelligence Core
+# 🤖 AI Tor.v69 | Neural Intelligence Core
+Agentics Intel HUB OSINT RAG WorkFlows
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/Alien69Flow/Alien69Flow/main/Alien.gif" width="100" />
