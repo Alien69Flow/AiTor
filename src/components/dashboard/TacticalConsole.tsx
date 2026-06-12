@@ -2,16 +2,15 @@ import { useState } from "react";
 import { ChevronUp, ChevronDown, X } from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 
-const glass = "bg-slate-950/40 backdrop-blur-[24px] border border-slate-700/50 rounded-2xl font-mono shadow-2xl shadow-blue-900/10";
+const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl font-mono";
 
 export function TacticalConsole({ onClose }: { onClose?: () => void }) {
   const sw = useSpaceWeather();
   const [sections, setSections] = useState({ tension: true, noaa: true });
   const toggle = (k: "tension" | "noaa") => setSections(s => ({ ...s, [k]: !s[k] }));
 
-  const kpColor = sw.kpIndex >= 5 ? "#ef4444" : sw.kpIndex >= 4 ? "#fbbf24" : "#34d399";
+  const kpColor = sw.kpIndex > 5 ? "#f87171" : sw.kpIndex > 4 ? "#fbbf24" : "#34d399";
   const kpAlert = sw.kpIndex >= 4;
-  const accentBorder = kpAlert ? "border-l-2 border-[#ef4444]" : "border-l-2 border-emerald-500";
 
   const sparkPoints = Array.from({ length: 24 }, (_, i) => {
     const v = 20 + Math.sin(i * 0.6) * 15 + Math.random() * 10;
@@ -23,29 +22,29 @@ export function TacticalConsole({ onClose }: { onClose?: () => void }) {
   const gScale = sw.geomagneticStorm !== "none" ? sw.geomagneticStorm : "0";
 
   return (
-    <div className={`${glass} ${accentBorder} w-[260px] overflow-hidden`}>
+    <div className={`${glass} w-[260px] overflow-hidden`}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-700/30">
-        <span className="text-[10px] uppercase tracking-[0.12em] text-[#b4c5b0] font-medium">Tactical Overview</span>
+        <span className="text-[10px] uppercase tracking-[0.12em] text-white/70 font-medium">Tactical Overview</span>
         {onClose && <button onClick={onClose}><X className="w-3 h-3 text-slate-500 hover:text-slate-300" /></button>}
       </div>
 
       {/* GLOBAL TENSION */}
       <div className="border-b border-slate-700/25">
         <button onClick={() => toggle("tension")} className="w-full flex items-center justify-between px-4 py-2">
-          <span className="text-[9px] uppercase tracking-wider text-[#b4c5b0]">Global Tension</span>
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">Global Tension</span>
           {sections.tension ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
         </button>
         {sections.tension && (
           <div className="px-4 pb-3">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-bold" style={{ color: kpColor }}>Kp: {sw.kpIndex.toFixed(1)}</span>
+              <span className="text-2xl font-bold" style={{ color: kpColor }}>Kp: {sw.kpIndex.toFixed(1)}</span>
               {kpAlert && (
-                <span className="text-[9px] animate-pulse" style={{ color: "#ef4444" }}>[ALERT] TESLA CONVERGENCE</span>
+                <span className="text-[9px] text-amber-400 animate-pulse">[ALERT] Tesla Convergence</span>
               )}
             </div>
             {!kpAlert && (
-              <span className="text-[9px] text-emerald-400/70">Magnetic field nominal</span>
+              <span className="text-[9px] text-slate-500">Magnetic field nominal</span>
             )}
           </div>
         )}
@@ -54,25 +53,25 @@ export function TacticalConsole({ onClose }: { onClose?: () => void }) {
       {/* NOAA SPACE WEATHER */}
       <div>
         <button onClick={() => toggle("noaa")} className="w-full flex items-center justify-between px-4 py-2">
-          <span className="text-[9px] uppercase tracking-wider text-[#b4c5b0]">NOAA Space Weather</span>
+          <span className="text-[9px] uppercase tracking-wider text-slate-400">NOAA Space Weather</span>
           {sections.noaa ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
         </button>
         {sections.noaa && (
           <div className="px-4 pb-3 space-y-2.5">
             {/* Indices */}
             <div className="grid grid-cols-2 gap-2">
-              <div className="p-2 bg-slate-950/60 border border-slate-700/30 rounded-xl">
+              <div className="p-2 bg-slate-800/30 border border-slate-700/25 rounded-xl">
                 <div className="text-[8px] text-slate-500 uppercase mb-1">Realtime Indices</div>
                 <div className="text-sm font-bold text-emerald-400">{rScale} | {sScale} | {gScale}</div>
               </div>
-              <div className="p-2 bg-slate-950/60 border border-slate-700/30 rounded-xl">
+              <div className="p-2 bg-slate-800/30 border border-slate-700/25 rounded-xl">
                 <div className="text-[8px] text-slate-500 uppercase mb-1">Reactive Indices</div>
-                <div className="text-sm font-bold text-[#b4c5b0]">32 | Bx Ka</div>
+                <div className="text-sm font-bold text-slate-400">32 | Bx Ka</div>
               </div>
             </div>
 
             {/* Mini Chart */}
-            <div className="bg-slate-950/60 border border-slate-700/30 rounded-xl p-2.5">
+            <div className="bg-slate-800/30 border border-slate-700/25 rounded-xl p-2.5">
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-[7px] text-slate-500 uppercase">Notenungs</span>
                 <div className="flex items-center gap-2">

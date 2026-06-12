@@ -1,8 +1,6 @@
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { useCryptoPrices } from "@/hooks/useCryptoPrices";
 
-const glass = "bg-slate-950/40 backdrop-blur-[24px] border border-slate-700/50 rounded-2xl shadow-2xl shadow-blue-900/10";
+const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl";
 
 function MiniSparkline({ change }: { change: number }) {
   const dir = change >= 1 ? "up" : change <= -1 ? "down" : "flat";
@@ -21,63 +19,37 @@ function MiniSparkline({ change }: { change: number }) {
 
 export function MarketsTerminalMini() {
   const { prices } = useCryptoPrices();
-  const [collapsed, setCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState<"dashboard" | "glint">("dashboard");
 
   return (
-    <div className={`${glass} w-[260px] overflow-hidden`}>
-      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-700/25">
-        <div className="flex gap-1">
-          <button
-            onClick={() => setActiveTab("dashboard")}
-            className={`px-2 py-0.5 text-[8px] rounded-md font-mono transition-colors ${
-              activeTab === "dashboard" ? "bg-slate-700/40 text-white/90" : "text-slate-500 hover:text-slate-400"
-            }`}
-          >
-            Dashboard
-          </button>
-          <button
-            onClick={() => setActiveTab("glint")}
-            className={`px-2 py-0.5 text-[8px] rounded-md font-mono transition-colors ${
-              activeTab === "glint" ? "bg-slate-700/40 text-white/90" : "text-slate-500 hover:text-slate-400"
-            }`}
-          >
-            Glint.trade
-          </button>
-        </div>
-        <button onClick={() => setCollapsed(!collapsed)} className="p-0.5 hover:bg-slate-700/40 rounded-lg transition-colors">
-          {collapsed ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
-        </button>
+    <div className={`${glass} w-[240px] overflow-hidden`}>
+      <div className="flex items-center justify-between px-3.5 py-2.5 border-b border-slate-700/25">
+        <span className="text-[9px] uppercase tracking-[0.12em] text-white/70 font-medium">Markets Terminal</span>
       </div>
 
-      {!collapsed && (
-        <>
-          {/* Table header */}
-          <div className="grid grid-cols-4 px-3 py-1.5 text-[7px] text-[#b4c5b0] uppercase border-b border-slate-700/20 font-mono">
-            <span>Pair</span><span>Trend</span><span>Price</span><span className="text-right">24h</span>
-          </div>
+      {/* Table header */}
+      <div className="grid grid-cols-4 px-3.5 py-1.5 text-[7px] text-slate-500 uppercase border-b border-slate-700/20">
+        <span>Pair</span><span>Trend</span><span>Price</span><span className="text-right">24h</span>
+      </div>
 
-          {/* Rows */}
-          <div className="divide-y divide-slate-700/15">
-            {prices.slice(0, 5).map(coin => {
-              const changeColor = coin.change24h >= 0 ? "#34d399" : "#f87171";
-              const changeStr = coin.change24h >= 0 ? `+${coin.change24h.toFixed(1)}%` : `${coin.change24h.toFixed(1)}%`;
-              return (
-                <div key={coin.id} className="grid grid-cols-4 items-center px-3 py-1.5 hover:bg-slate-800/30 transition-colors">
-                  <span className="text-[9px] font-mono text-white/80 font-bold">{coin.symbol}</span>
-                  <MiniSparkline change={coin.change24h} />
-                  <span className="text-[9px] font-mono text-[#b4c5b0]">${coin.price >= 1000 ? (coin.price / 1000).toFixed(1) + "k" : coin.price.toFixed(2)}</span>
-                  <span className="text-[9px] font-mono text-right" style={{ color: changeColor }}>{changeStr}</span>
-                </div>
-              );
-            })}
-          </div>
+      {/* Rows */}
+      <div className="divide-y divide-slate-700/15">
+        {prices.slice(0, 5).map(coin => {
+          const changeColor = coin.change24h >= 0 ? "#34d399" : "#f87171";
+          const changeStr = coin.change24h >= 0 ? `+${coin.change24h.toFixed(1)}%` : `${coin.change24h.toFixed(1)}%`;
+          return (
+            <div key={coin.id} className="grid grid-cols-4 items-center px-3.5 py-1.5 hover:bg-slate-800/30 transition-colors">
+              <span className="text-[9px] font-mono text-white/80 font-bold">{coin.symbol}</span>
+              <MiniSparkline change={coin.change24h} />
+              <span className="text-[9px] font-mono text-slate-400">${coin.price >= 1000 ? (coin.price / 1000).toFixed(1) + "k" : coin.price.toFixed(2)}</span>
+              <span className="text-[9px] font-mono text-right" style={{ color: changeColor }}>{changeStr}</span>
+            </div>
+          );
+        })}
+      </div>
 
-          <div className="px-3 py-1.5 text-[7px] text-slate-600 border-t border-slate-700/20 font-mono">
-            CoinGecko · Live
-          </div>
-        </>
-      )}
+      <div className="px-3.5 py-1.5 text-[7px] text-slate-600 border-t border-slate-700/20 font-mono">
+        CoinGecko · Live
+      </div>
     </div>
   );
 }
