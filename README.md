@@ -30,6 +30,11 @@ Este es el núcleo cerebral de **AlienFlowSpace DAO**. Una inteligencia neuronal
 ## 👽 Conexión Alien
 Esta IA no es solo código; es una extensión del Arquitecto. Está optimizada para la resiliencia y el análisis de activos del mundo real (RWA).
 
+---
+### ⚡ "Si quieres encontrar los secretos del universo, piensa en energía, frecuencia y vibración." — N. Tesla
+---
+"El universo no es solo lo que ves, es lo que eres capaz de procesar." — Alien69Flow
+
 ## ⚙️ Arranque del Núcleo (Quick Start)
 ```bash
 # Clonar el repositorio y acceder
@@ -41,8 +46,3 @@ npm install
 
 # Iniciar entorno de desarrollo local (Frecuencia 3-6-9)
 npm run dev
-
----
-### ⚡ "Si quieres encontrar los secretos del universo, piensa en energía, frecuencia y vibración." — N. Tesla
----
-"El universo no es solo lo que ves, es lo que eres capaz de procesar." — Alien69Flow
