@@ -377,7 +377,7 @@ export function GlobeScene({
   );
 
   return (
-    <div className="relative w-full h-full overflow-hidden bg-black">
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
 
       {/* Globe container */}
       <div ref={containerRef} className="absolute inset-0 z-10">

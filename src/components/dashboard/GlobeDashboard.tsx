@@ -9,7 +9,6 @@ import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
-import { Volume2, TrendingUp, Newspaper, Bell, ChartBar as BarChart3, Globe as GlobeIcon, Zap } from "lucide-react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
@@ -48,8 +47,6 @@ export function GlobeDashboard() {
   const handleGlobeReady = useCallback((navFn: (lat: number, lng: number, altitude: number) => void) => {
     globeNavRef.current = navFn;
   }, []);
-
-  const kpColor = spaceWeather.kpIndex >= 5 ? "#ef4444" : spaceWeather.kpIndex >= 4 ? "#fbbf24" : "#34d399";
 
   return (
     <div className="flex flex-col flex-1 min-h-0 bg-black overflow-hidden">
@@ -120,30 +117,6 @@ export function GlobeDashboard() {
           {/* Floating Markets Terminal Widget */}
           <div className="absolute bottom-16 right-4 z-30">
             <MarketsTerminalMini />
-          </div>
-
-          {/* Bottom Nav Bar — centered over globe */}
-          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-            <div className="bg-slate-950/60 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-3 shadow-2xl shadow-blue-900/10">
-              <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300 transition-colors" />
-              {[
-                { label: "Markets", Icon: TrendingUp },
-                { label: "Feed", Icon: Newspaper },
-                { label: "Alerts", Icon: Bell },
-                { label: "Movers", Icon: BarChart3 },
-                { label: "Global Tension", Icon: GlobeIcon },
-              ].map(({ label, Icon }) => (
-                <button key={label} className="flex items-center gap-1 text-[9px] font-mono text-[#b4c5b0] hover:text-white/90 cursor-pointer whitespace-nowrap transition-colors">
-                  <Icon className="w-3 h-3" />
-                  {label}
-                </button>
-              ))}
-              <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
-                <Zap className="w-3 h-3" style={{ color: kpColor }} />
-                <span className="text-[9px] font-mono text-[#b4c5b0]">Capa Tesla</span>
-                <span className="text-[10px] font-mono font-bold" style={{ color: kpColor }}>Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
-              </div>
-            </div>
           </div>
         </div>
 
