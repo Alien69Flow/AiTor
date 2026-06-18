@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* AlienFlow Design System - Phosphorescent Green Neon Theme */
+/* AlienFlow Design System - Premium World-Class Terminal UI */
 
 @layer base {
   html, body {
@@ -48,6 +48,10 @@
     /* Custom glow colors */
     --glow-green: 120 100% 50%;
     --glow-lime: 75 100% 34%;
+    --glow-cyan: 187 100% 50%;
+    --glow-amber: 43 100% 50%;
+    --glow-red: 0 100% 70%;
+    --glow-purple: 270 100% 70%;
 
     --sidebar-background: 220 25% 5%;
     --sidebar-foreground: 120 100% 50%;
@@ -97,45 +101,6 @@
     --sidebar-border: 220 20% 12%;
     --sidebar-ring: 120 100% 50%;
   }
-
-  .light {
-    --background: 45 30% 97%;
-    --foreground: 220 20% 15%;
-
-    --card: 0 0% 100%;
-    --card-foreground: 220 20% 15%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 20% 15%;
-
-    --primary: 120 100% 35%;
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 75 100% 30%;
-    --secondary-foreground: 0 0% 100%;
-
-    --muted: 45 20% 92%;
-    --muted-foreground: 220 15% 40%;
-
-    --accent: 75 100% 30%;
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-
-    --border: 45 20% 85%;
-    --input: 45 20% 90%;
-    --ring: 120 100% 35%;
-
-    --sidebar-background: 45 25% 95%;
-    --sidebar-foreground: 220 20% 15%;
-    --sidebar-primary: 120 100% 35%;
-    --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 75 100% 30%;
-    --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 45 20% 88%;
-    --sidebar-ring: 120 100% 35%;
-  }
 }
 
 @layer base {
@@ -152,27 +117,38 @@
   }
 }
 
-/* Terminal Matrix Effects */
+/* ============================================
+   Premium Animation System
+   ============================================ */
+
+/* Glow pulse for primary elements */
 @keyframes glow-pulse {
-  0%, 100% { 
-    box-shadow: 
-      0 0 20px hsla(120, 100%, 50%, 0.3), 
+  0%, 100% {
+    box-shadow:
+      0 0 20px hsla(120, 100%, 50%, 0.3),
       0 0 40px hsla(120, 100%, 50%, 0.15),
-      inset 0 0 20px hsla(120, 100%, 50%, 0.05); 
+      inset 0 0 20px hsla(120, 100%, 50%, 0.05);
   }
-  50% { 
-    box-shadow: 
-      0 0 40px hsla(120, 100%, 50%, 0.5), 
+  50% {
+    box-shadow:
+      0 0 40px hsla(120, 100%, 50%, 0.5),
       0 0 80px hsla(120, 100%, 50%, 0.25),
-      inset 0 0 30px hsla(120, 100%, 50%, 0.1); 
+      inset 0 0 30px hsla(120, 100%, 50%, 0.1);
   }
 }
 
+@keyframes glow-pulse-subtle {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+/* Shimmer effect for loading states */
 @keyframes shimmer {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(200%); }
 }
 
+/* Glitch text effect */
 @keyframes text-glitch {
   0%, 100% { opacity: 1; transform: translateX(0); }
   10% { opacity: 0.8; transform: translateX(-2px); }
@@ -180,16 +156,19 @@
   30% { opacity: 0.9; transform: translateX(0); }
 }
 
+/* Scanline effect */
 @keyframes scanline {
   0% { transform: translateY(-100%); }
   100% { transform: translateY(100vh); }
 }
 
+/* Magnetic pulse for geomagnetic indicators */
 @keyframes magnetic-pulse {
   0%, 100% { transform: scale(1); opacity: 0.3; }
   50% { transform: scale(1.05); opacity: 0.5; }
 }
 
+/* Float particle for background effects */
 @keyframes float-particle {
   0%, 100% { transform: translateY(0) translateX(0); }
   25% { transform: translateY(-10px) translateX(5px); }
@@ -197,6 +176,7 @@
   75% { transform: translateY(-15px) translateX(3px); }
 }
 
+/* Neon flicker for text */
 @keyframes neon-flicker {
   0%, 100% { opacity: 1; }
   92% { opacity: 1; }
@@ -204,6 +184,84 @@
   94% { opacity: 1; }
   96% { opacity: 0.9; }
   97% { opacity: 1; }
+}
+
+/* Fade in animation */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Slide in from right */
+@keyframes slide-in-right {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Slide in from left */
+@keyframes slide-in-left {
+  from { opacity: 0; transform: translateX(-16px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+/* Scale in animation */
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Pulse glow for LED indicators */
+@keyframes led-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 8px currentColor;
+  }
+  50% {
+    transform: scale(1.1);
+    box-shadow: 0 0 16px currentColor, 0 0 32px currentColor;
+  }
+}
+
+/* Breathing glow for panels */
+@keyframes breathing-glow {
+  0%, 100% {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  }
+  50% {
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(100,116,139,0.1);
+  }
+}
+
+/* Ticker animation */
+@keyframes ticker {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+/* Data stream animation */
+@keyframes data-stream {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+/* ============================================
+   Animation Utility Classes
+   ============================================ */
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out forwards;
+}
+
+.animate-slide-in-left {
+  animation: slide-in-left 0.3s ease-out forwards;
+}
+
+.animate-scale-in {
+  animation: scale-in 0.2s ease-out forwards;
 }
 
 .terminal-glow {
@@ -214,17 +272,57 @@
   animation: text-glitch 0.3s ease-in-out;
 }
 
+.panel-glow {
+  animation: breathing-glow 4s ease-in-out infinite;
+}
+
+.led-pulse {
+  animation: led-pulse 2s ease-in-out infinite;
+}
+
+.animate-ticker {
+  animation: ticker 60s linear infinite;
+}
+
+/* ============================================
+   Neon Text Effects
+   ============================================ */
+
 .neon-text-green {
-  text-shadow: 
+  text-shadow:
     0 0 5px hsl(120 100% 50% / 0.8),
     0 0 10px hsl(120 100% 50% / 0.6),
     0 0 20px hsl(120 100% 50% / 0.4);
   animation: neon-flicker 3s infinite;
 }
 
-/* Keep gold alias for backward compat */
+.neon-text-cyan {
+  text-shadow:
+    0 0 5px hsl(187 100% 50% / 0.8),
+    0 0 10px hsl(187 100% 50% / 0.6),
+    0 0 20px hsl(187 100% 50% / 0.4);
+  animation: neon-flicker 3s infinite;
+}
+
+.neon-text-amber {
+  text-shadow:
+    0 0 5px hsl(43 100% 50% / 0.8),
+    0 0 10px hsl(43 100% 50% / 0.6),
+    0 0 20px hsl(43 100% 50% / 0.4);
+  animation: neon-flicker 3s infinite;
+}
+
+.neon-text-red {
+  text-shadow:
+    0 0 5px hsl(0 100% 70% / 0.8),
+    0 0 10px hsl(0 100% 70% / 0.6),
+    0 0 20px hsl(0 100% 70% / 0.4);
+  animation: neon-flicker 3s infinite;
+}
+
+/* Backward compat aliases */
 .neon-text-gold {
-  text-shadow: 
+  text-shadow:
     0 0 5px hsl(120 100% 50% / 0.8),
     0 0 10px hsl(120 100% 50% / 0.6),
     0 0 20px hsl(120 100% 50% / 0.4);
@@ -232,28 +330,42 @@
 }
 
 .neon-text-lime {
-  text-shadow: 
+  text-shadow:
     0 0 5px hsl(75 100% 34% / 0.8),
     0 0 10px hsl(75 100% 34% / 0.6),
     0 0 20px hsl(75 100% 34% / 0.4);
   animation: neon-flicker 3s infinite;
 }
 
+/* ============================================
+   Border Glow Effects
+   ============================================ */
+
 .neon-border {
-  box-shadow: 
+  box-shadow:
     0 0 5px hsl(120 100% 50% / 0.5),
     0 0 10px hsl(120 100% 50% / 0.3),
     inset 0 0 5px hsl(120 100% 50% / 0.1);
 }
 
 .neon-border-gold {
-  box-shadow: 
+  box-shadow:
     0 0 5px hsl(120 100% 50% / 0.5),
     0 0 10px hsl(120 100% 50% / 0.3),
     inset 0 0 5px hsl(120 100% 50% / 0.1);
 }
 
-/* Scanlines overlay */
+.neon-border-cyan {
+  box-shadow:
+    0 0 5px hsl(187 100% 50% / 0.5),
+    0 0 10px hsl(187 100% 50% / 0.3),
+    inset 0 0 5px hsl(187 100% 50% / 0.1);
+}
+
+/* ============================================
+   Scanlines Overlay
+   ============================================ */
+
 .scanlines::after {
   content: '';
   position: absolute;
@@ -263,13 +375,16 @@
     0deg,
     transparent,
     transparent 2px,
-    hsl(120 100% 50% / 0.03) 2px,
-    hsl(120 100% 50% / 0.03) 4px
+    hsl(120 100% 50% / 0.015) 2px,
+    hsl(120 100% 50% / 0.015) 4px
   );
   z-index: 50;
 }
 
-/* HUD corners */
+/* ============================================
+   HUD Corners
+   ============================================ */
+
 .hud-corner::before,
 .hud-corner::after {
   content: '';
@@ -307,7 +422,10 @@
   border-top: none;
 }
 
-/* Glass effect */
+/* ============================================
+   Glass Effects
+   ============================================ */
+
 .glass {
   background: hsl(220 25% 8% / 0.7);
   backdrop-filter: blur(20px);
@@ -320,20 +438,65 @@
   -webkit-backdrop-filter: blur(30px);
 }
 
-/* Ticker animation */
-@keyframes ticker {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+.glass-premium {
+  background: linear-gradient(
+    135deg,
+    hsl(220 25% 12% / 0.6) 0%,
+    hsl(220 25% 8% / 0.8) 50%,
+    hsl(220 25% 12% / 0.6) 100%
+  );
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
 }
 
-.animate-ticker {
-  animation: ticker 60s linear infinite;
-}
+/* ============================================
+   Scrollbar Styling
+   ============================================ */
 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* Custom scrollbar for panels */
+.panel-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(220 15% 25%);
+  border-radius: 2px;
+}
+
+.panel-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 15% 35%);
+}
+
+/* ============================================
+   Focus States
+   ============================================ */
+
+.focus-glow:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(120 100% 50% / 0.5), 0 0 16px hsl(120 100% 50% / 0.2);
+}
+
+/* ============================================
+   Transition Utilities
+   ============================================ */
+
+.transition-panel {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-fast {
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }

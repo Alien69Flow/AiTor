@@ -5,11 +5,11 @@ import { GlobeScene, UnifiedHotspotData } from "../globe/GlobeScene";
 import { TacticalConsole } from "./TacticalConsole";
 import { LegendPanel, type LayerKey } from "./LegendPanel";
 import { NavigatePanel } from "./NavigatePanel";
-import { MarketsTerminalMini } from "./MarketsTerminalMini";
 import { ChatFeedPanel } from "./ChatFeedPanel";
 import { OsintTickerBar } from "./OsintTickerBar";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
-import { Volume2 } from "lucide-react";
+import { Volume2, TrendingUp, Radio, Bell, Activity, Globe, Layers, Cpu, Wifi, CircleCheck as CheckCircle2 } from "lucide-react";
+import { NavPill, LedIndicator, StatusBadge } from "./GlassPanels";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
@@ -51,14 +51,30 @@ export function GlobeDashboard() {
 
   return (
     <div className="flex flex-col flex-1 min-h-0 relative bg-black overflow-hidden">
-      {/* Crypto Ticker */}
-      <div className="flex items-center gap-4 px-3 py-1 border-b border-slate-700/25 text-[10px] overflow-x-auto bg-slate-950/80 backdrop-blur-xl no-scrollbar z-20">
+      {/* Crypto Ticker - Premium Header */}
+      <div className="flex items-center gap-5 px-4 py-2 border-b border-slate-700/30 overflow-x-auto backdrop-blur-2xl bg-slate-950/70 no-scrollbar z-20">
+        <div className="flex items-center gap-2 shrink-0">
+          <Cpu className="w-4 h-4 text-amber-400" />
+          <span className="text-[9px] uppercase tracking-wider text-slate-500 font-medium">
+            Live Markets
+          </span>
+        </div>
         {cryptoPrices.map((c) => (
-          <div key={c.id} className="flex items-center gap-1.5 shrink-0">
-            <span className="font-mono font-bold text-amber-400">{c.symbol}</span>
-            <span className="font-mono text-slate-400">${c.price.toLocaleString()}</span>
-            <span className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-              {c.change24h >= 0 ? "+" : ""}{c.change24h.toFixed(1)}%
+          <div
+            key={c.id}
+            className="flex items-center gap-2 shrink-0 px-2 py-1 rounded-lg bg-slate-800/30 border border-slate-700/20"
+          >
+            <span className="font-mono font-bold text-amber-400 text-[11px]">
+              {c.symbol}
+            </span>
+            <span className="font-mono text-slate-300 text-[10px]">
+              ${c.price.toLocaleString()}
+            </span>
+            <span
+              className={`font-mono text-[9px] ${c.change24h >= 0 ? "text-emerald-400" : "text-red-400"}`}
+            >
+              {c.change24h >= 0 ? "+" : ""}
+              {c.change24h.toFixed(1)}%
             </span>
           </div>
         ))}
@@ -119,18 +135,29 @@ export function GlobeDashboard() {
           </div>
         </div>
 
-        {/* CENTER BOTTOM: Nav menu + Audio */}
+        {/* CENTER BOTTOM: Premium Nav Dock */}
         <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto">
-          <div className="bg-slate-900/50 backdrop-blur-xl border border-slate-700/40 rounded-2xl px-4 py-2 flex items-center gap-4">
-            <Volume2 className="w-3.5 h-3.5 text-slate-500 cursor-pointer hover:text-slate-300" />
-            {["Markets", "Feed", "Alerts", "Movers", "Global Tension"].map(item => (
-              <span key={item} className="text-[9px] font-mono text-slate-500 hover:text-slate-300 cursor-pointer whitespace-nowrap transition-colors">
-                {item === "Markets" ? "🏦" : item === "Feed" ? "📰" : item === "Alerts" ? "🔔" : item === "Movers" ? "📈" : "🌐"} {item}
+          <div className="flex items-center gap-2 px-4 py-2 rounded-2xl backdrop-blur-2xl border border-slate-700/40 bg-slate-900/60 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+            <Volume2 className="w-4 h-4 text-slate-500 cursor-pointer hover:text-slate-300 transition-colors" />
+            <div className="w-px h-5 bg-slate-700/40 mx-1" />
+            <NavPill icon={TrendingUp} label="Markets" />
+            <NavPill icon={Radio} label="Feed" active />
+            <NavPill icon={Bell} label="Alerts" />
+            <NavPill icon={Activity} label="Movers" />
+            <NavPill icon={Globe} label="Tension" highlight={spaceWeather.kpIndex > 4 ? "#c084fc" : undefined} />
+            <div className="w-px h-5 bg-slate-700/40 mx-1" />
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-800/40 border border-slate-700/30">
+              <Layers className="w-3.5 h-3.5 text-cyan-400" />
+              <span className="text-[9px] text-slate-400 uppercase tracking-wider">Layers</span>
+              <span className="text-xs font-mono font-bold text-cyan-400">
+                {[
+                  cloudsEnabled,
+                  weatherEnabled,
+                  firesEnabled,
+                  aircraftEnabled,
+                  marketsEnabled,
+                ].filter(Boolean).length}
               </span>
-            ))}
-            <div className="flex items-center gap-1.5 ml-2 border-l border-slate-700/30 pl-3">
-              <span className="text-[9px] font-mono text-slate-500">Tesla Layer</span>
-              <span className="text-[10px] font-mono font-bold text-purple-400">Kp: {spaceWeather.kpIndex.toFixed(1)}</span>
             </div>
           </div>
         </div>
@@ -146,13 +173,33 @@ export function GlobeDashboard() {
       {/* OSINT Ticker Bar */}
       <OsintTickerBar tickerItems={tickerItems} earthquakes={earthquakes} nasaEvents={nasaEvents} />
 
-      {/* Status Bar */}
-      <div className="flex items-center justify-between px-4 py-1 border-t border-slate-700/25 text-[8px] bg-slate-950/80 backdrop-blur-xl font-mono text-slate-600 z-30">
-        <div className="text-slate-500">AEROSPACE · OSINT INTERFACE V2.0</div>
-        <div className="flex gap-3">
-          <span className="text-emerald-400">NASA ✓</span>
-          <span className="text-emerald-400">USGS ✓</span>
-          <span className="text-emerald-400">NOAA ✓</span>
+      {/* Status Bar - Premium Footer */}
+      <div className="flex items-center justify-between px-5 py-2 border-t border-slate-700/30 bg-slate-950/70 backdrop-blur-2xl z-30">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Wifi className="w-3.5 h-3.5 text-slate-500" />
+            <span className="text-[9px] text-slate-400 uppercase tracking-wider font-medium">
+              Aerospace OSINT Interface
+            </span>
+          </div>
+          <div className="text-[8px] text-slate-600 font-mono">v2.0.1</div>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-800/40 border border-slate-700/20">
+            <LedIndicator color="#34d399" active size="xs" />
+            <span className="text-[9px] text-slate-400 font-mono">NASA</span>
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+          </div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-800/40 border border-slate-700/20">
+            <LedIndicator color="#34d399" active size="xs" />
+            <span className="text-[9px] text-slate-400 font-mono">USGS</span>
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+          </div>
+          <div className="flex items-center gap-2 px-2 py-1 rounded-lg bg-slate-800/40 border border-slate-700/20">
+            <LedIndicator color="#34d399" active size="xs" />
+            <span className="text-[9px] text-slate-400 font-mono">NOAA</span>
+            <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+          </div>
         </div>
       </div>
     </div>
