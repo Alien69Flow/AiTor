@@ -26,7 +26,23 @@ import type { UAPSighting } from "@/hooks/useUAPSightings";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 
-const CESIUM_TOKEN = import.meta.env.VITE_CESIUM_TOKEN || "";
+// Cesium Ion token MUST NOT live in the client bundle. We fetch a
+// short-lived access token from the `cesium-tiles` edge function at
+// runtime (see fetchCesiumToken below).
+const SUPABASE_URL_BASE =
+  (import.meta.env.VITE_SUPABASE_URL as string) ||
+  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
+
+async function fetchCesiumToken(): Promise<string> {
+  try {
+    const r = await fetch(`${SUPABASE_URL_BASE}/functions/v1/cesium-tiles`);
+    if (!r.ok) return "";
+    const d = await r.json();
+    return (d?.accessToken as string) || "";
+  } catch {
+    return "";
+  }
+}
 
 const TACTICAL_COLORS: Record<string, string> = {
   finance: "#FFD700", tech: "#FFD700", uap: "#00FF41", ufo: "#00FF41",
@@ -99,7 +115,10 @@ export function CesiumGlobe({
   // Initialize viewer once
   useEffect(() => {
     if (!containerRef.current) return;
-    Ion.defaultAccessToken = CESIUM_TOKEN;
+    // Token is assigned async; viewer init does not block on it.
+    fetchCesiumToken().then((tok) => {
+      if (tok) Ion.defaultAccessToken = tok;
+    });
 
     const viewer = new CesiumViewer(containerRef.current, {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
