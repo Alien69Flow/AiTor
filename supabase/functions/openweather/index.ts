@@ -6,6 +6,36 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+async function requireUser(req: Request): Promise<Response | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_ANON_KEY")!,
+    { global: { headers: { Authorization: authHeader } } },
+  );
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supabase.auth.getClaims(token);
+  if (error || !data?.claims?.sub) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
+
+function isCoord(v: string | null, max: number): boolean {
+  if (!v) return false;
+  const n = Number(v);
+  return Number.isFinite(n) && Math.abs(n) <= max;
+}
+
 const KEY = Deno.env.get("OPENWEATHER_API_KEY");
 
 async function fetchOne(lat: string, lon: string) {
@@ -27,6 +57,9 @@ async function fetchOne(lat: string, lon: string) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
+    const authFail = await requireUser(req);
+    if (authFail) return authFail;
+
     if (!KEY) {
       return new Response(JSON.stringify({ error: "OPENWEATHER_API_KEY missing" }), {
         status: 500,
@@ -36,7 +69,10 @@ Deno.serve(async (req) => {
     const url = new URL(req.url);
     const points = url.searchParams.get("points");
     if (points) {
-      const parsed = points.split(";").map((s) => s.split(",")).filter((p) => p.length === 2);
+      const parsed = points
+        .split(";")
+        .map((s) => s.split(","))
+        .filter((p) => p.length === 2 && isCoord(p[0], 90) && isCoord(p[1], 180));
       // Cap at 60 to respect OWM free tier (60 req/min)
       const capped = parsed.slice(0, 60);
       const out = await Promise.all(capped.map(([la, lo]) => fetchOne(la, lo).catch(() => null)));
@@ -46,13 +82,13 @@ Deno.serve(async (req) => {
     }
     const lat = url.searchParams.get("lat");
     const lon = url.searchParams.get("lon");
-    if (!lat || !lon) {
-      return new Response(JSON.stringify({ error: "lat/lon or points required" }), {
+    if (!isCoord(lat, 90) || !isCoord(lon, 180)) {
+      return new Response(JSON.stringify({ error: "valid lat/lon or points required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const data = await fetchOne(lat, lon);
+    const data = await fetchOne(lat!, lon!);
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
     });
