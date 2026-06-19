@@ -158,12 +158,6 @@ export function GlobeScene({
   onReadyRef.current = onReady;
   const { kpIndex } = useSpaceWeather();
 
-  // Blink animation
-  useEffect(() => {
-    const interval = setInterval(() => setBlinkState(s => !s), 700);
-    return () => clearInterval(interval);
-  }, []);
-
   const atmosphereColor = kpIndex >= 4 ? "#ff00ff" : "#00ffff";
   const atmosphereAlt = kpIndex >= 6 ? 0.45 : kpIndex >= 4 ? 0.35 : 0.25;
   const auroraRings = getAuroraRings(kpIndex);
