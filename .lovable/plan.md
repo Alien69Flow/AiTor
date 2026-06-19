@@ -1,136 +1,90 @@
+## Diagnóstico actual (pestaña Globe)
 
-Objetivo confirmado: primero recuperar producción, luego conectar la capa OSINT unificada al Globe sin romper `react-globe.gl`, `ResizeObserver` ni la atmósfera/controles actuales.
+`GlobeDashboard.tsx` apila paneles fijos sobre el globo sin reservar espacio:
 
-1. Lo que he verificado en el repo
-- El error público encaja con el cliente generado de backend: `src/integrations/supabase/client.ts` depende de `import.meta.env.VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` en build time.
-- La pestaña OSINT ya existe y `SystemTab` carga `OsintConsole`, que usa `useOsintIntel` y la función `osint-aggregator`.
-- `useUnifiedIntel` existe, pero `GlobeDashboard` sigue consumiendo `useRealTimeData`.
-- El globo todavía hace fetch directo dentro de `GlobeScene.tsx` a USGS/OpenSky, así que hoy no hay una unificación real de marcadores.
-- `ChatFeedPanel` y `OsintTickerBar` todavía consumen solo USGS/NASA, no Firecrawl.
+- **Izquierda (top-3 left-3):** `TacticalConsole` + `LegendPanel` + `NavigatePanel` apilados en columna → en mobile cubren todo el ancho y tapan el planeta entero.
+- **Derecha:** `ChatFeedPanel` ancho fijo (`hidden md:block`), siempre visible en desktop.
+- **Centro-abajo:** Nav dock + `OsintTickerBar` + status footer ocupan ~120 px de alto del globo.
+- **Arriba:** Crypto ticker + `LiveTicker` añaden otra franja.
+- En mobile no hay paneles colapsables: o todo visible o nada. La columna izquierda llega hasta media pantalla.
 
-2. FASE 1 — Reparación del pipeline de producción
-Paso 1.1 — Sincronización de entorno publicado
-- Validar que el frontend publicado reciba las variables restauradas del backend integrado.
-- Forzar un publish limpio del frontend para regenerar el bundle con:
-  - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_PUBLISHABLE_KEY`
-- No tocar `src/integrations/supabase/client.ts`, `.env` ni `types.ts`.
+Resultado: en móvil el planeta queda como una franja de 30 % en el centro; en desktop la consola izquierda solapa la parte oeste del globo.
 
-Paso 1.2 — Endurecer puntos secundarios que aún dependen de env directo
-- Revisar y normalizar los accesos directos a `import.meta.env` que no pasan por el cliente integrado, para evitar futuras roturas en producción.
-- Prioridad:
-  - `src/hooks/useOsintFeed.ts`
-  - `src/services/agentTools.ts`
+## Objetivo (basado en la referencia "Gemini_G")
 
-Paso 1.3 — Verificación post-build
-- Confirmar que `aitor.lovable.app` deja de lanzar `supabaseUrl is required`.
-- Confirmar que la app monta `Index` y la pestaña `System > OSINT` abre sin pantalla negra.
+- Planeta siempre como protagonista, centrado y sin solapes verticales con el dock inferior.
+- Paneles laterales **colapsables a un icono-rail** (rail de 44 px) en desktop; el contenido se abre on-demand.
+- En mobile, los paneles se convierten en **bottom-sheets / drawers** disparados desde una barra inferior con iconos (Tactical, Legend, Navigate, Feed, Markets).
+- Top: un único ticker compacto (combinar crypto + OSINT) con altura ≤ 36 px.
+- Bottom dock: agrupa nav dock + status en una sola barra de 48 px con glass.
 
-Archivos implicados en esta fase
-- `src/hooks/useOsintFeed.ts`
-- `src/services/agentTools.ts`
-- Publicación frontend limpia
+## Cambios de código
 
-3. FASE 2 — Verificación de OSINT en System
-Paso 2.1 — Comprobar cadena completa
-- `SystemTab` → `OsintConsole` → `useOsintIntel` → `osint-aggregator`
-- Validar estados: loading, error, lastUpdate y render de eventos.
+### 1. `GlobeDashboard.tsx` — nuevo layout responsivo
+- Detectar `useIsMobile()`.
+- **Desktop (≥ md):**
+  - Rail izquierdo (w-12) con 3 iconos: Tactical / Legend / Navigate. Click expande un panel flotante (w-72) hacia la derecha, con cierre.
+  - Rail derecho (w-12) con icono Feed → expande `ChatFeedPanel` (w-80) o se cierra.
+  - Dock inferior centrado mantiene Markets/Feed/Alerts/Movers/Tension pero pasa a altura compacta 40 px.
+  - Solo un panel lateral abierto a la vez por lado (estado controlado).
+- **Mobile (< md):**
+  - Ocultar rails y paneles flotantes.
+  - Añadir `MobileGlobeBar` fijo abajo: iconos Tactical, Legend, Navigate, Feed, Markets. Tap abre `Sheet` (shadcn) desde abajo con el panel correspondiente.
+  - Ticker superior queda en una sola línea (max-h-9), con `truncate` y `no-scrollbar`.
+  - `LiveTicker` y `OsintTickerBar` se fusionan en un único componente `UnifiedTicker` con tabs (Crypto | OSINT) para no apilar dos barras.
 
-Paso 2.2 — Ajustes mínimos si falla la consola OSINT
-- Revisar shape de respuesta del agregador y consistencia de categorías/severidad.
-- Mantener la UI actual; solo corregir integración si hiciera falta.
+### 2. Componentes nuevos
+- `src/components/dashboard/GlobePanelRail.tsx` — rail vertical con icon buttons + estado `openId | null`.
+- `src/components/dashboard/MobileGlobeBar.tsx` — bottom bar móvil + `Sheet` por panel.
+- `src/components/dashboard/UnifiedTicker.tsx` — fusiona crypto + OSINT en una sola fila colapsable.
 
-Archivos implicados
-- `src/components/dashboard/SystemTab.tsx`
-- `src/components/dashboard/OsintConsole.tsx`
-- `src/hooks/useOsintIntel.ts`
-- `src/hooks/useUnifiedIntel.ts`
-- `supabase/functions/osint-aggregator/index.ts`
+### 3. Ajustes en paneles existentes
+- `TacticalConsole`, `LegendPanel`, `NavigatePanel`, `ChatFeedPanel`: aceptar prop `embedded?: boolean` para quitar el `position: absolute`/anchos fijos cuando viven dentro del rail-popover o del `Sheet` (full width en sheet, max-w-xs en popover desktop).
+- Quitar `hidden md:block` del `ChatFeedPanel`; ahora se controla por rail/sheet.
 
-4. FASE 3 — Migración del Globe al núcleo unificado
-Paso 3.1 — Hacer que `GlobeDashboard` use `useUnifiedIntel`
-- Sustituir `useRealTimeData()` por `useUnifiedIntel()`.
-- Tomar desde ahí:
-  - `cryptoPrices`
-  - `spaceWeather`
-  - `earthquakes`
-  - `nasaEvents`
-  - `osint`
-  - `events`
-  - `counts`
+### 4. Footer status
+- Pasar de barra siempre visible a chip integrado en el dock inferior (badges NASA/USGS/NOAA inline). Libera 32 px de alto.
 
-Paso 3.2 — Separar datos visuales del globo de la lógica de fetch interna
-- Refactorizar `GlobeScene.tsx` para que reciba los marcadores/capas por props desde el dashboard.
-- Eliminar fetches directos embebidos en `GlobeScene` para USGS/OpenSky en favor del flujo unificado.
-- Mantener intactos:
-  - controles de cámara
-  - `onReady`
-  - atmósfera Tesla
-  - moon/sun lighting
-  - `ResizeObserver`
+### 5. Z-index / pointer-events
+- Rails siempre encima (z-40). Paneles flotantes z-30 con backdrop-blur fuerte.
+- `pointer-events-none` en el contenedor del globo cuando un panel mobile-sheet está abierto, para evitar arrastres accidentales.
 
-Paso 3.3 — Definir contrato unificado de datos
-- Extender `useUnifiedIntel` para exponer:
-  - `mapLayers`
-  - `eventMarkers`
-  - `tickerItems`
-  - `counts`
-- Mantener `useRealTimeData` como base ambiental y usar `useOsintIntel` para la capa Firecrawl.
+## Estructura visual resultante
 
-Archivos implicados
-- `src/components/dashboard/GlobeDashboard.tsx`
-- `src/components/globe/GlobeScene.tsx`
-- `src/hooks/useUnifiedIntel.ts`
-- `src/hooks/useRealTimeData.ts`
+```text
+┌────────────────────────────────────────────────┐
+│ Unified ticker (36px) Crypto · OSINT · KP      │
+├──┬──────────────────────────────────────────┬──┤
+│▣ │                                          │▣ │
+│▣ │              🌍  PLANETA                  │▣ │   ← rails 48px
+│▣ │            (siempre centrado)            │▣ │
+│▣ │                                          │▣ │
+├──┴──────────────────────────────────────────┴──┤
+│ ◯ Markets ◯ Feed ◯ Alerts ◯ Tension · NASA/USGS │  ← dock 48px
+└────────────────────────────────────────────────┘
+```
 
-5. FASE 4 — Inyectar OSINT real en feed y ticker del Globe
-Paso 4.1 — ChatFeedPanel
-- Mezclar eventos Firecrawl con USGS/NASA/Crypto en el panel derecho.
-- Ordenar por frescura/severidad.
-- Mantener filtros y búsqueda.
+En mobile:
 
-Paso 4.2 — OsintTickerBar
-- Alimentarlo con `tickerItems` unificados.
-- Incluir headlines Firecrawl además de NOAA/NASA/USGS.
+```text
+┌──────────────────────────┐
+│ Unified ticker (32px)    │
+├──────────────────────────┤
+│                          │
+│        🌍 PLANETA         │
+│                          │
+├──────────────────────────┤
+│ ◯ Tact ◯ Leg ◯ Nav ◯ Feed │  ← bottom bar 56px
+└──────────────────────────┘
+   (cada icon abre Sheet)
+```
 
-Paso 4.3 — Marcadores del globo
-- Mapear eventos OSINT con coordenadas cuando existan.
-- Si un evento no trae coordenadas, mantenerlo en feed/ticker pero no forzarlo como punto geográfico.
+## Out of scope
+- No se cambia la lógica de datos (`useUnifiedIntel`, hooks de NASA/USGS).
+- No se toca el render 3D (`GlobeScene.tsx`).
+- No se redibujan los paneles internos, solo se hacen "embeddables".
 
-Archivos implicados
-- `src/components/dashboard/ChatFeedPanel.tsx`
-- `src/components/dashboard/OsintTickerBar.tsx`
-- `src/components/globe/GlobeScene.tsx`
-- `src/hooks/useUnifiedIntel.ts`
-
-6. Orden exacto de ejecución recomendado
-1. Reparar publicación frontend y regenerar build limpio
-2. Verificar `System > OSINT`
-3. Migrar `GlobeDashboard` a `useUnifiedIntel`
-4. Refactorizar `GlobeScene` para recibir datos por props
-5. Conectar OSINT al panel derecho y ticker inferior
-6. Validación final en preview y URL pública
-
-7. Criterios de aceptación
-- `aitor.lovable.app` carga sin `supabaseUrl is required`
-- `System > OSINT` muestra eventos reales
-- `GlobeDashboard` usa `useUnifiedIntel`
-- El globo recibe datos unificados sin perder interacción ni renderizado
-- `ChatFeedPanel` y `OsintTickerBar` muestran Firecrawl + USGS/NASA/Crypto
-- No se modifica `client.ts`, `types.ts` ni `.env`
-
-8. Archivos que modificaré
-- `src/hooks/useOsintFeed.ts`
-- `src/services/agentTools.ts`
-- `src/components/dashboard/SystemTab.tsx`
-- `src/components/dashboard/OsintConsole.tsx`
-- `src/hooks/useOsintIntel.ts`
-- `src/hooks/useUnifiedIntel.ts`
-- `src/hooks/useRealTimeData.ts`
-- `src/components/dashboard/GlobeDashboard.tsx`
-- `src/components/globe/GlobeScene.tsx`
-- `src/components/dashboard/ChatFeedPanel.tsx`
-- `src/components/dashboard/OsintTickerBar.tsx`
-- `supabase/functions/osint-aggregator/index.ts`
-
-Al aprobar este plan, la ejecución debe arrancar por la FASE 1 para recuperar la URL pública antes de tocar la migración completa del Globe.
+## Verificación
+1. Inspección visual en desktop y mobile (preview viewport switch).
+2. Confirmar que el globo queda visible al 100 % cuando los rails están colapsados.
+3. Confirmar que ningún panel solapa el planeta cuando se abre (los rails empujan vía popover, no encima del globo central).
