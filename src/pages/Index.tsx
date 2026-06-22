@@ -9,6 +9,7 @@ import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
 import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
 import { MarketsSection } from "@/components/dashboard/MarketsSection";
 import { SystemTab } from "@/components/dashboard/SystemTab";
+import { GlobalPaywall } from "@/components/dashboard/GlobalPaywall";
 
 export type TabId = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
 
@@ -44,6 +45,7 @@ const Index = () => {
       </div>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
+      <GlobalPaywall />
     </>
   );
 };

@@ -59,6 +59,11 @@ const DATA_SOURCES = [
   { key: "nasa", label: "NASA EONET", color: "#34d399", Icon: Satellite, status: "live" },
   { key: "noaa", label: "NOAA Space Weather", color: "#c084fc", Icon: Radio, status: "live" },
   { key: "owm", label: "OpenWeather", color: "#22d3ee", Icon: CloudRain, status: "standby" },
+  { key: "osky", label: "OpenSky Flights", color: "#e2e8f0", Icon: Plane, status: "live" },
+  { key: "tle", label: "Celestrak Satellites", color: "#60a5fa", Icon: Satellite, status: "soon" },
+  { key: "ocn", label: "NOAA Ocean (ERDDAP)", color: "#06b6d4", Icon: Activity, status: "soon" },
+  { key: "ais", label: "AIS Maritime", color: "#fb923c", Icon: Package, status: "soon" },
+  { key: "cam", label: "Earthcam Live", color: "#f472b6", Icon: Eye, status: "soon" },
 ] as const;
 
 interface LegendPanelProps {
@@ -178,6 +183,7 @@ export function LegendPanel({
           <div className="space-y-2">
             {DATA_SOURCES.map((src) => {
               const isLive = src.status === "live";
+              const isSoon = src.status === "soon";
               return (
                 <div
                   key={src.key}
@@ -195,8 +201,8 @@ export function LegendPanel({
                       {src.label}
                     </span>
                   </div>
-                  <StatusBadge variant={isLive ? "success" : "warning"} glow>
-                    {isLive ? "LIVE" : "STANDBY"}
+                  <StatusBadge variant={isLive ? "success" : isSoon ? "warning" : "warning"} glow={isLive}>
+                    {isLive ? "LIVE" : isSoon ? "SOON" : "STANDBY"}
                   </StatusBadge>
                 </div>
               );
