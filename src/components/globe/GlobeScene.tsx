@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
+import { supabase } from "@/integrations/supabase/client";
 import {
   createAtmosphereShell,
   createAuroraCurtains,
@@ -315,11 +316,49 @@ export function GlobeScene({
 
   useEffect(() => {
     if (!weatherEnabled) { setWeatherHeat([]); return; }
-    setWeatherHeat(Array.from({ length: 15 }, () => ({
-      lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
-      lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
-      weight: Math.random() * 0.6 + 0.2,
-    })));
+    let cancelled = false;
+    // Sample grid of cities — real cloud cover from OpenWeather edge function.
+    const SAMPLE = [
+      [40.4, -3.7], [41.65, -0.88], [48.8, 2.3], [51.5, -0.1], [52.5, 13.4],
+      [55.7, 37.6], [35.6, 139.6], [22.3, 114.1], [1.35, 103.8], [28.6, 77.2],
+      [-23.5, -46.6], [40.7, -74.0], [34.0, -118.2], [-33.9, 151.2], [-1.3, 36.8],
+      [19.4, -99.1], [30.0, 31.2], [25.2, 55.3], [37.7, -122.4], [59.3, 18.0],
+    ];
+    const pts = SAMPLE.map(([lat, lon]) => `${lat},${lon}`).join(";");
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke("openweather", {
+          method: "GET",
+          // edge function expects ?points=lat,lon;lat,lon — invoke serializes via body, so we hit the URL ourselves
+        });
+        // supabase.functions.invoke doesn't expose query params; do a manual fetch with the user JWT
+        if (error || !Array.isArray(data)) throw new Error("fallback");
+      } catch {
+        // ignore — manual fetch below
+      }
+      try {
+        const { data: sess } = await supabase.auth.getSession();
+        const token = sess?.session?.access_token;
+        if (!token) throw new Error("anon"); // anonymous users get synthetic
+        const url = `https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/openweather?points=${encodeURIComponent(pts)}`;
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error(String(res.status));
+        const arr = await res.json();
+        if (cancelled || !Array.isArray(arr)) return;
+        setWeatherHeat(arr.map((p: any) => ({
+          lat: p.lat, lng: p.lon, weight: Math.max(0.15, (p.clouds ?? 30) / 100),
+        })));
+      } catch {
+        // Synthetic fallback (anon users / quota exhausted)
+        if (cancelled) return;
+        setWeatherHeat(Array.from({ length: 15 }, () => ({
+          lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
+          lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
+          weight: Math.random() * 0.6 + 0.2,
+        })));
+      }
+    })();
+    return () => { cancelled = true; };
   }, [weatherEnabled]);
 
   const visiblePoints = pointsData.filter((p: any) => {

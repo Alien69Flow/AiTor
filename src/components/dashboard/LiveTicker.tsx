@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
+import { useCryptoPrices } from "@/hooks/useCryptoPrices";
 
 interface TickerItem {
   text: string;
@@ -25,6 +26,7 @@ interface LiveTickerProps {
 export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: LiveTickerProps) {
   const [lastUpdate, setLastUpdate] = useState(0);
   const prevStormRef = useRef(false);
+  const { prices } = useCryptoPrices();
 
   const tickerItems: TickerItem[] = [];
 
@@ -91,8 +93,26 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
   return (
     <div className="w-full flex items-center gap-3 px-3 py-1 bg-slate-900/50 backdrop-blur-xl border-b border-slate-700/25 text-[9px]">
       <div className="flex items-center gap-1.5 shrink-0">
-        <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" style={{ boxShadow: '0 0 8px #38bdf880' }} />
-        <span className="text-sky-400 tracking-wider uppercase font-bold text-[9px]">LIVE</span>
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ boxShadow: '0 0 8px #ef4444cc' }} />
+        <span className="text-red-500 tracking-wider uppercase font-bold text-[9px]">LIVE</span>
+      </div>
+
+      {/* Crypto strip — compact, scrolls with the page width */}
+      <div className="hidden sm:flex items-center gap-2.5 shrink-0 pr-2 border-r border-slate-700/30">
+        {prices.slice(0, 5).map((c) => {
+          const up = c.change24h >= 0;
+          return (
+            <div key={c.id} className="flex items-center gap-1 font-mono">
+              <span className="text-slate-300 font-bold text-[9px]">{c.symbol}</span>
+              <span className="text-slate-400 text-[9px]">
+                ${c.price >= 1 ? c.price.toLocaleString(undefined, { maximumFractionDigits: 0 }) : c.price.toFixed(3)}
+              </span>
+              <span className={`text-[8px] ${up ? "text-emerald-400" : "text-red-400"}`}>
+                {up ? "▲" : "▼"}{Math.abs(c.change24h).toFixed(1)}%
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <div className="flex-1 overflow-hidden relative">
@@ -110,7 +130,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <span className="text-sky-400 font-bold text-[10px] font-mono">{tickerItems.length} SIG</span>
+        <span className="text-red-400 font-bold text-[10px] font-mono">{tickerItems.length} SIG</span>
         <span className="text-slate-500 font-mono text-[10px]">{lastUpdate}s</span>
       </div>
     </div>
