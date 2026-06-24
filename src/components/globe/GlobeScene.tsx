@@ -162,6 +162,13 @@ export function GlobeScene({
   const [localFiresEnabled, setLocalFiresEnabled] = useState(firesEnabledProp);
   const [localAircraftEnabled, setLocalAircraftEnabled] = useState(aircraftEnabledProp);
   const [localMarketsEnabled, setLocalMarketsEnabled] = useState(marketsEnabledProp);
+  // OpenWeatherMap raster tile overlays (semitransparent shells).
+  const [owmLayers, setOwmLayers] = useState({
+    clouds: false,
+    precipitation: false,
+    wind: false,
+    pressure: false,
+  });
 
   const cloudsEnabled = localCloudsEnabled;
   const weatherEnabled = localWeatherEnabled;
@@ -177,6 +184,9 @@ export function GlobeScene({
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
+  const owmMeshesRef = useRef<Record<string, THREE.Mesh | null>>({
+    clouds: null, precipitation: null, wind: null, pressure: null,
+  });
   const sceneEnhanced = useRef(false);
   const auroraRef = useRef<THREE.Group | null>(null);
   const vanAllenRef = useRef<THREE.Group | null>(null);
@@ -276,6 +286,103 @@ export function GlobeScene({
     };
     animateClouds();
   }, [atmosphereColor, kpIndex]);
+
+  // ---- OpenWeatherMap tile overlays --------------------------------------
+  // Build one transparent sphere shell per OWM layer, textured by stitching
+  // z=2 (16 tiles) into a 1024x512 equirectangular canvas via the
+  // openweather edge-function tile proxy. Layers toggle independently.
+  useEffect(() => {
+    if (!globeRef.current) return;
+    const scene = globeRef.current.scene?.();
+    if (!scene) return;
+
+    const Z = 2;
+    const N = 1 << Z; // 4
+    const TILE = 256;
+    const W = TILE * N; // 1024
+    const H = TILE * N; // 1024 — Web Mercator square; we crop poles when wrapping
+    const PROXY = "https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/openweather";
+
+    type LayerKey = "clouds" | "precipitation" | "wind" | "pressure";
+    const LAYER_PARAM: Record<LayerKey, string> = {
+      clouds: "clouds_new",
+      precipitation: "precipitation_new",
+      wind: "wind_new",
+      pressure: "pressure_new",
+    };
+    const RADII: Record<LayerKey, number> = {
+      clouds: 100.9,
+      precipitation: 101.0,
+      wind: 101.1,
+      pressure: 101.2,
+    };
+
+    let disposed = false;
+    const loaded = new Set<LayerKey>();
+
+    async function buildLayer(key: LayerKey) {
+      if (disposed || loaded.has(key) || owmMeshesRef.current[key]) return;
+      loaded.add(key);
+      const canvas = document.createElement("canvas");
+      canvas.width = W; canvas.height = H;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      // Transparent background.
+      ctx.clearRect(0, 0, W, H);
+      const tasks: Promise<void>[] = [];
+      for (let x = 0; x < N; x++) {
+        for (let y = 0; y < N; y++) {
+          const url = `${PROXY}?tile=${LAYER_PARAM[key]}&z=${Z}&x=${x}&y=${y}`;
+          tasks.push(new Promise<void>((resolve) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => { try { ctx.drawImage(img, x * TILE, y * TILE); } catch { /* ignore */ } resolve(); };
+            img.onerror = () => resolve();
+            img.src = url;
+          }));
+        }
+      }
+      await Promise.all(tasks);
+      if (disposed) return;
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.needsUpdate = true;
+      const geo = new THREE.SphereGeometry(RADII[key], 96, 64);
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.6,
+        depthWrite: false,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.name = `owm_${key}`;
+      mesh.visible = owmLayers[key];
+      // Web Mercator tiles align with equator when rotated -90° around Y in
+      // three-globe's coordinate frame.
+      mesh.rotation.y = -Math.PI / 2;
+      scene.add(mesh);
+      owmMeshesRef.current[key] = mesh;
+    }
+
+    (Object.keys(owmLayers) as LayerKey[]).forEach((k) => {
+      if (owmLayers[k]) buildLayer(k);
+      const mesh = owmMeshesRef.current[k];
+      if (mesh) mesh.visible = owmLayers[k];
+    });
+
+    return () => { disposed = true; };
+  }, [owmLayers, sceneEnhanced.current]);
+
+  // Expose OWM layer toggles on window so the existing layer-control panel
+  // can flip them without prop drilling. (Picked up by LegendPanel button.)
+  useEffect(() => {
+    (window as any).__owmToggle = (key: "clouds" | "precipitation" | "wind" | "pressure") => {
+      setOwmLayers((s) => ({ ...s, [key]: !s[key] }));
+    };
+    (window as any).__owmState = owmLayers;
+    return () => { /* keep handler — globe persists for app lifetime */ };
+  }, [owmLayers]);
+  // ------------------------------------------------------------------------
 
   useEffect(() => {
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];

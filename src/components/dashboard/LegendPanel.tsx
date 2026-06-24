@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Layers,
   Activity,
@@ -7,6 +7,8 @@ import {
   CloudRain,
   Wind,
   Cloud,
+  Droplets,
+  Gauge,
   Flame,
   Plane,
   TrendingUp,
@@ -147,6 +149,29 @@ export function LegendPanel({
     },
   ];
 
+  // OpenWeatherMap raster tile overlays (clouds / precip / wind / pressure).
+  // Globe exposes a toggle on window.__owmToggle and current state on
+  // window.__owmState — bridged here so the panel stays decoupled.
+  const [owm, setOwm] = useState<{ clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
+    clouds: false, precipitation: false, wind: false, pressure: false,
+  });
+  useEffect(() => {
+    const id = setInterval(() => {
+      const s = (window as any).__owmState;
+      if (s) setOwm({ ...s });
+    }, 400);
+    return () => clearInterval(id);
+  }, []);
+  const toggleOwm = (k: "clouds" | "precipitation" | "wind" | "pressure") => {
+    (window as any).__owmToggle?.(k);
+  };
+  const owmToggles = [
+    { key: "clouds", label: "OWM Clouds", color: "#7dd3fc", Icon: Cloud },
+    { key: "precipitation", label: "OWM Rain", color: "#38bdf8", Icon: Droplets },
+    { key: "wind", label: "OWM Wind", color: "#a7f3d0", Icon: Wind },
+    { key: "pressure", label: "OWM Pressure", color: "#fbbf24", Icon: Gauge },
+  ] as const;
+
   return (
     <GlassPanel
       icon={Layers}
@@ -222,6 +247,23 @@ export function LegendPanel({
                 color={t.color}
                 active={t.enabled}
                 onChange={() => t.onToggle?.()}
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* OpenWeatherMap raster tiles */}
+        <div>
+          <SectionTitle>OpenWeather Tiles</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            {owmToggles.map((t) => (
+              <ToggleRow
+                key={t.key}
+                icon={t.Icon}
+                label={t.label}
+                color={t.color}
+                active={owm[t.key]}
+                onChange={() => toggleOwm(t.key)}
               />
             ))}
           </div>
