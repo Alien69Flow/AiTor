@@ -29,3 +29,12 @@ verify_jwt = false
 
 [functions.openweather]
 verify_jwt = false
+
+[functions.agenticworkflows]
+verify_jwt = false
+
+[functions.skills-ingest]
+verify_jwt = false
+
+[functions.noaa-space-weather]
+verify_jwt = false
