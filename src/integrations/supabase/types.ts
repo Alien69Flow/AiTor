@@ -98,11 +98,44 @@ export type Database = {
         }
         Relationships: []
       }
+      user_credits: {
+        Row: {
+          paid_tier: Database["public"]["Enums"]["credit_tier"]
+          reset_at: string
+          updated_at: string
+          used: number
+          user_id: string
+        }
+        Insert: {
+          paid_tier?: Database["public"]["Enums"]["credit_tier"]
+          reset_at?: string
+          updated_at?: string
+          used?: number
+          user_id: string
+        }
+        Update: {
+          paid_tier?: Database["public"]["Enums"]["credit_tier"]
+          reset_at?: string
+          updated_at?: string
+          used?: number
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      consume_credits: {
+        Args: { _cost: number }
+        Returns: {
+          allowed: boolean
+          limit: number
+          tier: Database["public"]["Enums"]["credit_tier"]
+          used: number
+        }[]
+      }
       match_skills_documents: {
         Args: {
           match_count?: number
@@ -122,7 +155,7 @@ export type Database = {
       }
     }
     Enums: {
-      [_ in never]: never
+      credit_tier: "registered" | "basic" | "pro" | "quantum"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -249,6 +282,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      credit_tier: ["registered", "basic", "pro", "quantum"],
+    },
   },
 } as const
