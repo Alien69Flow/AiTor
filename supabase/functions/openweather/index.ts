@@ -1,34 +1,11 @@
 // OpenWeather proxy — keeps OPENWEATHER_API_KEY server-side.
 // GET /openweather?lat=..&lon=..  -> current weather JSON
 // GET /openweather?points=lat,lon;lat,lon  -> batched array
+// GET /openweather?tile=clouds_new&z=2&x=1&y=1  -> PNG raster tile (proxied)
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
-
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-async function requireUser(req: Request): Promise<Response | null> {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  const supa = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } },
-  );
-  const token = authHeader.replace("Bearer ", "");
-  const { data, error } = await supa.auth.getUser(token);
-  if (error || !data?.user?.id) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  return null;
-}
 
 function isCoord(v: string | null, max: number): boolean {
   if (!v) return false;
@@ -37,6 +14,13 @@ function isCoord(v: string | null, max: number): boolean {
 }
 
 const KEY = Deno.env.get("OPENWEATHER_API_KEY");
+const ALLOWED_TILE_LAYERS = new Set([
+  "clouds_new",
+  "precipitation_new",
+  "wind_new",
+  "pressure_new",
+  "temp_new",
+]);
 
 async function fetchOne(lat: string, lon: string) {
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`;
@@ -57,8 +41,6 @@ async function fetchOne(lat: string, lon: string) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
-    const authFail = await requireUser(req);
-    if (authFail) return authFail;
     if (!KEY) {
       return new Response(JSON.stringify({ error: "OPENWEATHER_API_KEY missing" }), {
         status: 500,
@@ -66,6 +48,42 @@ Deno.serve(async (req) => {
       });
     }
     const url = new URL(req.url);
+
+    // Tile proxy: keeps the API key server-side while letting the globe
+    // overlay OpenWeatherMap raster layers (clouds/precip/wind/pressure).
+    const tile = url.searchParams.get("tile");
+    if (tile) {
+      if (!ALLOWED_TILE_LAYERS.has(tile)) {
+        return new Response(JSON.stringify({ error: "invalid tile layer" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const z = Number(url.searchParams.get("z"));
+      const x = Number(url.searchParams.get("x"));
+      const y = Number(url.searchParams.get("y"));
+      if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) ||
+          z < 0 || z > 6 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
+        return new Response(JSON.stringify({ error: "invalid z/x/y" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const upstream = `https://tile.openweathermap.org/map/${tile}/${z}/${x}/${y}.png?appid=${KEY}`;
+      const r = await fetch(upstream);
+      if (!r.ok) {
+        return new Response(JSON.stringify({ error: `tile upstream ${r.status}` }), {
+          status: r.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const buf = await r.arrayBuffer();
+      return new Response(buf, {
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "image/png",
+          "Cache-Control": "public, max-age=600",
+        },
+      });
+    }
+
     const points = url.searchParams.get("points");
     if (points) {
       const parsed = points
