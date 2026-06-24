@@ -118,6 +118,34 @@ interface GlobeSceneProps {
 
 const ZARAGOZA = { lat: 41.65, lon: -0.88 };
 
+// Dense world grid for live weather sampling (within OWM 60 req/min cap).
+const WEATHER_GRID: [number, number][] = [
+  [60, -150], [60, -100], [60, -50], [60, 0], [60, 50], [60, 100], [60, 150],
+  [40, -120], [40, -80], [40, -40], [40, 0], [40, 40], [40, 80], [40, 120],
+  [20, -100], [20, -60], [20, -20], [20, 20], [20, 60], [20, 100], [20, 140],
+  [0, -80], [0, -40], [0, 0], [0, 40], [0, 80], [0, 120], [0, 160],
+  [-20, -70], [-20, -30], [-20, 30], [-20, 100], [-20, 140],
+  [-40, -70], [-40, -20], [-40, 20], [-40, 60], [-40, 140], [-40, 170],
+];
+
+function tempColor(t: number | null): string {
+  if (t == null) return "#94a3b8";
+  // -20°C cold blue → 0 cyan → 15 green → 25 yellow → 35 red
+  if (t <= -10) return "#1e3a8a";
+  if (t <= 0) return "#3b82f6";
+  if (t <= 10) return "#06b6d4";
+  if (t <= 20) return "#22c55e";
+  if (t <= 28) return "#facc15";
+  if (t <= 34) return "#f97316";
+  return "#ef4444";
+}
+
+interface WeatherPoint {
+  lat: number; lon: number;
+  clouds: number; rain: number;
+  temp: number | null; wind: number | null; desc: string | null;
+}
+
 export function GlobeScene({
   onHotspotClick,
   onReady,
@@ -145,7 +173,7 @@ export function GlobeScene({
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
   const [arcsData, setArcsData] = useState<any[]>([]);
-  const [weatherHeat, setWeatherHeat] = useState<{ lat: number; lng: number; weight: number }[]>([]);
+  const [weatherPoints, setWeatherPoints] = useState<WeatherPoint[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
   const cloudsMeshRef = useRef<THREE.Mesh | null>(null);
@@ -317,44 +345,42 @@ export function GlobeScene({
   useEffect(() => {
     if (!weatherEnabled) { setWeatherHeat([]); return; }
     let cancelled = false;
-    // Sample grid of cities — real cloud cover from OpenWeather edge function.
-    const SAMPLE = [
-      [40.4, -3.7], [41.65, -0.88], [48.8, 2.3], [51.5, -0.1], [52.5, 13.4],
-      [55.7, 37.6], [35.6, 139.6], [22.3, 114.1], [1.35, 103.8], [28.6, 77.2],
-      [-23.5, -46.6], [40.7, -74.0], [34.0, -118.2], [-33.9, 151.2], [-1.3, 36.8],
-      [19.4, -99.1], [30.0, 31.2], [25.2, 55.3], [37.7, -122.4], [59.3, 18.0],
-    ];
-    const pts = SAMPLE.map(([lat, lon]) => `${lat},${lon}`).join(";");
+    const pts = WEATHER_GRID.map(([lat, lon]) => `${lat},${lon}`).join(";");
     (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("openweather", {
-          method: "GET",
-          // edge function expects ?points=lat,lon;lat,lon — invoke serializes via body, so we hit the URL ourselves
-        });
-        // supabase.functions.invoke doesn't expose query params; do a manual fetch with the user JWT
-        if (error || !Array.isArray(data)) throw new Error("fallback");
-      } catch {
-        // ignore — manual fetch below
-      }
       try {
         const { data: sess } = await supabase.auth.getSession();
         const token = sess?.session?.access_token;
-        if (!token) throw new Error("anon"); // anonymous users get synthetic
+        const anonKey = (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string)
+          || (import.meta.env.VITE_SUPABASE_ANON_KEY as string)
+          || "";
         const url = `https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/openweather?points=${encodeURIComponent(pts)}`;
-        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        const res = await fetch(url, {
+          headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${token || anonKey}`,
+          },
+        });
         if (!res.ok) throw new Error(String(res.status));
         const arr = await res.json();
         if (cancelled || !Array.isArray(arr)) return;
-        setWeatherHeat(arr.map((p: any) => ({
-          lat: p.lat, lng: p.lon, weight: Math.max(0.15, (p.clouds ?? 30) / 100),
+        setWeatherPoints(arr.map((p: any) => ({
+          lat: Number(p.lat), lon: Number(p.lon),
+          clouds: Number(p.clouds ?? 0),
+          rain: Number(p.rain ?? 0),
+          temp: typeof p.temp === "number" ? p.temp : null,
+          wind: typeof p.wind === "number" ? p.wind : null,
+          desc: p.desc ?? null,
         })));
       } catch {
-        // Synthetic fallback (anon users / quota exhausted)
+        // Synthetic fallback
         if (cancelled) return;
-        setWeatherHeat(Array.from({ length: 15 }, () => ({
-          lat: ZARAGOZA.lat + (Math.random() - 0.5) * 8,
-          lng: ZARAGOZA.lon + (Math.random() - 0.5) * 8,
-          weight: Math.random() * 0.6 + 0.2,
+        setWeatherPoints(WEATHER_GRID.map(([lat, lon]) => ({
+          lat, lon,
+          clouds: Math.round(Math.random() * 100),
+          rain: Math.random() < 0.3 ? Math.random() * 3 : 0,
+          temp: 30 - Math.abs(lat) * 0.6 + (Math.random() - 0.5) * 6,
+          wind: Math.random() * 12,
+          desc: null,
         })));
       }
     })();
@@ -372,8 +398,27 @@ export function GlobeScene({
   const getPointAlt = useCallback((d: any) => d.type === 'aircraft' ? 0.06 : d.type === 'quake' ? 0.008 : d.type === 'dao_node' ? 0.03 : 0.02 + d.intensity * 0.01, []);
   const getPointRadius = useCallback((d: any) => d.type === 'aircraft' ? 0.08 : d.type === 'quake' ? d.intensity * 0.5 : d.type === 'dao_node' ? 0.6 : d.intensity * 0.35, []);
 
+  // Build three weather visualization datasets:
+  // - cloudHeat (white) for cloud cover
+  // - rainHeat  (blue)  for precipitation
+  // - tempHtml  per-point colored badge for temperature
+  const cloudHeat = weatherEnabled
+    ? weatherPoints.filter(p => p.clouds > 10).map(p => ({ lat: p.lat, lng: p.lon, weight: Math.max(0.15, p.clouds / 100) }))
+    : [];
+  const rainHeat = weatherEnabled
+    ? weatherPoints.filter(p => p.rain > 0).map(p => ({ lat: p.lat, lng: p.lon, weight: Math.min(1, 0.4 + p.rain * 0.3) }))
+    : [];
+  const tempHtml = weatherEnabled
+    ? weatherPoints.filter(p => p.temp != null).map(p => ({ lat: p.lat, lng: p.lon, temp: p.temp as number }))
+    : [];
+
+  const heatmapsData = [
+    ...(cloudHeat.length ? [cloudHeat] : []),
+    ...(rainHeat.length ? [rainHeat] : []),
+  ];
+
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black">
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-black animate-fade-in">
 
       {/* Globe container */}
       <div ref={containerRef} className="absolute inset-0 z-10">
@@ -423,14 +468,25 @@ export function GlobeScene({
             ringRepeatPeriod="repeatPeriod"
             ringColor="color"
             {...{
-              heatmapsData: weatherEnabled && weatherHeat.length ? [weatherHeat] : [],
+              heatmapsData,
               heatmapPointLat: "lat",
               heatmapPointLng: "lng",
               heatmapPointWeight: "weight",
-              heatmapBandwidth: 2.5,
-              heatmapColorSaturation: 3.0,
+              heatmapBandwidth: 3.0,
+              heatmapColorSaturation: 2.4,
               heatmapBaseAltitude: 0.01,
-              heatmapTopAltitude: 0.08,
+              heatmapTopAltitude: 0.1,
+              htmlElementsData: tempHtml,
+              htmlLat: "lat",
+              htmlLng: "lng",
+              htmlAltitude: 0.04,
+              htmlElement: (d: any) => {
+                const el = document.createElement("div");
+                const c = tempColor(d.temp);
+                el.style.cssText = `pointer-events:none;font:600 9px/1 ui-monospace,monospace;color:#fff;background:${c};padding:2px 5px;border-radius:8px;box-shadow:0 0 8px ${c}aa,0 0 2px #000;transform:translate(-50%,-50%);opacity:0;animation:fade-in .6s ease-out forwards;`;
+                el.textContent = `${Math.round(d.temp)}°`;
+                return el;
+              },
             } as any}
           />
         )}
