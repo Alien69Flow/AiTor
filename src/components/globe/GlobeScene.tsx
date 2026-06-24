@@ -343,7 +343,7 @@ export function GlobeScene({
   useEffect(() => { if (atmosphereShellRef.current) atmosphereShellRef.current.visible = localAtmosphereEnabled; }, [localAtmosphereEnabled]);
 
   useEffect(() => {
-    if (!weatherEnabled) { setWeatherHeat([]); return; }
+    if (!weatherEnabled) { setWeatherPoints([]); return; }
     let cancelled = false;
     const pts = WEATHER_GRID.map(([lat, lon]) => `${lat},${lon}`).join(";");
     (async () => {
