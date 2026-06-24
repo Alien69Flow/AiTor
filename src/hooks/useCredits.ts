@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useAuth } from "./useAuth";
+import { supabase } from "@/integrations/supabase/client";
 
 export type CreditTier = "anonymous" | "registered" | "basic" | "pro" | "quantum";
 
@@ -51,6 +52,9 @@ export function openPaywall(reason?: string) {
 export function useCredits() {
   const { user } = useAuth();
   const [state, setState] = useState<CreditState>(() => load());
+  const [serverTier, setServerTier] = useState<"registered" | "basic" | "pro" | "quantum" | null>(null);
+  const [serverUsed, setServerUsed] = useState<number | null>(null);
+  const [serverLimit, setServerLimit] = useState<number | null>(null);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -60,30 +64,79 @@ export function useCredits() {
     return () => window.removeEventListener("storage", onStorage);
   }, []);
 
-  const tier: CreditTier =
-    state.paidTier ? state.paidTier : user ? "registered" : "anonymous";
-  const limit = TIER_LIMITS[tier];
-  const left = Math.max(0, limit - state.used);
+  // Hydrate server-side credit state for authenticated users — paid tier is
+  // never trusted from localStorage when a session exists.
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setServerTier(null);
+      setServerUsed(null);
+      setServerLimit(null);
+      return;
+    }
+    supabase
+      .from("user_credits")
+      .select("used, paid_tier")
+      .eq("user_id", user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return;
+        const t = (data?.paid_tier as "registered" | "basic" | "pro" | "quantum" | undefined) ?? "registered";
+        setServerTier(t);
+        setServerUsed(data?.used ?? 0);
+        setServerLimit(TIER_LIMITS[t]);
+      });
+    return () => { cancelled = true; };
+  }, [user]);
 
-  const consume = useCallback((cost = 1, reason?: string): boolean => {
+  const tier: CreditTier = user
+    ? (serverTier ?? "registered")
+    : "anonymous";
+  const limit = user ? (serverLimit ?? TIER_LIMITS[tier]) : TIER_LIMITS["anonymous"];
+  const used = user ? (serverUsed ?? 0) : state.used;
+  const left = Math.max(0, limit - used);
+
+  const consume = useCallback(async (cost = 1, reason?: string): Promise<boolean> => {
+    // Authenticated users: enforce server-side via consume_credits RPC.
+    if (user) {
+      const { data, error } = await supabase.rpc("consume_credits", { _cost: cost });
+      const row = Array.isArray(data) ? data[0] : data;
+      if (error || !row) {
+        openPaywall(reason ?? "Credit check failed. Please retry.");
+        return false;
+      }
+      const t = (row.tier as "registered" | "basic" | "pro" | "quantum") ?? "registered";
+      setServerTier(t);
+      setServerUsed(row.used ?? 0);
+      setServerLimit(row.limit ?? TIER_LIMITS[t]);
+      if (!row.allowed) {
+        openPaywall(reason ?? `You used ${row.used}/${row.limit} ${t.toUpperCase()} credits today.`);
+        return false;
+      }
+      return true;
+    }
+    // Anonymous: localStorage fallback (no paid tiers possible).
     const current = load();
-    const t: CreditTier = current.paidTier ? current.paidTier : user ? "registered" : "anonymous";
+    const t: CreditTier = "anonymous";
     const lim = TIER_LIMITS[t];
     if (current.used + cost > lim) {
       openPaywall(reason ?? `You used ${current.used}/${lim} ${t.toUpperCase()} credits today.`);
       return false;
     }
-    const next: CreditState = { ...current, used: current.used + cost };
+    const next: CreditState = { used: current.used + cost, resetAt: current.resetAt };
     persist(next);
     setState(next);
     return true;
   }, [user]);
 
-  const setPaidTier = useCallback((paidTier: "basic" | "pro" | "quantum") => {
-    const next: CreditState = { ...load(), paidTier };
-    persist(next);
-    setState(next);
+  // Paid tier is no longer settable from the client — must be granted
+  // server-side (e.g. via a Stripe webhook updating user_credits.paid_tier
+  // with the service role). Kept as a no-op for API compatibility.
+  const setPaidTier = useCallback((_paidTier: "basic" | "pro" | "quantum") => {
+    if (typeof console !== "undefined") {
+      console.warn("[useCredits] setPaidTier is server-controlled and ignored on the client.");
+    }
   }, []);
 
-  return { tier, limit, used: state.used, left, consume, setPaidTier, openPaywall };
+  return { tier, limit, used, left, consume, setPaidTier, openPaywall };
 }

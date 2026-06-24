@@ -10,6 +10,27 @@ const FIRECRAWL_KEY = Deno.env.get("FIRECRAWL_API_KEY");
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
+
+async function requireUser(req: Request): Promise<Response | null> {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  const supa = createClient(SUPABASE_URL, ANON_KEY, {
+    global: { headers: { Authorization: authHeader } },
+  });
+  const token = authHeader.replace("Bearer ", "");
+  const { data, error } = await supa.auth.getUser(token);
+  if (error || !data?.user?.id) {
+    return new Response(JSON.stringify({ error: "Unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+  return null;
+}
 
 async function scrape(url: string): Promise<{ title: string; content: string; metadata: Record<string, unknown> } | null> {
   const res = await fetch("https://api.firecrawl.dev/v1/scrape", {
@@ -48,6 +69,8 @@ function chunk(text: string, size = 2000, overlap = 200): string[] {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
+    const authFail = await requireUser(req);
+    if (authFail) return authFail;
     if (!FIRECRAWL_KEY || !OPENAI_KEY) {
       return new Response(JSON.stringify({ error: "Missing FIRECRAWL_API_KEY or OPENAI_API_KEY" }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
