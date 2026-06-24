@@ -319,12 +319,14 @@ export function GlobeScene({
 
   useEffect(() => {
     if (!globeRef.current) return;
+    // Cinematic intro: start far + spinning, then ease in toward the action.
+    globeRef.current.pointOfView({ lat: 15, lng: -30, altitude: 3.8 }, 0);
     const t = setTimeout(() => {
       if (!globeRef.current) return;
-      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.2 }, 1500);
+      globeRef.current.pointOfView({ lat: 25, lng: 30, altitude: 2.2 }, 2600);
       const controls = globeRef.current.controls();
       if (controls) {
-        controls.autoRotate = true; controls.autoRotateSpeed = 0.35;
+        controls.autoRotate = true; controls.autoRotateSpeed = 0.9;
         controls.enableDamping = true; controls.dampingFactor = 0.1;
         controls.enableZoom = true; controls.enableRotate = true; controls.enablePan = true;
         controls.minDistance = 101; controls.maxDistance = 500;
@@ -332,10 +334,12 @@ export function GlobeScene({
           const pov = globeRef.current?.pointOfView();
           if (pov && typeof pov.altitude === "number") setAltitude(prev => Math.abs(pov.altitude - prev) > 0.15 ? pov.altitude : prev);
         });
+        // Slow the spin once the user has had their cinematic moment.
+        setTimeout(() => { if (controls) controls.autoRotateSpeed = 0.35; }, 4000);
       }
       enhanceScene();
       if (onReadyRef.current) onReadyRef.current((lat, lng, alt) => globeRef.current?.pointOfView({ lat, lng, altitude: alt }, 1500));
-    }, 800);
+    }, 400);
     return () => clearTimeout(t);
   }, [enhanceScene]);
 
