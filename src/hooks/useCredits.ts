@@ -52,9 +52,11 @@ export function openPaywall(reason?: string) {
 export function useCredits() {
   const { user } = useAuth();
   const [state, setState] = useState<CreditState>(() => load());
-  const [serverTier, setServerTier] = useState<"registered" | "basic" | "pro" | "quantum" | null>(null);
-  const [serverUsed, setServerUsed] = useState<number | null>(null);
-  const [serverLimit, setServerLimit] = useState<number | null>(null);
+  const [server, setServer] = useState<{
+    tier: "registered" | "basic" | "pro" | "quantum" | null;
+    used: number | null;
+    limit: number | null;
+  }>({ tier: null, used: null, limit: null });
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -69,9 +71,7 @@ export function useCredits() {
   useEffect(() => {
     let cancelled = false;
     if (!user) {
-      setServerTier(null);
-      setServerUsed(null);
-      setServerLimit(null);
+      setServer({ tier: null, used: null, limit: null });
       return;
     }
     supabase
@@ -82,18 +82,16 @@ export function useCredits() {
       .then(({ data }) => {
         if (cancelled) return;
         const t = (data?.paid_tier as "registered" | "basic" | "pro" | "quantum" | undefined) ?? "registered";
-        setServerTier(t);
-        setServerUsed(data?.used ?? 0);
-        setServerLimit(TIER_LIMITS[t]);
+        setServer({ tier: t, used: data?.used ?? 0, limit: TIER_LIMITS[t] });
       });
     return () => { cancelled = true; };
   }, [user]);
 
   const tier: CreditTier = user
-    ? (serverTier ?? "registered")
+    ? (server.tier ?? "registered")
     : "anonymous";
-  const limit = user ? (serverLimit ?? TIER_LIMITS[tier]) : TIER_LIMITS["anonymous"];
-  const used = user ? (serverUsed ?? 0) : state.used;
+  const limit = user ? (server.limit ?? TIER_LIMITS[tier]) : TIER_LIMITS["anonymous"];
+  const used = user ? (server.used ?? 0) : state.used;
   const left = Math.max(0, limit - used);
 
   const consume = useCallback(async (cost = 1, reason?: string): Promise<boolean> => {
@@ -106,9 +104,7 @@ export function useCredits() {
         return false;
       }
       const t = (row.tier as "registered" | "basic" | "pro" | "quantum") ?? "registered";
-      setServerTier(t);
-      setServerUsed(row.used ?? 0);
-      setServerLimit(row.limit ?? TIER_LIMITS[t]);
+      setServer({ tier: t, used: row.used ?? 0, limit: row.limit ?? TIER_LIMITS[t] });
       if (!row.allowed) {
         openPaywall(reason ?? `You used ${row.used}/${row.limit} ${t.toUpperCase()} credits today.`);
         return false;
