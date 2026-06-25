@@ -1,4 +1,4 @@
-import { useState } from "https://esm.sh/react@18.3.1";
+import { useState } from "react";
 import { ChatContainer } from "@/components/chat/ChatContainer";
 import { NeuralBrain } from "./NeuralBrain";
 import { Brain, MessageSquare } from "lucide-react";
