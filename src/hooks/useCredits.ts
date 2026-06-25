@@ -97,7 +97,9 @@ export function useCredits() {
   const consume = useCallback(async (cost = 1, reason?: string): Promise<boolean> => {
     // Authenticated users: enforce server-side via consume_credits RPC.
     if (user) {
-      const { data, error } = await supabase.rpc("consume_credits", { _cost: cost });
+      const { data, error } = await supabase.functions.invoke("consume-credits", {
+        body: { cost },
+      });
       const row = Array.isArray(data) ? data[0] : data;
       if (error || !row) {
         openPaywall(reason ?? "Credit check failed. Please retry.");

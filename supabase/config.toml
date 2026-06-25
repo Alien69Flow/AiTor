@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.noaa-space-weather]
 verify_jwt = false
+
+[functions.consume-credits]
+verify_jwt = false
