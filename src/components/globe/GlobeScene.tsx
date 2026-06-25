@@ -164,10 +164,10 @@ export function GlobeScene({
   const [localMarketsEnabled, setLocalMarketsEnabled] = useState(marketsEnabledProp);
   // OpenWeatherMap raster tile overlays (semitransparent shells).
   const [owmLayers, setOwmLayers] = useState({
-    clouds: false,
-    precipitation: false,
-    wind: false,
-    pressure: false,
+    clouds: true,
+    precipitation: true,
+    wind: true,
+    pressure: true,
   });
 
   const cloudsEnabled = localCloudsEnabled;
