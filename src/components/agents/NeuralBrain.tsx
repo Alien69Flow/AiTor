@@ -147,8 +147,12 @@ export function NeuralBrain() {
       if (hits.length && labelRef.current) {
         const idx = (hits[0].object.userData as { index: number }).index;
         const d = TOOLS[idx];
-        labelRef.current.textContent = `${d.icon}  ${d.name}`;
-        labelRef.current.style.opacity = "1";
+        if (d) {
+          labelRef.current.textContent = `${d.icon}  ${d.name}`;
+          labelRef.current.style.opacity = "1";
+        } else {
+          labelRef.current.style.opacity = "0";
+        }
       } else if (labelRef.current) {
         labelRef.current.style.opacity = "0";
       }
