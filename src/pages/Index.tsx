@@ -3,7 +3,7 @@ import { Helmet } from "react-helmet-async";
 import { TopNavBar } from "@/components/dashboard/TopNavBar";
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import { ChatContainer } from "@/components/chat/ChatContainer";
+import { AgentsFlipCard } from "@/components/agents/AgentsFlipCard";
 import { UFOMonitorTab } from "@/components/dashboard/UFOMonitorTab";
 import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
 import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
@@ -18,7 +18,7 @@ const Index = () => {
 
   const renderTab = () => {
     switch (activeTab) {
-      case "agents": return <ChatContainer />;
+      case "agents": return <AgentsFlipCard />;
       case "alien": return <UFOMonitorTab />;
       case "cosmos": return <SolarSystemTab />;
       case "globe": return <GlobeDashboard />;
