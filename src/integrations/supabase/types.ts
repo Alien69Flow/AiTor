@@ -128,7 +128,7 @@ export type Database = {
     }
     Functions: {
       consume_credits: {
-        Args: { _cost: number }
+        Args: { _cost: number; _user_id: string }
         Returns: {
           allowed: boolean
           limit: number
