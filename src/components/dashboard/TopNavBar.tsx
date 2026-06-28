@@ -30,9 +30,17 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   };
 
   const handleConnectWallet = () => {
-    toast.info("Conectar Wallet disponible próximamente", {
-      description: "Desbloquea el modo Nexo Soberano con Web3",
-    });
+    const el = document.createElement("appkit-button");
+    // Prefer the AppKit modal API if available
+    const modal = (window as unknown as { appKit?: { open: () => void } }).appKit;
+    if (modal?.open) {
+      modal.open();
+      return;
+    }
+    // Fallback: dispatch custom element click
+    document.body.appendChild(el);
+    (el as unknown as HTMLElement).click();
+    setTimeout(() => el.remove(), 0);
   };
 
   return (
