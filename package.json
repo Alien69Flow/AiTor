@@ -77,8 +77,8 @@
     "three": "0.170.0",
     "three-render-objects": "1.39.3",
     "vaul": "^0.9.9",
-    "viem": "^2.53.1",
-    "wagmi": "^3.6.21",
+    "viem": "^2.21.0",
+    "wagmi": "^2.14.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
