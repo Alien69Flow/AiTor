@@ -3,6 +3,7 @@ import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } 
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { useAppKit } from "@reown/appkit/react";
 import alienflowLogo from "@/assets/alienflow-logo.webp";
 import type { TabId } from "@/pages/Index";
 
@@ -23,6 +24,7 @@ interface TopNavBarProps {
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const { open } = useAppKit();
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -30,17 +32,7 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   };
 
   const handleConnectWallet = () => {
-    const el = document.createElement("appkit-button");
-    // Prefer the AppKit modal API if available
-    const modal = (window as unknown as { appKit?: { open: () => void } }).appKit;
-    if (modal?.open) {
-      modal.open();
-      return;
-    }
-    // Fallback: dispatch custom element click
-    document.body.appendChild(el);
-    (el as unknown as HTMLElement).click();
-    setTimeout(() => el.remove(), 0);
+    open();
   };
 
   return (
