@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const FIRECRAWL_KEY = Deno.env.get("FIRECRAWL_API_KEY");
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
+const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -47,12 +48,22 @@ async function scrape(url: string): Promise<{ title: string; content: string; me
 }
 
 async function embed(text: string): Promise<number[] | null> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  // Prefer Lovable AI Gateway (reliable); fall back to direct OpenAI if missing.
+  const useGateway = !!LOVABLE_KEY;
+  const url = useGateway
+    ? "https://ai.gateway.lovable.dev/v1/embeddings"
+    : "https://api.openai.com/v1/embeddings";
+  const key = useGateway ? LOVABLE_KEY : OPENAI_KEY;
+  const model = useGateway ? "openai/text-embedding-3-small" : "text-embedding-3-small";
+  const res = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 30000) }),
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, input: text.slice(0, 30000) }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("embed failed", res.status, (await res.text()).slice(0, 300));
+    return null;
+  }
   const json = await res.json();
   return json?.data?.[0]?.embedding ?? null;
 }
@@ -69,6 +80,47 @@ function chunk(text: string, size = 2000, overlap = 200): string[] {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
+    const body = await req.json().catch(() => ({}));
+    const action: string = body.action ?? "ingest";
+
+    // SEARCH mode: embed query and run pgvector match RPC. Used by agenticworkflows
+    // (service-role bearer) and other internal tools — no end-user auth needed.
+    if (action === "search") {
+      if (!OPENAI_KEY) {
+        return new Response(JSON.stringify({ error: "OPENAI_API_KEY missing" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const query: string = body.query ?? "";
+      const match_count: number = Math.min(Math.max(Number(body.match_count) || 5, 1), 10);
+      const match_threshold: number = typeof body.match_threshold === "number" ? body.match_threshold : 0.3;
+      if (!query.trim()) {
+        return new Response(JSON.stringify({ error: "query required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const embedding = await embed(query);
+      if (!embedding) {
+        return new Response(JSON.stringify({ error: "embed failed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+      const { data, error } = await supabase.rpc("match_skills_documents", {
+        query_embedding: embedding as unknown as string,
+        match_threshold,
+        match_count,
+      });
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ success: true, matches: data ?? [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const authFail = await requireUser(req);
     if (authFail) return authFail;
     if (!FIRECRAWL_KEY || !OPENAI_KEY) {
@@ -76,7 +128,6 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const body = await req.json().catch(() => ({}));
     const url: string | undefined = body.url;
     const source: string = body.source ?? "manual";
     const category: string = body.category ?? "skill";

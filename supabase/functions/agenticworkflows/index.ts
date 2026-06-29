@@ -8,6 +8,9 @@ const corsHeaders = {
 
 const ANTHROPIC_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const FIRECRAWL_KEY = Deno.env.get("FIRECRAWL_API_KEY");
+const GROK_KEY = Deno.env.get("GROK_API_KEY");
+const LIVEUAMAP_KEY = Deno.env.get("LIVEUAMAP_API_KEY");
+const GITHUB_PAT = Deno.env.get("GITHUB_PAT");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -99,6 +102,50 @@ const TOOLS: Tool[] = [
     description: "Latest UAP / UFO sightings stored in the database.",
     input_schema: { type: "object", properties: { limit: { type: "number" } } },
   },
+  {
+    name: "grok_search",
+    description: "Real-time web-aware answer from xAI Grok. Use for breaking news, X/Twitter sentiment, or when other sources are stale.",
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "liveuamap_feed",
+    description: "Liveuamap geopolitical conflict feed (Ukraine, Middle East, etc.). Returns recent geolocated events.",
+    input_schema: {
+      type: "object",
+      properties: { region: { type: "string", description: "e.g. ukraine, israel, syria" }, limit: { type: "number" } },
+    },
+  },
+  {
+    name: "github_repo",
+    description: "Query a public or owned GitHub repo via PAT. Actions: 'get_repo', 'list_files' (path), 'read_file' (path), 'search_code' (q).",
+    input_schema: {
+      type: "object",
+      properties: {
+        action: { type: "string", enum: ["get_repo", "list_files", "read_file", "search_code"] },
+        owner: { type: "string" },
+        repo: { type: "string" },
+        path: { type: "string" },
+        q: { type: "string" },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "skills_rag_search",
+    description: "Semantic search over the AI Tor knowledge base (pgvector). Use this BEFORE answering questions about AI Tor, the DAO, internal skills, docs, or anything the user may have previously ingested.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        match_count: { type: "number", description: "default 5, max 10" },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 async function callInternal(path: string, init: RequestInit = {}): Promise<unknown> {
@@ -150,6 +197,57 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
         return await callInternal("noaa-space-weather", { method: "GET" });
       case "ufo_feed":
         return await callInternal("ufo-feed", { method: "POST", body: JSON.stringify(input) });
+      case "grok_search": {
+        if (!GROK_KEY) return { error: "GROK_API_KEY missing" };
+        const r = await fetch("https://api.x.ai/v1/chat/completions", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${GROK_KEY}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model: "grok-2-latest",
+            messages: [
+              { role: "system", content: "You are a concise real-time research assistant. Cite sources inline." },
+              { role: "user", content: String(input.query ?? "") },
+            ],
+            max_tokens: 800,
+          }),
+        });
+        const j = await r.json();
+        return { answer: j?.choices?.[0]?.message?.content ?? j };
+      }
+      case "liveuamap_feed": {
+        if (!LIVEUAMAP_KEY) return { error: "LIVEUAMAP_API_KEY missing" };
+        const region = String(input.region ?? "ukraine");
+        const limit = Number(input.limit ?? 10);
+        const r = await fetch(`https://liveuamap.com/api/v1/events?region=${encodeURIComponent(region)}&limit=${limit}`, {
+          headers: { Authorization: `Bearer ${LIVEUAMAP_KEY}` },
+        });
+        const text = await r.text();
+        try { return JSON.parse(text); } catch { return { raw: text.slice(0, 4000) }; }
+      }
+      case "github_repo": {
+        if (!GITHUB_PAT) return { error: "GITHUB_PAT missing" };
+        const { action, owner, repo, path, q } = input as Record<string, string>;
+        const h = { Authorization: `Bearer ${GITHUB_PAT}`, "User-Agent": "AITor-Agent", Accept: "application/vnd.github+json" };
+        let url = "";
+        switch (action) {
+          case "get_repo": url = `https://api.github.com/repos/${owner}/${repo}`; break;
+          case "list_files": url = `https://api.github.com/repos/${owner}/${repo}/contents/${path ?? ""}`; break;
+          case "read_file": url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`; break;
+          case "search_code": url = `https://api.github.com/search/code?q=${encodeURIComponent(q)}`; break;
+          default: return { error: `Unknown github action ${action}` };
+        }
+        const r = await fetch(url, { headers: h });
+        const j = await r.json();
+        if (action === "read_file" && j?.content && j?.encoding === "base64") {
+          try { return { path: j.path, content: atob(j.content.replace(/\n/g, "")).slice(0, 8000) }; } catch { return j; }
+        }
+        return j;
+      }
+      case "skills_rag_search":
+        return await callInternal("skills-ingest", {
+          method: "POST",
+          body: JSON.stringify({ action: "search", query: input.query, match_count: input.match_count ?? 5 }),
+        });
       default:
         return { error: `Unknown tool ${name}` };
     }
