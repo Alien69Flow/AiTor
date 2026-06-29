@@ -8,6 +8,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const FIRECRAWL_KEY = Deno.env.get("FIRECRAWL_API_KEY");
 const OPENAI_KEY = Deno.env.get("OPENAI_API_KEY");
+const LOVABLE_KEY = Deno.env.get("LOVABLE_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY")!;
@@ -47,12 +48,22 @@ async function scrape(url: string): Promise<{ title: string; content: string; me
 }
 
 async function embed(text: string): Promise<number[] | null> {
-  const res = await fetch("https://api.openai.com/v1/embeddings", {
+  // Prefer Lovable AI Gateway (reliable); fall back to direct OpenAI if missing.
+  const useGateway = !!LOVABLE_KEY;
+  const url = useGateway
+    ? "https://ai.gateway.lovable.dev/v1/embeddings"
+    : "https://api.openai.com/v1/embeddings";
+  const key = useGateway ? LOVABLE_KEY : OPENAI_KEY;
+  const model = useGateway ? "openai/text-embedding-3-small" : "text-embedding-3-small";
+  const res = await fetch(url, {
     method: "POST",
-    headers: { Authorization: `Bearer ${OPENAI_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 30000) }),
+    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ model, input: text.slice(0, 30000) }),
   });
-  if (!res.ok) return null;
+  if (!res.ok) {
+    console.error("embed failed", res.status, (await res.text()).slice(0, 300));
+    return null;
+  }
   const json = await res.json();
   return json?.data?.[0]?.embedding ?? null;
 }
