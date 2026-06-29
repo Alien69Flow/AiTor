@@ -69,6 +69,47 @@ function chunk(text: string, size = 2000, overlap = 200): string[] {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   try {
+    const body = await req.json().catch(() => ({}));
+    const action: string = body.action ?? "ingest";
+
+    // SEARCH mode: embed query and run pgvector match RPC. Used by agenticworkflows
+    // (service-role bearer) and other internal tools — no end-user auth needed.
+    if (action === "search") {
+      if (!OPENAI_KEY) {
+        return new Response(JSON.stringify({ error: "OPENAI_API_KEY missing" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const query: string = body.query ?? "";
+      const match_count: number = Math.min(Math.max(Number(body.match_count) || 5, 1), 10);
+      const match_threshold: number = typeof body.match_threshold === "number" ? body.match_threshold : 0.3;
+      if (!query.trim()) {
+        return new Response(JSON.stringify({ error: "query required" }), {
+          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const embedding = await embed(query);
+      if (!embedding) {
+        return new Response(JSON.stringify({ error: "embed failed" }), {
+          status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+      const { data, error } = await supabase.rpc("match_skills_documents", {
+        query_embedding: embedding as unknown as string,
+        match_threshold,
+        match_count,
+      });
+      if (error) {
+        return new Response(JSON.stringify({ error: error.message }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify({ success: true, matches: data ?? [] }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     const authFail = await requireUser(req);
     if (authFail) return authFail;
     if (!FIRECRAWL_KEY || !OPENAI_KEY) {
@@ -76,7 +117,6 @@ Deno.serve(async (req) => {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const body = await req.json().catch(() => ({}));
     const url: string | undefined = body.url;
     const source: string = body.source ?? "manual";
     const category: string = body.category ?? "skill";
