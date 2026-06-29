@@ -1,90 +1,57 @@
-## Diagnóstico actual (pestaña Globe)
+## Objetivo
+Limpiar la duplicación visual del logo en la pestaña Agents y refinar la interfaz móvil del chat (selector de IA, botón flip Chat⟳Neural, hero del empty state). Cambios sólo de UI en frontend.
 
-`GlobeDashboard.tsx` apila paneles fijos sobre el globo sin reservar espacio:
+## 1. Logo duplicado (3 instancias en Agents)
 
-- **Izquierda (top-3 left-3):** `TacticalConsole` + `LegendPanel` + `NavigatePanel` apilados en columna → en mobile cubren todo el ancho y tapan el planeta entero.
-- **Derecha:** `ChatFeedPanel` ancho fijo (`hidden md:block`), siempre visible en desktop.
-- **Centro-abajo:** Nav dock + `OsintTickerBar` + status footer ocupan ~120 px de alto del globo.
-- **Arriba:** Crypto ticker + `LiveTicker` añaden otra franja.
-- En mobile no hay paneles colapsables: o todo visible o nada. La columna izquierda llega hasta media pantalla.
+Actualmente el logo `alienflow-logo.webp` aparece en:
+- `TopNavBar.tsx` (header global) — **se mantiene** como marca principal.
+- `ChatHeader.tsx` (header del chat con "AI Tor / Online") — **se elimina** el `<img>` y se deja sólo el texto "AI Tor" + dot online. El header del chat ya está dentro de la pestaña Agents, así que la marca de la app ya está visible arriba.
+- `EmptyState.tsx` (hero gigante con anillos animados que hacen "ondas") — **se mantiene** pero:
+  - En móvil (<500px) se reducen los anillos a uno solo y se baja la opacidad para que no parezca un radar pesado.
+  - Se reduce el tamaño del logo en móvil de `w-12 h-12` a `w-10 h-10` y se acerca al título para compactar el hero.
 
-Resultado: en móvil el planeta queda como una franja de 30 % en el centro; en desktop la consola izquierda solapa la parte oeste del globo.
+Resultado: 2 instancias visibles (nav global + hero) en vez de 3, sin tocar la identidad.
 
-## Objetivo (basado en la referencia "Gemini_G")
+## 2. Selector de IA en móvil
 
-- Planeta siempre como protagonista, centrado y sin solapes verticales con el dock inferior.
-- Paneles laterales **colapsables a un icono-rail** (rail de 44 px) en desktop; el contenido se abre on-demand.
-- En mobile, los paneles se convierten en **bottom-sheets / drawers** disparados desde una barra inferior con iconos (Tactical, Legend, Navigate, Feed, Markets).
-- Top: un único ticker compacto (combinar crypto + OSINT) con altura ≤ 36 px.
-- Bottom dock: agrupa nav dock + status en una sola barra de 48 px con glass.
+`ModelSelector.tsx` en móvil muestra: icono pill + nombre truncado + badge Fast/Pro + barras de velocidad + chevron, lo que crea las "burbujas" amontonadas.
 
-## Cambios de código
+Cambios:
+- En `<500px`: ocultar el badge `ORACLE_TYPE_BADGES` y el `SpeedIndicator` del trigger; dejar sólo icono + nombre + chevron.
+- Reducir altura del trigger de `h-9` a `h-8` y padding `px-2` en móvil.
+- `PopoverContent`: cambiar `w-[380px]` por `w-[calc(100vw-1rem)] max-w-[380px]` para que no desborde en móvil.
 
-### 1. `GlobeDashboard.tsx` — nuevo layout responsivo
-- Detectar `useIsMobile()`.
-- **Desktop (≥ md):**
-  - Rail izquierdo (w-12) con 3 iconos: Tactical / Legend / Navigate. Click expande un panel flotante (w-72) hacia la derecha, con cierre.
-  - Rail derecho (w-12) con icono Feed → expande `ChatFeedPanel` (w-80) o se cierra.
-  - Dock inferior centrado mantiene Markets/Feed/Alerts/Movers/Tension pero pasa a altura compacta 40 px.
-  - Solo un panel lateral abierto a la vez por lado (estado controlado).
-- **Mobile (< md):**
-  - Ocultar rails y paneles flotantes.
-  - Añadir `MobileGlobeBar` fijo abajo: iconos Tactical, Legend, Navigate, Feed, Markets. Tap abre `Sheet` (shadcn) desde abajo con el panel correspondiente.
-  - Ticker superior queda en una sola línea (max-h-9), con `truncate` y `no-scrollbar`.
-  - `LiveTicker` y `OsintTickerBar` se fusionan en un único componente `UnifiedTicker` con tabs (Crypto | OSINT) para no apilar dos barras.
+## 3. Botón flip Chat ⟳ Neural (`AgentsFlipCard.tsx`)
 
-### 2. Componentes nuevos
-- `src/components/dashboard/GlobePanelRail.tsx` — rail vertical con icon buttons + estado `openId | null`.
-- `src/components/dashboard/MobileGlobeBar.tsx` — bottom bar móvil + `Sheet` por panel.
-- `src/components/dashboard/UnifiedTicker.tsx` — fusiona crypto + OSINT en una sola fila colapsable.
+Actualmente está en `top-3 right-3` y tapa el botón de cerrar sesión / model selector en móvil.
 
-### 3. Ajustes en paneles existentes
-- `TacticalConsole`, `LegendPanel`, `NavigatePanel`, `ChatFeedPanel`: aceptar prop `embedded?: boolean` para quitar el `position: absolute`/anchos fijos cuando viven dentro del rail-popover o del `Sheet` (full width en sheet, max-w-xs en popover desktop).
-- Quitar `hidden md:block` del `ChatFeedPanel`; ahora se controla por rail/sheet.
+Cambios:
+- En móvil moverlo a `bottom-16 right-3` (encima de la BottomNav) como FAB redondo con sólo el icono (Brain/MessageSquare), sin texto.
+- En desktop mantener la posición y el texto actuales.
+- Añadir `aria-pressed={flipped}` para accesibilidad.
 
-### 4. Footer status
-- Pasar de barra siempre visible a chip integrado en el dock inferior (badges NASA/USGS/NOAA inline). Libera 32 px de alto.
+## 4. ChatHeader compacto en móvil
 
-### 5. Z-index / pointer-events
-- Rails siempre encima (z-40). Paneles flotantes z-30 con backdrop-blur fuerte.
-- `pointer-events-none` en el contenedor del globo cuando un panel mobile-sheet está abierto, para evitar arrastres accidentales.
+- Eliminar `<img>` del logo (punto 1).
+- Reducir el bloque izquierdo: dejar sólo "AI Tor" con dot pulsante.
+- El `ModelSelector` del lado derecho (mobile) queda más visible al liberar espacio.
 
-## Estructura visual resultante
+## 5. Respuesta sobre agentes RAG / Agentic Workflows
 
-```text
-┌────────────────────────────────────────────────┐
-│ Unified ticker (36px) Crypto · OSINT · KP      │
-├──┬──────────────────────────────────────────┬──┤
-│▣ │                                          │▣ │
-│▣ │              🌍  PLANETA                  │▣ │   ← rails 48px
-│▣ │            (siempre centrado)            │▣ │
-│▣ │                                          │▣ │
-├──┴──────────────────────────────────────────┴──┤
-│ ◯ Markets ◯ Feed ◯ Alerts ◯ Tension · NASA/USGS │  ← dock 48px
-└────────────────────────────────────────────────┘
-```
+No es un cambio de código; va como nota informativa al final de la implementación:
 
-En mobile:
+Estado actual de las integraciones con secrets:
+- **Configurados y enrutados en `agenticworkflows`**: `ANTHROPIC_API_KEY` (router Claude Sonnet 4), `FIRECRAWL_API_KEY` (search + osint), `GEMINI_API_KEY` (vía función `chat`), `OPENAI_API_KEY` (vía `chat`).
+- **Configurados pero NO enrutados aún como tool del router**: `GROK_API_KEY`, `LIVEUAMAP_API_KEY`, `GITHUB_PAT` (sólo usado por `github-proxy` desde el frontend, no expuesto al agentic loop), `VITE_CESIUM_TOKEN` (proxy de tiles, no es una "skill" del agente).
+- **Skills RAG (`skills-ingest` + pgvector)**: la función existe pero el router `agenticworkflows` **no consulta el índice vectorial** como tool. Falta una tool `skills_rag_search` que llame a `skills-ingest` en modo query.
 
-```text
-┌──────────────────────────┐
-│ Unified ticker (32px)    │
-├──────────────────────────┤
-│                          │
-│        🌍 PLANETA         │
-│                          │
-├──────────────────────────┤
-│ ◯ Tact ◯ Leg ◯ Nav ◯ Feed │  ← bottom bar 56px
-└──────────────────────────┘
-   (cada icon abre Sheet)
-```
+Estos huecos se proponen como trabajo separado (no se tocan en este plan que es sólo UI).
 
-## Out of scope
-- No se cambia la lógica de datos (`useUnifiedIntel`, hooks de NASA/USGS).
-- No se toca el render 3D (`GlobeScene.tsx`).
-- No se redibujan los paneles internos, solo se hacen "embeddables".
+## Archivos a modificar
 
-## Verificación
-1. Inspección visual en desktop y mobile (preview viewport switch).
-2. Confirmar que el globo queda visible al 100 % cuando los rails están colapsados.
-3. Confirmar que ningún panel solapa el planeta cuando se abre (los rails empujan vía popover, no encima del globo central).
+- `src/components/chat/ChatHeader.tsx` — quitar `<img>` logo.
+- `src/components/chat/EmptyState.tsx` — reducir anillos y logo en móvil.
+- `src/components/chat/ModelSelector.tsx` — simplificar trigger y popover en móvil.
+- `src/components/agents/AgentsFlipCard.tsx` — FAB móvil para el botón flip.
+
+Sin cambios en backend, edge functions, ni en otras pestañas.

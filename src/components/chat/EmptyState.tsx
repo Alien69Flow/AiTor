@@ -112,10 +112,13 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
               <div className="absolute w-28 h-28 rounded-full bg-primary/5 blur-3xl animate-pulse pointer-events-none" />
             </>
           )}
+          {isCompact && (
+            <div className="absolute w-16 h-16 rounded-full bg-primary/5 blur-2xl animate-pulse pointer-events-none" />
+          )}
           <img
             src={alienflowLogo}
             alt="AlienFlow"
-            className={`object-contain relative z-10 drop-shadow-[0_0_40px_hsl(var(--primary)/0.5)] ${isCompact ? "w-12 h-12" : "w-20 h-20"}`}
+            className={`object-contain relative z-10 drop-shadow-[0_0_40px_hsl(var(--primary)/0.5)] ${isCompact ? "w-10 h-10" : "w-20 h-20"}`}
           />
         </div>
         <div className="text-center">
