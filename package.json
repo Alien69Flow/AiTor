@@ -5,6 +5,7 @@
   "type": "module",
   "overrides": {
     "three": "0.170.0"
+    "typescript": "5.9.3"
   },
   "scripts": {
     "dev": "vite",
