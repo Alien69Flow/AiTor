@@ -20,10 +20,12 @@ async function requireUser(req: Request): Promise<Response | null> {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+  // Allow service-role calls (internal seeding / cross-function invocation).
+  const token = authHeader.replace("Bearer ", "");
+  if (token === SERVICE_ROLE) return null;
   const supa = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const token = authHeader.replace("Bearer ", "");
   const { data, error } = await supa.auth.getUser(token);
   if (error || !data?.user?.id) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
