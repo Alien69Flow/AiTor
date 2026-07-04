@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "overrides": {
-    "three": "0.170.0"
+    "three": "0.170.0",
     "typescript": "5.9.3"
   },
   "scripts": {
