@@ -105,6 +105,12 @@ Deno.serve(async (req) => {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      console.log("[skills-ingest.search]", JSON.stringify({
+        query: query.slice(0, 120),
+        match_count,
+        match_threshold,
+        embedding_dims: embedding.length,
+      }));
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
       const { data, error } = await supabase.rpc("match_skills_documents", {
         query_embedding: embedding as unknown as string,
@@ -112,11 +118,20 @@ Deno.serve(async (req) => {
         match_count,
       });
       if (error) {
+        console.error("[skills-ingest.search] rpc error", error.message);
         return new Response(JSON.stringify({ error: error.message }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ success: true, matches: data ?? [] }), {
+      const matches = data ?? [];
+      console.log("[skills-ingest.search] matched", matches.length, "docs");
+      return new Response(JSON.stringify({
+        success: true,
+        query,
+        match_count,
+        match_threshold,
+        matches,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
