@@ -20,10 +20,12 @@ async function requireUser(req: Request): Promise<Response | null> {
       status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+  // Allow service-role calls (internal seeding / cross-function invocation).
+  const token = authHeader.replace("Bearer ", "");
+  if (token === SERVICE_ROLE) return null;
   const supa = createClient(SUPABASE_URL, ANON_KEY, {
     global: { headers: { Authorization: authHeader } },
   });
-  const token = authHeader.replace("Bearer ", "");
   const { data, error } = await supa.auth.getUser(token);
   if (error || !data?.user?.id) {
     return new Response(JSON.stringify({ error: "Unauthorized" }), {
@@ -105,6 +107,12 @@ Deno.serve(async (req) => {
           status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      console.log("[skills-ingest.search]", JSON.stringify({
+        query: query.slice(0, 120),
+        match_count,
+        match_threshold,
+        embedding_dims: embedding.length,
+      }));
       const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
       const { data, error } = await supabase.rpc("match_skills_documents", {
         query_embedding: embedding as unknown as string,
@@ -112,11 +120,20 @@ Deno.serve(async (req) => {
         match_count,
       });
       if (error) {
+        console.error("[skills-ingest.search] rpc error", error.message);
         return new Response(JSON.stringify({ error: error.message }), {
           status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      return new Response(JSON.stringify({ success: true, matches: data ?? [] }), {
+      const matches = data ?? [];
+      console.log("[skills-ingest.search] matched", matches.length, "docs");
+      return new Response(JSON.stringify({
+        success: true,
+        query,
+        match_count,
+        match_threshold,
+        matches,
+      }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

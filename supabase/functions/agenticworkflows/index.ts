@@ -37,7 +37,12 @@ async function requireUser(req: Request): Promise<Response | null> {
 
 const MODEL = "claude-sonnet-4-20250514";
 
-const SYSTEM_PROMPT = `You are AI Tor.v69's autonomous routing agent. You receive a user request and decide which internal tool(s) to invoke to gather data, then synthesise a concise tactical answer in the user's language. Prefer the smallest set of tool calls. Always cite the tool source briefly.`;
+const SYSTEM_PROMPT = `You are AI Tor.v69's autonomous routing agent. You receive a user request and decide which internal tool(s) to invoke to gather data, then synthesise a concise tactical answer in the user's language. Prefer the smallest set of tool calls. Always cite the tool source briefly.
+
+RAG POLICY:
+- For any question about AI Tor, the AlienFlowSpace DAO, internal docs, skills or previously ingested content, ALWAYS call skills_rag_search FIRST.
+- When skills_rag_search returns matches, cite each with its title and similarity score inline (e.g. "[fuente: <title> · sim 0.82]") and quote briefly.
+- When skills_rag_search returns 0 matches, tell the user the knowledge base has no relevant context yet and suggest ingesting sources via the Skills tab. Then fall back to the general web tools (grok_search / firecrawl_search) if appropriate.`;
 
 type Tool = {
   name: string;
@@ -203,7 +208,7 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
           method: "POST",
           headers: { Authorization: `Bearer ${GROK_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "grok-2-latest",
+            model: "grok-3",
             messages: [
               { role: "system", content: "You are a concise real-time research assistant. Cite sources inline." },
               { role: "user", content: String(input.query ?? "") },
@@ -244,10 +249,33 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
         return j;
       }
       case "skills_rag_search":
-        return await callInternal("skills-ingest", {
+      {
+        const raw = await callInternal("skills-ingest", {
           method: "POST",
           body: JSON.stringify({ action: "search", query: input.query, match_count: input.match_count ?? 5 }),
-        });
+        }) as { success?: boolean; matches?: Array<Record<string, unknown>>; error?: string };
+        const matches = raw?.matches ?? [];
+        if (!matches.length) {
+          return {
+            success: true,
+            matches: [],
+            fallback: "Empty knowledge base for this query. Suggest the user ingest relevant URLs via the Skills tab (skills-ingest). Consider calling firecrawl_search or grok_search as a fallback.",
+          };
+        }
+        // Compact match payload so Claude cites cleanly.
+        return {
+          success: true,
+          count: matches.length,
+          matches: matches.map((m) => ({
+            title: m.title,
+            url: m.url,
+            source: m.source,
+            category: m.category,
+            similarity: typeof m.similarity === "number" ? Number((m.similarity as number).toFixed(3)) : m.similarity,
+            snippet: typeof m.content === "string" ? (m.content as string).slice(0, 600) : m.content,
+          })),
+        };
+      }
       default:
         return { error: `Unknown tool ${name}` };
     }
