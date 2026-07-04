@@ -208,7 +208,7 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
           method: "POST",
           headers: { Authorization: `Bearer ${GROK_KEY}`, "Content-Type": "application/json" },
           body: JSON.stringify({
-            model: "grok-2-latest",
+            model: "grok-3",
             messages: [
               { role: "system", content: "You are a concise real-time research assistant. Cite sources inline." },
               { role: "user", content: String(input.query ?? "") },
