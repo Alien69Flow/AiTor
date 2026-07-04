@@ -15,7 +15,7 @@ Deno.test({
       method: "POST",
       headers: { Authorization: `Bearer ${GROK}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "grok-2-latest",
+        model: "grok-3",
         messages: [{ role: "user", content: "reply with the single word: pong" }],
         max_tokens: 10,
       }),
