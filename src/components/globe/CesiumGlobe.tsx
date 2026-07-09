@@ -36,7 +36,13 @@ const SUPABASE_URL_BASE =
 
 async function fetchCesiumToken(): Promise<string> {
   try {
-    const r = await fetch(`${SUPABASE_URL_BASE}/functions/v1/cesium-tiles`);
+    const anon =
+      (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
+      (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
+      "";
+    const r = await fetch(`${SUPABASE_URL_BASE}/functions/v1/cesium-tiles`, {
+      headers: anon ? { apikey: anon, Authorization: `Bearer ${anon}` } : {},
+    });
     if (!r.ok) return "";
     const d = await r.json();
     return (d?.accessToken as string) || "";
