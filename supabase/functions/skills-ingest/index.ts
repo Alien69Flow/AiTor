@@ -85,6 +85,62 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action: string = body.action ?? "ingest";
 
+    // SEED mode: ingest a curated set of example URLs so skills_rag_search
+    // returns real matches. Auth: service-role bearer OR authenticated user.
+    if (action === "seed") {
+      const authFail = await requireUser(req);
+      if (authFail) return authFail;
+      if (!FIRECRAWL_KEY) {
+        return new Response(JSON.stringify({ error: "FIRECRAWL_API_KEY missing" }), {
+          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const SEED_URLS: Array<{ url: string; source: string; category: string }> = Array.isArray(body.urls) && body.urls.length
+        ? body.urls
+        : [
+            { url: "https://docs.unlock-protocol.com/getting-started/what-is-unlock", source: "unlock", category: "web3" },
+            { url: "https://docs.reown.com/appkit/overview", source: "reown", category: "web3" },
+            { url: "https://wagmi.sh/react/getting-started", source: "wagmi", category: "web3" },
+            { url: "https://viem.sh/docs/getting-started", source: "viem", category: "web3" },
+            { url: "https://polygon.technology/blog", source: "polygon", category: "web3" },
+            { url: "https://supabase.com/docs/guides/ai/vector-columns", source: "supabase", category: "rag" },
+            { url: "https://platform.openai.com/docs/guides/embeddings", source: "openai", category: "rag" },
+            { url: "https://docs.lovable.dev/features/cloud", source: "lovable", category: "platform" },
+          ];
+      const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+      const results: Array<{ url: string; inserted: number; error?: string }> = [];
+      for (const item of SEED_URLS) {
+        try {
+          const scraped = await scrape(item.url);
+          if (!scraped?.content) { results.push({ url: item.url, inserted: 0, error: "scrape empty" }); continue; }
+          const chunks = chunk(scraped.content);
+          let n = 0;
+          for (let i = 0; i < chunks.length; i++) {
+            const emb = await embed(chunks[i]);
+            if (!emb) continue;
+            const { error } = await supabase.from("skills_documents").insert({
+              title: chunks.length > 1 ? `${scraped.title} (${i + 1}/${chunks.length})` : scraped.title,
+              content: chunks[i],
+              url: item.url,
+              source: item.source,
+              category: item.category,
+              embedding: emb as unknown as string,
+              metadata: { ...scraped.metadata, chunk: i, total: chunks.length, seeded: true },
+            });
+            if (!error) n++;
+          }
+          results.push({ url: item.url, inserted: n });
+        } catch (e) {
+          results.push({ url: item.url, inserted: 0, error: String(e).slice(0, 120) });
+        }
+      }
+      const total = results.reduce((s, r) => s + r.inserted, 0);
+      console.log("[skills-ingest.seed] total chunks inserted", total);
+      return new Response(JSON.stringify({ success: true, total, results }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // SEARCH mode: embed query and run pgvector match RPC. Used by agenticworkflows
     // (service-role bearer) and other internal tools — no end-user auth needed.
     if (action === "search") {
