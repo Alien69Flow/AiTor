@@ -19,6 +19,7 @@ import {
   EllipsoidTerrainProvider,
   CallbackProperty,
   SkyBox,
+  UrlTemplateImageryProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -92,11 +93,29 @@ interface CesiumGlobeProps {
   kpIndex?: number;
   earthquakes?: Earthquake[];
   nasaEvents?: NasaEvent[];
+  /** Base imagery style: photo (ArcGIS satellite) vs vector dark (CartoDB). */
+  baseMapStyle?: "satellite" | "dark";
+  /** RainViewer live precipitation radar overlay. */
+  showRadar?: boolean;
+  /** OpenWeatherMap pressure isobars overlay (via edge proxy). */
+  showIsobars?: boolean;
+  /** OpenWeatherMap cloud cover overlay (via edge proxy). */
+  showClouds?: boolean;
+  /** OpenWeatherMap wind overlay (via edge proxy). */
+  showWind?: boolean;
+  /** OpenWeatherMap precipitation overlay (via edge proxy). */
+  showRain?: boolean;
+  /** Aircraft (OpenSky) — wired in next sprint. Prop kept for API stability. */
+  aircraftEnabled?: boolean;
 }
 
 export function CesiumGlobe({
   onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [],
+  baseMapStyle = "satellite",
+  showRadar = false, showIsobars = false, showClouds = false,
+  showWind = false, showRain = false,
+  aircraftEnabled = true,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -106,6 +125,16 @@ export function CesiumGlobe({
   const teslaAuraRef = useRef<string[]>([]);
   const quakeEntityIdsRef = useRef<string[]>([]);
   const nasaEntityIdsRef = useRef<string[]>([]);
+  // Refs for dynamic imagery layers so we can remove/replace exactly.
+  const baseLayerRef = useRef<any>(null);
+  const radarLayerRef = useRef<any>(null);
+  const isobarsLayerRef = useRef<any>(null);
+  const cloudsLayerRef = useRef<any>(null);
+  const windLayerRef = useRef<any>(null);
+  const rainLayerRef = useRef<any>(null);
+
+  // Edge proxy that keeps OPENWEATHER_API_KEY server-side.
+  const OWM_PROXY = `${SUPABASE_URL_BASE}/functions/v1/openweather`;
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -127,6 +156,8 @@ export function CesiumGlobe({
       creditContainer: document.createElement("div"),
       terrainProvider: new EllipsoidTerrainProvider(),
       contextOptions: { webgl: { alpha: false } },
+      // Base imagery is managed by the baseMapStyle useEffect below.
+      baseLayer: false as any,
     });
 
     // Enable built-in Cesium sky with stars and atmosphere
@@ -174,23 +205,7 @@ export function CesiumGlobe({
       }).catch((e: any) => console.warn("Night lights failed:", e));
     } catch (e) { console.warn("Night lights init failed:", e); }
 
-    // ArcGIS satellite imagery
-    try {
-      ArcGisMapServerImageryProvider.fromUrl(
-        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
-      ).then((provider) => {
-        if (!viewer.isDestroyed()) {
-          viewer.imageryLayers.removeAll();
-          viewer.imageryLayers.addImageryProvider(provider);
-          IonImageryProvider.fromAssetId(3812).then((nightProv) => {
-            if (!viewer.isDestroyed()) {
-              const nl = viewer.imageryLayers.addImageryProvider(nightProv);
-              nl.dayAlpha = 0.0; nl.nightAlpha = 0.9; nl.brightness = 2.0;
-            }
-          }).catch(() => {});
-        }
-      });
-    } catch (e) { console.warn("ArcGIS failed:", e); }
+    // Base imagery layer is now owned by the baseMapStyle useEffect below.
 
     // NO atmosphere ellipsoid entity — using Cesium's built-in skyAtmosphere instead
 
@@ -237,6 +252,122 @@ export function CesiumGlobe({
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);
+
+  // ---- Base map layer (satellite vs dark vector) --------------------------
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+    let cancelled = false;
+
+    (async () => {
+      let provider: any = null;
+      try {
+        if (baseMapStyle === "dark") {
+          provider = new UrlTemplateImageryProvider({
+            url: "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+            maximumLevel: 19,
+            credit: "© CARTO © OpenStreetMap",
+          });
+        } else {
+          provider = await ArcGisMapServerImageryProvider.fromUrl(
+            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
+          );
+        }
+      } catch (e) {
+        console.warn("Base imagery failed:", e);
+        return;
+      }
+      if (cancelled || viewer.isDestroyed() || !provider) return;
+      // Remove previous base layer if any
+      if (baseLayerRef.current) {
+        try { viewer.imageryLayers.remove(baseLayerRef.current, true); } catch { /* ignore */ }
+        baseLayerRef.current = null;
+      }
+      // Insert at bottom so overlays and night-lights stay above.
+      const layer = viewer.imageryLayers.addImageryProvider(provider, 0);
+      baseLayerRef.current = layer;
+    })();
+
+    return () => { cancelled = true; };
+  }, [baseMapStyle]);
+
+  // ---- Generic helper: toggle a UrlTemplate imagery overlay ---------------
+  function useOverlay(
+    enabled: boolean,
+    ref: React.MutableRefObject<any>,
+    urlTemplate: string,
+    alpha: number,
+    maximumLevel: number = 6,
+  ) {
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    useEffect(() => {
+      const viewer = viewerRef.current;
+      if (!viewer || viewer.isDestroyed()) return;
+      if (enabled) {
+        try {
+          const provider = new UrlTemplateImageryProvider({
+            url: urlTemplate,
+            maximumLevel,
+          });
+          const layer = viewer.imageryLayers.addImageryProvider(provider);
+          layer.alpha = alpha;
+          ref.current = layer;
+        } catch (e) { console.warn("Overlay failed:", urlTemplate, e); }
+      }
+      return () => {
+        if (ref.current && viewer && !viewer.isDestroyed()) {
+          try { viewer.imageryLayers.remove(ref.current, true); } catch { /* ignore */ }
+          ref.current = null;
+        }
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [enabled]);
+  }
+
+  // RainViewer — static timestamp placeholder per MVP spec.
+  useOverlay(
+    showRadar,
+    radarLayerRef,
+    "https://tilecache.rainviewer.com/v2/radar/1719954000/256/{z}/{x}/{y}/2/1_1.png",
+    0.6,
+    10,
+  );
+  // OpenWeather isobars (pressure). Key hidden by the edge proxy.
+  useOverlay(
+    showIsobars,
+    isobarsLayerRef,
+    `${OWM_PROXY}?tile=pressure_new&z={z}&x={x}&y={y}`,
+    0.7,
+    6,
+  );
+  useOverlay(
+    showClouds,
+    cloudsLayerRef,
+    `${OWM_PROXY}?tile=clouds_new&z={z}&x={x}&y={y}`,
+    0.55,
+    6,
+  );
+  useOverlay(
+    showWind,
+    windLayerRef,
+    `${OWM_PROXY}?tile=wind_new&z={z}&x={x}&y={y}`,
+    0.55,
+    6,
+  );
+  useOverlay(
+    showRain,
+    rainLayerRef,
+    `${OWM_PROXY}?tile=precipitation_new&z={z}&x={x}&y={y}`,
+    0.65,
+    6,
+  );
+
+  // Aircraft (OpenSky) — placeholder. Feed will be wired via edge fn next sprint.
+  // Keeping the prop live keeps the HUD toggle wiring stable.
+  useEffect(() => {
+    if (!aircraftEnabled) return;
+    // TODO: subscribe to /functions/v1/opensky-feed and paint entities.
+  }, [aircraftEnabled]);
 
   // Tesla Aurora — dynamic polar rings reacting to Kp
   useEffect(() => {
