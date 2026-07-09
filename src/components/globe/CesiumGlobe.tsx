@@ -246,10 +246,24 @@ export function CesiumGlobe({
       duration: 0,
     });
 
+    // Expose a lightweight zoom helper for the HUD buttons.
+    (window as any).__cesiumZoom = (factor: number) => {
+      if (!viewer || viewer.isDestroyed()) return;
+      const height = viewer.camera.positionCartographic.height;
+      const nextHeight = Math.max(500, Math.min(30_000_000, height * factor));
+      const carto = viewer.camera.positionCartographic;
+      viewer.camera.flyTo({
+        destination: Cartesian3.fromRadians(carto.longitude, carto.latitude, nextHeight),
+        orientation: { heading: viewer.camera.heading, pitch: viewer.camera.pitch, roll: 0 },
+        duration: 0.6,
+      });
+    };
+
     return () => {
       handler.destroy();
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
+      if ((window as any).__cesiumZoom) delete (window as any).__cesiumZoom;
     };
   }, [handleHotspotClick]);
 
