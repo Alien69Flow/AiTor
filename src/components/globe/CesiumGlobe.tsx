@@ -18,7 +18,6 @@ import {
   IonImageryProvider,
   EllipsoidTerrainProvider,
   CallbackProperty,
-  SkyBox,
   UrlTemplateImageryProvider,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
@@ -183,21 +182,8 @@ export function CesiumGlobe({
     if (viewer.scene.sun) viewer.scene.sun.show = true;
     if (viewer.scene.moon) viewer.scene.moon.show = true;
 
-    // Dense star field skybox
-    try {
-      viewer.scene.skyBox = new SkyBox({
-        sources: {
-          positiveX: "https://cesium.com/public/SandcastleSampleData/skybox_px.jpg",
-          negativeX: "https://cesium.com/public/SandcastleSampleData/skybox_mx.jpg",
-          positiveY: "https://cesium.com/public/SandcastleSampleData/skybox_py.jpg",
-          negativeY: "https://cesium.com/public/SandcastleSampleData/skybox_my.jpg",
-          positiveZ: "https://cesium.com/public/SandcastleSampleData/skybox_pz.jpg",
-          negativeZ: "https://cesium.com/public/SandcastleSampleData/skybox_mz.jpg",
-        },
-      });
-    } catch (e) {
-      console.warn("Skybox init failed, using default stars:", e);
-    }
+    // Keep Cesium's built-in skybox. Remote Sandcastle skybox textures are
+    // CORS-blocked in production previews and can stop the render loop.
 
     // Night lights
     try {
