@@ -5,30 +5,6 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-async function requireUser(req: Request): Promise<Response | null> {
-  const authHeader = req.headers.get("Authorization");
-  if (!authHeader?.startsWith("Bearer ")) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_ANON_KEY")!,
-    { global: { headers: { Authorization: authHeader } } },
-  );
-  const token = authHeader.replace("Bearer ", "");
-  const { data, error } = await supabase.auth.getUser(token);
-  if (error || !data?.user?.id) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
-  }
-  return null;
-}
-
 const ION_TOKEN = Deno.env.get("VITE_CESIUM_TOKEN") || Deno.env.get("CESIUM_ION_TOKEN");
 
 // Bing Maps Aerial = Cesium Ion asset 2 (world imagery)
@@ -38,9 +14,6 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const authFail = await requireUser(req);
-    if (authFail) return authFail;
-
     if (!ION_TOKEN) {
       return new Response(
         JSON.stringify({ error: "CESIUM_ION_TOKEN not configured" }),
