@@ -1,57 +1,68 @@
-## Objetivo
-Limpiar la duplicación visual del logo en la pestaña Agents y refinar la interfaz móvil del chat (selector de IA, botón flip Chat⟳Neural, hero del empty state). Cambios sólo de UI en frontend.
 
-## 1. Logo duplicado (3 instancias en Agents)
+# Fase 1 (estricta) — Fix Sol, Luna y Bloom
 
-Actualmente el logo `alienflow-logo.webp` aparece en:
-- `TopNavBar.tsx` (header global) — **se mantiene** como marca principal.
-- `ChatHeader.tsx` (header del chat con "AI Tor / Online") — **se elimina** el `<img>` y se deja sólo el texto "AI Tor" + dot online. El header del chat ya está dentro de la pestaña Agents, así que la marca de la app ya está visible arriba.
-- `EmptyState.tsx` (hero gigante con anillos animados que hacen "ondas") — **se mantiene** pero:
-  - En móvil (<500px) se reducen los anillos a uno solo y se baja la opacidad para que no parezca un radar pesado.
-  - Se reduce el tamaño del logo en móvil de `w-12 h-12` a `w-10 h-10` y se acerca al título para compactar el hero.
+Un solo archivo: `src/components/globe/CesiumGlobe.tsx`. Sólo el bloque de astros y bloom dentro del `useEffect` de init del viewer. Cero cambios de UI, cero billboards de planetas, cero tabs.
 
-Resultado: 2 instancias visibles (nav global + hero) en vez de 3, sin tocar la identidad.
+## Diagnóstico
 
-## 2. Selector de IA en móvil
+- `new Sun()` y `new Moon()` ya se crean, pero no se ven porque:
+  1. El bloom con `contrast: 128` + `brightness: -0.3` aplasta cualquier fuente puntual brillante contra el negro — se come Sol, Luna y estrellas nítidas.
+  2. Sin `viewer.clock.shouldAnimate = true`, la posición del Sol es estática según la hora del cliente; según cámara inicial puede estar detrás.
+  3. `scene.sun.glowFactor` por defecto es bajo; el disco solar queda diminuto.
+  4. `Moon` por defecto usa `onlySunLighting = true` — en cara noche se ve casi negra.
+  5. `scene.globe.showGroundAtmosphere` intenso solapa al Sol al ras del limbo.
 
-`ModelSelector.tsx` en móvil muestra: icono pill + nombre truncado + badge Fast/Pro + barras de velocidad + chevron, lo que crea las "burbujas" amontonadas.
+## Cambios (sólo dentro del init `useEffect`)
 
-Cambios:
-- En `<500px`: ocultar el badge `ORACLE_TYPE_BADGES` y el `SpeedIndicator` del trigger; dejar sólo icono + nombre + chevron.
-- Reducir altura del trigger de `h-9` a `h-8` y padding `px-2` en móvil.
-- `PopoverContent`: cambiar `w-[380px]` por `w-[calc(100vw-1rem)] max-w-[380px]` para que no desborde en móvil.
+Reemplazar el bloque actual de astros y el de bloom por:
 
-## 3. Botón flip Chat ⟳ Neural (`AgentsFlipCard.tsx`)
+```ts
+// Sol — halo grande y visible
+viewer.scene.sun = new Sun();
+viewer.scene.sun.show = true;
+viewer.scene.sun.glowFactor = 2.0;
 
-Actualmente está en `top-3 right-3` y tapa el botón de cerrar sesión / model selector en móvil.
+// Luna con textura local (viene con Cesium)
+viewer.scene.moon = new Moon({
+  textureUrl: buildModuleUrl("Assets/Textures/moonSmall.jpg"),
+  onlySunLighting: false, // visible también en el hemisferio noche
+});
+viewer.scene.moon.show = true;
 
-Cambios:
-- En móvil moverlo a `bottom-16 right-3` (encima de la BottomNav) como FAB redondo con sólo el icono (Brain/MessageSquare), sin texto.
-- En desktop mantener la posición y el texto actuales.
-- Añadir `aria-pressed={flipped}` para accesibilidad.
+// Reloj animado → efemérides reales para Sol y Luna
+viewer.clock.shouldAnimate = true;
+viewer.clock.multiplier = 1;
 
-## 4. ChatHeader compacto en móvil
+// Atmósfera terrestre suave, sin comer el limbo solar
+viewer.scene.globe.showGroundAtmosphere = true;
+(viewer.scene.globe as any).atmosphereBrightnessShift = -0.1;
 
-- Eliminar `<img>` del logo (punto 1).
-- Reducir el bloque izquierdo: dejar sólo "AI Tor" con dot pulsante.
-- El `ModelSelector` del lado derecho (mobile) queda más visible al liberar espacio.
+// Bloom táctico recalibrado — brillo sin aplastar puntos de luz
+viewer.scene.postProcessStages.bloom.enabled = true;
+viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false;
+viewer.scene.postProcessStages.bloom.uniforms.contrast = 16;
+viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.1;
+viewer.scene.postProcessStages.bloom.uniforms.delta = 1.0;
+viewer.scene.postProcessStages.bloom.uniforms.sigma = 2.0;
+viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.0;
+```
 
-## 5. Respuesta sobre agentes RAG / Agentic Workflows
+Todo dentro de `try/catch` como el bloque original.
 
-No es un cambio de código; va como nota informativa al final de la implementación:
+## Sobre "el resto de planetas del sistema solar"
 
-Estado actual de las integraciones con secrets:
-- **Configurados y enrutados en `agenticworkflows`**: `ANTHROPIC_API_KEY` (router Claude Sonnet 4), `FIRECRAWL_API_KEY` (search + osint), `GEMINI_API_KEY` (vía función `chat`), `OPENAI_API_KEY` (vía `chat`).
-- **Configurados pero NO enrutados aún como tool del router**: `GROK_API_KEY`, `LIVEUAMAP_API_KEY`, `GITHUB_PAT` (sólo usado por `github-proxy` desde el frontend, no expuesto al agentic loop), `VITE_CESIUM_TOKEN` (proxy de tiles, no es una "skill" del agente).
-- **Skills RAG (`skills-ingest` + pgvector)**: la función existe pero el router `agenticworkflows` **no consulta el índice vectorial** como tool. Falta una tool `skills_rag_search` que llame a `skills-ingest` en modo query.
+Cesium **no** renderiza nativamente Mercurio/Venus/Marte/etc. Las únicas opciones reales son:
+- billboards con posición calculada (lo que llamas "pegatinas de mierda") — descartado por ti,
+- o un asset 3D externo del sistema solar (Ion tile) — mucho scope, no toca en Fase 1.
 
-Estos huecos se proponen como trabajo separado (no se tocan en este plan que es sólo UI).
+Por tanto en este commit **no** se añaden más astros. Con `clock.shouldAnimate` activo, Sol y Luna quedan en su posición astronómica real; para añadir planetas propiamente lo abriremos en una fase aparte cuando lo pidas.
 
-## Archivos a modificar
+## Verificación
 
-- `src/components/chat/ChatHeader.tsx` — quitar `<img>` logo.
-- `src/components/chat/EmptyState.tsx` — reducir anillos y logo en móvil.
-- `src/components/chat/ModelSelector.tsx` — simplificar trigger y popover en móvil.
-- `src/components/agents/AgentsFlipCard.tsx` — FAB móvil para el botón flip.
+- Playwright: cargar `/`, entrar al Globe, screenshot orientando cámara hacia el limbo iluminado → confirmar disco solar con glow. Segundo screenshot hacia el terminador → confirmar Luna visible.
+- Consola: sin warnings nuevos.
 
-Sin cambios en backend, edge functions, ni en otras pestañas.
+## Archivos tocados
+- `src/components/globe/CesiumGlobe.tsx` (sólo bloques `Sun/Moon` y `bloom` del useEffect init)
+
+Nada más.
