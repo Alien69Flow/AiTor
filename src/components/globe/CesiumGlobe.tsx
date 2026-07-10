@@ -191,8 +191,18 @@ export function CesiumGlobe({
     try {
       viewer.scene.sun = new Sun();
       viewer.scene.sun.show = true;
-      viewer.scene.moon = new Moon();
+      (viewer.scene.sun as any).glowFactor = 2.0;
+      viewer.scene.moon = new Moon({
+        textureUrl: buildModuleUrl("Assets/Textures/moonSmall.jpg"),
+        onlySunLighting: false,
+      } as any);
       viewer.scene.moon.show = true;
+      // Reloj animado → efemérides reales para Sol y Luna
+      viewer.clock.shouldAnimate = true;
+      viewer.clock.multiplier = 1;
+      // Atmósfera terrestre suave, sin comer el limbo solar
+      viewer.scene.globe.showGroundAtmosphere = true;
+      (viewer.scene.globe as any).atmosphereBrightnessShift = -0.1;
     } catch (e) { console.warn("Sun/Moon init failed:", e); }
 
     // High-res Milky Way skybox (tycho2t3_80) — served locally by
@@ -214,10 +224,10 @@ export function CesiumGlobe({
     try {
       viewer.scene.postProcessStages.bloom.enabled = true;
       viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false;
-      viewer.scene.postProcessStages.bloom.uniforms.contrast = 128;
-      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.3;
+      viewer.scene.postProcessStages.bloom.uniforms.contrast = 16;
+      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.1;
       viewer.scene.postProcessStages.bloom.uniforms.delta = 1.0;
-      viewer.scene.postProcessStages.bloom.uniforms.sigma = 3.5;
+      viewer.scene.postProcessStages.bloom.uniforms.sigma = 2.0;
       viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.0;
     } catch (e) { console.warn("Bloom init failed:", e); }
 
