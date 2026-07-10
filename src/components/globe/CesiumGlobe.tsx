@@ -19,6 +19,11 @@ import {
   EllipsoidTerrainProvider,
   CallbackProperty,
   UrlTemplateImageryProvider,
+  SkyBox,
+  Sun,
+  Moon,
+  SkyAtmosphere,
+  buildModuleUrl,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -165,25 +170,56 @@ export function CesiumGlobe({
       baseLayer: false as any,
     });
 
-    // Enable built-in Cesium sky with stars and atmosphere
+    // ---------------- Photo-real cosmos environment ----------------
     viewer.scene.backgroundColor = Color.BLACK;
+
+    // Real day/night terminator + dynamic sunrise/sunset atmosphere.
     viewer.scene.globe.enableLighting = true;
+    (viewer.scene.globe as any).dynamicAtmosphereLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 8.0;
 
-    // Enable sky atmosphere (the glow halo around the Earth)
-    if (viewer.scene.skyAtmosphere) {
+    // Halo atmosphere around the Earth limb.
+    try {
+      viewer.scene.skyAtmosphere = new SkyAtmosphere();
       viewer.scene.skyAtmosphere.show = true;
       viewer.scene.skyAtmosphere.brightnessShift = 0.05;
       viewer.scene.skyAtmosphere.hueShift = -0.05;
       viewer.scene.skyAtmosphere.saturationShift = 0.2;
-    }
+    } catch (e) { console.warn("SkyAtmosphere init failed:", e); }
 
-    // Enable sun and moon
-    if (viewer.scene.sun) viewer.scene.sun.show = true;
-    if (viewer.scene.moon) viewer.scene.moon.show = true;
+    // Native astros — Cesium computes real ephemerides (lunar phase, sun pos).
+    try {
+      viewer.scene.sun = new Sun();
+      viewer.scene.sun.show = true;
+      viewer.scene.moon = new Moon();
+      viewer.scene.moon.show = true;
+    } catch (e) { console.warn("Sun/Moon init failed:", e); }
 
-    // Keep Cesium's built-in skybox. Remote Sandcastle skybox textures are
-    // CORS-blocked in production previews and can stop the render loop.
+    // High-res Milky Way skybox (tycho2t3_80) — served locally by
+    // vite-plugin-cesium, so no CORS from third-party CDNs.
+    try {
+      viewer.scene.skyBox = new SkyBox({
+        sources: {
+          positiveX: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_px.jpg"),
+          negativeX: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mx.jpg"),
+          positiveY: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_py.jpg"),
+          negativeY: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_my.jpg"),
+          positiveZ: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_pz.jpg"),
+          negativeZ: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mz.jpg"),
+        },
+      });
+    } catch (e) { console.warn("SkyBox init failed:", e); }
+
+    // Tactical bloom — city lights and stars punch through the dark.
+    try {
+      viewer.scene.postProcessStages.bloom.enabled = true;
+      viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false;
+      viewer.scene.postProcessStages.bloom.uniforms.contrast = 128;
+      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.3;
+      viewer.scene.postProcessStages.bloom.uniforms.delta = 1.0;
+      viewer.scene.postProcessStages.bloom.uniforms.sigma = 3.5;
+      viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.0;
+    } catch (e) { console.warn("Bloom init failed:", e); }
 
     // Night lights
     try {
