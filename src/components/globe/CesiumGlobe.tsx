@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import {
   Ion,
   Viewer as CesiumViewer,
@@ -137,12 +137,14 @@ interface CesiumGlobeProps {
   /** Aircraft (OpenSky) — wired in next sprint. Prop kept for API stability. */
   aircraftEnabled?: boolean;
   externalMarkers?: HotspotData[];
+  onReady?: (navFn: (lat: number, lng: number, altitude: number) => void) => void;
 }
 
 export function CesiumGlobe({
   onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [],
   externalMarkers = [],
+  onReady,
   baseMapStyle = "satellite",
   showRadar = false, showIsobars = false, showClouds = false,
   showWind = false, showRain = false,
@@ -297,6 +299,13 @@ export function CesiumGlobe({
           } catch { /* ignore */ }
           return;
         }
+        const externalMarker = picked.id.properties.externalMarker?.getValue();
+        if (externalMarker) {
+          try {
+            handleHotspotClick(JSON.parse(externalMarker));
+          } catch { /* ignore */ }
+          return;
+        }
       }
       handleHotspotClick(null);
     }, ScreenSpaceEventType.LEFT_CLICK);
@@ -308,6 +317,16 @@ export function CesiumGlobe({
     });
 
     // Expose a lightweight zoom helper for the HUD buttons.
+    const flyToLocation = (lat: number, lng: number, altitude: number) => {
+      if (!viewer || viewer.isDestroyed()) return;
+      viewer.camera.flyTo({
+        destination: Cartesian3.fromDegrees(lng, lat, altitude * 1_000_000),
+        orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
+        duration: 1.5,
+      });
+    };
+    onReady?.(flyToLocation);
+
     (window as any).__cesiumZoom = (factor: number) => {
       if (!viewer || viewer.isDestroyed()) return;
       const height = viewer.camera.positionCartographic.height;
@@ -326,7 +345,7 @@ export function CesiumGlobe({
       viewerRef.current = null;
       if ((window as any).__cesiumZoom) delete (window as any).__cesiumZoom;
     };
-  }, [handleHotspotClick]);
+  }, [handleHotspotClick, onReady]);
 
   // ---- Base map layer (satellite vs dark vector) --------------------------
   useEffect(() => {
