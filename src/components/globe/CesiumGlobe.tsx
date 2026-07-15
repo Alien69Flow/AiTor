@@ -876,8 +876,9 @@ export function CesiumGlobe({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !flyTo) return;
+    const altitudeMeters = flyTo.alt < 1000 ? flyTo.alt * 1_000_000 : flyTo.alt;
     viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, flyTo.alt),
+      destination: Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, altitudeMeters),
       orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
       duration: 1.5,
     });

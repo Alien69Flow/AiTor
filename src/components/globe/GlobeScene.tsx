@@ -118,7 +118,7 @@ export function GlobeScene({
 
   const navigate = useCallback((lat: number, lon: number, alt: number) => {
     if (navRef.current) navRef.current(lat, lon, alt);
-    else setFlyToTarget({ lat, lon, alt });
+    else setFlyToTarget({ lat, lon, alt: alt < 1000 ? alt * 1_000_000 : alt });
   }, []);
 
   const flyToDAO = () => navigate(ZARAGOZA.lat, ZARAGOZA.lon, ZARAGOZA.alt);
