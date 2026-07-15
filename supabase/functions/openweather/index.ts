@@ -62,7 +62,7 @@ Deno.serve(async (req) => {
       const x = Number(url.searchParams.get("x"));
       const y = Number(url.searchParams.get("y"));
       if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) ||
-          z < 0 || z > 8 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
+          z < 0 || z > 12 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
         return new Response(JSON.stringify({ error: "invalid z/x/y" }), {
           status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

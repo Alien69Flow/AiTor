@@ -83,9 +83,9 @@ export function GlobeScene({
   const [baseMapStyle, setBaseMapStyle] = useState<"satellite" | "dark">("satellite");
   const [showRadar, setShowRadar] = useState(false);
   const [showIsobars, setShowIsobars] = useState(false);
-  const [showClouds, setShowClouds] = useState(cloudsEnabled);
+  const [showClouds, setShowClouds] = useState(false);
   const [showWind, setShowWind] = useState(false);
-  const [showRain, setShowRain] = useState(weatherEnabled);
+  const [showRain, setShowRain] = useState(false);
   const [showAircraft, setShowAircraft] = useState(aircraftEnabled);
   const [showMarkets, setShowMarkets] = useState(marketsEnabled);
   const [showFires, setShowFires] = useState(firesEnabled);
@@ -93,8 +93,6 @@ export function GlobeScene({
     { lat: number; lon: number; alt: number } | null
   >(null);
 
-  useEffect(() => setShowClouds(cloudsEnabled), [cloudsEnabled]);
-  useEffect(() => setShowRain(weatherEnabled), [weatherEnabled]);
   useEffect(() => setShowFires(firesEnabled), [firesEnabled]);
   useEffect(() => setShowAircraft(aircraftEnabled), [aircraftEnabled]);
   useEffect(() => setShowMarkets(marketsEnabled), [marketsEnabled]);

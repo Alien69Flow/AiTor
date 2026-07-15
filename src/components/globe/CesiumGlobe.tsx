@@ -453,7 +453,7 @@ export function CesiumGlobe({
     isobarsLayerRef,
     `${OWM_PROXY}?tile=pressure_new&z={z}&x={x}&y={y}`,
     0.7,
-    8,
+    12,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
@@ -461,7 +461,7 @@ export function CesiumGlobe({
     cloudsLayerRef,
     `${OWM_PROXY}?tile=clouds_new&z={z}&x={x}&y={y}`,
     0.55,
-    8,
+    12,
     { brightness: 1.2, contrast: 1.05, credit: new Credit("OpenWeather") },
   );
   useOverlay(
@@ -469,7 +469,7 @@ export function CesiumGlobe({
     windLayerRef,
     `${OWM_PROXY}?tile=wind_new&z={z}&x={x}&y={y}`,
     0.55,
-    8,
+    12,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
@@ -477,7 +477,7 @@ export function CesiumGlobe({
     rainLayerRef,
     `${OWM_PROXY}?tile=precipitation_new&z={z}&x={x}&y={y}`,
     0.65,
-    8,
+    12,
     { brightness: 1.15, contrast: 1.08, credit: new Credit("OpenWeather") },
   );
 
