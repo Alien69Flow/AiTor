@@ -152,13 +152,13 @@ export function LegendPanel({
   // OpenWeatherMap raster tile overlays (clouds / precip / wind / pressure).
   // Globe exposes a toggle on window.__owmToggle and current state on
   // window.__owmState — bridged here so the panel stays decoupled.
-  const [owm, setOwm] = useState<{ clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
-    clouds: false, precipitation: false, wind: false, pressure: false,
+  const [owm, setOwm] = useState<{ radar: boolean; clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
+    radar: false, clouds: false, precipitation: false, wind: false, pressure: false,
   });
   useEffect(() => {
     const id = setInterval(() => {
       const s = (window as any).__owmState;
-        if (s) setOwm({ clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure });
+        if (s) setOwm({ radar: !!s.radar, clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure });
     }, 400);
     return () => clearInterval(id);
   }, []);
@@ -263,7 +263,7 @@ export function LegendPanel({
                 icon={t.Icon}
                 label={t.label}
                 color={t.color}
-                active={t.key === "radar" ? !!(window as any).__owmState?.radar : owm[t.key]}
+                active={owm[t.key]}
                 onChange={() => toggleOwm(t.key)}
               />
             ))}
