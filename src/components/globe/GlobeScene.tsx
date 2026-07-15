@@ -80,7 +80,7 @@ export function GlobeScene({
   const { kpIndex } = useSpaceWeather();
 
   // ---- HUD state --------------------------------------------------------
-  const [baseMapStyle, setBaseMapStyle] = useState<"satellite" | "dark">("satellite");
+  const baseMapStyle = "satellite" as const;
   const [showRadar, setShowRadar] = useState(false);
   const [showIsobars, setShowIsobars] = useState(false);
   const [showClouds, setShowClouds] = useState(cloudsEnabled);
