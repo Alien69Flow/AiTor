@@ -80,7 +80,7 @@ export function GlobeScene({
   const { kpIndex } = useSpaceWeather();
 
   // ---- HUD state --------------------------------------------------------
-  const baseMapStyle = "satellite" as const;
+  const [baseMapStyle, setBaseMapStyle] = useState<"satellite" | "dark">("satellite");
   const [showRadar, setShowRadar] = useState(false);
   const [showIsobars, setShowIsobars] = useState(false);
   const [showClouds, setShowClouds] = useState(cloudsEnabled);
@@ -161,6 +161,8 @@ export function GlobeScene({
       pressure: showIsobars,
     };
     (window as any).__owmState = state;
+    (window as any).__globeBaseState = baseMapStyle;
+    (window as any).__globeSetBase = (style: "satellite" | "dark") => setBaseMapStyle(style);
     (window as any).__owmToggle = (key: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
       if (key === "radar") setShowRadar((v) => !v);
       if (key === "clouds") setShowClouds((v) => !v);
@@ -171,8 +173,10 @@ export function GlobeScene({
     return () => {
       delete (window as any).__owmState;
       delete (window as any).__owmToggle;
+      delete (window as any).__globeBaseState;
+      delete (window as any).__globeSetBase;
     };
-  }, [showClouds, showRain, showRadar, showWind, showIsobars]);
+  }, [baseMapStyle, showClouds, showRain, showRadar, showWind, showIsobars]);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
