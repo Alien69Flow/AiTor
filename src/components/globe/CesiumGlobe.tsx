@@ -675,7 +675,7 @@ export function CesiumGlobe({
             const elapsed = (Date.now() - startTime) % 4000;
             const pulse = 1 + 0.3 * Math.sin((elapsed / 4000) * Math.PI * 2);
             const majorVal = baseRadius * pulse;
-            const minorVal = baseRadius * pulse;
+            const minorVal = baseRadius * pulse * 0.98;
             return Math.min(majorVal, minorVal);
           }, false) as any,
           material: Color.fromCssColorString("#FF4444").withAlpha(
