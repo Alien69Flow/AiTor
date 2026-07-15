@@ -158,14 +158,15 @@ export function LegendPanel({
   useEffect(() => {
     const id = setInterval(() => {
       const s = (window as any).__owmState;
-      if (s) setOwm({ ...s });
+        if (s) setOwm({ clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure });
     }, 400);
     return () => clearInterval(id);
   }, []);
-  const toggleOwm = (k: "clouds" | "precipitation" | "wind" | "pressure") => {
+  const toggleOwm = (k: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
     (window as any).__owmToggle?.(k);
   };
   const owmToggles = [
+    { key: "radar", label: "Rain Radar", color: "#22d3ee", Icon: CloudRain },
     { key: "clouds", label: "OWM Clouds", color: "#7dd3fc", Icon: Cloud },
     { key: "precipitation", label: "OWM Rain", color: "#38bdf8", Icon: Droplets },
     { key: "wind", label: "OWM Wind", color: "#a7f3d0", Icon: Wind },
@@ -262,7 +263,7 @@ export function LegendPanel({
                 icon={t.Icon}
                 label={t.label}
                 color={t.color}
-                active={owm[t.key]}
+                active={t.key === "radar" ? !!(window as any).__owmState?.radar : owm[t.key]}
                 onChange={() => toggleOwm(t.key)}
               />
             ))}
