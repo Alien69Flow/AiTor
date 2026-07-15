@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   Crosshair,
   Wifi,
@@ -16,11 +17,10 @@ import {
 } from "./GlassPanels";
 
 function TensionSparkline({ value, color }: { value: number; color: string }) {
-  const points = Array.from({ length: 24 }, (_, i) => {
-    const base = 20 + Math.sin(i * 0.5) * 15 + (value / 100) * 20;
-    const noise = Math.random() * 8;
-    return `${10 + i * 10},${80 - base - noise}`;
-  }).join(" ");
+  const points = useMemo(() => Array.from({ length: 24 }, (_, i) => {
+    const base = 18 + Math.sin(i * 0.55) * 12 + Math.cos(i * 0.21) * 5 + (value / 100) * 24;
+    return `${10 + i * 10},${Math.max(10, Math.min(82, 82 - base))}`;
+  }).join(" "), [value]);
 
   return (
     <svg viewBox="0 0 260 90" className="w-full h-20">
@@ -89,16 +89,25 @@ function TensionMeter({ value }: { value: number }) {
 export function TacticalConsole() {
   const sw = useSpaceWeather();
 
-  const kpColor =
-    sw.kpIndex > 5 ? "#f87171" : sw.kpIndex > 4 ? "#fbbf24" : "#34d399";
-  const kpStatus =
-    sw.kpIndex > 5 ? "SEVERE" : sw.kpIndex > 4 ? "ELEVATED" : "NOMINAL";
-  const kpVariant =
-    sw.kpIndex > 5 ? "danger" : sw.kpIndex > 4 ? "warning" : "success";
+  const scaleValue = (scale: string) => {
+    const n = Number((scale.match(/\d+/)?.[0] ?? "0"));
+    return Number.isFinite(n) ? n : 0;
+  };
 
   const rScale = sw.radioBlackout !== "none" ? sw.radioBlackout : "R0";
   const sScale = sw.stormLevel !== "none" ? sw.stormLevel : "S0";
   const gScale = sw.geomagneticStorm !== "none" ? sw.geomagneticStorm : "G0";
+  const tensionScore = Math.min(
+    100,
+    Math.round(sw.kpIndex * 8 + scaleValue(rScale) * 10 + scaleValue(sScale) * 8 + scaleValue(gScale) * 9),
+  );
+
+  const kpColor =
+    tensionScore >= 70 ? "#f87171" : tensionScore >= 45 ? "#fbbf24" : "#34d399";
+  const kpStatus =
+    tensionScore >= 70 ? "SEVERE" : tensionScore >= 45 ? "ELEVATED" : "NOMINAL";
+  const kpVariant =
+    tensionScore >= 70 ? "danger" : tensionScore >= 45 ? "warning" : "success";
 
   return (
     <GlassPanel
@@ -112,19 +121,20 @@ export function TacticalConsole() {
       <div className="space-y-5">
         {/* Main Kp Index Display */}
         <div className="text-center py-2">
-          <div className="flex items-center justify-center gap-3 mb-3">
+          <div className="flex items-center justify-center gap-4 mb-3">
             <Zap className="w-5 h-5" style={{ color: kpColor }} />
             <span
-              className="text-4xl font-bold font-mono"
+              className="text-4xl font-bold font-mono tabular-nums"
               style={{ color: kpColor }}
             >
-              {sw.kpIndex.toFixed(1)}
+              {tensionScore}
             </span>
+            <span className="text-[10px] text-slate-500 uppercase tracking-widest self-end mb-1">/100</span>
           </div>
           <div className="text-[10px] text-slate-400 uppercase tracking-widest mb-4">
-            Kp Index
+            Global Tension · Kp {sw.kpIndex.toFixed(1)}
           </div>
-          <TensionMeter value={sw.kpIndex * 10} />
+          <TensionMeter value={tensionScore} />
         </div>
 
         {/* Realtime Indices Grid */}
@@ -162,17 +172,17 @@ export function TacticalConsole() {
               </span>
             </div>
             <div className="flex items-center gap-1.5">
-              {sw.kpIndex > 3 ? (
+                {tensionScore > 35 ? (
                 <TrendingUp className="w-3 h-3 text-amber-400" />
               ) : (
                 <TrendingDown className="w-3 h-3 text-emerald-400" />
               )}
               <span className="text-[9px] font-mono" style={{ color: kpColor }}>
-                {sw.kpIndex > 3 ? "+0.2" : "-0.1"}
+                {tensionScore > 35 ? "+2" : "-1"}
               </span>
             </div>
           </div>
-          <TensionSparkline value={sw.kpIndex * 10} color={kpColor} />
+          <TensionSparkline value={tensionScore} color={kpColor} />
           <div className="flex justify-between text-[8px] text-slate-600 mt-1.5 px-2">
             <span>-24h</span>
             <span>-12h</span>

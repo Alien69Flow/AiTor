@@ -3,6 +3,7 @@ import {
   Layers,
   Activity,
   Satellite,
+  Map as MapIcon,
   Radio,
   CloudRain,
   Wind,
@@ -149,28 +150,35 @@ export function LegendPanel({
     },
   ];
 
-  // OpenWeatherMap raster tile overlays (clouds / precip / wind / pressure).
+  // Globe raster overlays (RainViewer + OpenWeather clouds / precip / wind / pressure).
   // Globe exposes a toggle on window.__owmToggle and current state on
   // window.__owmState — bridged here so the panel stays decoupled.
-  const [owm, setOwm] = useState<{ clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
-    clouds: false, precipitation: false, wind: false, pressure: false,
+  const [owm, setOwm] = useState<{ radar: boolean; clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
+    radar: false, clouds: false, precipitation: false, wind: false, pressure: false,
   });
+  const [baseMap, setBaseMap] = useState<"satellite" | "dark">("satellite");
   useEffect(() => {
     const id = setInterval(() => {
       const s = (window as any).__owmState;
-      if (s) setOwm({ ...s });
+      if (s) setOwm({ radar: !!s.radar, clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure });
+      if ((window as any).__globeBaseState) setBaseMap((window as any).__globeBaseState);
     }, 400);
     return () => clearInterval(id);
   }, []);
-  const toggleOwm = (k: "clouds" | "precipitation" | "wind" | "pressure") => {
+  const toggleOwm = (k: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
     (window as any).__owmToggle?.(k);
   };
   const owmToggles = [
+    { key: "radar", label: "Rain Radar", color: "#22d3ee", Icon: CloudRain },
     { key: "clouds", label: "OWM Clouds", color: "#7dd3fc", Icon: Cloud },
     { key: "precipitation", label: "OWM Rain", color: "#38bdf8", Icon: Droplets },
     { key: "wind", label: "OWM Wind", color: "#a7f3d0", Icon: Wind },
     { key: "pressure", label: "OWM Pressure", color: "#fbbf24", Icon: Gauge },
   ] as const;
+  const setGlobeBase = (style: "satellite" | "dark") => {
+    setBaseMap(style);
+    (window as any).__globeSetBase?.(style);
+  };
 
   return (
     <GlassPanel
@@ -184,6 +192,26 @@ export function LegendPanel({
       headerRight={<LedIndicator color="#34d399" active size="sm" />}
     >
       <div className="space-y-5">
+        <div>
+          <SectionTitle>Base Map</SectionTitle>
+          <div className="grid grid-cols-2 gap-2">
+            <ToggleRow
+              icon={Satellite}
+              label="Satellite"
+              color="#fbbf24"
+              active={baseMap === "satellite"}
+              onChange={() => setGlobeBase("satellite")}
+            />
+            <ToggleRow
+              icon={MapIcon}
+              label="Dark Map"
+              color="#22d3ee"
+              active={baseMap === "dark"}
+              onChange={() => setGlobeBase("dark")}
+            />
+          </div>
+        </div>
+
         {/* Data Categories */}
         <div>
           <SectionTitle>Intelligence Categories</SectionTitle>

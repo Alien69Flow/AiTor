@@ -1,8 +1,6 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Layers, Radar, CloudRain, Cloud, Wind, Gauge, Satellite,
-  Map as MapIcon, Plane, ZoomIn, ZoomOut, Crosshair,
-  ChevronRight, ChevronLeft, TrendingUp,
+  ZoomIn, ZoomOut, Crosshair,
 } from "lucide-react";
 import { CesiumGlobe } from "./CesiumGlobe";
 import { useEarthquakes } from "@/hooks/useEarthquakes";
@@ -44,6 +42,18 @@ interface GlobeSceneProps {
 }
 
 const ZARAGOZA = { lat: 41.65, lon: -0.88, alt: 1_500_000 };
+const DAO_MARKER: UnifiedHotspotData = {
+  lat: ZARAGOZA.lat,
+  lon: ZARAGOZA.lon,
+  intensity: 1,
+  color: "#FFD700",
+  name: "ΔlieπFlΦw DAO",
+  country: "Zaragoza",
+  marketVolume: "Sovereign Node",
+  trend: "ONLINE",
+  topTokens: ["DAO", "HQ"],
+  type: "dao_node",
+};
 
 /**
  * GlobeScene — pure UI wrapper around the Cesium engine.
@@ -56,6 +66,7 @@ const ZARAGOZA = { lat: 41.65, lon: -0.88, alt: 1_500_000 };
 export function GlobeScene({
   onHotspotClick,
   onReady,
+  externalMarkers = [],
   cloudsEnabled = true,
   weatherEnabled = true,
   firesEnabled = true,
@@ -72,16 +83,19 @@ export function GlobeScene({
   const [baseMapStyle, setBaseMapStyle] = useState<"satellite" | "dark">("satellite");
   const [showRadar, setShowRadar] = useState(false);
   const [showIsobars, setShowIsobars] = useState(false);
-  const [showClouds, setShowClouds] = useState(cloudsEnabled);
+  const [showClouds, setShowClouds] = useState(false);
   const [showWind, setShowWind] = useState(false);
-  const [showRain, setShowRain] = useState(weatherEnabled);
+  const [showRain, setShowRain] = useState(false);
   const [showAircraft, setShowAircraft] = useState(aircraftEnabled);
   const [showMarkets, setShowMarkets] = useState(marketsEnabled);
   const [showFires, setShowFires] = useState(firesEnabled);
-  const [panelOpen, setPanelOpen] = useState(true);
   const [flyToTarget, setFlyToTarget] = useState<
     { lat: number; lon: number; alt: number } | null
   >(null);
+
+  useEffect(() => setShowFires(firesEnabled), [firesEnabled]);
+  useEffect(() => setShowAircraft(aircraftEnabled), [aircraftEnabled]);
+  useEffect(() => setShowMarkets(marketsEnabled), [marketsEnabled]);
 
   // Cesium exposes a nav callback we forward both to parent and to HUD buttons.
   const navRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
@@ -105,7 +119,7 @@ export function GlobeScene({
 
   const navigate = useCallback((lat: number, lon: number, alt: number) => {
     if (navRef.current) navRef.current(lat, lon, alt);
-    else setFlyToTarget({ lat, lon, alt });
+    else setFlyToTarget({ lat, lon, alt: alt < 1000 ? alt * 1_000_000 : alt });
   }, []);
 
   const flyToDAO = () => navigate(ZARAGOZA.lat, ZARAGOZA.lon, ZARAGOZA.alt);
@@ -126,11 +140,48 @@ export function GlobeScene({
     );
   }, [nasaEvents, showFires]);
 
+  const mergedExternalMarkers = useMemo(() => {
+    const seen = new Set<string>();
+    return [DAO_MARKER, ...externalMarkers].filter((marker) => {
+      const key = `${marker.type}:${marker.name}:${marker.lat.toFixed(3)}:${marker.lon.toFixed(3)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [externalMarkers]);
+
+  useEffect(() => {
+    const state = {
+      radar: showRadar,
+      clouds: showClouds,
+      precipitation: showRain || showRadar,
+      wind: showWind,
+      pressure: showIsobars,
+    };
+    (window as any).__owmState = state;
+    (window as any).__globeBaseState = baseMapStyle;
+    (window as any).__globeSetBase = (style: "satellite" | "dark") => setBaseMapStyle(style);
+    (window as any).__owmToggle = (key: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
+      if (key === "radar") setShowRadar((v) => !v);
+      if (key === "clouds") setShowClouds((v) => !v);
+      if (key === "precipitation") setShowRain((v) => !v);
+      if (key === "wind") setShowWind((v) => !v);
+      if (key === "pressure") setShowIsobars((v) => !v);
+    };
+    return () => {
+      delete (window as any).__owmState;
+      delete (window as any).__owmToggle;
+      delete (window as any).__globeBaseState;
+      delete (window as any).__globeSetBase;
+    };
+  }, [baseMapStyle, showClouds, showRain, showRadar, showWind, showIsobars]);
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
       <CesiumGlobe
         onHotspotClick={onHotspotClick}
         sightings={sightings as any}
+        externalMarkers={mergedExternalMarkers}
         visibleLayers={visibleLayers}
         flyTo={flyToTarget}
         kpIndex={kpIndex}
@@ -146,83 +197,6 @@ export function GlobeScene({
         {...({ onReady: handleReady } as any)}
       />
 
-      {/* ================ HUD: Layer Control Panel (top-right) ============ */}
-      <div className="absolute top-3 right-3 z-30 flex items-start gap-2 pointer-events-none">
-        {panelOpen ? (
-          <div
-            className="pointer-events-auto w-[260px] max-h-[calc(100vh-6rem)] overflow-y-auto bg-black/80 backdrop-blur-md border border-[#69af00]/40 rounded-xl p-4 shadow-[0_0_24px_rgba(105,175,0,0.15)]"
-            style={{ fontFamily: "'Nasalization', ui-monospace, monospace" }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-[#69af00]" />
-                <span className="text-[11px] tracking-[0.15em] text-[#69af00] uppercase">
-                  Tactical Layers
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPanelOpen(false)}
-                className="text-[#69af00]/70 hover:text-[#69af00] transition"
-                aria-label="Collapse layer panel"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Base map selector */}
-            <div className="mb-4">
-              <div className="text-[9px] uppercase tracking-widest text-slate-500 mb-1.5">
-                Base Map
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                <BaseChoice
-                  active={baseMapStyle === "satellite"}
-                  onClick={() => setBaseMapStyle("satellite")}
-                  Icon={Satellite}
-                  label="SATELLITE"
-                />
-                <BaseChoice
-                  active={baseMapStyle === "dark"}
-                  onClick={() => setBaseMapStyle("dark")}
-                  Icon={MapIcon}
-                  label="DARK"
-                />
-              </div>
-            </div>
-
-            {/* Weather overlays */}
-            <SectionLabel>Weather Overlays</SectionLabel>
-            <ToggleRow icon={Radar} label="Rain Radar" hint="RainViewer" active={showRadar} onToggle={() => setShowRadar((v) => !v)} />
-            <ToggleRow icon={Gauge} label="Isobars" hint="OWM · pressure" active={showIsobars} onToggle={() => setShowIsobars((v) => !v)} />
-            <ToggleRow icon={Cloud} label="Clouds" hint="OWM · clouds" active={showClouds} onToggle={() => setShowClouds((v) => !v)} />
-            <ToggleRow icon={Wind} label="Wind" hint="OWM · wind" active={showWind} onToggle={() => setShowWind((v) => !v)} />
-            <ToggleRow icon={CloudRain} label="Precipitation" hint="OWM · rain" active={showRain} onToggle={() => setShowRain((v) => !v)} />
-
-            <SectionLabel className="mt-3">Intel Feeds</SectionLabel>
-            <ToggleRow icon={Plane} label="Aircraft" hint="OpenSky · soon" active={showAircraft} onToggle={() => setShowAircraft((v) => !v)} />
-            <ToggleRow icon={TrendingUp} label="Markets" hint="Hotspots" active={showMarkets} onToggle={() => setShowMarkets((v) => !v)} />
-            <ToggleRow icon={CloudRain} label="Fires" hint="NASA EONET" active={showFires} onToggle={() => setShowFires((v) => !v)} />
-
-            <div className="mt-4 pt-3 border-t border-[#69af00]/20 flex items-center justify-between text-[9px] text-slate-500 uppercase tracking-wider">
-              <span>Kp Index</span>
-              <span className={cn("font-mono", kpIndex >= 4 ? "text-[#FFD700]" : "text-[#69af00]")}>
-                {kpIndex.toFixed(1)}
-              </span>
-            </div>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setPanelOpen(true)}
-            className="pointer-events-auto w-9 h-9 rounded-lg bg-black/80 backdrop-blur-md border border-[#69af00]/40 flex items-center justify-center text-[#69af00] hover:border-[#69af00] transition"
-            aria-label="Open layer panel"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-        )}
-      </div>
-
       {/* ================ HUD: Left-side navigation buttons =============== */}
       <div className="absolute left-3 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-2 pointer-events-none">
         <HUDButton onClick={zoomIn} label="Zoom In">
@@ -236,83 +210,6 @@ export function GlobeScene({
         </HUDButton>
       </div>
     </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Small HUD subcomponents (kept in-file to reduce blast radius)
-// ---------------------------------------------------------------------------
-function SectionLabel({
-  children, className,
-}: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cn("text-[9px] uppercase tracking-widest text-slate-500 mb-1.5", className)}>
-      {children}
-    </div>
-  );
-}
-
-function ToggleRow({
-  icon: Icon, label, hint, active, onToggle,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string; hint?: string; active: boolean; onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={cn(
-        "w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border transition mb-1",
-        active
-          ? "bg-[#69af00]/10 border-[#69af00]/60 text-[#69af00]"
-          : "bg-black/40 border-slate-700/50 text-slate-400 hover:border-[#69af00]/40 hover:text-[#69af00]/80",
-      )}
-    >
-      <span className="flex items-center gap-2">
-        <Icon className="w-3.5 h-3.5" />
-        <span className="text-[10px] uppercase tracking-wider">{label}</span>
-      </span>
-      <span className="flex items-center gap-2">
-        {hint && <span className="text-[8px] text-slate-500 uppercase tracking-wide">{hint}</span>}
-        <span
-          className={cn(
-            "w-6 h-3 rounded-full relative transition",
-            active ? "bg-[#69af00]/80" : "bg-slate-700",
-          )}
-        >
-          <span
-            className={cn(
-              "absolute top-0.5 w-2 h-2 rounded-full bg-black transition-all",
-              active ? "left-3.5" : "left-0.5",
-            )}
-          />
-        </span>
-      </span>
-    </button>
-  );
-}
-
-function BaseChoice({
-  active, onClick, Icon, label,
-}: {
-  active: boolean; onClick: () => void;
-  Icon: React.ComponentType<{ className?: string }>; label: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "flex items-center justify-center gap-1.5 px-2 py-2 rounded-lg border text-[9px] tracking-widest transition",
-        active
-          ? "bg-[#69af00]/15 border-[#69af00] text-[#69af00]"
-          : "bg-black/40 border-slate-700/50 text-slate-400 hover:border-[#69af00]/40",
-      )}
-    >
-      <Icon className="w-3.5 h-3.5" />
-      {label}
-    </button>
   );
 }
 
