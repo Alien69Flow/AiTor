@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Layers, Radar, CloudRain, Cloud, Wind, Gauge, Satellite,
   Map as MapIcon, Plane, ZoomIn, ZoomOut, Crosshair,
@@ -44,6 +44,18 @@ interface GlobeSceneProps {
 }
 
 const ZARAGOZA = { lat: 41.65, lon: -0.88, alt: 1_500_000 };
+const DAO_MARKER: UnifiedHotspotData = {
+  lat: ZARAGOZA.lat,
+  lon: ZARAGOZA.lon,
+  intensity: 1,
+  color: "#FFD700",
+  name: "ΔlieπFlΦw DAO",
+  country: "Zaragoza",
+  marketVolume: "Sovereign Node",
+  trend: "ONLINE",
+  topTokens: ["DAO", "HQ"],
+  type: "dao_node",
+};
 
 /**
  * GlobeScene — pure UI wrapper around the Cesium engine.
@@ -56,6 +68,7 @@ const ZARAGOZA = { lat: 41.65, lon: -0.88, alt: 1_500_000 };
 export function GlobeScene({
   onHotspotClick,
   onReady,
+  externalMarkers = [],
   cloudsEnabled = true,
   weatherEnabled = true,
   firesEnabled = true,
@@ -78,7 +91,7 @@ export function GlobeScene({
   const [showAircraft, setShowAircraft] = useState(aircraftEnabled);
   const [showMarkets, setShowMarkets] = useState(marketsEnabled);
   const [showFires, setShowFires] = useState(firesEnabled);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelOpen, setPanelOpen] = useState(false);
   const [flyToTarget, setFlyToTarget] = useState<
     { lat: number; lon: number; alt: number } | null
   >(null);
@@ -126,11 +139,42 @@ export function GlobeScene({
     );
   }, [nasaEvents, showFires]);
 
+  const mergedExternalMarkers = useMemo(() => {
+    const seen = new Set<string>();
+    return [DAO_MARKER, ...externalMarkers].filter((marker) => {
+      const key = `${marker.type}:${marker.name}:${marker.lat.toFixed(3)}:${marker.lon.toFixed(3)}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [externalMarkers]);
+
+  useEffect(() => {
+    const state = {
+      clouds: showClouds,
+      precipitation: showRain || showRadar,
+      wind: showWind,
+      pressure: showIsobars,
+    };
+    (window as any).__owmState = state;
+    (window as any).__owmToggle = (key: "clouds" | "precipitation" | "wind" | "pressure") => {
+      if (key === "clouds") setShowClouds((v) => !v);
+      if (key === "precipitation") setShowRain((v) => !v);
+      if (key === "wind") setShowWind((v) => !v);
+      if (key === "pressure") setShowIsobars((v) => !v);
+    };
+    return () => {
+      delete (window as any).__owmState;
+      delete (window as any).__owmToggle;
+    };
+  }, [showClouds, showRain, showRadar, showWind, showIsobars]);
+
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
       <CesiumGlobe
         onHotspotClick={onHotspotClick}
         sightings={sightings as any}
+        externalMarkers={mergedExternalMarkers}
         visibleLayers={visibleLayers}
         flyTo={flyToTarget}
         kpIndex={kpIndex}
@@ -192,7 +236,7 @@ export function GlobeScene({
             </div>
 
             {/* Weather overlays */}
-            <SectionLabel>Weather Overlays</SectionLabel>
+            <SectionLabel>Weather Matrix</SectionLabel>
             <ToggleRow icon={Radar} label="Rain Radar" hint="RainViewer" active={showRadar} onToggle={() => setShowRadar((v) => !v)} />
             <ToggleRow icon={Gauge} label="Isobars" hint="OWM · pressure" active={showIsobars} onToggle={() => setShowIsobars((v) => !v)} />
             <ToggleRow icon={Cloud} label="Clouds" hint="OWM · clouds" active={showClouds} onToggle={() => setShowClouds((v) => !v)} />
@@ -200,7 +244,7 @@ export function GlobeScene({
             <ToggleRow icon={CloudRain} label="Precipitation" hint="OWM · rain" active={showRain} onToggle={() => setShowRain((v) => !v)} />
 
             <SectionLabel className="mt-3">Intel Feeds</SectionLabel>
-            <ToggleRow icon={Plane} label="Aircraft" hint="OpenSky · soon" active={showAircraft} onToggle={() => setShowAircraft((v) => !v)} />
+            <ToggleRow icon={Plane} label="Aircraft" hint="OpenSky" active={showAircraft} onToggle={() => setShowAircraft((v) => !v)} />
             <ToggleRow icon={TrendingUp} label="Markets" hint="Hotspots" active={showMarkets} onToggle={() => setShowMarkets((v) => !v)} />
             <ToggleRow icon={CloudRain} label="Fires" hint="NASA EONET" active={showFires} onToggle={() => setShowFires((v) => !v)} />
 
