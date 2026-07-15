@@ -19,7 +19,6 @@ import {
   EllipsoidTerrainProvider,
   CallbackProperty,
   UrlTemplateImageryProvider,
-  Rectangle,
   Credit,
   PinBuilder,
   SkyBox,
@@ -319,8 +318,9 @@ export function CesiumGlobe({
     // Expose a lightweight zoom helper for the HUD buttons.
     const flyToLocation = (lat: number, lng: number, altitude: number) => {
       if (!viewer || viewer.isDestroyed()) return;
+      const altitudeMeters = altitude < 1000 ? altitude * 1_000_000 : altitude;
       viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(lng, lat, altitude * 1_000_000),
+        destination: Cartesian3.fromDegrees(lng, lat, altitudeMeters),
         orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
         duration: 1.5,
       });
