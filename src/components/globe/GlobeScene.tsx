@@ -158,16 +158,30 @@ export function GlobeScene({
       precipitation: showRain || showRadar,
       wind: showWind,
       pressure: showIsobars,
+      temperature: showTemperature,
     };
     (window as any).__owmState = state;
     (window as any).__globeBaseState = baseMapStyle;
     (window as any).__globeSetBase = (style: "satellite" | "dark") => setBaseMapStyle(style);
-    (window as any).__owmToggle = (key: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
-      if (key === "radar") setShowRadar((v) => !v);
-      if (key === "clouds") setShowClouds((v) => !v);
-      if (key === "precipitation") setShowRain((v) => !v);
-      if (key === "wind") setShowWind((v) => !v);
-      if (key === "pressure") setShowIsobars((v) => !v);
+    // Mutually-exclusive OWM overlay — only one raster active at a time so
+    // stacked tiles don't turn the globe into a muddy blob when zooming.
+    (window as any).__owmToggle = (
+      key: "radar" | "clouds" | "precipitation" | "wind" | "pressure" | "temperature",
+    ) => {
+      const cur: Record<string, boolean> = {
+        radar: showRadar, clouds: showClouds, precipitation: showRain,
+        wind: showWind, pressure: showIsobars, temperature: showTemperature,
+      };
+      const isOn = !!cur[key];
+      setShowRadar(false); setShowClouds(false); setShowRain(false);
+      setShowWind(false); setShowIsobars(false); setShowTemperature(false);
+      if (isOn) return;
+      if (key === "radar") setShowRadar(true);
+      else if (key === "clouds") setShowClouds(true);
+      else if (key === "precipitation") setShowRain(true);
+      else if (key === "wind") setShowWind(true);
+      else if (key === "pressure") setShowIsobars(true);
+      else if (key === "temperature") setShowTemperature(true);
     };
     return () => {
       delete (window as any).__owmState;
@@ -175,7 +189,7 @@ export function GlobeScene({
       delete (window as any).__globeBaseState;
       delete (window as any).__globeSetBase;
     };
-  }, [baseMapStyle, showClouds, showRain, showRadar, showWind, showIsobars]);
+  }, [baseMapStyle, showClouds, showRain, showRadar, showWind, showIsobars, showTemperature]);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
