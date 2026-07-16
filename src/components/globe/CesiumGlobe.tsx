@@ -133,6 +133,8 @@ interface CesiumGlobeProps {
   showWind?: boolean;
   /** OpenWeatherMap precipitation overlay (via edge proxy). */
   showRain?: boolean;
+  /** OpenWeatherMap temperature overlay (via edge proxy). */
+  showTemperature?: boolean;
   /** Aircraft (OpenSky) — wired in next sprint. Prop kept for API stability. */
   aircraftEnabled?: boolean;
   externalMarkers?: HotspotData[];
@@ -147,6 +149,7 @@ export function CesiumGlobe({
   baseMapStyle = "satellite",
   showRadar = false, showIsobars = false, showClouds = false,
   showWind = false, showRain = false,
+  showTemperature = false,
   aircraftEnabled = true,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,6 +169,7 @@ export function CesiumGlobe({
   const cloudsLayerRef = useRef<any>(null);
   const windLayerRef = useRef<any>(null);
   const rainLayerRef = useRef<any>(null);
+  const tempLayerRef = useRef<any>(null);
 
   // Edge proxy that keeps OPENWEATHER_API_KEY server-side.
   const OWM_PROXY = `${SUPABASE_URL_BASE}/functions/v1/openweather`;
@@ -200,7 +204,9 @@ export function CesiumGlobe({
     // Real day/night terminator + dynamic sunrise/sunset atmosphere.
     viewer.scene.globe.enableLighting = true;
     (viewer.scene.globe as any).dynamicAtmosphereLighting = true;
-    viewer.scene.globe.atmosphereLightIntensity = 8.0;
+    // Cesium default is ~10; keep it moderate so the Sun disc doesn't get
+    // washed out by planetary shading on the day-side limb.
+    viewer.scene.globe.atmosphereLightIntensity = 5.0;
 
     // Halo atmosphere around the Earth limb.
     try {
@@ -215,10 +221,12 @@ export function CesiumGlobe({
     try {
       viewer.scene.sun = new Sun();
       viewer.scene.sun.show = true;
-      (viewer.scene.sun as any).glowFactor = 2.0;
+      // A large glow factor gives the Sun a photoreal corona instead of the
+      // default tiny disc that reads as a stray white pixel.
+      (viewer.scene.sun as any).glowFactor = 9.0;
       viewer.scene.moon = new Moon({
         textureUrl: buildModuleUrl("Assets/Textures/moonSmall.jpg"),
-        onlySunLighting: false,
+        onlySunLighting: false, // visible también en el hemisferio noche
       } as any);
       viewer.scene.moon.show = true;
       // Reloj animado → efemérides reales para Sol y Luna
@@ -226,7 +234,8 @@ export function CesiumGlobe({
       viewer.clock.multiplier = 1;
       // Atmósfera terrestre suave, sin comer el limbo solar
       viewer.scene.globe.showGroundAtmosphere = true;
-      (viewer.scene.globe as any).atmosphereBrightnessShift = -0.1;
+      (viewer.scene.globe as any).atmosphereBrightnessShift = -0.15;
+      (viewer.scene.globe as any).atmosphereSaturationShift = 0.1;
     } catch (e) { console.warn("Sun/Moon init failed:", e); }
 
     // High-res Milky Way skybox (tycho2t3_80) — served locally by
@@ -244,15 +253,16 @@ export function CesiumGlobe({
       });
     } catch (e) { console.warn("SkyBox init failed:", e); }
 
-    // Tactical bloom — city lights and stars punch through the dark.
+    // Tactical bloom — city lights, Sun corona and stars punch through the
+    // dark without clipping mid-tones (recalibrated to preserve Sol/Luna).
     try {
       viewer.scene.postProcessStages.bloom.enabled = true;
       viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false;
-      viewer.scene.postProcessStages.bloom.uniforms.contrast = 16;
-      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.1;
-      viewer.scene.postProcessStages.bloom.uniforms.delta = 1.0;
-      viewer.scene.postProcessStages.bloom.uniforms.sigma = 2.0;
-      viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.0;
+      viewer.scene.postProcessStages.bloom.uniforms.contrast = 10;
+      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.05;
+      viewer.scene.postProcessStages.bloom.uniforms.delta = 1.2;
+      viewer.scene.postProcessStages.bloom.uniforms.sigma = 2.6;
+      viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.2;
     } catch (e) { console.warn("Bloom init failed:", e); }
 
     // Night lights
@@ -452,33 +462,41 @@ export function CesiumGlobe({
     showIsobars,
     isobarsLayerRef,
     `${OWM_PROXY}?tile=pressure_new&z={z}&x={x}&y={y}`,
-    0.7,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
     showClouds,
     cloudsLayerRef,
     `${OWM_PROXY}?tile=clouds_new&z={z}&x={x}&y={y}`,
-    0.55,
-    12,
+    0.4,
+    9,
     { brightness: 1.2, contrast: 1.05, credit: new Credit("OpenWeather") },
   );
   useOverlay(
     showWind,
     windLayerRef,
     `${OWM_PROXY}?tile=wind_new&z={z}&x={x}&y={y}`,
-    0.55,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
     showRain,
     rainLayerRef,
     `${OWM_PROXY}?tile=precipitation_new&z={z}&x={x}&y={y}`,
-    0.65,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.08, credit: new Credit("OpenWeather") },
+  );
+  useOverlay(
+    showTemperature,
+    tempLayerRef,
+    `${OWM_PROXY}?tile=temp_new&z={z}&x={x}&y={y}`,
+    0.45,
+    9,
+    { brightness: 1.1, contrast: 1.05, credit: new Credit("OpenWeather") },
   );
 
   // Aircraft (OpenSky-style live layer) — deterministic tactical sample until

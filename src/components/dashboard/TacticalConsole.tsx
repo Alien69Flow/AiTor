@@ -8,6 +8,8 @@ import {
   TrendingDown,
 } from "lucide-react";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
+import { useEarthquakes } from "@/hooks/useEarthquakes";
+import { useNasaEvents } from "@/hooks/useNasaEvents";
 import {
   GlassPanel,
   LedIndicator,
@@ -88,6 +90,8 @@ function TensionMeter({ value }: { value: number }) {
 
 export function TacticalConsole() {
   const sw = useSpaceWeather();
+  const { earthquakes } = useEarthquakes();
+  const { events: nasaEvents } = useNasaEvents();
 
   const scaleValue = (scale: string) => {
     const n = Number((scale.match(/\d+/)?.[0] ?? "0"));
@@ -97,9 +101,35 @@ export function TacticalConsole() {
   const rScale = sw.radioBlackout !== "none" ? sw.radioBlackout : "R0";
   const sScale = sw.stormLevel !== "none" ? sw.stormLevel : "S0";
   const gScale = sw.geomagneticStorm !== "none" ? sw.geomagneticStorm : "G0";
+
+  // Blend space-weather with terrestrial hazards for a more meaningful score.
+  const strongQuakes = earthquakes.filter((q: any) => q.magnitude >= 5).length;
+  const majorQuakes = earthquakes.filter((q: any) => q.magnitude >= 6.5).length;
+  const wildfires = nasaEvents.filter((e: any) =>
+    /(fire|wildfire)/i.test(e.category || ""),
+  ).length;
+  const volcanoes = nasaEvents.filter((e: any) =>
+    /volcano/i.test(e.category || ""),
+  ).length;
+  const storms = nasaEvents.filter((e: any) =>
+    /(storm|cyclone)/i.test(e.category || ""),
+  ).length;
+
+  const spaceComponent =
+    sw.kpIndex * 5 +
+    scaleValue(rScale) * 7 +
+    scaleValue(sScale) * 5 +
+    scaleValue(gScale) * 6;
+  const terrestrialComponent =
+    Math.min(25, strongQuakes * 1.2) +
+    Math.min(15, majorQuakes * 5) +
+    Math.min(15, wildfires * 0.5) +
+    Math.min(10, volcanoes * 2) +
+    Math.min(10, storms * 1.5);
+
   const tensionScore = Math.min(
     100,
-    Math.round(sw.kpIndex * 8 + scaleValue(rScale) * 10 + scaleValue(sScale) * 8 + scaleValue(gScale) * 9),
+    Math.round(spaceComponent + terrestrialComponent),
   );
 
   const kpColor =
