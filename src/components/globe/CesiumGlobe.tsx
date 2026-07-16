@@ -462,24 +462,24 @@ export function CesiumGlobe({
     showIsobars,
     isobarsLayerRef,
     `${OWM_PROXY}?tile=pressure_new&z={z}&x={x}&y={y}`,
-    0.7,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
     showClouds,
     cloudsLayerRef,
     `${OWM_PROXY}?tile=clouds_new&z={z}&x={x}&y={y}`,
-    0.55,
-    12,
+    0.4,
+    9,
     { brightness: 1.2, contrast: 1.05, credit: new Credit("OpenWeather") },
   );
   useOverlay(
     showWind,
     windLayerRef,
     `${OWM_PROXY}?tile=wind_new&z={z}&x={x}&y={y}`,
-    0.55,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
   );
   useOverlay(
