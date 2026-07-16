@@ -87,6 +87,7 @@ export function GlobeScene({
   const [showWind, setShowWind] = useState(false);
   const [showRain, setShowRain] = useState(false);
   const [showAircraft, setShowAircraft] = useState(aircraftEnabled);
+  const [showTemperature, setShowTemperature] = useState(false);
   const [showMarkets, setShowMarkets] = useState(marketsEnabled);
   const [showFires, setShowFires] = useState(firesEnabled);
   const [flyToTarget, setFlyToTarget] = useState<
