@@ -133,6 +133,8 @@ interface CesiumGlobeProps {
   showWind?: boolean;
   /** OpenWeatherMap precipitation overlay (via edge proxy). */
   showRain?: boolean;
+  /** OpenWeatherMap temperature overlay (via edge proxy). */
+  showTemperature?: boolean;
   /** Aircraft (OpenSky) — wired in next sprint. Prop kept for API stability. */
   aircraftEnabled?: boolean;
   externalMarkers?: HotspotData[];
@@ -147,6 +149,7 @@ export function CesiumGlobe({
   baseMapStyle = "satellite",
   showRadar = false, showIsobars = false, showClouds = false,
   showWind = false, showRain = false,
+  showTemperature = false,
   aircraftEnabled = true,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -166,6 +169,7 @@ export function CesiumGlobe({
   const cloudsLayerRef = useRef<any>(null);
   const windLayerRef = useRef<any>(null);
   const rainLayerRef = useRef<any>(null);
+  const tempLayerRef = useRef<any>(null);
 
   // Edge proxy that keeps OPENWEATHER_API_KEY server-side.
   const OWM_PROXY = `${SUPABASE_URL_BASE}/functions/v1/openweather`;
@@ -482,9 +486,17 @@ export function CesiumGlobe({
     showRain,
     rainLayerRef,
     `${OWM_PROXY}?tile=precipitation_new&z={z}&x={x}&y={y}`,
-    0.65,
-    12,
+    0.45,
+    9,
     { brightness: 1.15, contrast: 1.08, credit: new Credit("OpenWeather") },
+  );
+  useOverlay(
+    showTemperature,
+    tempLayerRef,
+    `${OWM_PROXY}?tile=temp_new&z={z}&x={x}&y={y}`,
+    0.45,
+    9,
+    { brightness: 1.1, contrast: 1.05, credit: new Credit("OpenWeather") },
   );
 
   // Aircraft (OpenSky-style live layer) — deterministic tactical sample until
