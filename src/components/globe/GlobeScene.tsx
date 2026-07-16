@@ -195,7 +195,7 @@ export function GlobeScene({
         showWind={showWind}
         showRain={showRain}
         aircraftEnabled={showAircraft}
-        {...({ onReady: handleReady } as any)}
+        {...({ onReady: handleReady, showTemperature } as any)}
       />
 
       {/* ================ HUD: Left-side navigation buttons =============== */}
