@@ -12,6 +12,7 @@ import {
   Gauge,
   Flame,
   Plane,
+  Thermometer,
   TrendingUp,
   DollarSign,
   Eye,
@@ -153,19 +154,19 @@ export function LegendPanel({
   // Globe raster overlays (RainViewer + OpenWeather clouds / precip / wind / pressure).
   // Globe exposes a toggle on window.__owmToggle and current state on
   // window.__owmState — bridged here so the panel stays decoupled.
-  const [owm, setOwm] = useState<{ radar: boolean; clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean }>({
-    radar: false, clouds: false, precipitation: false, wind: false, pressure: false,
+  const [owm, setOwm] = useState<{ radar: boolean; clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean; temperature: boolean }>({
+    radar: false, clouds: false, precipitation: false, wind: false, pressure: false, temperature: false,
   });
   const [baseMap, setBaseMap] = useState<"satellite" | "dark">("satellite");
   useEffect(() => {
     const id = setInterval(() => {
       const s = (window as any).__owmState;
-      if (s) setOwm({ radar: !!s.radar, clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure });
+      if (s) setOwm({ radar: !!s.radar, clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure, temperature: !!s.temperature });
       if ((window as any).__globeBaseState) setBaseMap((window as any).__globeBaseState);
     }, 400);
     return () => clearInterval(id);
   }, []);
-  const toggleOwm = (k: "radar" | "clouds" | "precipitation" | "wind" | "pressure") => {
+  const toggleOwm = (k: "radar" | "clouds" | "precipitation" | "wind" | "pressure" | "temperature") => {
     (window as any).__owmToggle?.(k);
   };
   const owmToggles = [
@@ -174,6 +175,7 @@ export function LegendPanel({
     { key: "precipitation", label: "OWM Rain", color: "#38bdf8", Icon: Droplets },
     { key: "wind", label: "OWM Wind", color: "#a7f3d0", Icon: Wind },
     { key: "pressure", label: "OWM Pressure", color: "#fbbf24", Icon: Gauge },
+    { key: "temperature", label: "OWM Temp", color: "#f87171", Icon: Thermometer },
   ] as const;
   const setGlobeBase = (style: "satellite" | "dark") => {
     setBaseMap(style);
