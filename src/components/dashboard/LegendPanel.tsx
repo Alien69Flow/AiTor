@@ -284,7 +284,7 @@ export function LegendPanel({
 
         {/* OpenWeatherMap raster tiles */}
         <div>
-          <SectionTitle>OpenWeather Tiles</SectionTitle>
+          <SectionTitle>OpenWeather Tiles · single-select</SectionTitle>
           <div className="grid grid-cols-2 gap-2">
             {owmToggles.map((t) => (
               <ToggleRow
