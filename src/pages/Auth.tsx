@@ -54,7 +54,7 @@ export default function Auth() {
           toast.success("¡Bienvenido, Soberano!");
         }
       } else {
-        const { error } = await signUp(email, password);
+        const { error } = await signUp(email, password, window.location.origin + safeNext);
         if (error) {
           toast.error(error.message.includes("already registered") 
             ? "Este email ya está registrado" 
