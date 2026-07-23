@@ -3,13 +3,12 @@ import { Helmet } from "react-helmet-async";
 import { TopNavBar } from "@/components/dashboard/TopNavBar";
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { SpaceBackground } from "@/components/SpaceBackground";
-import { AgentsFlipCard } from "@/components/agents/AgentsFlipCard";
+import { ChatContainer } from "@/components/chat/ChatContainer";
 import { UFOMonitorTab } from "@/components/dashboard/UFOMonitorTab";
 import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
 import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
 import { MarketsSection } from "@/components/dashboard/MarketsSection";
 import { SystemTab } from "@/components/dashboard/SystemTab";
-import { GlobalPaywall } from "@/components/dashboard/GlobalPaywall";
 
 export type TabId = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
 
@@ -18,7 +17,7 @@ const Index = () => {
 
   const renderTab = () => {
     switch (activeTab) {
-      case "agents": return <AgentsFlipCard />;
+      case "agents": return <ChatContainer />;
       case "alien": return <UFOMonitorTab />;
       case "cosmos": return <SolarSystemTab />;
       case "globe": return <GlobeDashboard />;
@@ -45,7 +44,6 @@ const Index = () => {
       </div>
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
-      <GlobalPaywall />
     </>
   );
 };

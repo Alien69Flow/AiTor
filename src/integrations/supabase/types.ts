@@ -14,45 +14,6 @@ export type Database = {
   }
   public: {
     Tables: {
-      skills_documents: {
-        Row: {
-          category: string | null
-          content: string
-          created_at: string
-          embedding: string | null
-          id: string
-          metadata: Json
-          source: string | null
-          title: string
-          updated_at: string
-          url: string | null
-        }
-        Insert: {
-          category?: string | null
-          content: string
-          created_at?: string
-          embedding?: string | null
-          id?: string
-          metadata?: Json
-          source?: string | null
-          title: string
-          updated_at?: string
-          url?: string | null
-        }
-        Update: {
-          category?: string | null
-          content?: string
-          created_at?: string
-          embedding?: string | null
-          id?: string
-          metadata?: Json
-          source?: string | null
-          title?: string
-          updated_at?: string
-          url?: string | null
-        }
-        Relationships: []
-      }
       uap_sightings: {
         Row: {
           category: string | null
@@ -98,64 +59,15 @@ export type Database = {
         }
         Relationships: []
       }
-      user_credits: {
-        Row: {
-          paid_tier: Database["public"]["Enums"]["credit_tier"]
-          reset_at: string
-          updated_at: string
-          used: number
-          user_id: string
-        }
-        Insert: {
-          paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          reset_at?: string
-          updated_at?: string
-          used?: number
-          user_id: string
-        }
-        Update: {
-          paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          reset_at?: string
-          updated_at?: string
-          used?: number
-          user_id?: string
-        }
-        Relationships: []
-      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      consume_credits: {
-        Args: { _cost: number; _user_id: string }
-        Returns: {
-          allowed: boolean
-          limit: number
-          tier: Database["public"]["Enums"]["credit_tier"]
-          used: number
-        }[]
-      }
-      match_skills_documents: {
-        Args: {
-          match_count?: number
-          match_threshold?: number
-          query_embedding: string
-        }
-        Returns: {
-          category: string
-          content: string
-          id: string
-          metadata: Json
-          similarity: number
-          source: string
-          title: string
-          url: string
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: {
-      credit_tier: "registered" | "basic" | "pro" | "quantum"
+      [_ in never]: never
     }
     CompositeTypes: {
       [_ in never]: never
@@ -282,8 +194,6 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {
-      credit_tier: ["registered", "basic", "pro", "quantum"],
-    },
+    Enums: {},
   },
 } as const

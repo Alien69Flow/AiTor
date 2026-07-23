@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import {
   Ion,
   Viewer as CesiumViewer,
@@ -18,14 +18,7 @@ import {
   IonImageryProvider,
   EllipsoidTerrainProvider,
   CallbackProperty,
-  UrlTemplateImageryProvider,
-  Credit,
-  PinBuilder,
   SkyBox,
-  Sun,
-  Moon,
-  SkyAtmosphere,
-  buildModuleUrl,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -33,35 +26,12 @@ import type { UAPSighting } from "@/hooks/useUAPSightings";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 
-// Cesium Ion token MUST NOT live in the client bundle. We fetch a
-// short-lived access token from the `cesium-tiles` edge function at
-// runtime (see fetchCesiumToken below).
-const SUPABASE_URL_BASE =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-
-async function fetchCesiumToken(): Promise<string> {
-  try {
-    const anon =
-      (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-      (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-      "";
-    const r = await fetch(`${SUPABASE_URL_BASE}/functions/v1/cesium-tiles`, {
-      headers: anon ? { apikey: anon, Authorization: `Bearer ${anon}` } : {},
-    });
-    if (!r.ok) return "";
-    const d = await r.json();
-    return (d?.accessToken as string) || "";
-  } catch {
-    return "";
-  }
-}
+const CESIUM_TOKEN = import.meta.env.VITE_CESIUM_TOKEN || "";
 
 const TACTICAL_COLORS: Record<string, string> = {
   finance: "#FFD700", tech: "#FFD700", uap: "#00FF41", ufo: "#00FF41",
   intel: "#00FF41", conflict: "#FF4444", geopolitical: "#0088FF",
   logistics: "#FF8844", cryptozoology: "#FF00FF", convergence: "#FFFFFF",
-  quake: "#FF4444", nasa: "#FFDD00", dao_node: "#FFD700", aircraft: "#E2E8F0",
 };
 
 const HOTSPOT_DATA: HotspotData[] = [
@@ -85,8 +55,6 @@ const HOTSPOT_DATA: HotspotData[] = [
 
 const ARC_PAIRS = [[0, 5], [3, 8], [11, 13], [14, 6], [7, 12]];
 
-const RAINVIEWER_FRAME_FALLBACK = 1719954000;
-
 const SEVERITY_SIZE: Record<string, number> = {
   critical: 14, high: 11, medium: 8, low: 6, signal: 5,
 };
@@ -96,19 +64,6 @@ function hexToColor(hex: string, alpha = 1): Color {
   const g = parseInt(hex.slice(3, 5), 16) / 255;
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   return new Color(r, g, b, alpha);
-}
-
-async function fetchRainViewerFrame(): Promise<number> {
-  try {
-    const r = await fetch("https://api.rainviewer.com/public/weather-maps.json");
-    if (!r.ok) return RAINVIEWER_FRAME_FALLBACK;
-    const data = await r.json();
-    const frames = data?.radar?.past ?? [];
-    const latest = frames[frames.length - 1]?.time;
-    return Number.isFinite(latest) ? latest : RAINVIEWER_FRAME_FALLBACK;
-  } catch {
-    return RAINVIEWER_FRAME_FALLBACK;
-  }
 }
 
 type LayerKey = "markets" | "uap" | "cryptozoo";
@@ -121,36 +76,11 @@ interface CesiumGlobeProps {
   kpIndex?: number;
   earthquakes?: Earthquake[];
   nasaEvents?: NasaEvent[];
-  /** Base imagery style: photo (ArcGIS satellite) vs vector dark (CartoDB). */
-  baseMapStyle?: "satellite" | "dark";
-  /** RainViewer live precipitation radar overlay. */
-  showRadar?: boolean;
-  /** OpenWeatherMap pressure isobars overlay (via edge proxy). */
-  showIsobars?: boolean;
-  /** OpenWeatherMap cloud cover overlay (via edge proxy). */
-  showClouds?: boolean;
-  /** OpenWeatherMap wind overlay (via edge proxy). */
-  showWind?: boolean;
-  /** OpenWeatherMap precipitation overlay (via edge proxy). */
-  showRain?: boolean;
-  /** OpenWeatherMap temperature overlay (via edge proxy). */
-  showTemperature?: boolean;
-  /** Aircraft (OpenSky) — wired in next sprint. Prop kept for API stability. */
-  aircraftEnabled?: boolean;
-  externalMarkers?: HotspotData[];
-  onReady?: (navFn: (lat: number, lng: number, altitude: number) => void) => void;
 }
 
 export function CesiumGlobe({
   onHotspotClick, sightings = [], visibleLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [],
-  externalMarkers = [],
-  onReady,
-  baseMapStyle = "satellite",
-  showRadar = false, showIsobars = false, showClouds = false,
-  showWind = false, showRain = false,
-  showTemperature = false,
-  aircraftEnabled = true,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -160,19 +90,6 @@ export function CesiumGlobe({
   const teslaAuraRef = useRef<string[]>([]);
   const quakeEntityIdsRef = useRef<string[]>([]);
   const nasaEntityIdsRef = useRef<string[]>([]);
-  const externalEntityIdsRef = useRef<string[]>([]);
-  const aircraftEntityIdsRef = useRef<string[]>([]);
-  // Refs for dynamic imagery layers so we can remove/replace exactly.
-  const baseLayerRef = useRef<any>(null);
-  const radarLayerRef = useRef<any>(null);
-  const isobarsLayerRef = useRef<any>(null);
-  const cloudsLayerRef = useRef<any>(null);
-  const windLayerRef = useRef<any>(null);
-  const rainLayerRef = useRef<any>(null);
-  const tempLayerRef = useRef<any>(null);
-
-  // Edge proxy that keeps OPENWEATHER_API_KEY server-side.
-  const OWM_PROXY = `${SUPABASE_URL_BASE}/functions/v1/openweather`;
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -182,10 +99,7 @@ export function CesiumGlobe({
   // Initialize viewer once
   useEffect(() => {
     if (!containerRef.current) return;
-    // Token is assigned async; viewer init does not block on it.
-    fetchCesiumToken().then((tok) => {
-      if (tok) Ion.defaultAccessToken = tok;
-    });
+    Ion.defaultAccessToken = CESIUM_TOKEN;
 
     const viewer = new CesiumViewer(containerRef.current, {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
@@ -194,76 +108,40 @@ export function CesiumGlobe({
       creditContainer: document.createElement("div"),
       terrainProvider: new EllipsoidTerrainProvider(),
       contextOptions: { webgl: { alpha: false } },
-      // Base imagery is managed by the baseMapStyle useEffect below.
-      baseLayer: false as any,
     });
 
-    // ---------------- Photo-real cosmos environment ----------------
+    // Enable built-in Cesium sky with stars and atmosphere
     viewer.scene.backgroundColor = Color.BLACK;
-
-    // Real day/night terminator + dynamic sunrise/sunset atmosphere.
     viewer.scene.globe.enableLighting = true;
-    (viewer.scene.globe as any).dynamicAtmosphereLighting = true;
-    // Cesium default is ~10; keep it moderate so the Sun disc doesn't get
-    // washed out by planetary shading on the day-side limb.
-    viewer.scene.globe.atmosphereLightIntensity = 5.0;
+    viewer.scene.globe.atmosphereLightIntensity = 8.0;
 
-    // Halo atmosphere around the Earth limb.
-    try {
-      viewer.scene.skyAtmosphere = new SkyAtmosphere();
+    // Enable sky atmosphere (the glow halo around the Earth)
+    if (viewer.scene.skyAtmosphere) {
       viewer.scene.skyAtmosphere.show = true;
       viewer.scene.skyAtmosphere.brightnessShift = 0.05;
       viewer.scene.skyAtmosphere.hueShift = -0.05;
       viewer.scene.skyAtmosphere.saturationShift = 0.2;
-    } catch (e) { console.warn("SkyAtmosphere init failed:", e); }
+    }
 
-    // Native astros — Cesium computes real ephemerides (lunar phase, sun pos).
-    try {
-      viewer.scene.sun = new Sun();
-      viewer.scene.sun.show = true;
-      // A large glow factor gives the Sun a photoreal corona instead of the
-      // default tiny disc that reads as a stray white pixel.
-      (viewer.scene.sun as any).glowFactor = 9.0;
-      viewer.scene.moon = new Moon({
-        textureUrl: buildModuleUrl("Assets/Textures/moonSmall.jpg"),
-        onlySunLighting: false, // visible también en el hemisferio noche
-      } as any);
-      viewer.scene.moon.show = true;
-      // Reloj animado → efemérides reales para Sol y Luna
-      viewer.clock.shouldAnimate = true;
-      viewer.clock.multiplier = 1;
-      // Atmósfera terrestre suave, sin comer el limbo solar
-      viewer.scene.globe.showGroundAtmosphere = true;
-      (viewer.scene.globe as any).atmosphereBrightnessShift = -0.15;
-      (viewer.scene.globe as any).atmosphereSaturationShift = 0.1;
-    } catch (e) { console.warn("Sun/Moon init failed:", e); }
+    // Enable sun and moon
+    if (viewer.scene.sun) viewer.scene.sun.show = true;
+    if (viewer.scene.moon) viewer.scene.moon.show = true;
 
-    // High-res Milky Way skybox (tycho2t3_80) — served locally by
-    // vite-plugin-cesium, so no CORS from third-party CDNs.
+    // Dense star field skybox
     try {
       viewer.scene.skyBox = new SkyBox({
         sources: {
-          positiveX: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_px.jpg"),
-          negativeX: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mx.jpg"),
-          positiveY: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_py.jpg"),
-          negativeY: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_my.jpg"),
-          positiveZ: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_pz.jpg"),
-          negativeZ: buildModuleUrl("Assets/Textures/SkyBox/tycho2t3_80_mz.jpg"),
+          positiveX: "https://cesium.com/public/SandcastleSampleData/skybox_px.jpg",
+          negativeX: "https://cesium.com/public/SandcastleSampleData/skybox_mx.jpg",
+          positiveY: "https://cesium.com/public/SandcastleSampleData/skybox_py.jpg",
+          negativeY: "https://cesium.com/public/SandcastleSampleData/skybox_my.jpg",
+          positiveZ: "https://cesium.com/public/SandcastleSampleData/skybox_pz.jpg",
+          negativeZ: "https://cesium.com/public/SandcastleSampleData/skybox_mz.jpg",
         },
       });
-    } catch (e) { console.warn("SkyBox init failed:", e); }
-
-    // Tactical bloom — city lights, Sun corona and stars punch through the
-    // dark without clipping mid-tones (recalibrated to preserve Sol/Luna).
-    try {
-      viewer.scene.postProcessStages.bloom.enabled = true;
-      viewer.scene.postProcessStages.bloom.uniforms.glowOnly = false;
-      viewer.scene.postProcessStages.bloom.uniforms.contrast = 10;
-      viewer.scene.postProcessStages.bloom.uniforms.brightness = -0.05;
-      viewer.scene.postProcessStages.bloom.uniforms.delta = 1.2;
-      viewer.scene.postProcessStages.bloom.uniforms.sigma = 2.6;
-      viewer.scene.postProcessStages.bloom.uniforms.stepSize = 1.2;
-    } catch (e) { console.warn("Bloom init failed:", e); }
+    } catch (e) {
+      console.warn("Skybox init failed, using default stars:", e);
+    }
 
     // Night lights
     try {
@@ -277,7 +155,23 @@ export function CesiumGlobe({
       }).catch((e: any) => console.warn("Night lights failed:", e));
     } catch (e) { console.warn("Night lights init failed:", e); }
 
-    // Base imagery layer is now owned by the baseMapStyle useEffect below.
+    // ArcGIS satellite imagery
+    try {
+      ArcGisMapServerImageryProvider.fromUrl(
+        "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
+      ).then((provider) => {
+        if (!viewer.isDestroyed()) {
+          viewer.imageryLayers.removeAll();
+          viewer.imageryLayers.addImageryProvider(provider);
+          IonImageryProvider.fromAssetId(3812).then((nightProv) => {
+            if (!viewer.isDestroyed()) {
+              const nl = viewer.imageryLayers.addImageryProvider(nightProv);
+              nl.dayAlpha = 0.0; nl.nightAlpha = 0.9; nl.brightness = 2.0;
+            }
+          }).catch(() => {});
+        }
+      });
+    } catch (e) { console.warn("ArcGIS failed:", e); }
 
     // NO atmosphere ellipsoid entity — using Cesium's built-in skyAtmosphere instead
 
@@ -308,13 +202,6 @@ export function CesiumGlobe({
           } catch { /* ignore */ }
           return;
         }
-        const externalMarker = picked.id.properties.externalMarker?.getValue();
-        if (externalMarker) {
-          try {
-            handleHotspotClick(JSON.parse(externalMarker));
-          } catch { /* ignore */ }
-          return;
-        }
       }
       handleHotspotClick(null);
     }, ScreenSpaceEventType.LEFT_CLICK);
@@ -325,282 +212,12 @@ export function CesiumGlobe({
       duration: 0,
     });
 
-    // Expose a lightweight zoom helper for the HUD buttons.
-    const flyToLocation = (lat: number, lng: number, altitude: number) => {
-      if (!viewer || viewer.isDestroyed()) return;
-      const altitudeMeters = altitude < 1000 ? altitude * 1_000_000 : altitude;
-      viewer.camera.flyTo({
-        destination: Cartesian3.fromDegrees(lng, lat, altitudeMeters),
-        orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
-        duration: 1.5,
-      });
-    };
-    onReady?.(flyToLocation);
-
-    (window as any).__cesiumZoom = (factor: number) => {
-      if (!viewer || viewer.isDestroyed()) return;
-      const height = viewer.camera.positionCartographic.height;
-      const nextHeight = Math.max(500, Math.min(30_000_000, height * factor));
-      const carto = viewer.camera.positionCartographic;
-      viewer.camera.flyTo({
-        destination: Cartesian3.fromRadians(carto.longitude, carto.latitude, nextHeight),
-        orientation: { heading: viewer.camera.heading, pitch: viewer.camera.pitch, roll: 0 },
-        duration: 0.6,
-      });
-    };
-
     return () => {
       handler.destroy();
       if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
-      if ((window as any).__cesiumZoom) delete (window as any).__cesiumZoom;
     };
-  }, [handleHotspotClick, onReady]);
-
-  // ---- Base map layer (satellite vs dark vector) --------------------------
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-    let cancelled = false;
-
-    (async () => {
-      let provider: any = null;
-      try {
-        if (baseMapStyle === "dark") {
-          provider = new UrlTemplateImageryProvider({
-            url: "https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
-            maximumLevel: 19,
-            credit: "© CARTO © OpenStreetMap",
-          });
-        } else {
-          provider = await ArcGisMapServerImageryProvider.fromUrl(
-            "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
-          );
-        }
-      } catch (e) {
-        console.warn("Base imagery failed:", e);
-        return;
-      }
-      if (cancelled || viewer.isDestroyed() || !provider) return;
-      // Remove previous base layer if any
-      if (baseLayerRef.current) {
-        try { viewer.imageryLayers.remove(baseLayerRef.current, true); } catch { /* ignore */ }
-        baseLayerRef.current = null;
-      }
-      // Insert at bottom so overlays and night-lights stay above.
-      const layer = viewer.imageryLayers.addImageryProvider(provider, 0);
-      baseLayerRef.current = layer;
-    })();
-
-    return () => { cancelled = true; };
-  }, [baseMapStyle]);
-
-  // ---- Generic helper: toggle a UrlTemplate imagery overlay ---------------
-  function useOverlay(
-    enabled: boolean,
-    ref: React.MutableRefObject<any>,
-    urlTemplate: string | null,
-    alpha: number,
-    maximumLevel: number = 8,
-    options: Record<string, any> = {},
-  ) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useEffect(() => {
-      const viewer = viewerRef.current;
-      if (!viewer || viewer.isDestroyed()) return;
-      if (enabled && urlTemplate) {
-        try {
-          const provider = new UrlTemplateImageryProvider({
-            url: urlTemplate,
-            maximumLevel,
-            tilingScheme: options.tilingScheme,
-            rectangle: options.rectangle,
-            minimumLevel: options.minimumLevel,
-            tileWidth: options.tileWidth,
-            tileHeight: options.tileHeight,
-            credit: options.credit,
-          });
-          const layer = viewer.imageryLayers.addImageryProvider(provider);
-          layer.alpha = alpha;
-          if (typeof options.brightness === "number") layer.brightness = options.brightness;
-          if (typeof options.contrast === "number") layer.contrast = options.contrast;
-          if (typeof options.saturation === "number") layer.saturation = options.saturation;
-          ref.current = layer;
-        } catch (e) { console.warn("Overlay failed:", urlTemplate, e); }
-      }
-      return () => {
-        if (ref.current && viewer && !viewer.isDestroyed()) {
-          try { viewer.imageryLayers.remove(ref.current, true); } catch { /* ignore */ }
-          ref.current = null;
-        }
-      };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [enabled, urlTemplate]);
-  }
-
-  const [rainViewerFrame, setRainViewerFrame] = useState<number | null>(null);
-  useEffect(() => {
-    if (!showRadar) return;
-    let cancelled = false;
-    fetchRainViewerFrame().then((frame) => {
-      if (!cancelled) setRainViewerFrame(frame);
-    });
-    return () => { cancelled = true; };
-  }, [showRadar]);
-
-  // RainViewer — static timestamp placeholder per MVP spec.
-  useOverlay(
-    showRadar,
-    radarLayerRef,
-    rainViewerFrame ? `https://tilecache.rainviewer.com/v2/radar/${rainViewerFrame}/256/{z}/{x}/{y}/2/1_1.png` : null,
-    0.6,
-    10,
-    { credit: new Credit("RainViewer") },
-  );
-  // OpenWeather isobars (pressure). Key hidden by the edge proxy.
-  useOverlay(
-    showIsobars,
-    isobarsLayerRef,
-    `${OWM_PROXY}?tile=pressure_new&z={z}&x={x}&y={y}`,
-    0.45,
-    9,
-    { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
-  );
-  useOverlay(
-    showClouds,
-    cloudsLayerRef,
-    `${OWM_PROXY}?tile=clouds_new&z={z}&x={x}&y={y}`,
-    0.4,
-    9,
-    { brightness: 1.2, contrast: 1.05, credit: new Credit("OpenWeather") },
-  );
-  useOverlay(
-    showWind,
-    windLayerRef,
-    `${OWM_PROXY}?tile=wind_new&z={z}&x={x}&y={y}`,
-    0.45,
-    9,
-    { brightness: 1.15, contrast: 1.1, credit: new Credit("OpenWeather") },
-  );
-  useOverlay(
-    showRain,
-    rainLayerRef,
-    `${OWM_PROXY}?tile=precipitation_new&z={z}&x={x}&y={y}`,
-    0.45,
-    9,
-    { brightness: 1.15, contrast: 1.08, credit: new Credit("OpenWeather") },
-  );
-  useOverlay(
-    showTemperature,
-    tempLayerRef,
-    `${OWM_PROXY}?tile=temp_new&z={z}&x={x}&y={y}`,
-    0.45,
-    9,
-    { brightness: 1.1, contrast: 1.05, credit: new Credit("OpenWeather") },
-  );
-
-  // Aircraft (OpenSky-style live layer) — deterministic tactical sample until
-  // the live feed endpoint is available, so the control renders visible traffic.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    aircraftEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    aircraftEntityIdsRef.current = [];
-
-    if (!aircraftEnabled) return;
-
-    const traffic = [
-      { id: "mad-ams", lon: -3.7, lat: 40.4, heading: 42, label: "OSN-214" },
-      { id: "par-dxb", lon: 8.2, lat: 44.6, heading: 118, label: "OSN-771" },
-      { id: "lon-nyc", lon: -22.0, lat: 50.5, heading: 285, label: "OSN-509" },
-      { id: "tok-sin", lon: 128.4, lat: 29.8, heading: 214, label: "OSN-088" },
-      { id: "gulf", lon: 48.8, lat: 27.9, heading: 92, label: "OSN-331" },
-    ];
-
-    traffic.forEach((aircraft) => {
-      const entityId = `aircraft-${aircraft.id}`;
-      viewer.entities.add({
-        id: entityId,
-        position: Cartesian3.fromDegrees(aircraft.lon, aircraft.lat, 9000),
-        billboard: {
-          image: new PinBuilder().fromText("✈", Color.fromCssColorString("#E2E8F0"), 36).toDataURL(),
-          width: 28,
-          height: 28,
-          rotation: CesiumMath.toRadians(aircraft.heading),
-          verticalOrigin: VerticalOrigin.CENTER,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.35),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: aircraft.label,
-          font: "9px monospace",
-          fillColor: Color.fromCssColorString("#E2E8F0"),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -16),
-          scaleByDistance: new NearFarScalar(1e6, 0.8, 1e8, 0.15),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      });
-      aircraftEntityIdsRef.current.push(entityId);
-    });
-  }, [aircraftEnabled]);
-
-  // External unified markers — DAO HQ, OSINT/environment markers from parent.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    externalEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    externalEntityIdsRef.current = [];
-
-    externalMarkers.forEach((marker, i) => {
-      if (!Number.isFinite(marker.lat) || !Number.isFinite(marker.lon)) return;
-      const entityId = `external-${marker.type}-${i}`;
-      const markerColor = marker.color || TACTICAL_COLORS[marker.type] || "#E2E8F0";
-      const isDao = marker.type === "dao_node";
-      viewer.entities.add({
-        id: entityId,
-        position: Cartesian3.fromDegrees(marker.lon, marker.lat, isDao ? 15000 : 0),
-        point: {
-          pixelSize: isDao ? 18 : 7 + marker.intensity * 8,
-          color: hexToColor(markerColor, isDao ? 1 : 0.86),
-          outlineColor: isDao ? Color.WHITE.withAlpha(0.8) : hexToColor(markerColor, 0.35),
-          outlineWidth: isDao ? 4 : 2,
-          scaleByDistance: new NearFarScalar(1e6, 1.35, 1e8, isDao ? 0.55 : 0.28),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: isDao ? "✦ DAO Zaragoza" : marker.name,
-          font: isDao ? "12px monospace" : "9px monospace",
-          fillColor: hexToColor(markerColor, 0.95),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, isDao ? -18 : -11),
-          scaleByDistance: new NearFarScalar(1e6, 1, 1e8, isDao ? 0.35 : 0.12),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: {
-          externalMarker: JSON.stringify(marker),
-        } as any,
-      });
-      externalEntityIdsRef.current.push(entityId);
-    });
-  }, [externalMarkers]);
+  }, [handleHotspotClick]);
 
   // Tesla Aurora — dynamic polar rings reacting to Kp
   useEffect(() => {
@@ -644,11 +261,8 @@ export function CesiumGlobe({
             }, false) as any,
             semiMinorAxis: new CallbackProperty(() => {
               const elapsed = (Date.now() - startTime) % 6000;
-              const majorPulse = 1 + 0.15 * Math.sin((elapsed / 6000) * Math.PI * 2 + ring);
-              const minorPulse = 1 + 0.15 * Math.sin((elapsed / 6000) * Math.PI * 2 + ring + 1);
-              const majorVal = baseRadius * majorPulse;
-              const minorVal = baseRadius * 0.6 * minorPulse;
-              return Math.min(majorVal, minorVal);
+              const pulse = 1 + 0.15 * Math.sin((elapsed / 6000) * Math.PI * 2 + ring + 1);
+              return baseRadius * 0.6 * pulse;
             }, false) as any,
             material: hexToColor(color, 0.03 + intensity * 0.05),
             outline: true,
@@ -692,9 +306,7 @@ export function CesiumGlobe({
           semiMinorAxis: new CallbackProperty(() => {
             const elapsed = (Date.now() - startTime) % 4000;
             const pulse = 1 + 0.3 * Math.sin((elapsed / 4000) * Math.PI * 2);
-            const majorVal = baseRadius * pulse;
-            const minorVal = baseRadius * pulse * 0.98;
-            return Math.min(majorVal, minorVal);
+            return baseRadius * pulse;
           }, false) as any,
           material: Color.fromCssColorString("#FF4444").withAlpha(
             Math.min(0.6, q.magnitude / 10)
@@ -894,9 +506,8 @@ export function CesiumGlobe({
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed() || !flyTo) return;
-    const altitudeMeters = flyTo.alt < 1000 ? flyTo.alt * 1_000_000 : flyTo.alt;
     viewer.camera.flyTo({
-      destination: Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, altitudeMeters),
+      destination: Cartesian3.fromDegrees(flyTo.lon, flyTo.lat, flyTo.alt),
       orientation: { heading: CesiumMath.toRadians(0), pitch: CesiumMath.toRadians(-90), roll: 0 },
       duration: 1.5,
     });

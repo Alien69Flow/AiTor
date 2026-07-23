@@ -12,21 +12,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // ── Require shared secret. This endpoint mutates the DB and burns
-    // Firecrawl credits, so it must only run from a trusted scheduler/admin.
-    const expected = Deno.env.get('UFO_FEED_SECRET');
-    if (!expected) {
-      return new Response(JSON.stringify({ success: false, error: 'Refresh secret not configured' }), {
-        status: 503, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-    const incoming = req.headers.get('x-refresh-secret');
-    if (incoming !== expected) {
-      return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
     const firecrawlKey = Deno.env.get('FIRECRAWL_API_KEY');
     if (!firecrawlKey) {
       return new Response(JSON.stringify({ success: false, error: 'Firecrawl not configured' }), {
@@ -114,19 +99,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Upsert by source_url (unique partial index) — no destructive delete.
+    // Insert into database (upsert by clearing old + inserting new)
     if (sightings.length > 0) {
-      const withUrl = sightings.filter((s) => s.source_url);
-      const withoutUrl = sightings.filter((s) => !s.source_url);
-      if (withUrl.length > 0) {
-        const { error } = await supabase
-          .from('uap_sightings')
-          .upsert(withUrl, { onConflict: 'source_url', ignoreDuplicates: false });
-        if (error) console.error('Upsert error:', error);
-      }
-      if (withoutUrl.length > 0) {
-        const { error } = await supabase.from('uap_sightings').insert(withoutUrl);
-        if (error) console.error('Insert error:', error);
+      // Delete old cached sightings
+      await supabase.from('uap_sightings').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      
+      const { error } = await supabase.from('uap_sightings').insert(sightings);
+      if (error) {
+        console.error('Insert error:', error);
       }
     }
 

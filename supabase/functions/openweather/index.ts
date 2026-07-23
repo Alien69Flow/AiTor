@@ -1,26 +1,12 @@
 // OpenWeather proxy — keeps OPENWEATHER_API_KEY server-side.
 // GET /openweather?lat=..&lon=..  -> current weather JSON
 // GET /openweather?points=lat,lon;lat,lon  -> batched array
-// GET /openweather?tile=clouds_new&z=2&x=1&y=1  -> PNG raster tile (proxied)
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-function isCoord(v: string | null, max: number): boolean {
-  if (!v) return false;
-  const n = Number(v);
-  return Number.isFinite(n) && Math.abs(n) <= max;
-}
-
 const KEY = Deno.env.get("OPENWEATHER_API_KEY");
-const ALLOWED_TILE_LAYERS = new Set([
-  "clouds_new",
-  "precipitation_new",
-  "wind_new",
-  "pressure_new",
-  "temp_new",
-]);
 
 async function fetchOne(lat: string, lon: string) {
   const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${KEY}&units=metric`;
@@ -48,48 +34,9 @@ Deno.serve(async (req) => {
       });
     }
     const url = new URL(req.url);
-
-    // Tile proxy: keeps the API key server-side while letting the globe
-    // overlay OpenWeatherMap raster layers (clouds/precip/wind/pressure).
-    const tile = url.searchParams.get("tile");
-    if (tile) {
-      if (!ALLOWED_TILE_LAYERS.has(tile)) {
-        return new Response(JSON.stringify({ error: "invalid tile layer" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const z = Number(url.searchParams.get("z"));
-      const x = Number(url.searchParams.get("x"));
-      const y = Number(url.searchParams.get("y"));
-      if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y) ||
-          z < 0 || z > 12 || x < 0 || y < 0 || x >= 2 ** z || y >= 2 ** z) {
-        return new Response(JSON.stringify({ error: "invalid z/x/y" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const upstream = `https://tile.openweathermap.org/map/${tile}/${z}/${x}/${y}.png?appid=${KEY}`;
-      const r = await fetch(upstream);
-      if (!r.ok) {
-        return new Response(JSON.stringify({ error: `tile upstream ${r.status}` }), {
-          status: r.status, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const buf = await r.arrayBuffer();
-      return new Response(buf, {
-        headers: {
-          ...corsHeaders,
-          "Content-Type": "image/png",
-          "Cache-Control": "public, max-age=600",
-        },
-      });
-    }
-
     const points = url.searchParams.get("points");
     if (points) {
-      const parsed = points
-        .split(";")
-        .map((s) => s.split(","))
-        .filter((p) => p.length === 2 && isCoord(p[0], 90) && isCoord(p[1], 180));
+      const parsed = points.split(";").map((s) => s.split(",")).filter((p) => p.length === 2);
       // Cap at 60 to respect OWM free tier (60 req/min)
       const capped = parsed.slice(0, 60);
       const out = await Promise.all(capped.map(([la, lo]) => fetchOne(la, lo).catch(() => null)));
@@ -99,13 +46,13 @@ Deno.serve(async (req) => {
     }
     const lat = url.searchParams.get("lat");
     const lon = url.searchParams.get("lon");
-    if (!isCoord(lat, 90) || !isCoord(lon, 180)) {
-      return new Response(JSON.stringify({ error: "valid lat/lon or points required" }), {
+    if (!lat || !lon) {
+      return new Response(JSON.stringify({ error: "lat/lon or points required" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const data = await fetchOne(lat!, lon!);
+    const data = await fetchOne(lat, lon);
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=300" },
     });

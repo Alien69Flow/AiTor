@@ -76,16 +76,8 @@ const getQuality = (id: string): number => {
 
 export function ModelSelector({ value, onChange }: ModelSelectorProps) {
   const [open, setOpen] = useState(false);
-  const [isCompact, setIsCompact] = useState(false);
   const selected = AI_MODELS.find(m => m.id === value);
   const selGlow = getGlow(selected?.oracleType);
-
-  useEffect(() => {
-    const check = () => setIsCompact(window.innerWidth < 500);
-    check();
-    window.addEventListener("resize", check);
-    return () => window.removeEventListener("resize", check);
-  }, []);
 
   // Keyboard navigation
   useEffect(() => {
@@ -101,31 +93,29 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className={cn(
-          "flex items-center gap-2 rounded-full font-mono text-xs group",
-          isCompact ? "h-8 px-2 gap-1.5" : "h-9 px-3",
+          "flex items-center gap-2 h-9 px-3 rounded-full font-mono text-xs group",
           "bg-black/40 backdrop-blur-xl border border-white/10",
           "hover:bg-black/60 hover:border-white/20 transition-all duration-300",
           selGlow.glow, selGlow.ring,
         )}>
           <span className={cn(
-            "rounded-full flex items-center justify-center transition-transform duration-300 group-hover:scale-110",
-            isCompact ? "w-5 h-5 text-xs" : "w-6 h-6 text-sm",
+            "w-6 h-6 rounded-full flex items-center justify-center text-sm transition-transform duration-300 group-hover:scale-110",
             selGlow.iconBg
           )}>{selected ? getIcon(selected) : "🔮"}</span>
-          <span className="text-foreground/80 truncate max-w-[80px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
-          {!isCompact && selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
+          <span className="text-foreground/80 truncate max-w-[100px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
+          {selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
             <Badge variant="outline" className={cn("text-[7px] px-1.5 py-0 h-3.5 font-mono", ORACLE_TYPE_BADGES[selected.oracleType].className)}>
               {ORACLE_TYPE_BADGES[selected.oracleType].label}
             </Badge>
           )}
-          {!isCompact && selected?.speed && (
+          {selected?.speed && (
             <SpeedIndicator speed={selected.speed} />
           )}
           <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 group-hover:text-foreground/60 transition-all duration-200", open && "rotate-180")} />
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[calc(100vw-1rem)] max-w-[380px] p-0 bg-black/70 backdrop-blur-2xl border border-white/10 shadow-2xl shadow-black/50 animate-in zoom-in-95 fade-in duration-200"
+        className="w-[380px] p-0 bg-black/70 backdrop-blur-2xl border border-white/10 shadow-2xl shadow-black/50 animate-in zoom-in-95 fade-in duration-200"
         align="center"
         sideOffset={8}
       >

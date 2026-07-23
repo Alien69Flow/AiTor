@@ -31,25 +31,25 @@ export function useAuth() {
     return { error };
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, redirectTo?: string) => {
+  const signUp = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({
       email,
       password,
-      options: { emailRedirectTo: redirectTo ?? window.location.origin },
+      options: { emailRedirectTo: window.location.origin },
     });
     return { error };
   }, []);
 
-  const signInWithGoogle = useCallback(async (redirectTo?: string) => {
+  const signInWithGoogle = useCallback(async () => {
     const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: redirectTo ?? window.location.origin,
+      redirect_uri: window.location.origin,
     });
     return { error: result.error || null };
   }, []);
 
-  const signInWithApple = useCallback(async (redirectTo?: string) => {
+  const signInWithApple = useCallback(async () => {
     const result = await lovable.auth.signInWithOAuth("apple", {
-      redirect_uri: redirectTo ?? window.location.origin,
+      redirect_uri: window.location.origin,
     });
     return { error: result.error || null };
   }, []);

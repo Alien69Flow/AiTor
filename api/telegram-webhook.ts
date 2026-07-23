@@ -3,7 +3,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // Variables de entorno (se configuran en Vercel)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
-const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || '';
 
 // Supabase de AiTor (función de chat existente)
 const SUPABASE_URL = 'https://wkdtvrxavkhbifjtvvdw.supabase.co';
@@ -137,17 +136,6 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
-  }
-
-  // Verify the webhook came from Telegram. Configure the same secret
-  // when registering the webhook: setWebhook(url, secret_token).
-  if (!TELEGRAM_WEBHOOK_SECRET) {
-    console.error('TELEGRAM_WEBHOOK_SECRET not configured — refusing request');
-    return res.status(503).send('Webhook secret not configured');
-  }
-  const incoming = req.headers['x-telegram-bot-api-secret-token'];
-  if (incoming !== TELEGRAM_WEBHOOK_SECRET) {
-    return res.status(401).send('Unauthorized');
   }
 
   const { message } = req.body || {};

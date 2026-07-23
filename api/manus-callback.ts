@@ -2,7 +2,6 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
-const MANUS_WEBHOOK_SECRET = process.env.MANUS_WEBHOOK_SECRET || '';
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 async function sendTelegramMessage(chatId: number, text: string) {
@@ -64,16 +63,6 @@ async function getChatIdFromTask(taskId: string): Promise<number | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') {
     return res.status(405).send('Method Not Allowed');
-  }
-  // Verify shared secret. Configure the same value when registering the
-  // Manus callback URL (header: x-manus-webhook-secret).
-  if (!MANUS_WEBHOOK_SECRET) {
-    console.error('MANUS_WEBHOOK_SECRET not configured — refusing callback');
-    return res.status(503).send('Webhook secret not configured');
-  }
-  const incoming = req.headers['x-manus-webhook-secret'];
-  if (incoming !== MANUS_WEBHOOK_SECRET) {
-    return res.status(401).send('Unauthorized');
   }
   try {
     const { event_type, task_detail } = req.body || {};

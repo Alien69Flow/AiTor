@@ -5,6 +5,7 @@ import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus } from "luci
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -47,6 +48,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
         </Button>
 
         <div className="flex items-center gap-2">
+          <img src={alienflowLogo} alt="AlienFlow" className="w-6 h-6 object-contain" />
           <div className="flex flex-col leading-none min-w-0">
             <span className="text-xs font-heading font-bold tracking-wider text-foreground truncate max-w-[120px] sm:max-w-none">
               AI Tor

@@ -22,13 +22,7 @@ Deno.serve(async (req) => {
     }
 
     const url = new URL(req.url);
-    const rawAsset = url.searchParams.get("asset") || DEFAULT_ASSET;
-    if (!/^\d{1,10}$/.test(rawAsset)) {
-      return new Response(JSON.stringify({ error: "Invalid asset id" }), {
-        status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    const assetId = rawAsset;
+    const assetId = url.searchParams.get("asset") || DEFAULT_ASSET;
 
     // Ask Cesium Ion for the tileset endpoint + short-lived access token
     const ionRes = await fetch(`https://api.cesium.com/v1/assets/${assetId}/endpoint`, {

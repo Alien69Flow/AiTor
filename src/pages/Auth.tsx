@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,16 +24,12 @@ export default function Auth() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { signIn, signUp, signInWithGoogle, signInWithApple, user, loading } = useAuth();
   const navigate = useNavigate();
-  const [params] = useSearchParams();
-  const rawNext = params.get("next");
-  const safeNext =
-    rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   useEffect(() => {
     if (!loading && user) {
-      navigate(safeNext, { replace: true });
+      navigate("/", { replace: true });
     }
-  }, [user, loading, navigate, safeNext]);
+  }, [user, loading, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -54,7 +50,7 @@ export default function Auth() {
           toast.success("¡Bienvenido, Soberano!");
         }
       } else {
-        const { error } = await signUp(email, password, window.location.origin + safeNext);
+        const { error } = await signUp(email, password);
         if (error) {
           toast.error(error.message.includes("already registered") 
             ? "Este email ya está registrado" 
@@ -71,11 +67,8 @@ export default function Auth() {
   const handleOAuth = async (provider: "google" | "apple") => {
     setIsSubmitting(true);
     try {
-      const redirectTo = window.location.origin + safeNext;
-      const { error } =
-        provider === "google"
-          ? await signInWithGoogle(redirectTo)
-          : await signInWithApple(redirectTo);
+      const fn = provider === "google" ? signInWithGoogle : signInWithApple;
+      const { error } = await fn();
       if (error) toast.error(error.message || `Error con ${provider}`);
     } finally {
       setIsSubmitting(false);

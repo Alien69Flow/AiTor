@@ -9,27 +9,13 @@ interface Region {
   altitude: number;
 }
 
-// Wide regions (macro fly-to).
 const REGIONS: Region[] = [
-  { label: "Europe", flag: "🇪🇺", lat: 48, lng: 10, altitude: 2.0 },
   { label: "Middle East", flag: "🇸🇦", lat: 28, lng: 45, altitude: 1.8 },
+  { label: "Europe", flag: "🇪🇺", lat: 48, lng: 10, altitude: 2.0 },
   { label: "Americas", flag: "🇺🇸", lat: 35, lng: -90, altitude: 2.5 },
   { label: "Asia", flag: "🇨🇳", lat: 35, lng: 105, altitude: 2.2 },
   { label: "Africa", flag: "🇿🇦", lat: 5, lng: 20, altitude: 2.3 },
   { label: "Oceania", flag: "🇦🇺", lat: -25, lng: 135, altitude: 2.2 },
-];
-
-// Country / hotspot pins — closer altitude for tactical drill-down.
-const HOTSPOTS: Region[] = [
-  { label: "España", flag: "🇪🇸", lat: 40.4, lng: -3.7, altitude: 0.9 },
-  { label: "France", flag: "🇫🇷", lat: 46.6, lng: 2.5, altitude: 0.9 },
-  { label: "United Kingdom", flag: "🇬🇧", lat: 54.0, lng: -2.0, altitude: 0.9 },
-  { label: "Russia", flag: "🇷🇺", lat: 61.5, lng: 90.0, altitude: 2.2 },
-  { label: "Israel", flag: "🇮🇱", lat: 31.5, lng: 34.8, altitude: 0.6 },
-  { label: "Iran", flag: "🇮🇷", lat: 32.4, lng: 53.7, altitude: 1.2 },
-  { label: "Ukraine", flag: "🇺🇦", lat: 48.4, lng: 31.2, altitude: 1.0 },
-  { label: "Taiwan", flag: "🇹🇼", lat: 23.7, lng: 121.0, altitude: 0.6 },
-  { label: "Kashmir", flag: "🇮🇳", lat: 34.0, lng: 76.5, altitude: 0.6 },
 ];
 
 const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl";
@@ -63,25 +49,6 @@ export function NavigatePanel({ onNavigate }: NavigatePanelProps) {
                 {r.flag}
               </button>
             ))}
-          </div>
-
-          {/* Country / hotspot pins */}
-          <div>
-            <div className="text-[8px] uppercase tracking-wider text-slate-500 mb-1.5 px-0.5">
-              Hotspots
-            </div>
-            <div className="grid grid-cols-5 gap-1.5">
-              {HOTSPOTS.map(r => (
-                <button
-                  key={r.label}
-                  onClick={() => onNavigate?.(r.lat, r.lng, r.altitude)}
-                  className="text-sm hover:scale-125 transition-transform bg-slate-800/25 border border-slate-700/25 rounded-md py-1"
-                  title={r.label}
-                >
-                  {r.flag}
-                </button>
-              ))}
-            </div>
           </div>
 
           {/* Category status list */}

@@ -1,18 +1,14 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Layers,
   Activity,
   Satellite,
-  Map as MapIcon,
   Radio,
   CloudRain,
   Wind,
   Cloud,
-  Droplets,
-  Gauge,
   Flame,
   Plane,
-  Thermometer,
   TrendingUp,
   DollarSign,
   Eye,
@@ -63,11 +59,6 @@ const DATA_SOURCES = [
   { key: "nasa", label: "NASA EONET", color: "#34d399", Icon: Satellite, status: "live" },
   { key: "noaa", label: "NOAA Space Weather", color: "#c084fc", Icon: Radio, status: "live" },
   { key: "owm", label: "OpenWeather", color: "#22d3ee", Icon: CloudRain, status: "standby" },
-  { key: "osky", label: "OpenSky Flights", color: "#e2e8f0", Icon: Plane, status: "live" },
-  { key: "tle", label: "Celestrak Satellites", color: "#60a5fa", Icon: Satellite, status: "soon" },
-  { key: "ocn", label: "NOAA Ocean (ERDDAP)", color: "#06b6d4", Icon: Activity, status: "soon" },
-  { key: "ais", label: "AIS Maritime", color: "#fb923c", Icon: Package, status: "soon" },
-  { key: "cam", label: "Earthcam Live", color: "#f472b6", Icon: Eye, status: "soon" },
 ] as const;
 
 interface LegendPanelProps {
@@ -151,37 +142,6 @@ export function LegendPanel({
     },
   ];
 
-  // Globe raster overlays (RainViewer + OpenWeather clouds / precip / wind / pressure).
-  // Globe exposes a toggle on window.__owmToggle and current state on
-  // window.__owmState — bridged here so the panel stays decoupled.
-  const [owm, setOwm] = useState<{ radar: boolean; clouds: boolean; precipitation: boolean; wind: boolean; pressure: boolean; temperature: boolean }>({
-    radar: false, clouds: false, precipitation: false, wind: false, pressure: false, temperature: false,
-  });
-  const [baseMap, setBaseMap] = useState<"satellite" | "dark">("satellite");
-  useEffect(() => {
-    const id = setInterval(() => {
-      const s = (window as any).__owmState;
-      if (s) setOwm({ radar: !!s.radar, clouds: !!s.clouds, precipitation: !!s.precipitation, wind: !!s.wind, pressure: !!s.pressure, temperature: !!s.temperature });
-      if ((window as any).__globeBaseState) setBaseMap((window as any).__globeBaseState);
-    }, 400);
-    return () => clearInterval(id);
-  }, []);
-  const toggleOwm = (k: "radar" | "clouds" | "precipitation" | "wind" | "pressure" | "temperature") => {
-    (window as any).__owmToggle?.(k);
-  };
-  const owmToggles = [
-    { key: "radar", label: "Rain Radar", color: "#22d3ee", Icon: CloudRain },
-    { key: "clouds", label: "OWM Clouds", color: "#7dd3fc", Icon: Cloud },
-    { key: "precipitation", label: "OWM Rain", color: "#38bdf8", Icon: Droplets },
-    { key: "wind", label: "OWM Wind", color: "#a7f3d0", Icon: Wind },
-    { key: "pressure", label: "OWM Pressure", color: "#fbbf24", Icon: Gauge },
-    { key: "temperature", label: "OWM Temp", color: "#f87171", Icon: Thermometer },
-  ] as const;
-  const setGlobeBase = (style: "satellite" | "dark") => {
-    setBaseMap(style);
-    (window as any).__globeSetBase?.(style);
-  };
-
   return (
     <GlassPanel
       icon={Layers}
@@ -194,26 +154,6 @@ export function LegendPanel({
       headerRight={<LedIndicator color="#34d399" active size="sm" />}
     >
       <div className="space-y-5">
-        <div>
-          <SectionTitle>Base Map</SectionTitle>
-          <div className="grid grid-cols-2 gap-2">
-            <ToggleRow
-              icon={Satellite}
-              label="Satellite"
-              color="#fbbf24"
-              active={baseMap === "satellite"}
-              onChange={() => setGlobeBase("satellite")}
-            />
-            <ToggleRow
-              icon={MapIcon}
-              label="Dark Map"
-              color="#22d3ee"
-              active={baseMap === "dark"}
-              onChange={() => setGlobeBase("dark")}
-            />
-          </div>
-        </div>
-
         {/* Data Categories */}
         <div>
           <SectionTitle>Intelligence Categories</SectionTitle>
@@ -238,7 +178,6 @@ export function LegendPanel({
           <div className="space-y-2">
             {DATA_SOURCES.map((src) => {
               const isLive = src.status === "live";
-              const isSoon = src.status === "soon";
               return (
                 <div
                   key={src.key}
@@ -256,8 +195,8 @@ export function LegendPanel({
                       {src.label}
                     </span>
                   </div>
-                  <StatusBadge variant={isLive ? "success" : isSoon ? "warning" : "warning"} glow={isLive}>
-                    {isLive ? "LIVE" : isSoon ? "SOON" : "STANDBY"}
+                  <StatusBadge variant={isLive ? "success" : "warning"} glow>
+                    {isLive ? "LIVE" : "STANDBY"}
                   </StatusBadge>
                 </div>
               );
@@ -277,23 +216,6 @@ export function LegendPanel({
                 color={t.color}
                 active={t.enabled}
                 onChange={() => t.onToggle?.()}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* OpenWeatherMap raster tiles */}
-        <div>
-          <SectionTitle>OpenWeather Tiles · single-select</SectionTitle>
-          <div className="grid grid-cols-2 gap-2">
-            {owmToggles.map((t) => (
-              <ToggleRow
-                key={t.key}
-                icon={t.Icon}
-                label={t.label}
-                color={t.color}
-                active={owm[t.key]}
-                onChange={() => toggleOwm(t.key)}
               />
             ))}
           </div>

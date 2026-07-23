@@ -3,7 +3,6 @@ import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } 
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { useAppKit } from "@reown/appkit/react";
 import alienflowLogo from "@/assets/alienflow-logo.webp";
 import type { TabId } from "@/pages/Index";
 
@@ -24,7 +23,6 @@ interface TopNavBarProps {
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const { open } = useAppKit();
 
   const handleSignOut = async () => {
     const { error } = await signOut();
@@ -32,7 +30,9 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   };
 
   const handleConnectWallet = () => {
-    open();
+    toast.info("Conectar Wallet disponible próximamente", {
+      description: "Desbloquea el modo Nexo Soberano con Web3",
+    });
   };
 
   return (
