@@ -116,12 +116,44 @@ function hexToColor(hex: string, alpha = 1): Color {
   return new Color(r, g, b, alpha);
 }
 
-type LayerKey = "markets" | "uap" | "cryptozoo";
+/** Categories controlled by the tactical legend. Keep this aligned with LegendPanel. */
+export type TacticalLayerKey =
+  | "finance"
+  | "intel"
+  | "conflict"
+  | "geopolitical"
+  | "logistics"
+  | "cryptozoo"
+  | "convergence";
+
+function tacticalLayerForCategory(category: string): TacticalLayerKey {
+  switch (category) {
+    case "tech":
+    case "market":
+    case "finance":
+      return "finance";
+    case "uap":
+    case "ufo":
+    case "intel":
+      return "intel";
+    case "cryptozoology":
+      return "cryptozoo";
+    case "chokepoint":
+    case "logistics":
+      return "logistics";
+    case "geopolitical":
+      return "geopolitical";
+    case "conflict":
+      return "conflict";
+    default:
+      return "convergence";
+  }
+}
 
 interface CesiumGlobeProps {
   onHotspotClick?: (data: HotspotData | null) => void;
   sightings?: UAPSighting[];
-  visibleLayers?: Set<LayerKey>;
+  visibleLayers?: Set<TacticalLayerKey>;
   envLayers?: Set<EnvLayerKey>;
   flyTo?: { lat: number; lon: number; alt: number } | null;
   kpIndex?: number;
@@ -537,9 +569,10 @@ export function CesiumGlobe({
     marketEntityIdsRef.current = [];
     arcEntityIdsRef.current = [];
 
-    if (visibleLayers && !visibleLayers.has("markets")) return;
-
+    const visibleSpotIndexes = new Set<number>();
     HOTSPOT_DATA.forEach((spot, idx) => {
+      if (visibleLayers && !visibleLayers.has(tacticalLayerForCategory(spot.type))) return;
+      visibleSpotIndexes.add(idx);
       const entityId = `market-${idx}`;
       const tacticalColor = TACTICAL_COLORS[spot.type] || spot.color;
       viewer.entities.add({
@@ -569,7 +602,7 @@ export function CesiumGlobe({
     });
 
     ARC_PAIRS.forEach(([a, b], arcIdx) => {
-      if (!HOTSPOT_DATA[a] || !HOTSPOT_DATA[b]) return;
+      if (!HOTSPOT_DATA[a] || !HOTSPOT_DATA[b] || !visibleSpotIndexes.has(a) || !visibleSpotIndexes.has(b)) return;
       const start = HOTSPOT_DATA[a], end = HOTSPOT_DATA[b];
       const arcPoints: Cartesian3[] = [];
       for (let i = 0; i <= 50; i++) {
@@ -606,10 +639,7 @@ export function CesiumGlobe({
     sightings.forEach((s) => {
       if (s.lat == null || s.lon == null) return;
       const cat = (s.category as string) || "uap";
-      if (visibleLayers) {
-        if ((cat === "uap" || cat === "ufo") && !visibleLayers.has("uap")) return;
-        if (cat === "cryptozoology" && !visibleLayers.has("cryptozoo")) return;
-      }
+      if (visibleLayers && !visibleLayers.has(tacticalLayerForCategory(cat))) return;
       const colorHex = TACTICAL_COLORS[cat] || "#00FF41";
       const size = SEVERITY_SIZE[s.severity || "signal"] || 6;
       const entityId = `sighting-${s.id}`;
@@ -682,7 +712,7 @@ export function CesiumGlobe({
 
     // Add flight markers
     flights.forEach((flight, i) => {
-      if (!flight.latitude || !flight.longitude) return;
+      if (!Number.isFinite(flight.latitude) || !Number.isFinite(flight.longitude)) return;
       
       const entityId = `flight-${i}`;
       viewer.entities.add({
@@ -739,7 +769,7 @@ export function CesiumGlobe({
 
     // Add ship markers
     ships.forEach((ship, i) => {
-      if (!ship.latitude || !ship.longitude) return;
+      if (!Number.isFinite(ship.latitude) || !Number.isFinite(ship.longitude)) return;
       
       const entityId = `ship-${i}`;
       viewer.entities.add({

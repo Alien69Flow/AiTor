@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.noaa-space-weather]
 verify_jwt = false
+
+[functions.access-status]
+verify_jwt = true
+
+[functions.wallet-link]
+verify_jwt = true

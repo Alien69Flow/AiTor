@@ -3,6 +3,7 @@ import { lazyWithRetry } from "@/lib/lazy-retry";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { type UnifiedHotspotData } from "./GlobeScene";
 import type { EnvLayerKey } from "@/lib/globe-layers";
+import type { TacticalLayerKey } from "./CesiumGlobe";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { UAPSighting } from "@/hooks/useUAPSightings";
@@ -17,6 +18,7 @@ const CesiumGlobe = lazyWithRetry(() =>
 
 export interface HybridGlobeProps {
   layers: Set<EnvLayerKey>;
+  visibleLayers: Set<TacticalLayerKey>;
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
@@ -40,6 +42,7 @@ function GlobeFallback() {
 
 export function HybridGlobe({
   layers,
+  visibleLayers,
   onHotspotClick,
   onReady,
   externalMarkers,
@@ -72,6 +75,7 @@ export function HybridGlobe({
       <Suspense fallback={<GlobeFallback />}>
         <CesiumGlobe
           envLayers={layers}
+          visibleLayers={visibleLayers}
           onHotspotClick={onHotspotClick as any}
           sightings={sightings}
           flyTo={flyTo}
