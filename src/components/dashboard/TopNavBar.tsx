@@ -1,6 +1,8 @@
 import { Button } from "@/components/ui/button";
 import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useWalletLink } from "@/hooks/useWalletLink";
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 import alienflowLogo from "@/assets/alienflow-logo.webp";
@@ -22,6 +24,9 @@ interface TopNavBarProps {
 
 export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
   const { user, signOut } = useAuth();
+  const { open } = useAppKit();
+  const { address, isConnected } = useAppKitAccount();
+  const { linkWallet, isVerified, isLinking } = useWalletLink();
   const navigate = useNavigate();
 
   const handleSignOut = async () => {
@@ -29,11 +34,35 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
     if (error) toast.error("Error al cerrar sesión");
   };
 
-  const handleConnectWallet = () => {
-    toast.info("Conectar Wallet disponible próximamente", {
-      description: "Desbloquea el modo Nexo Soberano con Web3",
-    });
+  const handleConnectWallet = async () => {
+    if (!user) {
+      toast.info("Inicia sesión antes de conectar tu wallet");
+      navigate("/auth");
+      return;
+    }
+    if (!isConnected) {
+      await open({ view: "Connect" });
+      return;
+    }
+    if (isVerified) {
+      await open({ view: "Account" });
+      return;
+    }
+    try {
+      await linkWallet();
+      toast.success("Wallet verificada", { description: "La dirección quedó vinculada a tu cuenta de AI Tor." });
+    } catch (error) {
+      toast.error("No se verificó la wallet", { description: error instanceof Error ? error.message : undefined });
+    }
   };
+
+  const walletLabel = isLinking
+    ? "Verificando..."
+    : address && isVerified
+      ? `${address.slice(0, 6)}...${address.slice(-4)}`
+      : address
+        ? "Verificar wallet"
+        : "Wallet";
 
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 shrink-0">
@@ -73,10 +102,11 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
             variant="outline"
             size="sm"
             onClick={handleConnectWallet}
+            disabled={isLinking}
             className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:border-primary/50 transition-all uppercase"
           >
             <Wallet className="h-3.5 w-3.5 md:mr-1" />
-            <span className="hidden lg:inline">Wallet</span>
+            <span className="hidden lg:inline">{walletLabel}</span>
           </Button>
 
           {user ? (

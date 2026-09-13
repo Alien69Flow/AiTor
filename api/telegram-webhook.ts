@@ -3,6 +3,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 // Variables de entorno (se configuran en Vercel)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
+const TELEGRAM_MINI_APP_URL = process.env.TELEGRAM_MINI_APP_URL || 'https://aitor.alienflow.space';
 
 // Supabase de AiTor (función de chat existente)
 const SUPABASE_URL = 'https://wkdtvrxavkhbifjtvvdw.supabase.co';
@@ -12,7 +13,11 @@ const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 // Enviar mensaje a Telegram
-async function sendTelegramMessage(chatId: number, text: string) {
+type TelegramReplyMarkup = {
+  inline_keyboard: Array<Array<{ text: string; web_app?: { url: string }; url?: string }>>;
+};
+
+async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: TelegramReplyMarkup) {
   // Telegram tiene límite de 4096 caracteres por mensaje
   const maxLen = 4000;
   if (text.length > maxLen) {
@@ -26,6 +31,7 @@ async function sendTelegramMessage(chatId: number, text: string) {
           chat_id: chatId,
           text: part,
           parse_mode: 'Markdown',
+          ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
         }),
       });
     }
@@ -37,6 +43,7 @@ async function sendTelegramMessage(chatId: number, text: string) {
         chat_id: chatId,
         text: text,
         parse_mode: 'Markdown',
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
   }
@@ -138,16 +145,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send('Method Not Allowed');
   }
 
-  // Verify the request really comes from Telegram (setWebhook secret_token).
-  // Only enforced when a secret is configured AND the webhook was registered
-  // with it; otherwise the bot would go silent (Telegram sends no header).
+  // Production webhooks must use Telegram's setWebhook secret_token.
+  // Fail closed: accepting a request without this header lets anyone trigger
+  // bot replies or consume AI-provider credits.
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const providedSecret = req.headers['x-telegram-bot-api-secret-token'];
-  if (expectedSecret && providedSecret && providedSecret !== expectedSecret) {
+  if (!expectedSecret || providedSecret !== expectedSecret) {
     return res.status(401).send('Unauthorized');
-  }
-  if (expectedSecret && !providedSecret) {
-    console.warn('Telegram webhook received without secret_token header — re-register the webhook with secret_token.');
   }
 
   const { message } = req.body || {};
@@ -169,7 +173,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     else if (command === '/app') {
       await sendTelegramMessage(chatId,
-        '🎮 Accede a la Mini App:\nhttps://t.me/Alien69Bot/app'
+        '🎮 *Accede a la Mini App de AI Tor*',
+        {
+          inline_keyboard: [[
+            {
+              text: '🚀 Abrir Mini App',
+              web_app: { url: TELEGRAM_MINI_APP_URL },
+            },
+          ]],
+        },
       );
     }
     else if (command === '/dao') {
