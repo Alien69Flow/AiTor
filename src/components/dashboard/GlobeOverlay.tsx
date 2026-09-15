@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, MapPin, TriangleAlert as AlertTriangle, Zap, Crosshair, Activity, Flame, Radio, ChevronDown } from "lucide-react";
+import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 import { fetchUapSightingsCount } from "@/lib/uap-sightings";
@@ -174,8 +175,8 @@ function CountryPopup({
   const typeColor = TYPE_COLORS[hotspot.type] || "#fbbf24";
 
   return (
-    <div className="absolute top-16 right-4 z-50 w-72 animate-in fade-in slide-in-from-right-4 duration-300">
-      <GlassPanel className="overflow-hidden" glowBorder glowColor={typeColor}>
+    <div className="absolute top-3 right-3 z-50 w-[min(340px,calc(100vw-24px))] animate-in fade-in slide-in-from-right-4 duration-300">
+      <GlassPanel className="overflow-hidden rounded-sm" glowBorder glowColor={typeColor}>
         <div className="-mt-4 -mx-4">
           {/* Header */}
           <div
@@ -201,12 +202,15 @@ function CountryPopup({
                 <div className="text-[9px] text-slate-500">{hotspot.country}</div>
               </div>
             </div>
-            <button
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-700/40 transition-colors"
+              className="h-8 w-8 rounded-sm"
+              aria-label="Cerrar análisis"
             >
               <X className="w-4 h-4 text-slate-400" />
-            </button>
+            </Button>
           </div>
 
           {/* Metrics */}
@@ -236,12 +240,30 @@ function CountryPopup({
                 </div>
               </div>
             )}
+
+            {hotspot.description && (
+              <div className="border-t border-border/60 pt-3">
+                <SectionTitle>Signal intelligence</SectionTitle>
+                <p className="text-[10px] leading-relaxed text-slate-300/80 break-words">{hotspot.description}</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2 border-t border-border/60 pt-3 text-[9px] font-mono">
+              <div className="min-w-0">
+                <div className="text-muted-foreground uppercase">Source</div>
+                <div className="text-primary truncate">{hotspot.source || hotspot.country}</div>
+              </div>
+              <div className="min-w-0">
+                <div className="text-muted-foreground uppercase">Updated</div>
+                <div className="text-foreground/80 truncate">{hotspot.timestamp || "LIVE"}</div>
+              </div>
+            </div>
           </div>
 
           {/* Footer */}
           <div className="px-4 py-3 flex items-center justify-between border-t border-slate-700/25">
             <div className="flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 text-emerald-400/60" />
+              <Database className="w-3.5 h-3.5 text-primary/60" />
               <span className="text-[9px] text-slate-500 font-medium">
                 {uapCount} UAP Sightings
               </span>

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Activity } from "lucide-react";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
@@ -89,10 +90,11 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
   }, [spaceWeather?.solarStorm]);
 
   return (
-    <div className="w-full flex items-center gap-3 px-3 py-1 bg-slate-900/50 backdrop-blur-xl border-b border-slate-700/25 text-[9px]">
-      <div className="flex items-center gap-1.5 shrink-0">
+    <div className="w-full h-9 flex items-center gap-3 bg-destructive/5 backdrop-blur-xl border-t border-destructive/25 text-[9px] overflow-hidden">
+      <div className="h-full flex items-center gap-2 shrink-0 px-3 md:px-4 bg-destructive/10 border-r border-destructive/25">
+        <Activity className="w-3.5 h-3.5 text-destructive" />
         <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ boxShadow: '0 0 8px #ef444480' }} />
-        <span className="text-red-400 tracking-wider uppercase font-bold text-[9px]">LIVE</span>
+        <span className="text-destructive tracking-wider uppercase font-bold text-[9px]">LIVE ALERTS</span>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
