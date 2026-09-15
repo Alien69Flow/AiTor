@@ -22,7 +22,7 @@ export interface UnifiedHotspotData {
   marketVolume: string;
   trend: string;
   topTokens: string[];
-  type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa" | "aircraft";
+  type: string;
   description?: string;
   source?: string;
   timestamp?: string;

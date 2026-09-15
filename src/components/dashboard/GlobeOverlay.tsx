@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, MapPin, TriangleAlert as AlertTriangle, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, ExternalLink, Database } from "lucide-react";
+import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";

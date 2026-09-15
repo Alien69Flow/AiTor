@@ -37,7 +37,20 @@ export function GlobeDashboard() {
   const { flights } = useAirTraffic();
   const { ships } = useMarineTraffic();
   const { outages } = useInternetOutages(true);
-  const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
+  const allFlights = intel.aviation.length > flights.length
+    ? intel.aviation.map((flight) => ({
+        icao24: flight.icao24,
+        callsign: flight.callsign,
+        origin: null,
+        destination: null,
+        latitude: flight.lat,
+        longitude: flight.lon,
+        altitude: flight.altitudeM,
+        velocity: flight.velocityMs,
+        heading: flight.heading,
+        timestamp: new Date().toISOString(),
+      }))
+    : flights;
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => setVisibleLayers((previous) => {
