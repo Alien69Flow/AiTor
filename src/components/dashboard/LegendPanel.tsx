@@ -31,6 +31,7 @@ import {
   type EnvLayerKey,
   type Tier,
 } from "@/lib/globe-layers";
+import type { LayerStatusMap } from "@/hooks/useUnifiedIntel";
 
 export type LayerKey =
   | "finance"
@@ -77,6 +78,7 @@ interface LegendPanelProps {
   hasAccess: (required: Tier) => boolean;
   onClose?: () => void;
   defaultCollapsed?: boolean;
+  layerStatus?: LayerStatusMap;
 }
 
 export function LegendPanel({
@@ -89,6 +91,7 @@ export function LegendPanel({
   hasAccess,
   onClose,
   defaultCollapsed = true,
+  layerStatus,
 }: LegendPanelProps) {
   return (
     <GlassPanel
@@ -96,7 +99,7 @@ export function LegendPanel({
       title="Legend & Controls"
       collapsible
       defaultCollapsed={defaultCollapsed}
-      className="w-full max-w-[300px]"
+      className="w-full max-w-[284px] rounded-sm"
       glowBorder
       glowColor="#22d3ee"
       headerRight={
@@ -109,7 +112,7 @@ export function LegendPanel({
       }
       onClose={onClose}
     >
-      <div className="space-y-5 max-h-[62vh] overflow-y-auto legend-scroll pr-2">
+      <div className="space-y-4 max-h-[58vh] overflow-y-auto legend-scroll pr-2 font-mono">
         {/* Data Categories */}
         <div>
           <SectionTitle>Intelligence Categories</SectionTitle>
@@ -138,6 +141,18 @@ export function LegendPanel({
               <div className="grid grid-cols-1 gap-2">
                 {defs.map((def) => {
                   const locked = !hasAccess(def.requiredTier);
+                  const statusKey = def.key === "precipitation" ? "rainRadar"
+                    : def.key === "wind" || def.key === "isobars" ? "surfaceWeather"
+                    : def.key === "earthquakes" ? "quakesEmsc"
+                    : def.key === "wildfires" ? "fires"
+                    : def.key === "solarActivity" ? "aurora"
+                    : def.key === "satellites" ? "satellites"
+                    : def.key === "underseaCables" ? "cables"
+                    : def.key === "economicCenters" ? "bitcoinNodes"
+                    : def.key === "airTraffic" ? "aviation"
+                    : def.key === "conflictZones" || def.key === "internetOutages" ? "gdelt"
+                    : null;
+                  const status = statusKey ? layerStatus?.[statusKey] : undefined;
                   return (
                     <div key={def.key} className="relative">
                       <ToggleRow
@@ -154,6 +169,9 @@ export function LegendPanel({
                             {TIER_LABEL[def.requiredTier]}
                           </span>
                         </span>
+                      )}
+                      {!locked && status && envLayers.has(def.key) && (
+                        <span className={`absolute right-11 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${status.error ? "bg-destructive" : status.loading ? "bg-accent animate-pulse" : "bg-primary"}`} title={status.error ?? `${status.count} señales`} />
                       )}
                     </div>
                   );

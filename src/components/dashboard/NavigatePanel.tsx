@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChevronUp, ChevronDown, Compass } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface Region {
   label: string;
@@ -31,7 +32,7 @@ const REGIONS: Region[] = [
   { label: "Oceania", flag: "🇦🇺", lat: -25, lng: 135, altitude: 2.2 },
 ];
 
-const glass = "bg-slate-900/40 backdrop-blur-xl border border-slate-700/50 rounded-2xl";
+const glass = "bg-card/75 backdrop-blur-xl border border-border/70 rounded-sm";
 
 interface NavigatePanelProps {
   onNavigate?: (lat: number, lng: number, altitude: number) => void;
@@ -45,25 +46,27 @@ export function NavigatePanel({ onNavigate, forceOpen, onClose }: NavigatePanelP
 
   return (
     <div className={`${glass} w-full max-w-[260px] overflow-hidden`}>
-      <button onClick={() => (onClose ? onClose() : setInternalOpen(!open))} className="w-full flex items-center justify-between px-4 py-2.5">
+      <Button variant="ghost" onClick={() => (onClose ? onClose() : setInternalOpen(!open))} className="w-full h-auto flex items-center justify-between px-4 py-2.5 rounded-none">
         <span className="text-[9px] uppercase tracking-wider text-slate-400 font-medium">
           <Compass className="w-3 h-3 inline mr-1.5" />Navigate
         </span>
         {open ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
-      </button>
+      </Button>
       {open && (
         <div className="px-3.5 pb-3.5 space-y-2.5">
           {/* Region flags row */}
           <div className="flex items-center gap-2 flex-wrap">
             {REGIONS.map(r => (
-              <button
+              <Button
+                variant="ghost"
+                size="icon"
                 key={r.label}
                 onClick={() => onNavigate?.(r.lat, r.lng, r.altitude)}
-                className="text-base hover:scale-125 transition-transform"
+                className="text-base h-7 w-7 rounded-sm hover:scale-110 transition-transform"
                 title={r.label}
               >
                 {r.flag}
-              </button>
+              </Button>
             ))}
           </div>
 

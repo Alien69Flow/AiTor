@@ -23,6 +23,10 @@ export interface UnifiedHotspotData {
   trend: string;
   topTokens: string[];
   type: "conflict" | "finance" | "tech" | "geopolitical" | "quake" | "dao_node" | "nasa" | "aircraft";
+  description?: string;
+  source?: string;
+  timestamp?: string;
+  reliability?: string;
 }
 
 export type HotspotData = UnifiedHotspotData;
