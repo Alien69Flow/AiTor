@@ -116,6 +116,21 @@ function hexToColor(hex: string, alpha = 1): Color {
   return new Color(r, g, b, alpha);
 }
 
+const MARKER_GLYPHS: Record<string, string> = {
+  quake: "⌁", fire: "▲", flight: "✈", ship: "◆", satellite: "✦",
+  conflict: "✕", news: "!", bitcoin: "₿", outage: "⌁", market: "$", uap: "◉",
+};
+
+function markerIcon(type: string, color: string): string {
+  const glyph = MARKER_GLYPHS[type] || "•";
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 2 36 11v18L20 38 4 29V11Z" fill="#05070a" fill-opacity=".9" stroke="${color}" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="${color}" fill-opacity=".16"/><text x="20" y="25" text-anchor="middle" font-family="monospace" font-size="16" font-weight="700" fill="${color}">${glyph}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function eventPayload(data: Record<string, unknown>) {
+  return { sightingData: JSON.stringify(data) } as any;
+}
+
 type LayerKey = "markets" | "uap" | "cryptozoo";
 
 interface CesiumGlobeProps {
@@ -290,6 +305,10 @@ export function CesiumGlobe({
               name: parsed.location, country: parsed.category?.toUpperCase() || "UAP",
               marketVolume: parsed.source || "Unknown", trend: parsed.date_reported || "",
               topTokens: [parsed.type || "unknown"], type: parsed.category || "uap",
+              description: parsed.description || "",
+              source: parsed.source || "Unknown",
+              timestamp: parsed.date_reported || "LIVE",
+              reliability: parsed.reliability || undefined,
             });
           } catch { /* ignore */ }
           return;
@@ -482,6 +501,12 @@ export function CesiumGlobe({
           outlineWidth: 1,
           height: 0,
         },
+        billboard: {
+          image: markerIcon("quake", "#FF4444"), width: 28, height: 28,
+          verticalOrigin: VerticalOrigin.CENTER,
+          scaleByDistance: new NearFarScalar(1e6, 1.1, 1e8, 0.35),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
         label: q.magnitude >= 4.5 ? {
           text: `${q.magnitude.toFixed(1)}`,
           font: "9px monospace",
@@ -494,6 +519,13 @@ export function CesiumGlobe({
           scaleByDistance: new NearFarScalar(1e6, 0.8, 1e8, 0.2),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         } : undefined,
+        properties: eventPayload({
+          lat: q.lat, lon: q.lon, location: q.place || "Earthquake",
+          description: `Magnitude ${q.magnitude.toFixed(1)} · depth ${q.depth} km`,
+          type: "quake", severity: q.magnitude >= 6 ? "critical" : q.magnitude >= 5 ? "high" : "medium",
+          source: q.id.startsWith("emsc-") ? "EMSC" : "USGS", category: "quake",
+          date_reported: new Date(q.time).toISOString(), reliability: "Official seismic feed",
+        }),
       });
       quakeEntityIdsRef.current.push(entityId);
     });
@@ -519,14 +551,17 @@ export function CesiumGlobe({
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(evt.lon, evt.lat, 0),
-        point: {
-          pixelSize: 7,
-          color: hexToColor(color, 0.85),
-          outlineColor: hexToColor(color, 0.4),
-          outlineWidth: 3,
+        billboard: {
+          image: markerIcon(isWildfire ? "fire" : "news", color), width: 26, height: 26,
           scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.4),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
+        properties: eventPayload({
+          lat: evt.lat, lon: evt.lon, location: evt.title,
+          description: `${evt.category} · NASA Earth Observatory Natural Event Tracking`,
+          type: isWildfire ? "fire" : "hazard", severity: "medium", source: "NASA EONET",
+          category: "nasa", date_reported: evt.date || "Active", reliability: "Official satellite feed",
+        }),
         label: {
           text: `${emoji} ${evt.title.substring(0, 20)}`,
           font: "9px monospace",
@@ -710,14 +745,18 @@ export function CesiumGlobe({
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
-        point: {
-          pixelSize: 4,
-          color: hexToColor("#00FFFF", 0.9),
-          outlineColor: hexToColor("#FFFFFF", 0.5),
-          outlineWidth: 1,
+        billboard: {
+          image: markerIcon("flight", "#69AF00"), width: 22, height: 22,
+          rotation: -CesiumMath.toRadians(flight.heading || 0),
           scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
+        properties: eventPayload({
+          lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
+          description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
+          date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
+        }),
         label: {
           text: `${flight.callsign}`,
           font: "8px monospace",
@@ -767,14 +806,18 @@ export function CesiumGlobe({
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(ship.longitude, ship.latitude, 0),
-        point: {
-          pixelSize: 6,
-          color: hexToColor("#38BDF8", 0.9),
-          outlineColor: hexToColor("#FFFFFF", 0.5),
-          outlineWidth: 1,
+        billboard: {
+          image: markerIcon("ship", "#FFD700"), width: 23, height: 23,
+          rotation: -CesiumMath.toRadians(ship.heading || 0),
           scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
+        properties: eventPayload({
+          lat: ship.latitude, lon: ship.longitude, location: ship.name || ship.mmsi,
+          description: `${ship.type} · ${ship.speed} kn · destination ${ship.destination || "unknown"}`,
+          type: "ship", severity: "low", source: "VesselFinder / AIS", category: "logistics",
+          date_reported: ship.timestamp || "LIVE", reliability: "AIS telemetry",
+        }),
         label: {
           text: `${ship.name || ship.type}`,
           font: "8px monospace",
@@ -932,14 +975,16 @@ export function CesiumGlobe({
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(s.lon, s.lat, Math.max(0, s.altKm) * 1000),
-        point: {
-          pixelSize: 4,
-          color: hexToColor("#8b5cf6", 0.95),
-          outlineColor: hexToColor("#c4b5fd", 0.4),
-          outlineWidth: 2,
+        billboard: {
+          image: markerIcon("satellite", "#69AF00"), width: 20, height: 20,
           scaleByDistance: new NearFarScalar(1e6, 1.4, 1e8, 0.5),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
+        properties: eventPayload({
+          lat: s.lat, lon: s.lon, location: s.name,
+          description: `Orbital altitude ${s.altKm.toFixed(0)} km`, type: "satellite", severity: "low",
+          source: "CelesTrak", category: "intel", date_reported: "LIVE", reliability: "TLE propagation",
+        }),
         label: {
           text: s.name,
           font: "8px monospace",
@@ -1081,11 +1126,8 @@ export function CesiumGlobe({
         viewer.entities.add({
           id,
           position: Cartesian3.fromDegrees(f.lon, f.lat, 0),
-          point: {
-            pixelSize: 5,
-            color: hexToColor("#FB923C", 0.95),
-            outlineColor: hexToColor("#FFEDD5", 0.3),
-            outlineWidth: 2,
+          billboard: {
+            image: markerIcon("fire", "#FF8844"), width: 22, height: 22,
             scaleByDistance: new NearFarScalar(1e6, 1.4, 1e8, 0.3),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
@@ -1132,12 +1174,17 @@ export function CesiumGlobe({
         viewer.entities.add({
           id,
           position: Cartesian3.fromDegrees(n.lon, n.lat, 0),
-          point: {
-            pixelSize: 3,
-            color: hexToColor("#F7931A", 0.85),
+          billboard: {
+            image: markerIcon("bitcoin", "#FFD700"), width: 18, height: 18,
             scaleByDistance: new NearFarScalar(1e6, 1.6, 1e8, 0.25),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
+          properties: eventPayload({
+            lat: n.lat, lon: n.lon, location: n.city || n.country || "Bitcoin node",
+            description: `Reachable Bitcoin node · ${n.country || "unknown country"}`,
+            type: "bitcoin", severity: "low", source: "Bitnodes", category: "finance",
+            date_reported: "LIVE", reliability: "Public network crawler",
+          }),
         });
         track(id);
       });
@@ -1150,11 +1197,8 @@ export function CesiumGlobe({
         viewer.entities.add({
           id,
           position: Cartesian3.fromDegrees(g.lon, g.lat, 0),
-          point: {
-            pixelSize: 5,
-            color: hexToColor("#38BDF8", 0.9),
-            outlineColor: hexToColor("#0EA5E9", 0.3),
-            outlineWidth: 3,
+          billboard: {
+            image: markerIcon("news", "#69AF00"), width: 21, height: 21,
             scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.3),
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
