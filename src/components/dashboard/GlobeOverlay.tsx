@@ -70,7 +70,7 @@ export function GlobeOverlay({
   return (
     <>
       {/* Global Tension Indicator - Premium Badge */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-10 px-2 w-full max-w-[440px] md:w-auto md:max-w-none">
+      <div className="absolute top-1.5 left-1/2 -translate-x-1/2 z-10 flex w-auto max-w-[calc(100vw-96px)] flex-col items-center px-1">
         <button
           type="button"
           onClick={() => setShowBreakdown((v) => !v)}
