@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      crypto_payments: {
+        Row: {
+          amount_usd: number
+          chain: string
+          created_at: string
+          id: string
+          plan: Database["public"]["Enums"]["credit_tier"]
+          recipient: string
+          tx_hash: string
+          user_id: string
+          wallet_address: string | null
+        }
+        Insert: {
+          amount_usd: number
+          chain: string
+          created_at?: string
+          id?: string
+          plan: Database["public"]["Enums"]["credit_tier"]
+          recipient: string
+          tx_hash: string
+          user_id: string
+          wallet_address?: string | null
+        }
+        Update: {
+          amount_usd?: number
+          chain?: string
+          created_at?: string
+          id?: string
+          plan?: Database["public"]["Enums"]["credit_tier"]
+          recipient?: string
+          tx_hash?: string
+          user_id?: string
+          wallet_address?: string | null
+        }
+        Relationships: []
+      }
       skills_documents: {
         Row: {
           category: string | null
