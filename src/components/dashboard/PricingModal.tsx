@@ -186,7 +186,7 @@ export function PricingModal({ open, onClose, reason, currentTier = "explorer" }
                   ? "Plan Actual"
                   : plan.id === "explorer"
                     ? "Incluido"
-                    : `Pagar ${PLAN_PRICE_USDC[plan.id]} USDC`}
+                    : `Pagar ${PLAN_PRICE_USDC[plan.id as "architect" | "alien"]} USDC`}
               </button>
             </div>
           ))}

@@ -1,5 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } from "lucide-react";
+import { Bot, Radio, Orbit, Globe, BarChart3, Settings, LogOut, LogIn, Crown } from "lucide-react";
+import { ConnectWalletButton } from "@/components/web3/ConnectWalletButton";
+import { PricingModal } from "./PricingModal";
+import { useTier } from "@/hooks/useTier";
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
