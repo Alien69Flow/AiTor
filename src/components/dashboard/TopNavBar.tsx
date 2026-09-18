@@ -73,12 +73,15 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleConnectWallet}
-            className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:border-primary/50 transition-all uppercase"
+            onClick={() => setPricingOpen(true)}
+            className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider uppercase border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/60 transition-all"
           >
-            <Wallet className="h-3.5 w-3.5 md:mr-1" />
-            <span className="hidden lg:inline">Wallet</span>
+            <Crown className="h-3.5 w-3.5 md:mr-1" />
+            <span className="hidden lg:inline">{tier === "explorer" ? "Upgrade" : tier}</span>
           </Button>
+
+          <ConnectWalletButton />
+
 
           {user ? (
             <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Cerrar sesión" className="h-7 w-7 text-muted-foreground/60 hover:text-primary" title="Cerrar sesión">
