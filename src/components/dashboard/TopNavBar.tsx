@@ -33,11 +33,8 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
     if (error) toast.error("Error al cerrar sesión");
   };
 
-  const handleConnectWallet = () => {
-    toast.info("Conectar Wallet disponible próximamente", {
-      description: "Desbloquea el modo Nexo Soberano con Web3",
-    });
-  };
+  const { tier } = useTier();
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 shrink-0">
