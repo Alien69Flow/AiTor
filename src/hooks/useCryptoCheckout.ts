@@ -58,6 +58,8 @@ export function useCryptoCheckout() {
           functionName: "transfer",
           args: [recipient.address, parseUnits(String(amount), 6)],
           chainId: target.id,
+          account: address as `0x${string}`,
+          chain: undefined,
         });
         setTxHash(hash);
 
