@@ -94,6 +94,7 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           )}
         </div>
       </div>
+      <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} currentTier={tier} />
     </header>
   );
 }
