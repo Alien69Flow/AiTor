@@ -1,31 +1,29 @@
-// Shared Unstoppable Domains (UNS) resolution used by payment endpoints.
-import { createPublicClient, http, namehash } from "https://esm.sh/viem@2.21.54";
-import { polygon, mainnet } from "https://esm.sh/viem@2.21.54/chains";
+// Shared Unstoppable Domains resolution used by the payment endpoints.
+// Reads the public profile records API (no key required) and picks the best
+// EVM payout address for the requested chain.
 
-const PROXY_READERS = [
-  { chain: polygon, rpc: "https://polygon-rpc.com", address: "0xA3f32c8cd786dc089Bd1fC175F2707223aeE5d00" },
-  { chain: mainnet, rpc: "https://eth.llamarpc.com", address: "0x1BDc0fD4fbABeed3E611fd6195fCd5d41dcEF393" },
-] as const;
-
-const ABI = [
-  {
-    name: "getMany",
-    type: "function",
-    stateMutability: "view",
-    inputs: [
-      { name: "keys", type: "string[]" },
-      { name: "tokenId", type: "uint256" },
-    ],
-    outputs: [{ name: "", type: "string[]" }],
-  },
-] as const;
+const PROFILE_API = "https://api.unstoppabledomains.com/profile/public";
 
 const KEYS_BY_CHAIN: Record<string, string[]> = {
-  base: ["crypto.USDC.version.BASE.address", "crypto.ETH.version.BASE.address"],
-  polygon: ["crypto.USDC.version.MATIC.address", "crypto.MATIC.version.MATIC.address"],
+  base: [
+    "crypto.USDC.version.BASE.address",
+    "token.EVM.BASE.USDC.address",
+    "token.EVM.BASE.address",
+    "crypto.ETH.version.BASE.address",
+  ],
+  polygon: [
+    "crypto.USDC.version.MATIC.address",
+    "token.EVM.MATIC.USDC.address",
+    "crypto.MATIC.version.MATIC.address",
+    "token.EVM.MATIC.address",
+  ],
 };
 
-const DEFAULT_KEYS = ["crypto.ETH.address", "crypto.USDC.version.ERC20.address"];
+const FALLBACK_KEYS = [
+  "crypto.USDC.version.ERC20.address",
+  "crypto.ETH.address",
+  "token.EVM.ETH.ETH.address",
+];
 
 const cache = new Map<string, { value: ResolvedRecipient; expires: number }>();
 
@@ -37,40 +35,48 @@ export interface ResolvedRecipient {
 }
 
 export function isSupportedDomain(domain: string) {
-  return /^[a-z0-9-]+\.(crypto|nft|x|wallet|dao|blockchain|bitcoin|888|zil|polygon)$/i.test(domain);
+  return /^[a-z0-9-]+\.(crypto|nft|x|wallet|dao|blockchain|bitcoin|888|zil|polygon|unstoppable)$/i.test(domain);
 }
 
+const isEvmAddress = (value: unknown): value is string =>
+  typeof value === "string" && /^0x[a-fA-F0-9]{40}$/.test(value);
+
 export async function resolveRecipient(domain: string, chain: string): Promise<ResolvedRecipient | null> {
-  const cacheKey = `${domain}:${chain}`;
-  const hit = cache.get(cacheKey);
+  const key = `${domain}:${chain}`;
+  const hit = cache.get(key);
   if (hit && hit.expires > Date.now()) return hit.value;
 
-  const keys = [...(KEYS_BY_CHAIN[chain] ?? []), ...DEFAULT_KEYS];
-  const tokenId = BigInt(namehash(domain.toLowerCase()));
+  try {
+    const response = await fetch(
+      `${PROFILE_API}/${encodeURIComponent(domain.toLowerCase())}?fields=records`,
+      { headers: { Accept: "application/json" } },
+    );
+    if (response.ok) {
+      const body = await response.json();
+      const records: Record<string, string> = body?.records ?? {};
+      const owner: string | undefined = body?.metadata?.owner;
 
-  for (const reader of PROXY_READERS) {
-    try {
-      const client = createPublicClient({ chain: reader.chain, transport: http(reader.rpc) });
-      const values = (await client.readContract({
-        address: reader.address as `0x${string}`,
-        abi: ABI,
-        functionName: "getMany",
-        args: [keys, tokenId],
-      })) as string[];
-      const index = values.findIndex((v) => /^0x[a-fA-F0-9]{40}$/.test(v ?? ""));
-      if (index >= 0) {
-        const value: ResolvedRecipient = { domain, address: values[index], record: keys[index], chain };
-        cache.set(cacheKey, { value, expires: Date.now() + 30 * 60_000 });
-        return value;
+      for (const recordKey of [...(KEYS_BY_CHAIN[chain] ?? []), ...FALLBACK_KEYS]) {
+        if (isEvmAddress(records[recordKey])) {
+          return remember(key, { domain, address: records[recordKey], record: recordKey, chain });
+        }
       }
-    } catch (_error) {
-      // try next registry
+      if (isEvmAddress(owner)) {
+        return remember(key, { domain, address: owner, record: "domain.owner", chain });
+      }
     }
+  } catch (error) {
+    console.error("uns resolve failed", error);
   }
 
   const fallback = Deno.env.get("PAYOUT_WALLET_ADDRESS");
-  if (fallback && /^0x[a-fA-F0-9]{40}$/.test(fallback)) {
-    return { domain, address: fallback, record: "fallback", chain };
+  if (isEvmAddress(fallback)) {
+    return { domain, address: fallback, record: "env.fallback", chain };
   }
   return null;
+}
+
+function remember(key: string, value: ResolvedRecipient) {
+  cache.set(key, { value, expires: Date.now() + 30 * 60_000 });
+  return value;
 }

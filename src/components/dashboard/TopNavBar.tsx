@@ -1,5 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { Bot, Radio, Orbit, Globe, BarChart3, Settings, Wallet, LogOut, LogIn } from "lucide-react";
+import { Bot, Radio, Orbit, Globe, BarChart3, Settings, LogOut, LogIn, Crown } from "lucide-react";
+import { ConnectWalletButton } from "@/components/web3/ConnectWalletButton";
+import { PricingModal } from "./PricingModal";
+import { useTier } from "@/hooks/useTier";
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -29,11 +33,8 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
     if (error) toast.error("Error al cerrar sesión");
   };
 
-  const handleConnectWallet = () => {
-    toast.info("Conectar Wallet disponible próximamente", {
-      description: "Desbloquea el modo Nexo Soberano con Web3",
-    });
-  };
+  const { tier } = useTier();
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   return (
     <header className="w-full bg-card/90 backdrop-blur-xl border-b border-border/40 z-50 shrink-0">
@@ -72,12 +73,15 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           <Button
             variant="outline"
             size="sm"
-            onClick={handleConnectWallet}
-            className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider border-primary/30 bg-primary/5 text-primary hover:bg-primary/15 hover:border-primary/50 transition-all uppercase"
+            onClick={() => setPricingOpen(true)}
+            className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider uppercase border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/60 transition-all"
           >
-            <Wallet className="h-3.5 w-3.5 md:mr-1" />
-            <span className="hidden lg:inline">Wallet</span>
+            <Crown className="h-3.5 w-3.5 md:mr-1" />
+            <span className="hidden lg:inline">{tier === "explorer" ? "Upgrade" : tier}</span>
           </Button>
+
+          <ConnectWalletButton />
+
 
           {user ? (
             <Button variant="ghost" size="icon" onClick={handleSignOut} aria-label="Cerrar sesión" className="h-7 w-7 text-muted-foreground/60 hover:text-primary" title="Cerrar sesión">
@@ -90,6 +94,7 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
           )}
         </div>
       </div>
+      <PricingModal open={pricingOpen} onClose={() => setPricingOpen(false)} currentTier={tier} />
     </header>
   );
 }
