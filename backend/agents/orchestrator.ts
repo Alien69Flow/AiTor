@@ -59,7 +59,7 @@ export class SwarmOrchestrator {
       }
 
       case "TASK_MANUS": {
-        const runtime = await runCapabilityRuntime(userInput, chatId, history);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history, ["development"]);
         finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
@@ -76,14 +76,14 @@ export class SwarmOrchestrator {
         ) {
           finalResponse = await this.handleSocialMediaRequest(userInput, history);
         } else {
-          const runtime = await runCapabilityRuntime(userInput, chatId, history);
+          const runtime = await runCapabilityRuntime(userInput, chatId, history, ["social"]);
           finalResponse = formatCapabilityRuntimeResult(runtime);
         }
         break;
       }
 
       case "SECURITY_SCAN": {
-        const runtime = await runCapabilityRuntime(userInput, chatId, history);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history, ["security"]);
         finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
