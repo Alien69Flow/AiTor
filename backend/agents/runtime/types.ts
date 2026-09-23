@@ -48,6 +48,10 @@ export interface WorkflowPlan {
   readonly requiresApproval: boolean;
 }
 
+export interface Planner {
+  plan(task: string, metadata?: Record<string, unknown>): Promise<WorkflowPlan>;
+}
+
 export interface WorkflowRunResult {
   readonly runId: string;
   readonly status: "completed" | "waiting_approval" | "failed" | "cancelled";
@@ -59,7 +63,13 @@ export interface WorkflowRunResult {
 export interface AuditEvent {
   readonly runId: string;
   readonly actorId: string;
-  readonly type: "plan" | "tool_requested" | "tool_completed" | "approval_required" | "workflow_failed";
+  readonly type:
+    | "plan"
+    | "tool_requested"
+    | "tool_retry"
+    | "tool_completed"
+    | "approval_required"
+    | "workflow_failed";
   readonly timestamp: Date;
   readonly data: Record<string, unknown>;
 }
