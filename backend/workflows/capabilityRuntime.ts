@@ -136,6 +136,12 @@ export async function runCapabilityRuntime(
   const result = await engine.run(task, {
     actorId,
     maxSteps: 3,
+    audit: async (event) => {
+      console.log(
+        `[CapabilityRuntime] ${event.type} run=${event.runId} actor=${event.actorId}`,
+        event.data,
+      );
+    },
   });
 
   const capabilities = detectCapabilities(task);
