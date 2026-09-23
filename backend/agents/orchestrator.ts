@@ -2,6 +2,7 @@ import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
 import { ManusAgent } from "./manus";
+import { runCapabilityRuntime } from "../workflows/capabilityRuntime";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
@@ -59,21 +60,32 @@ export class SwarmOrchestrator {
       }
 
       case "TASK_MANUS": {
-        // Despertamos al ejecutor técnico
-        finalResponse = await ManusAgent.executeTask(userInput, history);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history);
+        finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
 
       case "SOCIAL_MEDIA": {
-        // Routing al Social Media Manager Agent (lazy import para evitar ciclos)
-        const { SocialMediaManager } = await import('./socialMediaManager');
-        finalResponse = await this.handleSocialMediaRequest(userInput, history);
+        const input = userInput.toLowerCase();
+        if (
+          input.includes("ver propuestas") ||
+          input.includes("ver pendientes") ||
+          input.includes("aprobar") ||
+          input.includes("rechazar") ||
+          input.includes("estadísticas") ||
+          input.includes("stats")
+        ) {
+          finalResponse = await this.handleSocialMediaRequest(userInput, history);
+        } else {
+          const runtime = await runCapabilityRuntime(userInput, chatId, history);
+          finalResponse = formatCapabilityRuntimeResult(runtime);
+        }
         break;
       }
 
       case "SECURITY_SCAN": {
-        // Routing al Security Agent
-        finalResponse = await this.handleSecurityRequest(userInput);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history);
+        finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
 
@@ -400,4 +412,21 @@ Comandos disponibles:
 • "añadir BTC 0.5" - Añadir activo
 • "rebalancear" - Recomendaciones de distribución`;
   }
+}
+
+
+function formatCapabilityRuntimeResult(runtime: Awaited<ReturnType<typeof runCapabilityRuntime>>): string {
+  const status = runtime.status === "completed"
+    ? "✅ Capability workflow completed."
+    : runtime.status === "waiting_approval"
+      ? "⏳ Capability workflow is waiting for approval."
+      : "⚠️ Capability workflow failed.";
+
+  const details = runtime.outputs.map((output) => {
+    const label = output.capability.toUpperCase();
+    if (!output.ok) return `## ${label}\n❌ ${output.error || "Capability failed."}`;
+    return `## ${label}\n${typeof output.output === "string" ? output.output : JSON.stringify(output.output, null, 2)}`;
+  }).join("\n\n---\n\n");
+
+  return `${status}\nRun ID: ${runtime.runId}\n\n${details || "No capability output was produced."}`;
 }
