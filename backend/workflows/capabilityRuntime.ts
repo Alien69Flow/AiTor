@@ -12,6 +12,7 @@ import {
   detectPlatform,
   type Capability,
 } from "./capabilityPlan.js";
+import { WorkflowStateStore } from "./workflowStateStore.js";
 
 export { buildCapabilityPlan, detectCapabilities, resolveCapabilities, detectFrequency, detectPlatform } from "./capabilityPlan.js";
 export type { Capability } from "./capabilityPlan.js";
@@ -30,9 +31,11 @@ class CapabilityPlanner implements Planner {
   }
 }
 
-function isWellFormedAgentOutput(output: string): boolean {
+function validateStructuredOutput(output: string): { ok: boolean; reason?: string } {
   const normalized = output.trim();
-  if (!normalized || normalized.length < 32) return false;
+  if (!normalized || normalized.length < 32) {
+    return { ok: false, reason: "output is too short" };
+  }
 
   const lower = normalized.toLowerCase();
   const forbidden = [
@@ -45,7 +48,9 @@ function isWellFormedAgentOutput(output: string): boolean {
     "system error",
   ];
 
-  if (forbidden.some((token) => lower.includes(token))) return false;
+  if (forbidden.some((token) => lower.includes(token))) {
+    return { ok: false, reason: `contains forbidden phrase: ${token}` };
+  }
 
   const requiredSignals = [
     "plan",
@@ -63,7 +68,11 @@ function isWellFormedAgentOutput(output: string): boolean {
   const signalCount = requiredSignals.filter((signal) => lower.includes(signal)).length;
   const hasStructure = /(?:^|\n)(?:#{1,3}\s*|[-*]\s*|\d+\.?\s+|\*\*|\w+\s*:\s*)/.test(normalized);
 
-  return signalCount >= 2 || hasStructure;
+  if (signalCount >= 2 || hasStructure) {
+    return { ok: true };
+  }
+
+  return { ok: false, reason: "output does not have enough structure" };
 }
 
 function tool(
@@ -146,34 +155,49 @@ export async function runCapabilityRuntime(
     };
   }
 
-  const engine = new WorkflowEngine(
-    new CapabilityPlanner(allowedCapabilities),
-    createRegistry(history),
-  );
+  const runId = `capability-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const store = WorkflowStateStore.getInstance();
+  store.save({
+    runId,
+    task,
+    actorId,
+    status: "running",
+    allowedCapabilities: allowedCapabilities ?? [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    outputs: [],
+  });
+
+  const engine = new WorkflowEngine(new CapabilityPlanner(allowedCapabilities), createRegistry(history));
 
   const result = await engine.run(task, {
     actorId,
     maxSteps: 3,
     maxRetries: 2,
     audit: async (event) => {
-      console.log(
-        `[CapabilityRuntime] ${event.type} run=${event.runId} actor=${event.actorId}`,
-        event.data,
-      );
+      console.log(`[CapabilityRuntime] ${event.type} run=${event.runId} actor=${event.actorId}`, event.data);
     },
   });
 
   const capabilities = resolveCapabilities(task, allowedCapabilities);
+  const outputs = result.outputs.map((output, index) => ({
+    capability: capabilities[index] ?? allowedCapabilities?.[0] ?? "development",
+    ok: output.ok,
+    output: output.output,
+    error: output.error,
+  }));
+
+  store.update(runId, {
+    status: result.status,
+    outputs,
+    error: result.error,
+    updatedAt: new Date().toISOString(),
+  });
 
   return {
     status: result.status,
     runId: result.runId,
-    outputs: result.outputs.map((output, index) => ({
-      capability: capabilities[index] ?? allowedCapabilities?.[0] ?? "development",
-      ok: output.ok,
-      output: output.output,
-      error: output.error,
-    })),
+    outputs,
   };
 }
 
@@ -184,12 +208,9 @@ async function runDevelopmentAgent(task: string, history: string): Promise<{
   verified: boolean;
 }> {
   try {
-    const manusOutput = await ManusAgent.executeTask(
-      task,
-      history || "No previous context",
-    );
-
-    if (isWellFormedAgentOutput(manusOutput)) {
+    const manusOutput = await ManusAgent.executeTask(task, history || "No previous context");
+    const validation = validateStructuredOutput(manusOutput);
+    if (validation.ok) {
       return {
         success: true,
         agent: "manus",
@@ -197,19 +218,20 @@ async function runDevelopmentAgent(task: string, history: string): Promise<{
         verified: true,
       };
     }
+    console.warn("[CapabilityRuntime] Manus output rejected:", validation.reason);
   } catch (error) {
     console.warn("[CapabilityRuntime] Manus execution failed; falling back to Accio.", error);
   }
 
   try {
     const accioOutput = await AccioAgent.research(task, history);
-    const verified = isWellFormedAgentOutput(accioOutput);
+    const validation = validateStructuredOutput(accioOutput);
 
     return {
-      success: verified,
+      success: validation.ok,
       agent: "accio",
       output: accioOutput,
-      verified,
+      verified: validation.ok,
     };
   } catch (error) {
     return {
