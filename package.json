@@ -14,7 +14,7 @@
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",
-    "test:capability-runtime": "npx tsx backend/workflows/capabilityRuntime.test.ts"
+    "test:capability-runtime": "npx tsx backend/agents/runtime/workflowEngine.test.ts && npx tsx backend/workflows/capabilityRuntime.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
