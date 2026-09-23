@@ -1,12 +1,9 @@
-/**
- * 🔐 Security Agent
- * Agente especializado en auditoría de seguridad del repositorio
- */
-
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { exec } from 'child_process';
-import { promisify } from 'util';
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
 
 const execAsync = promisify(exec);
 
@@ -15,7 +12,7 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0.3,
 });
 
-export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
+export type SecurityLevel = "critical" | "high" | "medium" | "low" | "info";
 
 export interface SecurityFinding {
   id: string;
@@ -82,13 +79,22 @@ Analiza y responde en formato JSON:
 `);
 
 export class SecurityAgent {
-  private static repositoryPath = '/workspace/project/AiTor';
+  private static getRepositoryPath(): string {
+    const configured = process.env.REPOSITORY_PATH?.trim();
+    if (configured && existsSync(configured)) {
+      return resolve(configured);
+    }
 
-  /**
-   * Ejecuta un escaneo de seguridad completo
-   */
+    const cwd = process.cwd();
+    const candidates = [cwd, resolve(cwd, "..")];
+    const repoPath = candidates.find((candidate) => existsSync(resolve(candidate, "package.json"))) ?? cwd;
+    return resolve(repoPath);
+  }
+
+  private static repositoryPath = SecurityAgent.getRepositoryPath();
+
   static async fullScan(): Promise<SecurityReport> {
-    console.log('[SecurityAgent] Iniciando escaneo completo de seguridad...');
+    console.log("[SecurityAgent] Iniciando escaneo completo de seguridad...");
 
     const results = await Promise.allSettled([
       this.npmAudit(),
@@ -98,50 +104,42 @@ export class SecurityAgent {
     ]);
 
     const scanResults = results
-      .filter(r => r.status === 'fulfilled')
+      .filter((r) => r.status === "fulfilled")
       .map((r, i) => {
-        const labels = ['npm audit', 'dependency check', 'secrets check', 'outdated'];
+        const labels = ["npm audit", "dependency check", "secrets check", "outdated"];
         return `=== ${labels[i]} ===\n${(r as PromiseFulfilledResult<string>).value}`;
       })
-      .join('\n\n');
+      .join("\n\n");
 
     const report = await this.generateReport(scanResults);
     console.log(`[SecurityAgent] Escaneo completo. Encontrados: ${report.summary.total} hallazgos`);
-    
+
     return report;
   }
 
-  /**
-   * Escaneo rápido (npm audit)
-   */
   static async quickScan(): Promise<SecurityReport> {
-    console.log('[SecurityAgent] Escaneo rápido (npm audit)...');
-    
+    console.log("[SecurityAgent] Escaneo rápido (npm audit)...");
+
     const auditResults = await this.npmAudit();
-    const report = await this.generateReport(auditResults);
-    
-    return report;
+    return await this.generateReport(auditResults);
   }
 
-  /**
-   * Escaneo de dependencias de npm
-   */
   private static async npmAudit(): Promise<string> {
     try {
-      const { stdout, stderr } = await execAsync('npm audit --json 2>/dev/null', {
+      const { stdout, stderr } = await execAsync("npm audit --json 2>/dev/null", {
         cwd: this.repositoryPath,
         timeout: 60000,
       });
-      
-      if (!stdout) return 'npm audit no devolvió resultados';
-      
+
+      if (!stdout) return "npm audit no devolvió resultados";
+
       try {
         const parsed = JSON.parse(stdout);
         const vulnerabilities = parsed.vulnerabilities || {};
-        
+
         let summary = `npm audit results:\n`;
         summary += `- Total vulnerabilities: ${parsed.metadata?.vulnerabilities?.total || 0}\n`;
-        
+
         for (const [severity, data] of Object.entries(vulnerabilities)) {
           const v = data as any;
           summary += `- ${severity}: ${v.count || 0}\n`;
@@ -152,153 +150,136 @@ export class SecurityAgent {
             }
           }
         }
-        
+
         return summary;
       } catch {
         return stdout;
       }
     } catch (error) {
-      return `npm audit error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      return `npm audit error: ${error instanceof Error ? error.message : "Unknown error"}`;
     }
   }
 
-  /**
-   * Verificación de dependencias outdated
-   */
   private static async dependencyOutdated(): Promise<string> {
     try {
-      const { stdout } = await execAsync('npm outdated --json 2>/dev/null', {
+      const { stdout } = await execAsync("npm outdated --json 2>/dev/null", {
         cwd: this.repositoryPath,
         timeout: 30000,
       });
-      
-      if (!stdout) return 'Todas las dependencias están actualizadas';
-      
+
+      if (!stdout) return "Todas las dependencias están actualizadas";
+
       try {
         const outdated = JSON.parse(stdout);
-        let summary = 'Dependencies outdated:\n';
-        
+        let summary = "Dependencies outdated:\n";
+
         for (const [pkg, data] of Object.entries(outdated)) {
           const d = data as any;
           summary += `- ${pkg}: ${d.current} -> ${d.latest} (wanted: ${d.wanted})\n`;
         }
-        
+
         return summary;
       } catch {
         return stdout;
       }
     } catch {
-      return 'npm outdated no disponible o sin errores';
+      return "npm outdated no disponible o sin errores";
     }
   }
 
-  /**
-   * Verificación de secretos en código
-   */
   private static async secretsCheck(): Promise<string> {
     try {
-      // Buscar patrones comunes de secretos
       const patterns = [
-        { name: 'API Keys', pattern: /api[_-]?key\s*[=:]\s*['"][a-zA-Z0-9]{20,}['"]/gi },
-        { name: 'Private Keys', pattern: /private[_-]?key\s*[=:]\s*['"][a-zA-Z0-9+/=]{40,}['"]/gi },
-        { name: 'Tokens', pattern: /token\s*[=:]\s*['"][a-zA-Z0-9]{20,}['"]/gi },
-        { name: 'Passwords', pattern: /password\s*[=:]\s*['"][^'"]{8,}['"]/gi },
+        { name: "API Keys", pattern: /api[_-]?key\s*[=:]\s*["'][a-zA-Z0-9]{20,}["']/gi },
+        { name: "Private Keys", pattern: /private[_-]?key\s*[=:]\s*["'][a-zA-Z0-9+/=]{40,}["']/gi },
+        { name: "Tokens", pattern: /token\s*[=:]\s*["'][a-zA-Z0-9]{20,}["']/gi },
+        { name: "Passwords", pattern: /password\s*[=:]\s*["'][^"']{8,}["']/gi },
       ];
 
-      let results = 'Secret scanning results:\n';
+      let results = "Secret scanning results:\n";
 
       for (const { name, pattern } of patterns) {
         try {
           const { stdout } = await execAsync(
-            `grep -rnE '${pattern.source}' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build . 2>/dev/null | head -20`,
-            { cwd: this.repositoryPath }
+            `grep -rnE '${pattern.source}' --include='*.ts' --include='*.tsx' --include='*.js' --include='*.jsx' --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build . 2>/dev/null | head -n 50`,
+            { cwd: this.repositoryPath },
           );
-          
+
           if (stdout.trim()) {
             results += `⚠️ ${name} potenciales encontrados:\n${stdout}\n`;
           } else {
             results += `✓ ${name}: No encontrados\n`;
           }
         } catch {
-          results += `✓ ${name}: No encontrados\n`;
+          results += `⚠️ ${name}: No se pudo ejecutar el escaneo\n`;
         }
       }
 
       return results;
     } catch (error) {
-      return `Secrets check error: ${error instanceof Error ? error.message : 'Unknown error'}`;
+      return `Secrets check error: ${error instanceof Error ? error.message : "Unknown error"}`;
     }
   }
 
-  /**
-   * Verificación general de dependencias
-   */
   private static async dependencyCheck(): Promise<string> {
     try {
-      const { stdout } = await execAsync('npm ls --depth=0 2>/dev/null', {
+      const { stdout } = await execAsync("npm ls --depth=0 2>/dev/null", {
         cwd: this.repositoryPath,
         timeout: 30000,
       });
       return `Dependencies tree:\n${stdout}`;
     } catch {
-      return 'No se pudo obtener el árbol de dependencias';
+      return "No se pudo obtener el árbol de dependencias";
     }
   }
 
-  /**
-   * Genera el reporte estructurado usando LLM
-   */
   private static async generateReport(scanResults: string): Promise<SecurityReport> {
     try {
       const chain = securityPrompt.pipe(llm);
       const response = await chain.invoke({ scanResults });
-      
+
       const content = response.content.toString();
       const jsonMatch = content.match(/\{[\s\S]*\}/);
-      
+
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        
+
         return {
           timestamp: new Date(),
-          repository: 'AiTor',
-          branch: 'main',
+          repository: "AiTor",
+          branch: "main",
           summary: parsed.summary,
           findings: parsed.findings || [],
           recommendations: parsed.recommendations || [],
-          nextScan: new Date(Date.now() + 24 * 60 * 60 * 1000), // Mañana
+          nextScan: new Date(Date.now() + 24 * 60 * 60 * 1000),
         };
       }
     } catch (error) {
-      console.error('[SecurityAgent] Error parseando resultados:', error);
+      console.error("[SecurityAgent] Error parseando resultados:", error);
     }
 
-    // Fallback si el LLM falla
     return {
       timestamp: new Date(),
-      repository: 'AiTor',
-      branch: 'main',
+      repository: "AiTor",
+      branch: "main",
       summary: { total: 0, critical: 0, high: 0, medium: 0, low: 0, info: 0 },
       findings: [],
-      recommendations: ['Revisar manualmente los resultados del escaneo'],
+      recommendations: ["Revisar manualmente los resultados del escaneo"],
     };
   }
 
-  /**
-   * Genera el reporte en formato legible
-   */
   static formatReport(report: SecurityReport): string {
     const emoji = {
-      critical: '🔴',
-      high: '🟠',
-      medium: '🟡',
-      low: '🟢',
-      info: '🔵',
+      critical: "🔴",
+      high: "🟠",
+      medium: "🟡",
+      low: "🟢",
+      info: "🔵",
     };
 
     let message = `🛡️ **REPORTE DE SEGURIDAD**
 ━━━━━━━━━━━━━━━━━━━━━━
-📅 ${report.timestamp.toISOString().split('T')[0]}
+📅 ${report.timestamp.toISOString().split("T")[0]}
 📦 Repositorio: ${report.repository}
 🌿 Rama: ${report.branch}
 
@@ -312,7 +293,7 @@ export class SecurityAgent {
 
     if (report.findings.length > 0) {
       message += `**HALLAZGOS:**\n`;
-      report.findings.forEach(f => {
+      report.findings.forEach((f) => {
         message += `\n${emoji[f.level]} **[${f.level.toUpperCase()}]** ${f.title}\n`;
         message += `   📍 ${f.affected}\n`;
         message += `   💡 ${f.recommendation}\n`;
@@ -328,7 +309,7 @@ export class SecurityAgent {
       });
     }
 
-    message += `\n⏰ Próximo escaneo: ${report.nextScan?.toISOString().split('T')[0] || 'No programado'}`;
+    message += `\n⏰ Próximo escaneo: ${report.nextScan?.toISOString().split("T")[0] || "No programado"}`;
 
     return message;
   }

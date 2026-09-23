@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/server.js",
+    "test:capability-runtime": "tsx agents/runtime/workflowEngine.test.ts && tsx workflows/capabilityRuntime.test.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
