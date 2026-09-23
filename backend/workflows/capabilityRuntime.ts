@@ -32,7 +32,7 @@ class CapabilityPlanner implements Planner {
 
 function isWellFormedAgentOutput(output: string): boolean {
   const normalized = output.trim();
-  if (normalized.length < 32) return false;
+  if (!normalized || normalized.length < 32) return false;
 
   const lower = normalized.toLowerCase();
   const forbidden = [
@@ -56,15 +56,20 @@ function isWellFormedAgentOutput(output: string): boolean {
     "acción",
     "objective",
     "objetivo",
+    "deliverable",
+    "entregable",
   ];
 
-  return requiredSignals.some((signal) => lower.includes(signal));
+  const signalCount = requiredSignals.filter((signal) => lower.includes(signal)).length;
+  const hasStructure = /(?:^|\n)(?:#{1,3}\s*|[-*]\s*|\d+\.?\s+|\*\*|\w+\s*:\s*)/.test(normalized);
+
+  return signalCount >= 2 || hasStructure;
 }
 
 function tool(
   name: string,
   description: string,
-  execute: ToolDefinition<{ task: string }> ["execute"],
+  execute: ToolDefinition<{ task: string }>["execute"],
   retryable = true,
 ): ToolDefinition<{ task: string }> {
   return {
