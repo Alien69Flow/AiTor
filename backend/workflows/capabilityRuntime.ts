@@ -31,6 +31,34 @@ class CapabilityPlanner implements Planner {
   }
 }
 
+function parseEnabledCapabilities(): Capability[] {
+  const raw = process.env.AGENTIC_RUNTIME_CAPABILITIES ?? "";
+  if (!raw.trim()) return [];
+
+  const values = raw.split(",").map((value) => value.trim().toLowerCase()).filter(Boolean) as string[];
+
+  const allowed: Capability[] = [];
+  for (const value of values) {
+    if (value === "development" || value === "security" || value === "social") {
+      allowed.push(value);
+    }
+  }
+
+  return [...new Set(allowed)] as Capability[];
+}
+
+function isJsonLikeOutput(output: string): boolean {
+  const trimmed = output.trim();
+  if (!trimmed || trimmed[0] !== "{" && trimmed[0] !== "[") return false;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed !== null && typeof parsed === "object";
+  } catch {
+    return false;
+  }
+}
+
 function validateStructuredOutput(output: string): { ok: boolean; reason?: string } {
   const normalized = output.trim();
   if (!normalized || normalized.length < 32) {
@@ -50,6 +78,17 @@ function validateStructuredOutput(output: string): { ok: boolean; reason?: strin
 
   if (forbidden.some((token) => lower.includes(token))) {
     return { ok: false, reason: `contains forbidden phrase: ${token}` };
+  }
+
+  const jsonLike = isJsonLikeOutput(normalized);
+  if (jsonLike) {
+    try {
+      const parsed = JSON.parse(normalized) as Record<string, unknown>;
+      const hasRequiredKeys = ["summary", "steps", "status", "goal"].some((key) => key in parsed);
+      if (hasRequiredKeys) return { ok: true };
+    } catch {
+      return { ok: false, reason: "invalid JSON payload" };
+    }
   }
 
   const requiredSignals = [
@@ -147,7 +186,18 @@ export async function runCapabilityRuntime(
   history = "",
   allowedCapabilities?: Capability[],
 ): Promise<CapabilityRuntimeResult> {
+  const enabledCapabilities = parseEnabledCapabilities();
+  const effectiveAllowed = allowedCapabilities ?? enabledCapabilities;
+
   if (process.env.AGENTIC_RUNTIME_ENABLED !== "true" && process.env.AGENTIC_RUNTIME_ENABLED !== "1") {
+    return {
+      status: "cancelled",
+      runId: "disabled",
+      outputs: [],
+    };
+  }
+
+  if (effectiveAllowed.length === 0) {
     return {
       status: "cancelled",
       runId: "disabled",
@@ -162,13 +212,13 @@ export async function runCapabilityRuntime(
     task,
     actorId,
     status: "running",
-    allowedCapabilities: allowedCapabilities ?? [],
+    allowedCapabilities: effectiveAllowed,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     outputs: [],
   });
 
-  const engine = new WorkflowEngine(new CapabilityPlanner(allowedCapabilities), createRegistry(history));
+  const engine = new WorkflowEngine(new CapabilityPlanner(effectiveAllowed), createRegistry(history));
 
   const result = await engine.run(task, {
     actorId,
@@ -179,9 +229,9 @@ export async function runCapabilityRuntime(
     },
   });
 
-  const capabilities = resolveCapabilities(task, allowedCapabilities);
+  const capabilities = resolveCapabilities(task, effectiveAllowed);
   const outputs = result.outputs.map((output, index) => ({
-    capability: capabilities[index] ?? allowedCapabilities?.[0] ?? "development",
+    capability: capabilities[index] ?? effectiveAllowed[0] ?? "development",
     ok: output.ok,
     output: output.output,
     error: output.error,
