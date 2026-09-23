@@ -72,7 +72,8 @@ export class WorkflowEngine {
         const request = { ...step.tool, risk: effectiveRisk };
         let result: ToolResult = { ok: false, error: "Tool did not execute", retryable: false };
 
-        for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        let attempt = 0;
+        while (attempt <= maxRetries) {
           const decision = this.policy.evaluate(request, context);
           if (!decision.allowed) {
             if (decision.requiresApproval) {
@@ -118,6 +119,7 @@ export class WorkflowEngine {
             timestamp: new Date(),
             data: { stepId: step.id, tool: request.name, nextAttempt: attempt + 2, error: result.error },
           });
+          attempt += 1;
         }
 
         outputs.push(result);
