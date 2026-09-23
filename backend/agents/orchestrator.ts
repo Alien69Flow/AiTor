@@ -1,7 +1,6 @@
 import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
-import { ManusAgent } from "./manus";
 import { runCapabilityRuntime } from "../workflows/capabilityRuntime";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
