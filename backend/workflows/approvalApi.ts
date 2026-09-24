@@ -18,19 +18,18 @@ export interface PlanApprovalApiResponse {
 export async function createPlanForApproval(request: ApprovalRequest): Promise<PlanApprovalApiResponse> {
   try {
     const task = request.task?.trim();
-    if (!task) {
-      return {
-        ok: false,
-        message: "A task description is required.",
-      };
-    }
+    if (!task) return { ok: false, message: "A task description is required." };
 
     const allowed = request.capabilities && request.capabilities.length > 0
-      ? (request.capabilities.filter((value) => ["development", "security", "social"].includes(value)) as string[])
-      : ["development", "security", "social"];
+      ? request.capabilities.filter((value): value is "development" | "security" | "social" =>
+        value === "development" || value === "security" || value === "social")
+      : ["development", "security", "social"] as const;
 
-    const plan = generatePlanForApproval(task, allowed as any);
+    if (allowed.length === 0) {
+      return { ok: false, message: "At least one valid capability is required." };
+    }
 
+    const plan = generatePlanForApproval(task, [...new Set(allowed)]);
     return {
       ok: true,
       planId: plan.planId,
@@ -39,10 +38,7 @@ export async function createPlanForApproval(request: ApprovalRequest): Promise<P
       status: "draft",
     };
   } catch (error) {
-    return {
-      ok: false,
-      message: `Failed to generate approval plan: ${error instanceof Error ? error.message : "unknown error"}`,
-    };
+    return { ok: false, message: `Failed to generate approval plan: ${error instanceof Error ? error.message : "unknown error"}` };
   }
 }
 
@@ -52,62 +48,36 @@ export async function approveGeneratedPlan(
   approvals: Array<{ stepId: string; approved: boolean; reason?: string }>,
 ): Promise<PlanApprovalApiResponse> {
   try {
-    if (!planId?.trim()) {
-      return {
-        ok: false,
-        message: "A planId is required.",
-      };
-    }
+    if (!planId?.trim() || !actorId?.trim()) return { ok: false, message: "planId and actorId are required." };
+
+    const current = getPlan(planId);
+    if (!current) return { ok: false, message: "Plan not found." };
+    if (current.approvedBy && current.approvedBy !== actorId) return { ok: false, message: "Plan belongs to another user." };
 
     const approved = approvePlan(planId, actorId, approvals);
     const plan = getPlan(planId);
-
-    if (!plan) {
-      return {
-        ok: false,
-        message: "Plan not found.",
-      };
-    }
+    if (!plan) return { ok: false, message: "Plan not found." };
 
     return {
       ok: approved,
       planId,
-      message: approved
-        ? "Plan approved. The execution pipeline can proceed with the approved steps."
-        : "Plan not fully approved. Some steps remain pending or rejected.",
+      message: approved ? "Plan approved. Execution remains an explicit next step." : "Plan not fully approved. Some steps remain pending or rejected.",
       plan,
       status: plan.status,
     };
   } catch (error) {
-    return {
-      ok: false,
-      message: `Failed to approve plan: ${error instanceof Error ? error.message : "unknown error"}`,
-    };
+    return { ok: false, message: `Failed to approve plan: ${error instanceof Error ? error.message : "unknown error"}` };
   }
 }
 
 export async function getPlanStatus(planId: string): Promise<PlanApprovalApiResponse> {
   try {
+    if (!planId?.trim()) return { ok: false, message: "A planId is required." };
     const plan = getPlan(planId);
-    if (!plan) {
-      return {
-        ok: false,
-        message: "Plan not found.",
-      };
-    }
-
-    return {
-      ok: true,
-      planId,
-      message: "Plan status retrieved.",
-      plan,
-      status: plan.status,
-    };
+    if (!plan) return { ok: false, message: "Plan not found." };
+    return { ok: true, planId, message: "Plan status retrieved.", plan, status: plan.status };
   } catch (error) {
-    return {
-      ok: false,
-      message: `Failed to retrieve plan: ${error instanceof Error ? error.message : "unknown error"}`,
-    };
+    return { ok: false, message: `Failed to retrieve plan: ${error instanceof Error ? error.message : "unknown error"}` };
   }
 }
 

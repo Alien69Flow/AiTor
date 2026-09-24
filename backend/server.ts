@@ -1,87 +1,133 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { SwarmOrchestrator } from './agents/orchestrator'; // <- Importamos tu Orquestador Central
+import { SwarmOrchestrator } from './agents/orchestrator.js';
+import {
+  approveGeneratedPlan,
+  createPlanForApproval,
+  getPlanStatus,
+} from './workflows/approvalApi.js';
 
-// Hack cuántico para variables de entorno (invisible para escáneres estáticos)
-const getEnv = (key: string) => {
-  const g = globalThis as any;
-  if (g.process && g.process.env) {
-    return g.process.env[key] || '';
-  }
-  return '';
-};
+dotenv.config();
 
-// Configuración manual para asegurar que funciona en cualquier entorno Node
 const config = {
-  port: getEnv('PORT') || 4000,
-  geminiKey: getEnv('GEMINI_' + 'API_' + 'KEY'),
-  telegramToken: getEnv('TELEGRAM_' + 'BOT_' + 'TOKEN'),
-  supabaseUrl: getEnv('SUPABASE_URL'),
-  supabaseAnonKey: getEnv('SUPABASE_ANON_KEY')
+  port: Number(process.env.PORT ?? 4000),
+  supabaseUrl: process.env.SUPABASE_URL ?? '',
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY ?? process.env.SUPABASE_PUBLISHABLE_KEY ?? '',
 };
 
 const app = express();
-
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '256kb' }));
 
-// Endpoint de salud del motor de la IA
-app.get('/health', (req, res) => {
+app.get('/health', (_req, res) => {
   res.json({
-    status: '✅ Motor AI-TOR Online',
+    status: 'ok',
     mode: 'Quantum Swarm',
-    vibration: '16.18',
-    modules: ['rag', 'agents', 'tools', 'workflows']
+    modules: ['rag', 'agents', 'tools', 'workflows'],
   });
 });
 
-// Verify the caller's Supabase JWT and return the verified user id.
 async function verifyUser(authHeader?: string): Promise<string | null> {
-  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  if (!authHeader?.startsWith('Bearer ')) return null;
   if (!config.supabaseUrl || !config.supabaseAnonKey) return null;
+
   try {
-    const r = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
-      headers: { Authorization: authHeader, apikey: config.supabaseAnonKey }
+    const response = await fetch(`${config.supabaseUrl}/auth/v1/user`, {
+      headers: { Authorization: authHeader, apikey: config.supabaseAnonKey },
     });
-    if (!r.ok) return null;
-    const u = await r.json();
-    return u?.id || null;
+    if (!response.ok) return null;
+    const user = await response.json() as { id?: string };
+    return user.id ?? null;
   } catch {
     return null;
   }
 }
 
-// 🔥 EL PUENTE CON EL ENJAMBRE: Endpoint para procesar los mensajes entrantes
-app.post('/api/chat', async (req, res) => {
-  const { message } = req.body;
-
-  // Identity must come from a verified token, never from the request body:
-  // a client-supplied chatId would let anyone reset their free credit quota.
+async function requireUser(req: express.Request, res: express.Response): Promise<string | null> {
   const userId = await verifyUser(req.headers.authorization);
   if (!userId) {
-    return res.status(401).json({ error: 'No autorizado.' });
+    res.status(401).json({ error: 'No autorizado.' });
+    return null;
   }
+  return userId;
+}
 
-  if (!message || typeof message !== 'string' || message.length > 10000) {
-    return res.status(400).json({ error: 'Parámetro "message" inválido (máx. 10000 caracteres).' });
+app.post('/api/chat', async (req, res) => {
+  const userId = await requireUser(req, res);
+  if (!userId) return;
+
+  const { message } = req.body as { message?: unknown };
+  if (typeof message !== 'string' || message.trim().length === 0 || message.length > 10000) {
+    res.status(400).json({ error: 'Parámetro "message" inválido (máx. 10000 caracteres).' });
+    return;
   }
 
   try {
-    // Mandamos el mensaje al orquestador (él se encarga de memorizar, cobrar y responder)
-    const reply = await SwarmOrchestrator.processMessage(userId, message);
-    return res.json({ response: reply });
+    const response = await SwarmOrchestrator.processMessage(userId, message);
+    res.json({ response });
   } catch (error) {
     console.error('[Server Error] Falló el flujo del Swarm:', error);
-    return res.status(500).json({ error: 'Error interno en el enjambre de IA.' });
+    res.status(500).json({ error: 'Error interno en el enjambre de IA.' });
   }
+});
+
+app.post('/api/workflows/plans', async (req, res) => {
+  const userId = await requireUser(req, res);
+  if (!userId) return;
+
+  const { task, capabilities } = req.body as { task?: unknown; capabilities?: unknown };
+  if (typeof task !== 'string' || task.trim().length === 0 || task.length > 10000) {
+    res.status(400).json({ error: 'Parámetro "task" inválido (máx. 10000 caracteres).' });
+    return;
+  }
+
+  const requestedCapabilities = Array.isArray(capabilities)
+    ? capabilities.filter((value): value is string => typeof value === 'string')
+    : undefined;
+  const result = await createPlanForApproval({ task, capabilities: requestedCapabilities, actorId: userId });
+  res.status(result.ok ? 201 : 400).json(result);
+});
+
+app.post('/api/workflows/plans/:planId/approve', async (req, res) => {
+  const userId = await requireUser(req, res);
+  if (!userId) return;
+
+  const { approvals } = req.body as { approvals?: unknown };
+  if (!Array.isArray(approvals)) {
+    res.status(400).json({ error: 'El campo "approvals" debe ser un array.' });
+    return;
+  }
+
+  const validApprovals = approvals.filter((entry): entry is { stepId: string; approved: boolean; reason?: string } => {
+    if (!entry || typeof entry !== 'object') return false;
+    const candidate = entry as Record<string, unknown>;
+    return typeof candidate.stepId === 'string' && typeof candidate.approved === 'boolean'
+      && (candidate.reason === undefined || typeof candidate.reason === 'string');
+  });
+
+  const result = await approveGeneratedPlan(req.params.planId, userId, validApprovals);
+  res.status(result.ok ? 200 : 400).json(result);
+});
+
+app.get('/api/workflows/plans/:planId', async (req, res) => {
+  const userId = await requireUser(req, res);
+  if (!userId) return;
+
+  const result = await getPlanStatus(req.params.planId);
+  const plan = result.plan as { approvedBy?: string } | undefined;
+  if (result.ok && plan?.approvedBy && plan.approvedBy !== userId) {
+    res.status(403).json({ error: 'No autorizado.' });
+    return;
+  }
+
+  res.status(result.ok ? 200 : 404).json(result);
+});
+
+app.use((_req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada.' });
 });
 
 app.listen(config.port, () => {
-  console.log(`🚀 AI-TOR Backend corriendo en el puerto ${config.port}`);
-  if (!config.telegramToken) {
-    console.warn('⚠️ TELEGRAM_BOT_TOKEN no detectado. El bot está en reposo.');
-  }
+  console.log(`AI-TOR backend listening on port ${config.port}`);
 });
-
-export default app;
