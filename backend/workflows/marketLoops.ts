@@ -239,33 +239,10 @@ export class MarketLoops {
    * Detecta movimientos grandes (> $1M)
    */
   static detectLargeMovements(prices: Map<string, number>): WhaleAlert[] {
-    const largeMovements: WhaleAlert[] = [];
-    
-    // Mock detection - in production, track on-chain transactions
-    const symbols = Array.from(prices.keys());
-    
-    if (Math.random() > 0.9) { // 10% chance of large movement
-      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
-      const price = prices.get(symbol) || 0;
-      const amount = 10 + Math.random() * 100;
-      const usdValue = amount * price;
-
-      if (usdValue > 1000000) {
-        const alert: WhaleAlert = {
-          address: `0x${Math.random().toString(16).substr(2, 40)}`,
-          symbol,
-          amount,
-          usdValue,
-          type: Math.random() > 0.5 ? 'buy' : 'sell',
-          timestamp: new Date(),
-        };
-
-        MarketLoopStore.addWhaleAlert(alert);
-        largeMovements.push(alert);
-      }
-    }
-
-    return largeMovements;
+    // Whale alerts require real on-chain transaction data. Do not synthesize
+    // wallet addresses, trade direction, amounts, or timestamps as market facts.
+    console.warn('[MarketLoops] Whale detection requires an on-chain data adapter.');
+    return [];
   }
 
   /**
