@@ -244,39 +244,88 @@ export class SwarmOrchestrator {
     const { MarketKnowledge } = await import('../rag/marketKnowledge');
     const input = userInput.toLowerCase();
 
-    // Extraer símbolos mencionados
-    const symbols: string[] = [];
-    if (input.includes('btc') || input.includes('bitcoin')) symbols.push('BTC');
-    if (input.includes('eth') || input.includes('ethereum')) symbols.push('ETH');
-    if (input.includes('sol') || input.includes('solana')) symbols.push('SOL');
-    if (input.includes('bnb')) symbols.push('BNB');
+    const coinMap: Record<string, string> = {
+      btc: 'bitcoin',
+      bitcoin: 'bitcoin',
+      eth: 'ethereum',
+      ethereum: 'ethereum',
+      sol: 'solana',
+      solana: 'solana',
+      bnb: 'binancecoin',
+    };
+
+    const symbols = [...new Set(
+      Object.entries(coinMap)
+        .filter(([keyword]) => new RegExp(`\\b${keyword}\\b`, 'i').test(input))
+        .map(([, coinId]) => coinId),
+    )];
 
     if (symbols.length > 0) {
-      // Generar mock price data para demo
-      const prices = symbols.map(s => ({
-        symbol: s,
-        price: s === 'BTC' ? 64000 : s === 'ETH' ? 3400 : s === 'SOL' ? 140 : 580,
-        change24h: (Math.random() - 0.5) * 10,
-        marketCap: Math.random() * 100000000000,
-      }));
+      try {
+        const ids = symbols.join(',');
+        const response = await fetch(
+          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`,
+          { headers: { Accept: 'application/json' } },
+        );
 
-      const analyses = await MarketAnalyzer.analyzePortfolio(prices);
-      let response = `📊 **ANÁLISIS DE MERCADO**\n\n`;
+        if (!response.ok) {
+          throw new Error(`CoinGecko returned HTTP ${response.status}`);
+        }
 
-      for (const analysis of analyses) {
-        const emoji = analysis.technical.trend === 'bullish' ? '🟢' : analysis.technical.trend === 'bearish' ? '🔴' : '⚪';
-        response += `${emoji} **${analysis.symbol}** - ${analysis.technical.trend}\n`;
-        response += `   Precio: $${analysis.price.price.toLocaleString()}\n`;
-        response += `   Cambio 24h: ${analysis.price.change24h >= 0 ? '+' : ''}${analysis.price.change24h.toFixed(2)}%\n`;
-        response += `   Soporte: $${analysis.technical.support.toLocaleString()}\n`;
-        response += `   Resistencia: $${analysis.technical.resistance.toLocaleString()}\n`;
-        response += `   Recomendación: ${analysis.recommendation.toUpperCase()}\n\n`;
+        const data = await response.json() as Record<string, {
+          usd?: number;
+          usd_24h_change?: number;
+          usd_market_cap?: number;
+        }>;
+
+        const prices = symbols
+          .map((coinId) => {
+            const quote = data[coinId];
+            if (!quote?.usd) return null;
+            return {
+              symbol: coinId === 'bitcoin' ? 'BTC' :
+                coinId === 'ethereum' ? 'ETH' :
+                coinId === 'solana' ? 'SOL' : 'BNB',
+              price: quote.usd,
+              change24h: quote.usd_24h_change ?? 0,
+              marketCap: quote.usd_market_cap ?? 0,
+            };
+          })
+          .filter((price): price is {
+            symbol: string;
+            price: number;
+            change24h: number;
+            marketCap: number;
+          } => price !== null);
+
+        if (prices.length === 0) {
+          return '⚠️ Live market data is currently unavailable. No fabricated prices are shown.';
+        }
+
+        const analyses = await MarketAnalyzer.analyzePortfolio(prices);
+        let responseText = `📊 **LIVE MARKET ANALYSIS**\\n\\n`;
+
+        for (const analysis of analyses) {
+          const emoji = analysis.technical.trend === 'bullish'
+            ? '🟢'
+            : analysis.technical.trend === 'bearish' ? '🔴' : '⚪';
+
+          responseText += `${emoji} **${analysis.symbol}** — ${analysis.technical.trend}\\n`;
+          responseText += `   Price: $${analysis.price.price.toLocaleString()}\\n`;
+          responseText += `   24h: ${analysis.price.change24h >= 0 ? '+' : ''}${analysis.price.change24h.toFixed(2)}%\\n`;
+          responseText += `   Support: $${analysis.technical.support.toLocaleString()}\\n`;
+          responseText += `   Resistance: $${analysis.technical.resistance.toLocaleString()}\\n`;
+          responseText += `   Risk: ${analysis.riskLevel.toUpperCase()}\\n\\n`;
+        }
+
+        responseText += `_Source: CoinGecko live API. Analysis generated at ${new Date().toISOString()}._`;
+        return responseText;
+      } catch (error) {
+        console.error('[Market] Live data error:', error);
+        return '⚠️ Live market data is temporarily unavailable. Please try again shortly.';
       }
-
-      return response;
     }
 
-    // Análisis general de mercado
     return await MarketKnowledge.retrieveContext('marketSentiment' as any);
   }
 
