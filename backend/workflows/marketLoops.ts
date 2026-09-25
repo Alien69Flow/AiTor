@@ -161,23 +161,61 @@ export class MarketLoops {
     }
 
     const fetchTVL = async () => {
-      // Mock TVL data - in production, fetch from DeFiLlama or similar
-      const tvlData: TVLData[] = protocols.map(protocol => ({
-        protocol,
-        tvl: Math.random() * 1000000000,
-        change24h: (Math.random() - 0.5) * 20,
-        category: 'DeFi',
-      }));
+      try {
+        const results = await Promise.all(protocols.map(async (protocol): Promise<TVLData | null> => {
+          try {
+            const response = await fetch(
+              `https://api.llama.fi/tvl/${encodeURIComponent(protocol)}`,
+              { headers: { Accept: 'application/json' } },
+            );
 
-      tvlData.forEach(d => MarketLoopStore.setTVL(d.protocol, d));
+            if (!response.ok) {
+              throw new Error(`DeFiLlama returned HTTP ${response.status} for ${protocol}`);
+            }
 
-      if (onUpdate) {
-        onUpdate(tvlData);
+            const data = await response.json() as {
+              tvl?: number;
+              chainTvls?: Record<string, { tvl?: number }>;
+            };
+
+            const tvl = typeof data.tvl === 'number'
+              ? data.tvl
+              : Object.values(data.chainTvls ?? {}).reduce(
+                  (sum, chain) => sum + (typeof chain.tvl === 'number' ? chain.tvl : 0),
+                  0,
+                );
+
+            if (!Number.isFinite(tvl) || tvl <= 0) {
+              throw new Error(`DeFiLlama returned no usable TVL for ${protocol}`);
+            }
+
+            return {
+              protocol,
+              tvl,
+              change24h: 0,
+              category: 'DeFi',
+            };
+          } catch (error) {
+            console.error(`[MarketLoops] TVL error for ${protocol}:`, error);
+            return null;
+          }
+        }));
+
+        const tvlData = results.filter((item): item is TVLData => item !== null);
+        tvlData.forEach(d => MarketLoopStore.setTVL(d.protocol, d));
+
+        if (tvlData.length > 0) {
+          onUpdate?.(tvlData);
+        }
+      } catch (error) {
+        console.error('[MarketLoops] Live TVL error:', error);
       }
     };
 
-    fetchTVL();
-    this.tvlInterval = setInterval(fetchTVL, intervalMs);
+    void fetchTVL();
+    this.tvlInterval = setInterval(() => {
+      void fetchTVL();
+    }, intervalMs);
   }
 
   /**
@@ -211,33 +249,10 @@ export class MarketLoops {
    * Detecta movimientos grandes (> $1M)
    */
   static detectLargeMovements(prices: Map<string, number>): WhaleAlert[] {
-    const largeMovements: WhaleAlert[] = [];
-    
-    // Mock detection - in production, track on-chain transactions
-    const symbols = Array.from(prices.keys());
-    
-    if (Math.random() > 0.9) { // 10% chance of large movement
-      const symbol = symbols[Math.floor(Math.random() * symbols.length)];
-      const price = prices.get(symbol) || 0;
-      const amount = 10 + Math.random() * 100;
-      const usdValue = amount * price;
-
-      if (usdValue > 1000000) {
-        const alert: WhaleAlert = {
-          address: `0x${Math.random().toString(16).substr(2, 40)}`,
-          symbol,
-          amount,
-          usdValue,
-          type: Math.random() > 0.5 ? 'buy' : 'sell',
-          timestamp: new Date(),
-        };
-
-        MarketLoopStore.addWhaleAlert(alert);
-        largeMovements.push(alert);
-      }
-    }
-
-    return largeMovements;
+    // Whale alerts require real on-chain transaction data. Do not synthesize
+    // wallet addresses, trade direction, amounts, or timestamps as market facts.
+    console.warn('[MarketLoops] Whale detection requires an on-chain data adapter.');
+    return [];
   }
 
   /**
