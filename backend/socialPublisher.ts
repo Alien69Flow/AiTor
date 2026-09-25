@@ -299,11 +299,11 @@ export class SocialPublisher {
     console.log(`[Publisher] GitHub: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'github',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { url: 'https://github.com/Alien69Flow' },
+
+      error: 'GitHub token is configured, but announcement publishing is not implemented yet. No fake publication was recorded.',
     };
   }
 
