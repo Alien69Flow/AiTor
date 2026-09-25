@@ -256,9 +256,15 @@ export class PortfolioManager {
     const assets = this.getAllAssets();
     if (assets.length === 0) return [];
 
-    // Get prices (mock for now)
+    // Concentration is calculated from the latest known asset prices.
+    // Callers that have live quotes should pass those quotes to getMetrics();
+    // this method intentionally avoids inventing market prices.
     const prices = new Map<string, number>();
-    assets.forEach(a => prices.set(a.symbol, a.currentPrice));
+    assets.forEach(a => {
+      if (Number.isFinite(a.currentPrice) && a.currentPrice > 0) {
+        prices.set(a.symbol, a.currentPrice);
+      }
+    });
 
     const metrics = this.getMetrics(prices);
 
