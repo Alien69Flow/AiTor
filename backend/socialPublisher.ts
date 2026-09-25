@@ -174,11 +174,11 @@ export class SocialPublisher {
     console.log(`[Publisher] Twitter: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'twitter',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { tweet_id: 'mock_tweet_id' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -198,11 +198,11 @@ export class SocialPublisher {
     console.log(`[Publisher] LinkedIn: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'linkedin',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { urn: 'mock_linkedin_urn' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -226,11 +226,11 @@ export class SocialPublisher {
     }
     
     return {
-      success: true,
+      success: false,
       platform: 'discord',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { message_id: 'mock_discord_id' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -250,11 +250,11 @@ export class SocialPublisher {
     console.log(`[Publisher] Facebook: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'facebook',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { post_id: 'mock_facebook_id' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -274,11 +274,11 @@ export class SocialPublisher {
     console.log(`[Publisher] Instagram: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'instagram',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { media_id: 'mock_instagram_id' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -323,11 +323,11 @@ export class SocialPublisher {
     console.log(`[Publisher] HackMD: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'hackmd',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { note_id: 'mock_hackmd_id' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 
@@ -347,11 +347,11 @@ export class SocialPublisher {
     console.log(`[Publisher] FarcaSter: ${proposal.content.substring(0, 50)}...`);
     
     return {
-      success: true,
+      success: false,
       platform: 'farcaster',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { hash: 'mock_farcaster_hash' },
+
+      error: 'Provider credentials are present, but this publisher is not implemented yet. No fake publication was recorded.',
     };
   }
 }
