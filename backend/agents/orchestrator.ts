@@ -396,6 +396,47 @@ export class SwarmOrchestrator {
       return TradingSignals.formatSignalsReport();
     }
 
+    // Generate signals only from real price/technical inputs.
+    if (input.includes('generar') && input.includes('señal')) {
+      const symbolMap: Record<string, string> = {
+        btc: 'BTC', bitcoin: 'BTC', eth: 'ETH', ethereum: 'ETH',
+        sol: 'SOL', solana: 'SOL', bnb: 'BNB',
+      };
+      const symbols = [...new Set(
+        Object.entries(symbolMap)
+          .filter(([keyword]) => new RegExp(\\`\\\\b\\${keyword}\\\\b\\`, 'i').test(input))
+          .map(([, symbol]) => symbol),
+      )];
+
+      if (symbols.length === 0) {
+        return '⚠️ Specify a supported asset (BTC, ETH, SOL or BNB) so signals can be generated from live market data.';
+      }
+
+      try {
+        const quotes = await fetchLiveCryptoQuotes(symbols);
+        const prices = symbols.map(symbol => quotes.get(symbol)).filter((quote): quote is LiveQuote => Boolean(quote));
+        if (prices.length === 0) {
+          return '⚠️ Live market data is unavailable. No synthetic trading signals were generated.';
+        }
+
+        const { TradingSignals } = await import('./tradingSignals');
+        const technicalData = prices.map(quote => ({
+          symbol: quote.symbol,
+          price: quote.price,
+          change24h: quote.change24h,
+          marketCap: quote.marketCap,
+        }));
+        const signals = await TradingSignals.generateSignals(prices, technicalData);
+        if (signals.length === 0) {
+          return '⚠️ No signal could be generated from the available live market data.';
+        }
+        return TradingSignals.formatSignalsReport();
+      } catch (error) {
+        console.error('[Trading] Live signal data error:', error);
+        return '⚠️ Live market data is temporarily unavailable. No synthetic trading signals were generated.';
+      }
+    }
+
     // Checklist de trading
     if (input.includes('checklist') || input.includes('antes de operar')) {
       return MarketKnowledge.getAnalysisChecklist();
