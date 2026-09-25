@@ -18,7 +18,7 @@ type LiveQuote = {
   marketCap: number;
 };
 
-async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, number>> {
+async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, LiveQuote>> {
   const ids = [...new Set(symbols)].map((symbol) => ({
     BTC: "bitcoin",
     ETH: "ethereum",
@@ -61,7 +61,7 @@ async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, num
       marketCap: quote.usd_market_cap ?? 0,
     }));
 
-  return new Map(quotes.map((quote) => [quote.symbol, quote.price]));
+  return new Map(quotes.map((quote) => [quote.symbol, quote]));
 }
 
 export class SwarmOrchestrator {
@@ -315,13 +315,8 @@ export class SwarmOrchestrator {
         const pricesMap = await fetchLiveCryptoQuotes(symbols);
         const prices = symbols
           .map((symbol) => {
-            const price = pricesMap.get(symbol);
-            return price == null ? null : {
-              symbol,
-              price,
-              change24h: 0,
-              marketCap: 0,
-            };
+            const quote = pricesMap.get(symbol);
+            return quote ?? null;
           })
           .filter((price): price is {
             symbol: string;
@@ -424,7 +419,8 @@ ${MarketKnowledge.getAnalysisChecklist()}`;
 
     if (portfolioSymbols.length > 0) {
       try {
-        prices = await fetchLiveCryptoQuotes(portfolioSymbols);
+        const liveQuotes = await fetchLiveCryptoQuotes(portfolioSymbols);
+      prices = new Map([...liveQuotes].map(([symbol, quote]) => [symbol, quote.price]));
       } catch (error) {
         console.error('[Portfolio] Live price error:', error);
         return '⚠️ Live portfolio prices are temporarily unavailable. No fabricated prices are shown.';
@@ -461,7 +457,7 @@ Comandos disponibles:
         if (price == null) {
           try {
             const livePrices = await fetchLiveCryptoQuotes([symbol]);
-            price = livePrices.get(symbol);
+            price = livePrices.get(symbol)?.price;
           } catch (error) {
             console.error('[Portfolio] Live price error:', error);
           }
