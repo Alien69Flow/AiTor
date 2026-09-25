@@ -65,16 +65,52 @@ async function runDevelopmentAgent(task: string, history: string): Promise<{
   agent: "manus" | "accio";
   output: string;
 }> {
+  // Manus creates the execution plan. Accio independently reviews the result
+  // before the workflow reports success, so a single model response is not
+  // treated as proof that the task was completed correctly.
   const manus = await ManusAgent.executeTask(task, history);
-  if (!isAgentFailure(manus)) return { success: true, agent: "manus", output: manus };
+  if (isAgentFailure(manus)) {
+    const fallback = await AccioAgent.research(task, history);
+    if (!isAgentFailure(fallback)) {
+      return {
+        success: true,
+        agent: "accio",
+        output: fallback,
+      };
+    }
+    return {
+      success: false,
+      agent: "manus",
+      output: "Development agents did not produce a usable result.",
+    };
+  }
 
-  const accio = await AccioAgent.research(task, history);
-  if (!isAgentFailure(accio)) return { success: true, agent: "accio", output: accio };
+  const verification = await AccioAgent.research(
+    `Review this proposed implementation for the requested task. Identify missing steps, unsafe assumptions, and anything that would prevent a real implementation. Do not claim execution unless evidence is present.
+TASK:
+${task}
+
+MANUS PLAN:
+${manus}`,
+    history,
+  );
+
+  if (isAgentFailure(verification)) {
+    return {
+      success: false,
+      agent: "accio",
+      output: "Development result could not be independently verified.",
+    };
+  }
 
   return {
-    success: false,
+    success: true,
     agent: "manus",
-    output: "Development agents did not produce a usable result.",
+    output: `MANUS PLAN:
+${manus}
+
+ACCIO VERIFICATION:
+${verification}`,
   };
 }
 
