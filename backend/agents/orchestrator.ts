@@ -404,7 +404,7 @@ export class SwarmOrchestrator {
       };
       const symbols = [...new Set(
         Object.entries(symbolMap)
-          .filter(([keyword]) => new RegExp(\\`\\\\b\\${keyword}\\\\b\\`, 'i').test(input))
+          .filter(([keyword]) => new RegExp(`\\b${keyword}\\b`, 'i').test(input))
           .map(([, symbol]) => symbol),
       )];
 
