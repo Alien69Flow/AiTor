@@ -162,43 +162,53 @@ export class MarketLoops {
 
     const fetchTVL = async () => {
       try {
-        const response = await fetch(
-          `https://api.llama.fi/tvl/${encodeURIComponent(protocols[0] ?? '')}`,
-          { headers: { Accept: 'application/json' } },
-        );
-
-        if (!response.ok) {
-          throw new Error(`DeFiLlama returned HTTP ${response.status}`);
-        }
-
-        const data = await response.json() as {
-          tvl?: number;
-          chainTvls?: Record<string, { tvl?: number }>;
-        };
-
-        const tvl = typeof data.tvl === 'number'
-          ? data.tvl
-          : Object.values(data.chainTvls ?? {}).reduce(
-              (sum, chain) => sum + (typeof chain.tvl === 'number' ? chain.tvl : 0),
-              0,
+        const results = await Promise.all(protocols.map(async (protocol): Promise<TVLData | null> => {
+          try {
+            const response = await fetch(
+              `https://api.llama.fi/tvl/${encodeURIComponent(protocol)}`,
+              { headers: { Accept: 'application/json' } },
             );
 
-        if (!Number.isFinite(tvl) || tvl <= 0) {
-          throw new Error('DeFiLlama returned no usable TVL');
-        }
+            if (!response.ok) {
+              throw new Error(`DeFiLlama returned HTTP ${response.status} for ${protocol}`);
+            }
 
-        const tvlData: TVLData[] = protocols.map(protocol => ({
-          protocol,
-          tvl,
-          change24h: 0,
-          category: 'DeFi',
+            const data = await response.json() as {
+              tvl?: number;
+              chainTvls?: Record<string, { tvl?: number }>;
+            };
+
+            const tvl = typeof data.tvl === 'number'
+              ? data.tvl
+              : Object.values(data.chainTvls ?? {}).reduce(
+                  (sum, chain) => sum + (typeof chain.tvl === 'number' ? chain.tvl : 0),
+                  0,
+                );
+
+            if (!Number.isFinite(tvl) || tvl <= 0) {
+              throw new Error(`DeFiLlama returned no usable TVL for ${protocol}`);
+            }
+
+            return {
+              protocol,
+              tvl,
+              change24h: 0,
+              category: 'DeFi',
+            };
+          } catch (error) {
+            console.error(`[MarketLoops] TVL error for ${protocol}:`, error);
+            return null;
+          }
         }));
 
+        const tvlData = results.filter((item): item is TVLData => item !== null);
         tvlData.forEach(d => MarketLoopStore.setTVL(d.protocol, d));
-        onUpdate?.(tvlData);
+
+        if (tvlData.length > 0) {
+          onUpdate?.(tvlData);
+        }
       } catch (error) {
         console.error('[MarketLoops] Live TVL error:', error);
-        // Do not replace unavailable live data with random/demo values.
       }
     };
 
