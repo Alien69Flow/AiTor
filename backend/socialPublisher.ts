@@ -149,11 +149,11 @@ export class SocialPublisher {
     console.log(`[Publisher] Telegram: ${proposal.content}`);
     
     return {
-      success: true,
+      success: false,
       platform: 'telegram',
       proposalId: proposal.id,
-      publishedAt: new Date(),
-      response: { message: 'Publicado vía Telegram Bot' },
+
+      error: 'Telegram publishing is not wired to a send-message API yet. No fake publication was recorded.',
     };
   }
 
