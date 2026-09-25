@@ -25,6 +25,8 @@ async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, Liv
     SOL: "solana",
     BNB: "binancecoin",
     LINK: "chainlink",
+    DOT: "polkadot",
+    ADA: "cardano",
   }[symbol.toUpperCase()])).filter(Boolean);
 
   if (ids.length === 0) return new Map();
@@ -50,6 +52,8 @@ async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, Liv
     solana: "SOL",
     binancecoin: "BNB",
     chainlink: "LINK",
+    polkadot: "DOT",
+    cardano: "ADA",
   };
 
   const quotes = Object.entries(data)
@@ -420,7 +424,7 @@ ${MarketKnowledge.getAnalysisChecklist()}`;
     if (portfolioSymbols.length > 0) {
       try {
         const liveQuotes = await fetchLiveCryptoQuotes(portfolioSymbols);
-      prices = new Map([...liveQuotes].map(([symbol, quote]) => [symbol, quote.price]));
+        prices = new Map([...liveQuotes].map(([symbol, quote]) => [symbol, quote.price]));
       } catch (error) {
         console.error('[Portfolio] Live price error:', error);
         return '⚠️ Live portfolio prices are temporarily unavailable. No fabricated prices are shown.';
