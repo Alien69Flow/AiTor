@@ -11,6 +11,59 @@ const llmGeneral = new ChatGoogleGenerativeAI({
   temperature: 0.7,
 });
 
+type LiveQuote = {
+  symbol: string;
+  price: number;
+  change24h: number;
+  marketCap: number;
+};
+
+async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, number>> {
+  const ids = [...new Set(symbols)].map((symbol) => ({
+    BTC: "bitcoin",
+    ETH: "ethereum",
+    SOL: "solana",
+    BNB: "binancecoin",
+    LINK: "chainlink",
+  }[symbol.toUpperCase()])).filter(Boolean);
+
+  if (ids.length === 0) return new Map();
+
+  const response = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`,
+    { headers: { Accept: "application/json" } },
+  );
+
+  if (!response.ok) {
+    throw new Error(`CoinGecko returned HTTP ${response.status}`);
+  }
+
+  const data = await response.json() as Record<string, {
+    usd?: number;
+    usd_24h_change?: number;
+    usd_market_cap?: number;
+  }>;
+
+  const idToSymbol: Record<string, string> = {
+    bitcoin: "BTC",
+    ethereum: "ETH",
+    solana: "SOL",
+    binancecoin: "BNB",
+    chainlink: "LINK",
+  };
+
+  const quotes = Object.entries(data)
+    .filter(([, quote]) => typeof quote.usd === "number")
+    .map(([id, quote]): LiveQuote => ({
+      symbol: idToSymbol[id] ?? id.toUpperCase(),
+      price: quote.usd as number,
+      change24h: quote.usd_24h_change ?? 0,
+      marketCap: quote.usd_market_cap ?? 0,
+    }));
+
+  return new Map(quotes.map((quote) => [quote.symbol, quote.price]));
+}
+
 export class SwarmOrchestrator {
   /**
    * El punto de entrada único para cualquier mensaje que llegue (Telegram, Web, etc.)
@@ -244,51 +297,30 @@ export class SwarmOrchestrator {
     const { MarketKnowledge } = await import('../rag/marketKnowledge');
     const input = userInput.toLowerCase();
 
-    const coinMap: Record<string, string> = {
-      btc: 'bitcoin',
-      bitcoin: 'bitcoin',
-      eth: 'ethereum',
-      ethereum: 'ethereum',
-      sol: 'solana',
-      solana: 'solana',
-      bnb: 'binancecoin',
+    const symbolMap: Record<string, string> = {
+      btc: 'BTC', bitcoin: 'BTC',
+      eth: 'ETH', ethereum: 'ETH',
+      sol: 'SOL', solana: 'SOL',
+      bnb: 'BNB',
     };
 
     const symbols = [...new Set(
-      Object.entries(coinMap)
+      Object.entries(symbolMap)
         .filter(([keyword]) => new RegExp(`\\b${keyword}\\b`, 'i').test(input))
-        .map(([, coinId]) => coinId),
+        .map(([, symbol]) => symbol),
     )];
 
     if (symbols.length > 0) {
       try {
-        const ids = symbols.join(',');
-        const response = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids)}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`,
-          { headers: { Accept: 'application/json' } },
-        );
-
-        if (!response.ok) {
-          throw new Error(`CoinGecko returned HTTP ${response.status}`);
-        }
-
-        const data = await response.json() as Record<string, {
-          usd?: number;
-          usd_24h_change?: number;
-          usd_market_cap?: number;
-        }>;
-
+        const pricesMap = await fetchLiveCryptoQuotes(symbols);
         const prices = symbols
-          .map((coinId) => {
-            const quote = data[coinId];
-            if (!quote?.usd) return null;
-            return {
-              symbol: coinId === 'bitcoin' ? 'BTC' :
-                coinId === 'ethereum' ? 'ETH' :
-                coinId === 'solana' ? 'SOL' : 'BNB',
-              price: quote.usd,
-              change24h: quote.usd_24h_change ?? 0,
-              marketCap: quote.usd_market_cap ?? 0,
+          .map((symbol) => {
+            const price = pricesMap.get(symbol);
+            return price == null ? null : {
+              symbol,
+              price,
+              change24h: 0,
+              marketCap: 0,
             };
           })
           .filter((price): price is {
@@ -387,12 +419,17 @@ ${MarketKnowledge.getAnalysisChecklist()}`;
     const { PortfolioManager } = await import('./portfolioManager');
     const input = userInput.toLowerCase();
 
-    // Mock prices
-    const prices = new Map<string, number>();
-    prices.set('BTC', 64000);
-    prices.set('ETH', 3400);
-    prices.set('SOL', 140);
-    prices.set('LINK', 18);
+    const portfolioSymbols = PortfolioManager.getAssets().map((asset) => asset.symbol);
+    let prices = new Map<string, number>();
+
+    if (portfolioSymbols.length > 0) {
+      try {
+        prices = await fetchLiveCryptoQuotes(portfolioSymbols);
+      } catch (error) {
+        console.error('[Portfolio] Live price error:', error);
+        return '⚠️ Live portfolio prices are temporarily unavailable. No fabricated prices are shown.';
+      }
+    }
 
     if (input.includes('mi portfolio') || input.includes('mis activos')) {
       const assets = PortfolioManager.getAssets();
@@ -420,7 +457,19 @@ Comandos disponibles:
       if (symbolMatch && amountMatch) {
         const symbol = symbolMatch[1].toUpperCase();
         const amount = parseFloat(amountMatch[1]);
-        const price = prices.get(symbol) || 0;
+        let price = prices.get(symbol);
+        if (price == null) {
+          try {
+            const livePrices = await fetchLiveCryptoQuotes([symbol]);
+            price = livePrices.get(symbol);
+          } catch (error) {
+            console.error('[Portfolio] Live price error:', error);
+          }
+        }
+
+        if (price == null) {
+          return '⚠️ Live price unavailable. The asset was not added with a fabricated price.';
+        }
 
         PortfolioManager.addAsset(symbol, symbol, amount, price);
         
