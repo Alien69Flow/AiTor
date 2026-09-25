@@ -161,23 +161,51 @@ export class MarketLoops {
     }
 
     const fetchTVL = async () => {
-      // Mock TVL data - in production, fetch from DeFiLlama or similar
-      const tvlData: TVLData[] = protocols.map(protocol => ({
-        protocol,
-        tvl: Math.random() * 1000000000,
-        change24h: (Math.random() - 0.5) * 20,
-        category: 'DeFi',
-      }));
+      try {
+        const response = await fetch(
+          `https://api.llama.fi/tvl/${encodeURIComponent(protocols[0] ?? '')}`,
+          { headers: { Accept: 'application/json' } },
+        );
 
-      tvlData.forEach(d => MarketLoopStore.setTVL(d.protocol, d));
+        if (!response.ok) {
+          throw new Error(`DeFiLlama returned HTTP ${response.status}`);
+        }
 
-      if (onUpdate) {
-        onUpdate(tvlData);
+        const data = await response.json() as {
+          tvl?: number;
+          chainTvls?: Record<string, { tvl?: number }>;
+        };
+
+        const tvl = typeof data.tvl === 'number'
+          ? data.tvl
+          : Object.values(data.chainTvls ?? {}).reduce(
+              (sum, chain) => sum + (typeof chain.tvl === 'number' ? chain.tvl : 0),
+              0,
+            );
+
+        if (!Number.isFinite(tvl) || tvl <= 0) {
+          throw new Error('DeFiLlama returned no usable TVL');
+        }
+
+        const tvlData: TVLData[] = protocols.map(protocol => ({
+          protocol,
+          tvl,
+          change24h: 0,
+          category: 'DeFi',
+        }));
+
+        tvlData.forEach(d => MarketLoopStore.setTVL(d.protocol, d));
+        onUpdate?.(tvlData);
+      } catch (error) {
+        console.error('[MarketLoops] Live TVL error:', error);
+        // Do not replace unavailable live data with random/demo values.
       }
     };
 
-    fetchTVL();
-    this.tvlInterval = setInterval(fetchTVL, intervalMs);
+    void fetchTVL();
+    this.tvlInterval = setInterval(() => {
+      void fetchTVL();
+    }, intervalMs);
   }
 
   /**
