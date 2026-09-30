@@ -178,9 +178,9 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#e2e8f0", 
 		Icon: Plane, 
 		requiredTier: "explorer",
-		source: "OpenSky Network",
-		freshness: "2 min",
-		description: "Live flight tracking via OpenSky"
+		source: "ADS-B.lol",
+		freshness: "15 sec",
+		description: "Live aircraft telemetry from ADS-B.lol"
 	},
 	{ 
 		key: "marineTraffic", 
