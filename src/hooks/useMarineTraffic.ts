@@ -1,5 +1,8 @@
-import { usePolledConnector } from "@/lib/connectors";
-import { supabase } from "@/integrations/supabase/client";
+import { usePolledConnector, safeFetchJson } from "@/lib/connectors";
+
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string) ||
+  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
 
 export interface Ship {
   mmsi: string;
@@ -15,47 +18,30 @@ export interface Ship {
 
 interface MarineTrafficResponse {
   ships?: Ship[];
+  error?: string;
 }
 
 export function useMarineTraffic(enabled = true, intervalMs = 180_000) {
-  const connector = usePolledConnector<Ship[]>(
-    async () => {
-      const { data, error } = await supabase.functions.invoke<MarineTrafficResponse>(
-        "marine-traffic",
-        { body: {} },
+  return usePolledConnector<Ship[]>(
+    async (signal) => {
+      const response = await safeFetchJson<MarineTrafficResponse>(
+        `${SUPABASE_URL}/functions/v1/marine-traffic`,
+        { signal, timeoutMs: 12_000 },
       );
 
-      if (error) {
-        throw new Error(error.message || "Marine traffic provider unavailable");
-      }
-      if (!data) {
-        throw new Error("Marine traffic provider returned no response");
+      if (response.error) {
+        throw new Error(response.error);
       }
 
-      const ships = data.ships ?? [];
-      if (ships.some((ship) => ship.mmsi.startsWith("mock"))) {
-        throw new Error("Marine provider returned synthetic data");
-      }
-
-      return ships.filter(
+      return (response.ships ?? []).filter(
         (ship) =>
           Number.isFinite(ship.latitude) &&
           Number.isFinite(ship.longitude) &&
-          typeof ship.mmsi === "string" &&
-          ship.mmsi.length > 0,
+          typeof ship.mmsi === "string",
       );
     },
     [],
     intervalMs,
     enabled,
   );
-
-  return {
-    ships: connector.data,
-    isLoading: connector.loading,
-    error: connector.error,
-    lastUpdate: connector.lastUpdate,
-    refresh: connector.refresh,
-    count: connector.data.length,
-  };
 }
