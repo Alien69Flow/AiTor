@@ -1,6 +1,6 @@
 // Marine Traffic API - Ship Tracking
-// VesselFinder LiveData provides AIS positions for the account's configured area.
-// Provider failures are surfaced so the client can retain its last known-good data.
+// VesselFinder LiveData is the live AIS provider. Provider failures are
+// surfaced to the connector so the client can retain its last known-good data.
 import { guardPublic } from "../_shared/guard.ts";
 
 const corsHeaders = {
@@ -15,46 +15,53 @@ Deno.serve(async (req) => {
   if (blocked) return blocked;
 
   try {
-    const vesselFinderKey = Deno.env.get("VESSELFINDER_API_KEY");
-    if (!vesselFinderKey) {
-      return unavailable("Marine provider key not configured");
-    }
+    const apiKey = Deno.env.get("VESSELFINDER_API_KEY");
+    if (!apiKey) return unavailable("Marine provider key not configured");
 
     const response = await fetch(
-      `https://api.vesselfinder.com/livedata?userkey=${encodeURIComponent(vesselFinderKey)}&format=json&interval=5&errormode=409`,
+      `https://api.vesselfinder.com/livedata?userkey=${encodeURIComponent(apiKey)}&format=json&interval=10`,
       { headers: { Accept: "application/json" } },
     );
 
-    if (!response.ok) {
-      return unavailable(`Marine provider HTTP ${response.status}`);
+    const raw = await response.text();
+    if (!response.ok) return unavailable(`Marine provider HTTP ${response.status}`);
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(raw);
+    } catch {
+      return unavailable("Marine provider returned invalid JSON");
     }
 
-    const payload = await response.json();
-    if (payload?.error) {
-      return unavailable(`Marine provider: ${String(payload.error)}`);
+    if (!Array.isArray(payload)) {
+      const providerError =
+        typeof payload === "object" && payload !== null && "error" in payload
+          ? String((payload as { error?: unknown }).error)
+          : "Marine provider returned an unexpected payload";
+      return unavailable(providerError);
     }
 
-    const records = Array.isArray(payload) ? payload : [];
-    const ships = records
-      .map((record: any) => record?.AIS ?? record)
-      .map((v: any) => ({
-        mmsi: String(v?.MMSI ?? ""),
-        name: String(v?.NAME ?? "Unknown"),
-        type: String(v?.TYPE ?? "Unknown"),
-        latitude: Number(v?.LATITUDE),
-        longitude: Number(v?.LONGITUDE),
-        speed: Number(v?.SPEED ?? 0),
-        heading: Number(v?.HEADING ?? 0),
-        destination: String(v?.DESTINATION ?? ""),
-        timestamp: String(v?.TIMESTAMP ?? new Date().toISOString()),
-      }))
+    const ships = payload
+      .map((entry: any) => entry?.AIS)
       .filter(
-        (ship: any) =>
-          ship.mmsi.length > 0 &&
-          Number.isFinite(ship.latitude) &&
-          Number.isFinite(ship.longitude),
+        (ais: any) =>
+          ais &&
+          Number.isFinite(Number(ais.LATITUDE)) &&
+          Number.isFinite(Number(ais.LONGITUDE)) &&
+          Number.isFinite(Number(ais.MMSI)),
       )
-      .slice(0, 500);
+      .slice(0, 500)
+      .map((ais: any) => ({
+        mmsi: String(ais.MMSI),
+        name: ais.NAME || "Unknown",
+        type: String(ais.TYPE ?? "Unknown"),
+        latitude: Number(ais.LATITUDE),
+        longitude: Number(ais.LONGITUDE),
+        speed: Number(ais.SPEED ?? 0),
+        heading: Number(ais.HEADING ?? 0),
+        destination: ais.DESTINATION || "Unknown",
+        timestamp: ais.TIMESTAMP || new Date().toISOString(),
+      }));
 
     return new Response(
       JSON.stringify({
