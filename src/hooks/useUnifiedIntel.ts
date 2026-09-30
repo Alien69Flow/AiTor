@@ -256,6 +256,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,
     aviation: aviation.data,
+    marine: marine.data,
     marine: marine.ships,
     // OSINT
     osint: osint.events,
