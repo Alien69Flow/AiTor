@@ -257,7 +257,6 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     gdeltEvents: gdelt.data,
     aviation: aviation.data,
     marine: marine.data,
-    marine: marine.ships,
     // OSINT
     osint: osint.events,
     osintLoading: osint.isLoading,
