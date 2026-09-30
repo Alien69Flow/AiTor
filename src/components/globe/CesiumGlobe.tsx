@@ -739,9 +739,9 @@ export function CesiumGlobe({
 
     // Add flight markers
     flights.forEach((flight, i) => {
-      if (!Number.isFinite(flight.latitude) || !Number.isFinite(flight.longitude)) return;
+      if (!flight.latitude || !flight.longitude) return;
       
-      const entityId = `flight-${flight.icao24 || flight.callsign || i}`;
+      const entityId = `flight-${i}`;
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
@@ -754,7 +754,7 @@ export function CesiumGlobe({
         properties: eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
           description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "ADS-B.lol", category: "aircraft",
+          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
         }),
         label: {
@@ -800,9 +800,9 @@ export function CesiumGlobe({
 
     // Add ship markers
     ships.forEach((ship, i) => {
-      if (!Number.isFinite(ship.latitude) || !Number.isFinite(ship.longitude)) return;
+      if (!ship.latitude || !ship.longitude) return;
       
-      const entityId = `ship-${ship.mmsi || i}`;
+      const entityId = `ship-${i}`;
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(ship.longitude, ship.latitude, 0),
