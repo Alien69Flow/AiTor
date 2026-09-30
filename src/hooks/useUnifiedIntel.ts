@@ -10,6 +10,7 @@ import { useSubmarineCables } from "./connectors/useSubmarineCables";
 import { useBitcoinNodes } from "./connectors/useBitcoinNodes";
 import { useGdeltEvents } from "./connectors/useGdeltEvents";
 import { useAdsbTraffic } from "./connectors/useAdsbTraffic";
+import { useMarineTraffic } from "./useMarineTraffic";
 import { useCelestrakSatellites } from "./connectors/useCelestrakSatellites";
 import { toStatus, type LayerStatus } from "@/lib/connectors";
 import type { EnvLayerKey } from "@/lib/globe-layers";
@@ -35,6 +36,7 @@ export type ConnectorKey =
   | "bitcoinNodes"
   | "gdelt"
   | "aviation"
+  | "marine"
   | "osint";
 
 export type LayerStatusMap = Record<ConnectorKey, LayerStatus>;
@@ -72,6 +74,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
   // --- 5. OSINT & aviation -----------------------------------------------
   const gdelt = useGdeltEvents(on("conflictZones") || on("internetOutages"));
   const aviation = useAdsbTraffic(on("airTraffic"), 15_000);
+  const marine = useMarineTraffic(on("marineTraffic"), 180_000);
 
   /** USGS (global) merged with EMSC (Europe / Iberia), de-duplicated by proximity. */
   const earthquakes = useMemo<Earthquake[]>(() => {
@@ -105,6 +108,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       bitcoinNodes: toStatus(btcNodes, btcNodes.data.length),
       gdelt: toStatus(gdelt, gdelt.data.length),
       aviation: toStatus(aviation, aviation.data.length),
+      marine: toStatus(marine, marine.ships.length),
       osint: {
         loading: osint.isLoading,
         error: osint.error,
@@ -112,7 +116,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, aurora, sats, cables, btcNodes, gdelt, aviation, osint],
+    [rain, surface, emsc, fires, aurora, sats, cables, btcNodes, gdelt, aviation, marine, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -252,6 +256,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,
     aviation: aviation.data,
+    marine: marine.ships,
     // OSINT
     osint: osint.events,
     osintLoading: osint.isLoading,
