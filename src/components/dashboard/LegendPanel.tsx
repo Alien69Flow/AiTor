@@ -150,6 +150,7 @@ export function LegendPanel({
                     : def.key === "underseaCables" ? "cables"
                     : def.key === "economicCenters" ? "bitcoinNodes"
                     : def.key === "airTraffic" ? "aviation"
+                    : def.key === "marineTraffic" ? "marine"
                     : def.key === "conflictZones" || def.key === "internetOutages" ? "gdelt"
                     : null;
                   const status = statusKey ? layerStatus?.[statusKey] : undefined;
