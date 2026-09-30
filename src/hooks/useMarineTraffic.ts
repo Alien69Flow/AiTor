@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { usePolledConnector } from "@/lib/connectors";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface Ship {
@@ -14,61 +14,48 @@ export interface Ship {
 }
 
 interface MarineTrafficResponse {
-  count: number;
-  ships: Ship[];
-  bbox: { minLat: number; maxLat: number; minLon: number; maxLon: number };
-  mock?: boolean;
-  timestamp: string;
+  ships?: Ship[];
 }
 
-export function useMarineTraffic() {
-  const [ships, setShips] = useState<Ship[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [isMockData, setIsMockData] = useState(false);
+export function useMarineTraffic(enabled = true, intervalMs = 180_000) {
+  const connector = usePolledConnector<Ship[]>(
+    async () => {
+      const { data, error } = await supabase.functions.invoke<MarineTrafficResponse>(
+        "marine-traffic",
+        { body: {} },
+      );
 
-  const fetchMarineTraffic = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-
-      const { data, error: fnError } = await supabase.functions.invoke<MarineTrafficResponse>("marine-traffic", {
-        body: {},
-      });
-
-      if (fnError) {
-        throw new Error(fnError.message);
+      if (error) {
+        throw new Error(error.message || "Marine traffic provider unavailable");
+      }
+      if (!data) {
+        throw new Error("Marine traffic provider returned no response");
       }
 
-      if (data) {
-        setShips(data.ships || []);
-        setIsMockData(data.mock || false);
-        setLastUpdate(new Date(data.timestamp));
+      const ships = data.ships ?? [];
+      if (ships.some((ship) => ship.mmsi.startsWith("mock"))) {
+        throw new Error("Marine provider returned synthetic data");
       }
-    } catch (err) {
-      console.error("Marine traffic fetch error:", err);
-      setError(err instanceof Error ? err.message : "Failed to fetch marine traffic");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
 
-  useEffect(() => {
-    fetchMarineTraffic();
-    
-    // Refresh every 3 minutes
-    const interval = setInterval(fetchMarineTraffic, 180000);
-    return () => clearInterval(interval);
-  }, [fetchMarineTraffic]);
+      return ships.filter(
+        (ship) =>
+          Number.isFinite(ship.latitude) &&
+          Number.isFinite(ship.longitude) &&
+          typeof ship.mmsi === "string" &&
+          ship.mmsi.length > 0,
+      );
+    },
+    [],
+    intervalMs,
+    enabled,
+  );
 
   return {
-    ships,
-    isLoading,
-    error,
-    lastUpdate,
-    isMockData,
-    refresh: fetchMarineTraffic,
-    count: ships.length,
+    ships: connector.data,
+    isLoading: connector.loading,
+    error: connector.error,
+    lastUpdate: connector.lastUpdate,
+    refresh: connector.refresh,
+    count: connector.data.length,
   };
 }
