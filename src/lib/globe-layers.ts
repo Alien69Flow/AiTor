@@ -29,13 +29,21 @@ export type EnvLayerKey =
 	| "internetOutages"
 	| "economicCenters";
 
-export type Tier = "signal" | "synapse" | "oracle";
+export type Tier = "signal" | "node" | "synapse" | "oracle" | "quantum";
 
-export const TIER_RANK: Record<Tier, number> = { explorer: 0, architect: 1, alien: 2 };
+export const TIER_RANK: Record<Tier, number> = {
+	signal: 0,
+	node: 1,
+	synapse: 2,
+	oracle: 3,
+	quantum: 4,
+};
 export const TIER_LABEL: Record<Tier, string> = {
-	explorer: "Explorer",
-	architect: "Architect",
-	alien: "Alien",
+	signal: "Signal",
+	node: "Node",
+	synapse: "Synapse",
+	oracle: "Oracle",
+	quantum: "Quantum",
 };
 
 export type LayerGroup =
