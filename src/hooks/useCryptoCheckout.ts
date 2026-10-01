@@ -4,12 +4,13 @@ import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  BILLING_CYCLES,
   ERC20_TRANSFER_ABI,
   PAY_CHAINS,
-  PLAN_PRICE_USDC,
   resolvePaymentRecipient,
+  type BillingCycle,
   type PayChain,
-  type PlanId,
+  type PayToken,
 } from "@/lib/web3/payments";
 
 export type CheckoutStage = "idle" | "resolving" | "signing" | "verifying" | "done" | "error";
@@ -24,12 +25,12 @@ export function useCryptoCheckout() {
   const [txHash, setTxHash] = useState<string | null>(null);
 
   const pay = useCallback(
-    async (plan: Exclude<PlanId, "explorer">, chain: PayChain) => {
+    async (cycle: BillingCycle, chain: PayChain, token: PayToken) => {
       setTxHash(null);
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         setStage("error");
-        setMessage("Inicia sesión para asociar el pago a tu cuenta.");
+        setMessage("Conecta tu wallet o inicia sesión para asociar el pago a tu cuenta.");
         return;
       }
       if (!isConnected) {
@@ -38,7 +39,8 @@ export function useCryptoCheckout() {
       }
 
       const target = PAY_CHAINS[chain];
-      const amount = PLAN_PRICE_USDC[plan];
+      const tokenInfo = target.tokens[token];
+      const amount = BILLING_CYCLES[cycle].price;
 
       try {
         setStage("resolving");
@@ -51,12 +53,12 @@ export function useCryptoCheckout() {
         }
 
         setStage("signing");
-        setMessage(`Confirma el envío de ${amount} USDC en tu wallet…`);
+        setMessage(`Confirma el envío de ${amount} ${token} en tu wallet…`);
         const hash = await writeContractAsync({
           abi: ERC20_TRANSFER_ABI,
-          address: target.usdc,
+          address: tokenInfo.address,
           functionName: "transfer",
-          args: [recipient.address, parseUnits(String(amount), 6)],
+          args: [recipient.address, parseUnits(String(amount), tokenInfo.decimals)],
           chainId: target.id,
           account: address as `0x${string}`,
           chain: undefined,
@@ -66,13 +68,13 @@ export function useCryptoCheckout() {
         setStage("verifying");
         setMessage("Verificando la transacción en la red…");
         const { data, error } = await supabase.functions.invoke("verify-crypto-payment", {
-          body: { txHash: hash, chain, plan, wallet: address },
+          body: { txHash: hash, chain, token, cycle, plan: "synapse", wallet: address },
         });
         if (error) throw new Error(error.message);
         if (!data?.success) throw new Error(data?.error || "No se pudo verificar el pago");
 
         setStage("done");
-        setMessage(`Plan ${plan.toUpperCase()} activado. ¡Bienvenido al Nexo Soberano!`);
+        setMessage("Plan SYNAPSE activado. ¡Bienvenido al Nexo Soberano!");
       } catch (error) {
         setStage("error");
         const raw = error instanceof Error ? error.message : String(error);
