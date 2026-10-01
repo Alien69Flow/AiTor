@@ -29,7 +29,7 @@ export type EnvLayerKey =
 	| "internetOutages"
 	| "economicCenters";
 
-export type Tier = "explorer" | "architect" | "alien";
+export type Tier = "signal" | "synapse" | "oracle";
 
 export const TIER_RANK: Record<Tier, number> = { explorer: 0, architect: 1, alien: 2 };
 export const TIER_LABEL: Record<Tier, string> = {
@@ -71,7 +71,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Atmospheric & Weather", 
 		color: "#22d3ee", 
 		Icon: Wind, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		description: "Earth's atmospheric halo glow"
 	},
 	{ 
@@ -81,7 +81,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#7dd3fc", 
 		Icon: Cloud, 
 		owm: "clouds_new", 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Live cloud coverage from OpenWeatherMap"
@@ -93,7 +93,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#fb923c", 
 		Icon: Thermometer, 
 		owm: "temp_new", 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Global surface temperature map"
@@ -105,7 +105,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#60a5fa", 
 		Icon: Droplets, 
 		owm: "precipitation_new", 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Rain, snow, and precipitation intensity"
@@ -117,7 +117,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#a5b4fc", 
 		Icon: Gauge, 
 		owm: "pressure_new", 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Barometric pressure lines and gradients"
@@ -129,7 +129,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#6ee7b7", 
 		Icon: Compass, 
 		owm: "wind_new", 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Global wind patterns and direction"
@@ -142,7 +142,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos", 
 		color: "#c084fc", 
 		Icon: Sun, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "NOAA SWPC",
 		freshness: "30 min",
 		description: "Kp index and aurora borealis intensity"
@@ -155,7 +155,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#fb923c", 
 		Icon: Flame, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "NASA FIRMS",
 		freshness: "3 hours",
 		description: "Active wildfire detection from NASA"
@@ -166,7 +166,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#fbbf24", 
 		Icon: Activity, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "USGS",
 		freshness: "5 min",
 		description: "Real-time earthquake data from USGS"
@@ -177,7 +177,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#e2e8f0", 
 		Icon: Plane, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "OpenSky Network",
 		freshness: "2 min",
 		description: "Live flight tracking via OpenSky"
@@ -188,7 +188,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#38bdf8", 
 		Icon: Ship, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "VesselFinder / AIS",
 		freshness: "3 min",
 		description: "Ship tracking via VesselFinder AIS"
@@ -201,7 +201,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Markets & Feeds", 
 		color: "#fbbf24", 
 		Icon: TrendingUp, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "CoinGecko",
 		freshness: "1 min",
 		description: "Cryptocurrency and market data"
@@ -214,7 +214,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Geopolitical", 
 		color: "#dc2626", 
 		Icon: Crosshair, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "UCDP / WorldMonitor",
 		freshness: "Daily",
 		description: "Active armed conflict zones and events"
@@ -225,7 +225,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#7c3aed", 
 		Icon: AlertTriangle, 
-		requiredTier: "alien",
+		requiredTier: "oracle",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Nuclear facilities and power plants"
@@ -236,7 +236,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#4b5563", 
 		Icon: Shield, 
-		requiredTier: "alien",
+		requiredTier: "oracle",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major military installations worldwide"
@@ -247,7 +247,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#0891b2", 
 		Icon: Waves, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Submarine communications cables"
@@ -258,7 +258,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#ca8a04", 
 		Icon: Landmark, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major oil and gas pipelines"
@@ -269,7 +269,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#ea580c", 
 		Icon: Zap, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Critical maritime straits and canals"
@@ -280,7 +280,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos", 
 		color: "#8b5cf6", 
 		Icon: Satellite, 
-		requiredTier: "alien",
+		requiredTier: "oracle",
 		source: "Space-Track.org",
 		freshness: "1 hour",
 		description: "Active satellite positions"
@@ -291,7 +291,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#dc2626", 
 		Icon: Radio, 
-		requiredTier: "architect",
+		requiredTier: "synapse",
 		source: "WorldMonitor / Oracle",
 		freshness: "15 min",
 		description: "Real-time internet disruption events"
@@ -302,7 +302,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Markets & Feeds", 
 		color: "#10b981", 
 		Icon: TrendingUp, 
-		requiredTier: "explorer",
+		requiredTier: "signal",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major financial and economic hubs"
