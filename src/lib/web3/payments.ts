@@ -1,35 +1,50 @@
 import { supabase } from "@/integrations/supabase/client";
+import type { Tier } from "@/lib/globe-layers";
 
-export type PlanId = "explorer" | "architect" | "alien";
+export type PlanId = Tier;
 export type PayChain = "base" | "polygon";
+export type PayToken = "USDC" | "USDT";
+export type BillingCycle = "monthly" | "quarterly" | "yearly";
+
+export interface TokenInfo {
+  address: `0x${string}`;
+  decimals: number;
+}
 
 export interface PayChainInfo {
   id: number;
   label: string;
-  usdc: `0x${string}`;
   explorer: string;
+  tokens: Record<PayToken, TokenInfo>;
 }
 
-/** USDC (native) contracts on the supported low-fee chains. */
+/** Low-fee EVM rails supported for the Synapse subscription. */
 export const PAY_CHAINS: Record<PayChain, PayChainInfo> = {
   base: {
     id: 8453,
     label: "Base",
-    usdc: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     explorer: "https://basescan.org/tx/",
+    tokens: {
+      USDC: { address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", decimals: 6 },
+      USDT: { address: "0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2", decimals: 6 },
+    },
   },
   polygon: {
     id: 137,
     label: "Polygon",
-    usdc: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359",
     explorer: "https://polygonscan.com/tx/",
+    tokens: {
+      USDC: { address: "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359", decimals: 6 },
+      USDT: { address: "0xc2132D05D31c914a87C6611C10748AEb04B58e8F", decimals: 6 },
+    },
   },
 };
 
-/** Monthly price in USDC per plan. */
-export const PLAN_PRICE_USDC: Record<Exclude<PlanId, "explorer">, number> = {
-  architect: 29,
-  alien: 99,
+/** Synapse subscription pricing, in stablecoin units. */
+export const BILLING_CYCLES: Record<BillingCycle, { label: string; price: number; note: string }> = {
+  monthly: { label: "Mensual", price: 9, note: "9 / mes" },
+  quarterly: { label: "Trimestral", price: 24, note: "8 / mes" },
+  yearly: { label: "Anual", price: 99, note: "8,25 / mes" },
 };
 
 /** Web3 domains used for receiving payments (no raw addresses in the UI). */
@@ -42,7 +57,7 @@ export interface RecipientInfo {
   record: string;
 }
 
-let cached: Record<string, RecipientInfo> = {};
+const cached: Record<string, RecipientInfo> = {};
 
 export async function resolvePaymentRecipient(chain: PayChain): Promise<RecipientInfo> {
   const key = `${PAYMENT_DOMAIN}:${chain}`;
