@@ -3,15 +3,15 @@ import { supabase } from "@/integrations/supabase/client";
 import { TIER_RANK, type Tier } from "@/lib/globe-layers";
 
 const DB_TO_TIER: Record<string, Tier> = {
-  registered: "explorer",
-  basic: "architect",
-  pro: "alien",
-  quantum: "alien",
+  registered: "node",
+  basic: "synapse",
+  pro: "oracle",
+  quantum: "quantum",
 };
 
 export function useTier() {
   const [state, setState] = useState<{ tier: Tier; loading: boolean; authed: boolean }>({
-    tier: "explorer",
+    tier: "signal",
     loading: true,
     authed: false,
   });
@@ -23,7 +23,7 @@ export function useTier() {
       const { data: userData } = await supabase.auth.getUser();
       const user = userData?.user;
       if (!user) {
-        if (!cancelled) setState({ tier: "explorer", loading: false, authed: false });
+        if (!cancelled) setState({ tier: "signal", loading: false, authed: false });
         return;
       }
       const { data } = await supabase
@@ -33,7 +33,7 @@ export function useTier() {
         .maybeSingle();
       if (cancelled) return;
       const dbTier = (data as { paid_tier?: string } | null)?.paid_tier ?? "registered";
-      setState({ tier: DB_TO_TIER[dbTier] ?? "explorer", loading: false, authed: true });
+      setState({ tier: DB_TO_TIER[dbTier] ?? "node", loading: false, authed: true });
     };
 
     load();
