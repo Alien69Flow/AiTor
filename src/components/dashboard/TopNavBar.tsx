@@ -77,7 +77,7 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
             className="h-7 px-2 md:px-3 text-[10px] font-heading tracking-wider uppercase border-accent/40 bg-accent/10 text-accent hover:bg-accent/20 hover:border-accent/60 transition-all"
           >
             <Crown className="h-3.5 w-3.5 md:mr-1" />
-            <span className="hidden lg:inline">{tier === "explorer" ? "Upgrade" : tier}</span>
+            <span className="hidden lg:inline">{tier === "signal" || tier === "node" ? "Upgrade" : tier}</span>
           </Button>
 
           <ConnectWalletButton />
