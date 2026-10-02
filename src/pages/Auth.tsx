@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useWalletAuth } from "@/hooks/useWalletAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -23,6 +24,7 @@ export default function Auth() {
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { signIn, signUp, signInWithGoogle, signInWithApple, user, loading } = useAuth();
+  const { signIn: walletSignIn, busy: walletBusy, error: walletError, isConnected: walletConnected, address: walletAddress } = useWalletAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const rawNext = searchParams.get("next") ?? "";
@@ -177,17 +179,24 @@ export default function Auth() {
                 </Button>
               </div>
 
-              {/* Wallet Button (decorative/future) */}
               <Button
                 type="button"
                 variant="outline"
                 className="w-full h-11 border-secondary/30 bg-secondary/5 hover:bg-secondary/15 hover:border-secondary/50 transition-all duration-300 group"
-                disabled
+                disabled={walletBusy || isSubmitting}
+                onClick={async () => {
+                  const ok = await walletSignIn();
+                  if (ok) toast.success("Wallet verificada. ¡Bienvenido, Soberano!");
+                }}
               >
-                <Wallet className="mr-2 h-4 w-4 text-secondary/60 group-hover:text-secondary transition-colors" />
-                <span className="text-xs text-secondary/60 group-hover:text-secondary/80">Conectar Wallet</span>
-                <span className="ml-2 text-[8px] font-mono text-secondary/40 border border-secondary/20 rounded px-1.5 py-0.5 uppercase">Pronto</span>
+                {walletBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Wallet className="mr-2 h-4 w-4 text-secondary" />}
+                <span className="text-xs text-secondary">
+                  {walletConnected && walletAddress
+                    ? `Firmar con ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}`
+                    : "Conectar Wallet (Reown)"}
+                </span>
               </Button>
+              {walletError && <p className="text-[10px] text-destructive text-center">{walletError}</p>}
 
               {/* Divider */}
               <div className="relative">
