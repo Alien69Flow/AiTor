@@ -35,7 +35,7 @@ export function useDaoAccess() {
     try {
       const nonce = crypto.randomUUID();
       const message = `Verificar holdings AlienFlowSpace DAO\nWallet: ${address}\nNonce: ${nonce}`;
-      const signature = await signMessageAsync({ message });
+      const signature = await signMessageAsync({ message, account: address as `0x${string}` });
       const { data, error: fnError } = await supabase.functions.invoke("verify-dao-holdings", {
         body: { address, message, signature },
       });

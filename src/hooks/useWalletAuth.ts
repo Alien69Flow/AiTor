@@ -24,7 +24,7 @@ export function useWalletAuth() {
       const message =
         `${window.location.host} quiere verificar tu wallet para AI Tor.\n\n` +
         `Wallet: ${address}\nNonce: ${nonce}\nFecha: ${issuedAt}`;
-      const signature = await signMessageAsync({ message });
+      const signature = await signMessageAsync({ message, account: address as `0x${string}` });
 
       const { data, error: fnError } = await supabase.functions.invoke("wallet-auth", {
         body: { address, message, signature },
