@@ -6,6 +6,8 @@ export interface Flight {
   callsign: string;
   /** ICAO aircraft type designator, when supplied by the ADS-B source. */
   aircraftType?: string | null;
+  /** ADS-B emitter category code (for example A1-A7), when supplied by the source. */
+  aircraftCategory?: string | null;
   origin: string | null;
   destination: string | null;
   latitude: number;
