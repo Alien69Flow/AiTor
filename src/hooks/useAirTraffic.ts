@@ -4,6 +4,8 @@ import { supabase } from "@/integrations/supabase/client";
 export interface Flight {
   icao24: string;
   callsign: string;
+  /** ICAO aircraft type designator, when supplied by the ADS-B source. */
+  aircraftType?: string | null;
   origin: string | null;
   destination: string | null;
   latitude: number;
