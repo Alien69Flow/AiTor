@@ -56,29 +56,26 @@ Deno.serve(async (req) => {
 
     const ships = data.vessels
       .map((v: any) => {
-        const latitude = Number(v.LAT);
-        const longitude = Number(v.LON);
+        const latitude = parseFiniteNumber(v.LAT);
+        const longitude = parseFiniteNumber(v.LON);
         if (
-          !Number.isFinite(latitude) || !Number.isFinite(longitude) ||
+          latitude === null || longitude === null ||
           latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
         ) return null;
 
         const rawTimestamp = v.TIMESTAMP ?? v.TIME ?? v.LAST_POSITION;
-        const parsedTimestamp = rawTimestamp ? new Date(rawTimestamp) : null;
-        const timestamp = parsedTimestamp && Number.isFinite(parsedTimestamp.getTime())
-          ? parsedTimestamp.toISOString()
-          : new Date().toISOString();
-
+        const parsedTimestamp = parseProviderTimestamp(rawTimestamp);
         return {
-          mmsi: String(v.MMSI ?? ""),
+          mmsi: String(v.MMSI ?? "").trim(),
           name: String(v.NAME ?? "").trim() || "Unknown",
           type: String(v.TYPE ?? "").trim() || "Unknown",
           latitude,
           longitude,
-          speed: Number.isFinite(Number(v.SPEED)) ? Number(v.SPEED) : 0,
-          heading: Number.isFinite(Number(v.HEADING)) ? Number(v.HEADING) : 0,
+          speed: parseFiniteNumber(v.SPEED) ?? 0,
+          heading: parseFiniteNumber(v.HEADING) ?? 0,
           destination: String(v.DESTINATION ?? "").trim() || "Unknown",
-          timestamp,
+          // Do not fabricate a fresh position timestamp when the provider omits it.
+          timestamp: parsedTimestamp ?? "",
         };
       })
       .filter((ship: unknown) => ship !== null)
@@ -105,6 +102,28 @@ function parseBound(value: string | null, fallback: number, min: number, max: nu
   if (value === null || value.trim() === "") return fallback;
   const parsed = Number(value);
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : Number.NaN;
+}
+
+function parseFiniteNumber(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseProviderTimestamp(value: unknown): string | null {
+  if (value === null || value === undefined || value === "") return null;
+
+  // AIS providers may return Unix seconds, Unix milliseconds, or a date string.
+  if (typeof value === "number" || (typeof value === "string" && /^\d+(\.\d+)?$/.test(value.trim()))) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    const milliseconds = numeric < 1e12 ? numeric * 1000 : numeric;
+    const date = new Date(milliseconds);
+    return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+  }
+
+  const date = new Date(String(value));
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
 function jsonResponse(body: Record<string, unknown>, status = 200, maxAgeSeconds = 0): Response {
