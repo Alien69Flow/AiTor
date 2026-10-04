@@ -60,7 +60,7 @@ export function useAdsbTraffic(enabled: boolean, intervalMs = 15_000, maxAircraf
         });
         if (out.length >= maxAircraft) break;
       }
-      if (list.length > 0 && out.length === 0) {
+      if (out.length === 0) {
         throw new Error("ADS-B response contained no valid aircraft positions");
       }
       return out;
