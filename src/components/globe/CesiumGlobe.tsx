@@ -754,14 +754,11 @@ export function CesiumGlobe({
       return;
     }
 
-    // Remove old entities
-    flightEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    flightEntityIdsRef.current = [];
+    // Update existing entities in place. Rebuilding every billboard on each
+    // 15-second poll creates avoidable allocation and rendering churn.
+    const seenIds = new Set<string>();
 
-    // Add flight markers
+    // Add or update flight markers
     flights.forEach((flight, i) => {
       if (
         !Number.isFinite(flight.latitude) ||
@@ -771,38 +768,70 @@ export function CesiumGlobe({
       ) return;
 
       const entityId = `flight-${flight.icao24 || i}`;
+      seenIds.add(entityId);
       const marker = aircraftMarkerStyle(flight.aircraftType);
-      viewer.entities.add({
-        id: entityId,
-        position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, Math.max(0, flight.altitude || 0)),
-        billboard: {
-          image: markerIcon(marker.icon, marker.color), width: 22, height: 22,
-          rotation: -CesiumMath.toRadians(flight.heading || 0),
-          scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: eventPayload({
+      const position = Cartesian3.fromDegrees(
+        flight.longitude,
+        flight.latitude,
+        Math.max(0, flight.altitude || 0),
+      );
+      const image = markerIcon(marker.icon, marker.color);
+      const existing = viewer.entities.getById(entityId);
+
+      if (existing) {
+        existing.position = position;
+        if (existing.billboard) {
+          existing.billboard.image = image;
+          existing.billboard.rotation = -CesiumMath.toRadians(flight.heading || 0);
+        }
+        if (existing.label) existing.label.text = flight.callsign || flight.icao24;
+        existing.properties = eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
           description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
+          type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
-        }),
-        label: {
-          text: `${flight.callsign}`,
-          font: "8px monospace",
-          fillColor: hexToColor("#00FFFF", 0.8),
-          outlineColor: Color.BLACK,
-          outlineWidth: 1,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -8),
-          scaleByDistance: new NearFarScalar(1e5, 0.8, 5e6, 0.1),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      });
-      flightEntityIdsRef.current.push(entityId);
+        });
+      } else {
+        viewer.entities.add({
+          id: entityId,
+          position,
+          billboard: {
+            image, width: 22, height: 22,
+            rotation: -CesiumMath.toRadians(flight.heading || 0),
+            scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          properties: eventPayload({
+            lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
+            description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+            type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
+            date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
+          }),
+          label: {
+            text: flight.callsign || flight.icao24,
+            font: "8px monospace",
+            fillColor: hexToColor("#00FFFF", 0.8),
+            outlineColor: Color.BLACK,
+            outlineWidth: 1,
+            style: 2,
+            verticalOrigin: VerticalOrigin.BOTTOM,
+            horizontalOrigin: HorizontalOrigin.CENTER,
+            pixelOffset: new Cartesian2(0, -8),
+            scaleByDistance: new NearFarScalar(1e5, 0.8, 5e6, 0.1),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      }
     });
+
+    // Remove only aircraft that disappeared from the latest valid snapshot.
+    flightEntityIdsRef.current.forEach((id) => {
+      if (!seenIds.has(id)) {
+        const entity = viewer.entities.getById(id);
+        if (entity) viewer.entities.remove(entity);
+      }
+    });
+    flightEntityIdsRef.current = [...seenIds];
   }, [flights, envLayers]);
 
   // Marine Traffic layer — ship markers from VesselFinder
