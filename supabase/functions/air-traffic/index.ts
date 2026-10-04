@@ -7,92 +7,111 @@ const corsHeaders = {
 };
 
 const OPENSKY_API = "https://opensky-network.org/api";
+const DEFAULT_BOUNDS = { lamin: 35, lamax: 55, lomin: -10, lomax: 30 };
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
-  
+
   const blocked = guardPublic(req, corsHeaders, 120);
   if (blocked) return blocked;
-  
+
   try {
     const url = new URL(req.url);
-    const lamin = url.searchParams.get("lamin") || "35.0";
-    const lamax = url.searchParams.get("lamax") || "55.0";
-    const lomin = url.searchParams.get("lomin") || "-10.0";
-    const lomax = url.searchParams.get("lomax") || "30.0";
-    
-    const response = await fetch(
-      `${OPENSKY_API}/states/all?lamin=${lamin}&lamax=${lamax}&lomin=${lomin}&lomax=${lomax}`,
-      { headers: { "Accept": "application/json" }, signal: AbortSignal.timeout(8000) }
-    );
+    const bounds = {
+      lamin: parseBound(url.searchParams.get("lamin"), DEFAULT_BOUNDS.lamin, -90, 90),
+      lamax: parseBound(url.searchParams.get("lamax"), DEFAULT_BOUNDS.lamax, -90, 90),
+      lomin: parseBound(url.searchParams.get("lomin"), DEFAULT_BOUNDS.lomin, -180, 180),
+      lomax: parseBound(url.searchParams.get("lomax"), DEFAULT_BOUNDS.lomax, -180, 180),
+    };
+
+    if (bounds.lamin >= bounds.lamax || bounds.lomin >= bounds.lomax) {
+      return jsonResponse({ error: "Invalid air-traffic bounding box" }, 400);
+    }
+
+    const query = new URLSearchParams({
+      lamin: String(bounds.lamin),
+      lamax: String(bounds.lamax),
+      lomin: String(bounds.lomin),
+      lomax: String(bounds.lomax),
+    });
+    const response = await fetch(`${OPENSKY_API}/states/all?${query.toString()}`, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(8000),
+    });
 
     if (!response.ok) {
-      return new Response(JSON.stringify(generateMockFlights()), {
-        headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=120" },
-      });
+      console.warn("OpenSky returned an upstream error:", response.status);
+      return jsonResponse({ error: "Air-traffic provider unavailable", upstreamStatus: response.status }, 502);
     }
 
     const data = await response.json();
-    
-    const flights = (data.states || []).slice(0, 80).map((state: any) => ({
-      icao24: state[0],
-      callsign: state[1]?.trim() || "UNKNOWN",
-      origin: state[2] || null,
-      destination: state[3] || null,
-      latitude: state[5],
-      longitude: state[6],
-      altitude: Math.round(state[7] || 0),
-      velocity: Math.round(state[9] || 0),
-      heading: Math.round(state[10] || 0),
-      timestamp: new Date().toISOString(),
-    }));
+    if (!data || !Array.isArray(data.states)) {
+      return jsonResponse({ error: "Invalid response from air-traffic provider" }, 502);
+    }
 
-    return new Response(JSON.stringify({
+    // OpenSky state-vector indexes: longitude=5, latitude=6. Index 3 is
+    // position time and index 4 is last-contact time; neither is a destination.
+    const flights = data.states
+      .filter((state: unknown) => Array.isArray(state) && state.length >= 11)
+      .map((state: any) => {
+        const latitude = state[6];
+        const longitude = state[5];
+        if (
+          typeof latitude !== "number" || !Number.isFinite(latitude) ||
+          typeof longitude !== "number" || !Number.isFinite(longitude) ||
+          latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180
+        ) return null;
+
+        const lastContact = typeof state[4] === "number" && Number.isFinite(state[4])
+          ? new Date(state[4] * 1000).toISOString()
+          : new Date().toISOString();
+
+        return {
+          icao24: typeof state[0] === "string" ? state[0].toLowerCase() : "",
+          callsign: typeof state[1] === "string" ? state[1].trim() || "UNKNOWN" : "UNKNOWN",
+          origin: typeof state[2] === "string" ? state[2] : null,
+          destination: null,
+          latitude,
+          longitude,
+          altitude: typeof state[7] === "number" && Number.isFinite(state[7]) ? Math.round(state[7]) : 0,
+          velocity: typeof state[9] === "number" && Number.isFinite(state[9]) ? Math.round(state[9]) : 0,
+          heading: typeof state[10] === "number" && Number.isFinite(state[10]) ? Math.round(state[10]) : 0,
+          timestamp: lastContact,
+        };
+      })
+      .filter((flight: unknown) => flight !== null)
+      .slice(0, 80);
+
+    if (flights.length === 0) {
+      return jsonResponse({ error: "Air-traffic provider returned no aircraft with valid positions" }, 502);
+    }
+
+    return jsonResponse({
       count: flights.length,
       flights,
-      bbox: { lamin, lamax, lomin, lomax },
+      bbox: bounds,
+      mock: false,
       timestamp: new Date().toISOString(),
-    }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=120" },
-    });
+    }, 200, 120);
   } catch (err) {
-    console.error("Air traffic upstream unavailable, serving mock:", err);
-    const mock = generateMockFlights();
-    return new Response(JSON.stringify({
-      ...mock,
-      timestamp: new Date().toISOString(),
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": "public, max-age=60" },
-    });
+    console.error("Air-traffic provider request failed:", err);
+    return jsonResponse({ error: "Air-traffic provider unavailable" }, 502);
   }
 });
 
-function generateMockFlights() {
-  const airlines = ["AFR", "BAW", "DLH", "UAE", "THY", "RYR", "EZY", "VLG", "SAS", "WZZ", "IBE", "AEA"];
-  const routes = [
-    { from: "LHR", to: "JFK" }, { from: "CDG", to: "DXB" }, { from: "FRA", to: "SIN" },
-    { from: "MAD", to: "BOG" }, { from: "BCN", to: "MIA" }, { from: "ZAZ", to: "BCN" },
-    { from: "AGP", to: "LHR" }, { from: "LIS", to: "GRU" }, { from: "FCO", to: "EZE" },
-  ];
-  
-  const flights = [];
-  for (let i = 0; i < 50; i++) {
-    const route = routes[Math.floor(Math.random() * routes.length)];
-    const airline = airlines[Math.floor(Math.random() * airlines.length)];
-    flights.push({
-      icao24: `mock${i.toString(16).padStart(4, '0')}`,
-      callsign: `${airline}${Math.floor(Math.random() * 9000 + 1000)}`,
-      origin: route.from,
-      destination: route.to,
-      latitude: 35 + Math.random() * 20,
-      longitude: -10 + Math.random() * 40,
-      altitude: Math.round(9000 + Math.random() * 4000),
-      velocity: Math.round(200 + Math.random() * 200),
-      heading: Math.round(Math.random() * 360),
-      timestamp: new Date().toISOString(),
-    });
-  }
-  
-  return { count: flights.length, flights, mock: true };
+function parseBound(value: string | null, fallback: number, min: number, max: number): number {
+  if (value === null || value.trim() === "") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : Number.NaN;
+}
+
+function jsonResponse(body: Record<string, unknown>, status = 200, maxAgeSeconds = 0): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "Cache-Control": `public, max-age=${maxAgeSeconds}`,
+    },
+  });
 }
