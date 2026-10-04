@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 export interface Ship {
@@ -28,31 +28,43 @@ export function useMarineTraffic() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [isMockData, setIsMockData] = useState(false);
 
+  const inFlightRef = useRef(false);
+
   const fetchMarineTraffic = useCallback(async () => {
+    // Avoid overlapping refreshes from the interval and manual refresh action.
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
     try {
-      setIsLoading(true);
+      setIsLoading((previous) => ships.length === 0 ? true : previous);
       setError(null);
 
       const { data, error: fnError } = await supabase.functions.invoke<MarineTrafficResponse>("marine-traffic", {
         body: {},
       });
-
-      if (fnError) {
-        throw new Error(fnError.message);
+      if (fnError) throw new Error(fnError.message);
+      if (!data || !Array.isArray(data.ships)) {
+        throw new Error("Invalid marine traffic response: expected ships array");
       }
-
-      if (data) {
-        setShips(data.ships || []);
-        setIsMockData(data.mock || false);
-        setLastUpdate(new Date(data.timestamp));
-      }
+      const valid = data.ships.filter((ship) =>
+        Number.isFinite(ship.latitude) &&
+        Number.isFinite(ship.longitude) &&
+        ship.latitude >= -90 && ship.latitude <= 90 &&
+        ship.longitude >= -180 && ship.longitude <= 180
+      );
+      if (valid.length === 0) throw new Error("Marine traffic response contained no valid positions");
+      setShips(valid);
+      setIsMockData(data.mock || false);
+      const timestamp = new Date(data.timestamp);
+      setLastUpdate(Number.isNaN(timestamp.getTime()) ? new Date() : timestamp);
     } catch (err) {
       console.error("Marine traffic fetch error:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch marine traffic");
+      // Keep last known good ships and timestamp on failure.
     } finally {
+      inFlightRef.current = false;
       setIsLoading(false);
     }
-  }, []);
+  }, [ships.length]);
 
   useEffect(() => {
     fetchMarineTraffic();
