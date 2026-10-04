@@ -122,6 +122,12 @@ const MARKER_GLYPHS: Record<string, string> = {
 };
 
 function markerIcon(type: string, color: string): string {
+  // Aircraft use a clean silhouette instead of the generic shield marker.
+  if (type === "flight") {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M19 3.5c.7-.7 1.3-.7 2 0l2.1 12.1 11.4 6.2v3L23 22.1l-.8 10.1 4.3 2.7v2L20 35.1l-6.5 1.8v-2l4.3-2.7L17 22.1 5.5 24.8v-3l11.4-6.2L19 3.5Z" fill="${color}" stroke="#071018" stroke-width="1" stroke-linejoin="round"/></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   const glyph = MARKER_GLYPHS[type] || "•";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 2 36 11v18L20 38 4 29V11Z" fill="#05070a" fill-opacity=".9" stroke="${color}" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="${color}" fill-opacity=".16"/><text x="20" y="25" text-anchor="middle" font-family="monospace" font-size="16" font-weight="700" fill="${color}">${glyph}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
