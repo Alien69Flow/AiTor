@@ -41,7 +41,6 @@ export function useAirTraffic() {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
-      setIsLoading((previous) => flights.length === 0 ? true : previous);
       setError(null);
 
       const { data, error: fnError } = await supabase.functions.invoke<AirTrafficResponse>("air-traffic", {
@@ -70,7 +69,7 @@ export function useAirTraffic() {
       inFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [flights.length]);
+  }, []);
 
   useEffect(() => {
     fetchAirTraffic();
