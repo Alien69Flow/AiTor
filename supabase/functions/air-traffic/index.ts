@@ -24,7 +24,10 @@ Deno.serve(async (req) => {
       lomax: parseBound(url.searchParams.get("lomax"), DEFAULT_BOUNDS.lomax, -180, 180),
     };
 
-    if (bounds.lamin >= bounds.lamax || bounds.lomin >= bounds.lomax) {
+    if (
+      !Object.values(bounds).every(Number.isFinite) ||
+      bounds.lamin >= bounds.lamax || bounds.lomin >= bounds.lomax
+    ) {
       return jsonResponse({ error: "Invalid air-traffic bounding box" }, 400);
     }
 
