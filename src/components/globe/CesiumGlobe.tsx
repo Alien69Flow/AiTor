@@ -137,18 +137,26 @@ function markerIcon(type: string, color: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-/** Use only the source's aircraft type designator; never infer military status from callsigns. */
-function aircraftMarkerStyle(aircraftType?: string | null): { icon: "flight" | "helicopter"; color: string } {
+/** Classify from the feed's documented ADS-B emitter category when present.
+ * Do not infer military status from callsigns or unverified type-name guesses.
+ */
+function aircraftMarkerStyle(
+  aircraftType?: string | null,
+  aircraftCategory?: string | null,
+): { icon: "flight" | "helicopter"; color: string } {
+  const category = (aircraftCategory || "").trim().toUpperCase();
+  // ADS-B emitter categories: A1 light, A2 small, A3 large, A4 high-vortex,
+  // A5 heavy, A6 high-performance, A7 rotorcraft.
+  if (category === "A7") return { icon: "helicopter", color: "#F59E0B" };
+  if (category === "A1" || category === "A2") return { icon: "flight", color: "#34D399" };
+  if (category === "A3" || category === "A4" || category === "A5") return { icon: "flight", color: "#60A5FA" };
+  if (category === "A6") return { icon: "flight", color: "#A78BFA" };
+
+  // Type designators are a fallback only; not every source record has one.
   const type = (aircraftType || "").trim().toUpperCase();
-  if (!type) return { icon: "flight", color: "#38BDF8" }; // unclassified
-  if (type.startsWith("H")) return { icon: "helicopter", color: "#F59E0B" };
-  if (/^(A3[0-9A-Z]{2}|A2[0-9A-Z]{2}|B7[0-9A-Z]{2}|B3[0-9A-Z]{2}|B4[0-9A-Z]{2}|B5[0-9A-Z]{2}|B6[0-9A-Z]{2}|B1[0-9A-Z]{2}|E[17][0-9A-Z]{2}|CRJ[0-9A-Z]*)$/.test(type)) {
-    return { icon: "flight", color: "#60A5FA" }; // common airline/transport type families
-  }
-  if (/^(C1[0-9A-Z]{2}|C2[0-9A-Z]{2}|C3[0-9A-Z]{2}|PA[0-9A-Z]{2}|SR2[0-9A-Z]|DA[0-9A-Z]{2}|BE[0-9A-Z]{2})$/.test(type)) {
-    return { icon: "flight", color: "#34D399" }; // common light/general-aviation type families
-  }
-  return { icon: "flight", color: "#A78BFA" }; // known type, unmapped family
+  if (/^(H[0-9A-Z]{2,4}|R[0-9A-Z]{2,4})$/.test(type)) return { icon: "helicopter", color: "#F59E0B" };
+  if (type) return { icon: "flight", color: "#A78BFA" };
+  return { icon: "flight", color: "#38BDF8" }; // unclassified, never guess
 }
 
 function eventPayload(data: Record<string, unknown>) {
@@ -769,7 +777,7 @@ export function CesiumGlobe({
 
       const entityId = `flight-${flight.icao24 || i}`;
       seenIds.add(entityId);
-      const marker = aircraftMarkerStyle(flight.aircraftType);
+      const marker = aircraftMarkerStyle(flight.aircraftType, flight.aircraftCategory);
       const position = Cartesian3.fromDegrees(
         flight.longitude,
         flight.latitude,
