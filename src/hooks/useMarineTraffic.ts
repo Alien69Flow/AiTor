@@ -35,7 +35,6 @@ export function useMarineTraffic() {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
     try {
-      setIsLoading((previous) => ships.length === 0 ? true : previous);
       setError(null);
 
       const { data, error: fnError } = await supabase.functions.invoke<MarineTrafficResponse>("marine-traffic", {
@@ -64,7 +63,7 @@ export function useMarineTraffic() {
       inFlightRef.current = false;
       setIsLoading(false);
     }
-  }, [ships.length]);
+  }, []);
 
   useEffect(() => {
     fetchMarineTraffic();
