@@ -49,6 +49,7 @@ export function useAdsbTraffic(enabled: boolean, intervalMs = 15_000, maxAircraf
           icao24: (a.hex ?? "").trim().toLowerCase(),
           callsign: (a.flight ?? a.r ?? a.hex ?? "").trim(),
           aircraftType: a.t?.trim().toUpperCase() || null,
+          aircraftCategory: a.category?.trim().toUpperCase() || null,
           origin: null,
           destination: null,
           latitude: a.lat as number,
