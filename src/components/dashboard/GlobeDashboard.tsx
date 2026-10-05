@@ -12,8 +12,6 @@ import { GlobeDiagnostics } from "./GlobeDiagnostics";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
 import { useUAPSightings } from "@/hooks/useUAPSightings";
 import { useTier } from "@/hooks/useTier";
-import { useAirTraffic } from "@/hooks/useAirTraffic";
-import { useMarineTraffic } from "@/hooks/useMarineTraffic";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
 import { CONFLICT_ZONES } from "@/lib/geo-datasets";
 import { DEFAULT_ACTIVE_LAYERS, TIER_LABEL, layerDef, type EnvLayerKey } from "@/lib/globe-layers";
@@ -35,10 +33,9 @@ export function GlobeDashboard() {
   const intel = useUnifiedIntel(envLayers);
   const { sightings } = useUAPSightings();
   const { tier, hasAccess } = useTier();
-  const { flights } = useAirTraffic();
-  const { ships } = useMarineTraffic();
   const { outages } = useInternetOutages(true);
-  const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
+  const allFlights = intel.aviation;
+  const ships = intel.marineTraffic;
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
 
   const toggleLayer = useCallback((key: LayerKey) => setVisibleLayers((previous) => {
