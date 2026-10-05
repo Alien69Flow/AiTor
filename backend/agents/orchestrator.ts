@@ -1,7 +1,7 @@
 import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
-import { ManusAgent } from "./manus";
+import { runCapabilityRuntime } from "../workflows/capabilityRuntime";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
@@ -10,6 +10,63 @@ const llmGeneral = new ChatGoogleGenerativeAI({
   modelName: "gemini-2.5-flash", 
   temperature: 0.7,
 });
+
+type LiveQuote = {
+  symbol: string;
+  price: number;
+  change24h: number;
+  marketCap: number;
+};
+
+async function fetchLiveCryptoQuotes(symbols: string[]): Promise<Map<string, LiveQuote>> {
+  const ids = [...new Set(symbols)].map((symbol) => ({
+    BTC: "bitcoin",
+    ETH: "ethereum",
+    SOL: "solana",
+    BNB: "binancecoin",
+    LINK: "chainlink",
+    DOT: "polkadot",
+    ADA: "cardano",
+  }[symbol.toUpperCase()])).filter(Boolean);
+
+  if (ids.length === 0) return new Map();
+
+  const response = await fetch(
+    `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(ids.join(","))}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`,
+    { headers: { Accept: "application/json" } },
+  );
+
+  if (!response.ok) {
+    throw new Error(`CoinGecko returned HTTP ${response.status}`);
+  }
+
+  const data = await response.json() as Record<string, {
+    usd?: number;
+    usd_24h_change?: number;
+    usd_market_cap?: number;
+  }>;
+
+  const idToSymbol: Record<string, string> = {
+    bitcoin: "BTC",
+    ethereum: "ETH",
+    solana: "SOL",
+    binancecoin: "BNB",
+    chainlink: "LINK",
+    polkadot: "DOT",
+    cardano: "ADA",
+  };
+
+  const quotes = Object.entries(data)
+    .filter(([, quote]) => typeof quote.usd === "number")
+    .map(([id, quote]): LiveQuote => ({
+      symbol: idToSymbol[id] ?? id.toUpperCase(),
+      price: quote.usd as number,
+      change24h: quote.usd_24h_change ?? 0,
+      marketCap: quote.usd_market_cap ?? 0,
+    }));
+
+  return new Map(quotes.map((quote) => [quote.symbol, quote]));
+}
 
 export class SwarmOrchestrator {
   /**
@@ -59,21 +116,32 @@ export class SwarmOrchestrator {
       }
 
       case "TASK_MANUS": {
-        // Despertamos al ejecutor técnico
-        finalResponse = await ManusAgent.executeTask(userInput, history);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history, ["development"]);
+        finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
 
       case "SOCIAL_MEDIA": {
-        // Routing al Social Media Manager Agent (lazy import para evitar ciclos)
-        const { SocialMediaManager } = await import('./socialMediaManager');
-        finalResponse = await this.handleSocialMediaRequest(userInput, history);
+        const input = userInput.toLowerCase();
+        if (
+          input.includes("ver propuestas") ||
+          input.includes("ver pendientes") ||
+          input.includes("aprobar") ||
+          input.includes("rechazar") ||
+          input.includes("estadísticas") ||
+          input.includes("stats")
+        ) {
+          finalResponse = await this.handleSocialMediaRequest(userInput, history);
+        } else {
+          const runtime = await runCapabilityRuntime(userInput, chatId, history, ["social"]);
+          finalResponse = formatCapabilityRuntimeResult(runtime);
+        }
         break;
       }
 
       case "SECURITY_SCAN": {
-        // Routing al Security Agent
-        finalResponse = await this.handleSecurityRequest(userInput);
+        const runtime = await runCapabilityRuntime(userInput, chatId, history, ["security"]);
+        finalResponse = formatCapabilityRuntimeResult(runtime);
         break;
       }
 
@@ -233,39 +301,62 @@ export class SwarmOrchestrator {
     const { MarketKnowledge } = await import('../rag/marketKnowledge');
     const input = userInput.toLowerCase();
 
-    // Extraer símbolos mencionados
-    const symbols: string[] = [];
-    if (input.includes('btc') || input.includes('bitcoin')) symbols.push('BTC');
-    if (input.includes('eth') || input.includes('ethereum')) symbols.push('ETH');
-    if (input.includes('sol') || input.includes('solana')) symbols.push('SOL');
-    if (input.includes('bnb')) symbols.push('BNB');
+    const symbolMap: Record<string, string> = {
+      btc: 'BTC', bitcoin: 'BTC',
+      eth: 'ETH', ethereum: 'ETH',
+      sol: 'SOL', solana: 'SOL',
+      bnb: 'BNB',
+    };
+
+    const symbols = [...new Set(
+      Object.entries(symbolMap)
+          .filter(([keyword]) => new RegExp(`\\b${keyword}\\b`, 'i').test(input))
+        .map(([, symbol]) => symbol),
+    )];
 
     if (symbols.length > 0) {
-      // Generar mock price data para demo
-      const prices = symbols.map(s => ({
-        symbol: s,
-        price: s === 'BTC' ? 64000 : s === 'ETH' ? 3400 : s === 'SOL' ? 140 : 580,
-        change24h: (Math.random() - 0.5) * 10,
-        marketCap: Math.random() * 100000000000,
-      }));
+      try {
+        const pricesMap = await fetchLiveCryptoQuotes(symbols);
+        const prices = symbols
+          .map((symbol) => {
+            const quote = pricesMap.get(symbol);
+            return quote ?? null;
+          })
+          .filter((price): price is {
+            symbol: string;
+            price: number;
+            change24h: number;
+            marketCap: number;
+          } => price !== null);
 
-      const analyses = await MarketAnalyzer.analyzePortfolio(prices);
-      let response = `📊 **ANÁLISIS DE MERCADO**\n\n`;
+        if (prices.length === 0) {
+          return '⚠️ Live market data is currently unavailable. No fabricated prices are shown.';
+        }
 
-      for (const analysis of analyses) {
-        const emoji = analysis.technical.trend === 'bullish' ? '🟢' : analysis.technical.trend === 'bearish' ? '🔴' : '⚪';
-        response += `${emoji} **${analysis.symbol}** - ${analysis.technical.trend}\n`;
-        response += `   Precio: $${analysis.price.price.toLocaleString()}\n`;
-        response += `   Cambio 24h: ${analysis.price.change24h >= 0 ? '+' : ''}${analysis.price.change24h.toFixed(2)}%\n`;
-        response += `   Soporte: $${analysis.technical.support.toLocaleString()}\n`;
-        response += `   Resistencia: $${analysis.technical.resistance.toLocaleString()}\n`;
-        response += `   Recomendación: ${analysis.recommendation.toUpperCase()}\n\n`;
+        const analyses = await MarketAnalyzer.analyzePortfolio(prices);
+        let responseText = `📊 **LIVE MARKET ANALYSIS**\\n\\n`;
+
+        for (const analysis of analyses) {
+          const emoji = analysis.technical.trend === 'bullish'
+            ? '🟢'
+            : analysis.technical.trend === 'bearish' ? '🔴' : '⚪';
+
+          responseText += `${emoji} **${analysis.symbol}** — ${analysis.technical.trend}\\n`;
+          responseText += `   Price: $${analysis.price.price.toLocaleString()}\\n`;
+          responseText += `   24h: ${analysis.price.change24h >= 0 ? '+' : ''}${analysis.price.change24h.toFixed(2)}%\\n`;
+          responseText += `   Support: $${analysis.technical.support.toLocaleString()}\\n`;
+          responseText += `   Resistance: $${analysis.technical.resistance.toLocaleString()}\\n`;
+          responseText += `   Risk: ${analysis.riskLevel.toUpperCase()}\\n\\n`;
+        }
+
+        responseText += `_Source: CoinGecko live API. Analysis generated at ${new Date().toISOString()}._`;
+        return responseText;
+      } catch (error) {
+        console.error('[Market] Live data error:', error);
+        return '⚠️ Live market data is temporarily unavailable. Please try again shortly.';
       }
-
-      return response;
     }
 
-    // Análisis general de mercado
     return await MarketKnowledge.retrieveContext('marketSentiment' as any);
   }
 
@@ -305,6 +396,47 @@ export class SwarmOrchestrator {
       return TradingSignals.formatSignalsReport();
     }
 
+    // Generate signals only from real price/technical inputs.
+    if (input.includes('generar') && input.includes('señal')) {
+      const symbolMap: Record<string, string> = {
+        btc: 'BTC', bitcoin: 'BTC', eth: 'ETH', ethereum: 'ETH',
+        sol: 'SOL', solana: 'SOL', bnb: 'BNB',
+      };
+      const symbols = [...new Set(
+        Object.entries(symbolMap)
+          .filter(([keyword]) => new RegExp(`\\b${keyword}\\b`, 'i').test(input))
+          .map(([, symbol]) => symbol),
+      )];
+
+      if (symbols.length === 0) {
+        return '⚠️ Specify a supported asset (BTC, ETH, SOL or BNB) so signals can be generated from live market data.';
+      }
+
+      try {
+        const quotes = await fetchLiveCryptoQuotes(symbols);
+        const prices = symbols.map(symbol => quotes.get(symbol)).filter((quote): quote is LiveQuote => Boolean(quote));
+        if (prices.length === 0) {
+          return '⚠️ Live market data is unavailable. No synthetic trading signals were generated.';
+        }
+
+        const { TradingSignals } = await import('./tradingSignals');
+        const technicalData = prices.map(quote => ({
+          symbol: quote.symbol,
+          price: quote.price,
+          change24h: quote.change24h,
+          marketCap: quote.marketCap,
+        }));
+        const signals = await TradingSignals.generateSignals(prices, technicalData);
+        if (signals.length === 0) {
+          return '⚠️ No signal could be generated from the available live market data.';
+        }
+        return TradingSignals.formatSignalsReport();
+      } catch (error) {
+        console.error('[Trading] Live signal data error:', error);
+        return '⚠️ Live market data is temporarily unavailable. No synthetic trading signals were generated.';
+      }
+    }
+
     // Checklist de trading
     if (input.includes('checklist') || input.includes('antes de operar')) {
       return MarketKnowledge.getAnalysisChecklist();
@@ -327,12 +459,18 @@ ${MarketKnowledge.getAnalysisChecklist()}`;
     const { PortfolioManager } = await import('./portfolioManager');
     const input = userInput.toLowerCase();
 
-    // Mock prices
-    const prices = new Map<string, number>();
-    prices.set('BTC', 64000);
-    prices.set('ETH', 3400);
-    prices.set('SOL', 140);
-    prices.set('LINK', 18);
+    const portfolioSymbols = PortfolioManager.getAssets().map((asset) => asset.symbol);
+    let prices = new Map<string, number>();
+
+    if (portfolioSymbols.length > 0) {
+      try {
+        const liveQuotes = await fetchLiveCryptoQuotes(portfolioSymbols);
+        prices = new Map([...liveQuotes].map(([symbol, quote]) => [symbol, quote.price]));
+      } catch (error) {
+        console.error('[Portfolio] Live price error:', error);
+        return '⚠️ Live portfolio prices are temporarily unavailable. No fabricated prices are shown.';
+      }
+    }
 
     if (input.includes('mi portfolio') || input.includes('mis activos')) {
       const assets = PortfolioManager.getAssets();
@@ -360,7 +498,19 @@ Comandos disponibles:
       if (symbolMatch && amountMatch) {
         const symbol = symbolMatch[1].toUpperCase();
         const amount = parseFloat(amountMatch[1]);
-        const price = prices.get(symbol) || 0;
+        let price = prices.get(symbol);
+        if (price == null) {
+          try {
+            const livePrices = await fetchLiveCryptoQuotes([symbol]);
+            price = livePrices.get(symbol)?.price;
+          } catch (error) {
+            console.error('[Portfolio] Live price error:', error);
+          }
+        }
+
+        if (price == null) {
+          return '⚠️ Live price unavailable. The asset was not added with a fabricated price.';
+        }
 
         PortfolioManager.addAsset(symbol, symbol, amount, price);
         
@@ -400,4 +550,21 @@ Comandos disponibles:
 • "añadir BTC 0.5" - Añadir activo
 • "rebalancear" - Recomendaciones de distribución`;
   }
+}
+
+
+function formatCapabilityRuntimeResult(runtime: Awaited<ReturnType<typeof runCapabilityRuntime>>): string {
+  const status = runtime.status === "completed"
+    ? "✅ Capability workflow completed."
+    : runtime.status === "waiting_approval"
+      ? "⏳ Capability workflow is waiting for approval."
+      : "⚠️ Capability workflow failed.";
+
+  const details = runtime.outputs.map((output) => {
+    const label = output.capability.toUpperCase();
+    if (!output.ok) return `## ${label}\n❌ ${output.error || "Capability failed."}`;
+    return `## ${label}\n${typeof output.output === "string" ? output.output : JSON.stringify(output.output, null, 2)}`;
+  }).join("\n\n---\n\n");
+
+  return `${status}\nRun ID: ${runtime.runId}\n\n${details || "No capability output was produced."}`;
 }
