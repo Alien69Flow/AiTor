@@ -122,9 +122,41 @@ const MARKER_GLYPHS: Record<string, string> = {
 };
 
 function markerIcon(type: string, color: string): string {
+  // Aircraft use purpose-built silhouettes with no shield/background.
+  if (type === "flight") {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M19 3.5c.7-.7 1.3-.7 2 0l2.1 12.1 11.4 6.2v3L23 22.1l-.8 10.1 4.3 2.7v2L20 35.1l-6.5 1.8v-2l4.3-2.7L17 22.1 5.5 24.8v-3l11.4-6.2L19 3.5Z" fill="${color}" stroke="#071018" stroke-width="1" stroke-linejoin="round"/></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+  if (type === "helicopter") {
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><g fill="none" stroke="${color}" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13H32M20 13V17M13 20H25Q29 20 29 24V25H14Q10 25 10 21Q10 20 13 20Z"/><path d="M29 22L35 19M14 28L11 32M25 28L28 32M20 13V8M15 8H25"/></g><circle cx="20" cy="22" r="2" fill="${color}"/></svg>`;
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
   const glyph = MARKER_GLYPHS[type] || "•";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 2 36 11v18L20 38 4 29V11Z" fill="#05070a" fill-opacity=".9" stroke="${color}" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="${color}" fill-opacity=".16"/><text x="20" y="25" text-anchor="middle" font-family="monospace" font-size="16" font-weight="700" fill="${color}">${glyph}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/** Classify from the feed's documented ADS-B emitter category when present.
+ * Do not infer military status from callsigns or unverified type-name guesses.
+ */
+function aircraftMarkerStyle(
+  aircraftType?: string | null,
+  aircraftCategory?: string | null,
+): { icon: "flight" | "helicopter"; color: string } {
+  const category = (aircraftCategory || "").trim().toUpperCase();
+  // ADS-B emitter categories: A1 light, A2 small, A3 large, A4 high-vortex,
+  // A5 heavy, A6 high-performance, A7 rotorcraft.
+  if (category === "A7") return { icon: "helicopter", color: "#F59E0B" };
+  if (category === "A1" || category === "A2") return { icon: "flight", color: "#34D399" };
+  if (category === "A3" || category === "A4" || category === "A5") return { icon: "flight", color: "#60A5FA" };
+  if (category === "A6") return { icon: "flight", color: "#A78BFA" };
+
+  // Type designators are a fallback only; not every source record has one.
+  const type = (aircraftType || "").trim().toUpperCase();
+  if (/^(H[0-9A-Z]{2,4}|R[0-9A-Z]{2,4})$/.test(type)) return { icon: "helicopter", color: "#F59E0B" };
+  if (type) return { icon: "flight", color: "#A78BFA" };
+  return { icon: "flight", color: "#38BDF8" }; // unclassified, never guess
 }
 
 function eventPayload(data: Record<string, unknown>) {
@@ -730,49 +762,84 @@ export function CesiumGlobe({
       return;
     }
 
-    // Remove old entities
-    flightEntityIdsRef.current.forEach(id => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    flightEntityIdsRef.current = [];
+    // Update existing entities in place. Rebuilding every billboard on each
+    // 15-second poll creates avoidable allocation and rendering churn.
+    const seenIds = new Set<string>();
 
-    // Add flight markers
+    // Add or update flight markers
     flights.forEach((flight, i) => {
-      if (!flight.latitude || !flight.longitude) return;
-      
-      const entityId = `flight-${i}`;
-      viewer.entities.add({
-        id: entityId,
-        position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
-        billboard: {
-          image: markerIcon("flight", "#69AF00"), width: 22, height: 22,
-          rotation: -CesiumMath.toRadians(flight.heading || 0),
-          scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: eventPayload({
+      if (
+        !Number.isFinite(flight.latitude) ||
+        !Number.isFinite(flight.longitude) ||
+        flight.latitude < -90 || flight.latitude > 90 ||
+        flight.longitude < -180 || flight.longitude > 180
+      ) return;
+
+      const entityId = `flight-${flight.icao24 || i}`;
+      seenIds.add(entityId);
+      const marker = aircraftMarkerStyle(flight.aircraftType, flight.aircraftCategory);
+      const position = Cartesian3.fromDegrees(
+        flight.longitude,
+        flight.latitude,
+        Math.max(0, flight.altitude || 0),
+      );
+      const image = markerIcon(marker.icon, marker.color);
+      const existing = viewer.entities.getById(entityId);
+
+      if (existing) {
+        existing.position = position;
+        if (existing.billboard) {
+          existing.billboard.image = image;
+          existing.billboard.rotation = -CesiumMath.toRadians(flight.heading || 0);
+        }
+        if (existing.label) existing.label.text = flight.callsign || flight.icao24;
+        existing.properties = eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
           description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
+          type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
-        }),
-        label: {
-          text: `${flight.callsign}`,
-          font: "8px monospace",
-          fillColor: hexToColor("#00FFFF", 0.8),
-          outlineColor: Color.BLACK,
-          outlineWidth: 1,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -8),
-          scaleByDistance: new NearFarScalar(1e5, 0.8, 5e6, 0.1),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-      });
-      flightEntityIdsRef.current.push(entityId);
+        });
+      } else {
+        viewer.entities.add({
+          id: entityId,
+          position,
+          billboard: {
+            image, width: 22, height: 22,
+            rotation: -CesiumMath.toRadians(flight.heading || 0),
+            scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          properties: eventPayload({
+            lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
+            description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+            type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
+            date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
+          }),
+          label: {
+            text: flight.callsign || flight.icao24,
+            font: "8px monospace",
+            fillColor: hexToColor("#00FFFF", 0.8),
+            outlineColor: Color.BLACK,
+            outlineWidth: 1,
+            style: 2,
+            verticalOrigin: VerticalOrigin.BOTTOM,
+            horizontalOrigin: HorizontalOrigin.CENTER,
+            pixelOffset: new Cartesian2(0, -8),
+            scaleByDistance: new NearFarScalar(1e5, 0.8, 5e6, 0.1),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+      }
     });
+
+    // Remove only aircraft that disappeared from the latest valid snapshot.
+    flightEntityIdsRef.current.forEach((id) => {
+      if (!seenIds.has(id)) {
+        const entity = viewer.entities.getById(id);
+        if (entity) viewer.entities.remove(entity);
+      }
+    });
+    flightEntityIdsRef.current = [...seenIds];
   }, [flights, envLayers]);
 
   // Marine Traffic layer — ship markers from VesselFinder
