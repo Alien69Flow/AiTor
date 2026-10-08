@@ -162,6 +162,7 @@ interface CesiumGlobeProps {
   surfaceWeather?: {
     id: string; name: string; lat: number; lon: number;
     pressureHpa: number; windSpeedMs: number; windDirectionDeg: number;
+    temperatureC: number; humidityPercent: number;
   }[];
 }
 
@@ -1215,7 +1216,7 @@ export function CesiumGlobe({
     }
 
     // --- Open-Meteo surface wind / pressure ---
-    if (active.has("wind") || active.has("isobars")) {
+    if (active.has("wind") || active.has("isobars") || active.has("temperature") || active.has("humidity")) {
       surfaceWeather.forEach((p) => {
         const id = `surface-${p.id}`;
         const rad = (p.windDirectionDeg * Math.PI) / 180;
@@ -1244,7 +1245,11 @@ export function CesiumGlobe({
           label: {
             text: active.has("isobars")
               ? `${Math.round(p.pressureHpa)} hPa`
-              : `${p.windSpeedMs.toFixed(0)} m/s`,
+              : active.has("humidity")
+                ? `${Math.round(p.humidityPercent)}% RH`
+                : active.has("temperature")
+                  ? `${p.temperatureC.toFixed(1)}°C`
+                  : `${p.windSpeedMs.toFixed(0)} m/s · ${Math.round(p.windDirectionDeg)}°`,
             font: "9px monospace",
             fillColor: hexToColor("#A5B4FC", 0.9),
             outlineColor: Color.BLACK,

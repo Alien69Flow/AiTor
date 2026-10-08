@@ -37,6 +37,18 @@ const DAO_LINKS = [
     logo: "",
   },
   {
+    label: "Alien69Flow OpenSea",
+    url: "https://opensea.io/Alien69Flow",
+    desc: "Official creator profile · Ethereum wallet",
+    logo: "",
+  },
+  {
+    label: "AlienFlowSpace OpenSea",
+    url: "https://opensea.io/AlienFlowSpace",
+    desc: "Official DAO profile · Ethereum wallet",
+    logo: "",
+  },
+  {
     label: "GitHub",
     url: "https://github.com/Alien69Flow/AiTor",
     desc: "Source repository",

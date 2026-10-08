@@ -4,7 +4,6 @@ import { useCryptoCheckout } from "@/hooks/useCryptoCheckout";
 import { useDaoAccess } from "@/hooks/useDaoAccess";
 import { useWalletAuth } from "@/hooks/useWalletAuth";
 import { useAuth } from "@/hooks/useAuth";
-import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { PLANS } from "@/lib/tiers";
 import { TIER_RANK, type Tier } from "@/lib/globe-layers";
@@ -34,7 +33,6 @@ export function PricingModal({ open, onClose, reason, currentTier = "signal" }: 
   const { verify, busy: verifying, result, error: holdingsError } = useDaoAccess();
   const { signIn: walletSignIn, busy: walletBusy } = useWalletAuth();
   const { user } = useAuth();
-  const navigate = useNavigate();
 
   useEffect(() => {
     if (!open) return;
