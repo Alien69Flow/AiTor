@@ -1,7 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
+import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio, BrainCircuit } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
-import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 const CAPABILITIES = [
   { icon: Search, title: "Búsqueda Web", desc: "Información en tiempo real con Firecrawl", prompt: "Busca en la web: últimas noticias sobre crypto y DeFi" },
@@ -112,11 +111,9 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
               <div className="absolute w-28 h-28 rounded-full bg-primary/5 blur-3xl animate-pulse pointer-events-none" />
             </>
           )}
-          <img
-            src={alienflowLogo}
-            alt="AlienFlow"
-            className={`object-contain relative z-10 drop-shadow-[0_0_40px_hsl(var(--primary)/0.5)] ${isCompact ? "w-12 h-12" : "w-20 h-20"}`}
-          />
+          <div className={`relative z-10 flex items-center justify-center border border-primary/30 bg-primary/10 shadow-[0_0_40px_hsl(var(--primary)/0.28)] ${isCompact ? "h-12 w-12" : "h-20 w-20"}`}>
+            <BrainCircuit className={isCompact ? "h-7 w-7 text-primary" : "h-11 w-11 text-primary"} aria-label="AI Tor" />
+          </div>
         </div>
         <div className="text-center">
           <h1 className={`font-heading font-bold text-foreground tracking-wider neon-text-green ${isCompact ? "text-2xl" : "text-4xl sm:text-5xl"}`}>
