@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Settings, Wallet, Key, Shield, User, Radio, Sparkles, ExternalLink, Globe } from "lucide-react";
+import { Settings, Wallet, Key, Shield, User, Radio, Sparkles, ExternalLink, Globe, Landmark } from "lucide-react";
 import { OsintConsole } from "./OsintConsole";
 import { PricingModal } from "./PricingModal";
 
@@ -34,6 +34,18 @@ const DAO_LINKS = [
     label: "ATrip",
     url: "https://atrip.alienflow.space",
     desc: "Alien Travel Trip ",
+    logo: "",
+  },
+  {
+    label: "Alien69Flow OpenSea",
+    url: "https://opensea.io/Alien69Flow",
+    desc: "Official creator profile · Ethereum wallet",
+    logo: "",
+  },
+  {
+    label: "AlienFlowSpace OpenSea",
+    url: "https://opensea.io/AlienFlowSpace",
+    desc: "Official DAO profile · Ethereum wallet",
     logo: "",
   },
   {
@@ -89,17 +101,8 @@ export function SystemTab() {
           <div className="max-w-2xl w-full space-y-6">
             {/* Header */}
             <div className="text-center space-y-3">
-              <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mx-auto overflow-hidden">
-                <img
-                  src="/alienflow-logo.webp"
-                  alt="AlienFlow DAO"
-                  className="w-12 h-12 object-contain"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                    const parent = (e.target as HTMLImageElement).parentElement;
-                    if (parent) parent.innerHTML = '<span class="text-2xl font-heading text-primary">DAO</span>';
-                  }}
-                />
+              <div className="mx-auto inline-flex h-16 w-16 items-center justify-center border border-primary/20 bg-primary/10">
+                <Landmark className="h-8 w-8 text-primary" aria-label="AlienFlow DAO" />
               </div>
               <div>
                 <h2 className="text-xl font-heading text-foreground tracking-wide">DAO System</h2>

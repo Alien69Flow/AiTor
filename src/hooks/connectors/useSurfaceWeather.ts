@@ -8,6 +8,8 @@ export interface SurfaceWeatherPoint {
   pressureHpa: number;
   windSpeedMs: number;
   windDirectionDeg: number;
+  temperatureC: number;
+  humidityPercent: number;
   time: string;
 }
 
@@ -47,6 +49,8 @@ interface OpenMeteoResponse {
     surface_pressure?: number;
     wind_speed_10m?: number;
     wind_direction_10m?: number;
+    temperature_2m?: number;
+    relative_humidity_2m?: number;
   };
 }
 
@@ -59,7 +63,7 @@ export function useSurfaceWeather(enabled: boolean, intervalMs = 900_000) {
     async (signal) => {
       const lat = GRID.map((g) => g.lat).join(",");
       const lon = GRID.map((g) => g.lon).join(",");
-      const url = `${OPEN_METEO}?latitude=${lat}&longitude=${lon}&current=surface_pressure,wind_speed_10m,wind_direction_10m`;
+      const url = `${OPEN_METEO}?latitude=${lat}&longitude=${lon}&current=surface_pressure,wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m`;
       const json = await safeFetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(url, {
         signal,
         timeoutMs: 9000,
@@ -77,6 +81,8 @@ export function useSurfaceWeather(enabled: boolean, intervalMs = 900_000) {
             pressureHpa: row.current.surface_pressure ?? 0,
             windSpeedMs: row.current.wind_speed_10m ?? 0,
             windDirectionDeg: row.current.wind_direction_10m ?? 0,
+            temperatureC: row.current.temperature_2m ?? 0,
+            humidityPercent: row.current.relative_humidity_2m ?? 0,
             time: row.current.time ?? "",
           } satisfies SurfaceWeatherPoint;
         })

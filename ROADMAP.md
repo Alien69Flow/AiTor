@@ -181,6 +181,12 @@ backend/workflows/governanceLoops.ts
 
 ## 🌍 FASE 6: GLOBE MEJORAS
 
+### 6.0 Capas en preparación
+- [x] Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente
+- [ ] Mareas: dirección, velocidad y altura desde una fuente oceánica pública verificable
+- [ ] Vista orbital ampliada: Sol, Luna, planetas, asteroides y satélites con efemérides compartidas con COSMOS
+- [ ] Controles de tiempo y altitud para separar superficie, atmósfera y órbita
+
 ### 6.1 Capas de Datos Adicionales
 ```
 GlobeDashboard.tsx

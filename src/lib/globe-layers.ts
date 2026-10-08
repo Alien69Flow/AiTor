@@ -11,6 +11,7 @@ export type EnvLayerKey =
 	| "isobars"
 	| "wind"
 	| "temperature"
+	| "humidity"
 	| "precipitation"
 	| "solarActivity"
 	| "wildfires"
@@ -117,6 +118,17 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Rain, snow, and precipitation intensity"
+	},
+	{
+		key: "humidity",
+		label: "Humidity %",
+		group: "Atmospheric & Weather",
+		color: "#22d3ee",
+		Icon: Droplets,
+		requiredTier: "signal",
+		source: "Open-Meteo",
+		freshness: "15 min",
+		description: "Global relative humidity telemetry"
 	},
 	{ 
 		key: "isobars", 
@@ -330,6 +342,8 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	"atmosphere",
 	"clouds",
 	"temperature",
+	"humidity",
+	"precipitation",
 	"wildfires",
 	"earthquakes",
 	"airTraffic",

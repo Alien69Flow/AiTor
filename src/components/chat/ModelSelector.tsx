@@ -27,10 +27,10 @@ const ORACLE_TYPE_BADGES: Record<string, { label: string; className: string }> =
 
 // Dynamic glow color per oracle type — used for trigger button & active item
 const ORACLE_GLOW: Record<string, { glow: string; ring: string; iconBg: string }> = {
-  primary:    { glow: "shadow-[0_0_20px_rgba(105,175,0,0.35)]", ring: "ring-1 ring-[#69af00]/40",  iconBg: "bg-[#69af00]/15" },
-  advanced:   { glow: "shadow-[0_0_22px_rgba(255,215,0,0.4)]",  ring: "ring-1 ring-[#FFD700]/45", iconBg: "bg-[#FFD700]/15" },
-  blockchain: { glow: "shadow-[0_0_18px_rgba(0,255,255,0.35)]", ring: "ring-1 ring-cyan-400/40",  iconBg: "bg-cyan-400/10" },
-  external:   { glow: "shadow-[0_0_18px_rgba(255,0,255,0.3)]",  ring: "ring-1 ring-fuchsia-400/40", iconBg: "bg-fuchsia-400/10" },
+  primary:    { glow: "shadow-[0_0_20px_hsl(var(--primary)/0.22)]", ring: "ring-1 ring-primary/40", iconBg: "bg-primary/15" },
+  advanced:   { glow: "shadow-[0_0_20px_hsl(var(--accent)/0.24)]", ring: "ring-1 ring-accent/45", iconBg: "bg-accent/15" },
+  blockchain: { glow: "shadow-[0_0_18px_hsl(var(--glow-cyan)/0.25)]", ring: "ring-1 ring-primary/30", iconBg: "bg-primary/10" },
+  external:   { glow: "shadow-[0_0_18px_hsl(var(--secondary)/0.22)]", ring: "ring-1 ring-secondary/40", iconBg: "bg-secondary/10" },
 };
 const getGlow = (type?: string) => ORACLE_GLOW[type || "primary"] || ORACLE_GLOW.primary;
 
@@ -93,29 +93,28 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button className={cn(
-          "flex items-center gap-2 h-9 px-3 rounded-full font-mono text-xs group",
-          "bg-black/40 backdrop-blur-xl border border-white/10",
-          "hover:bg-black/60 hover:border-white/20 transition-all duration-300",
+          "group flex h-8 items-center gap-1.5 border border-border/70 bg-card/80 px-2 font-mono text-[10px] backdrop-blur-xl",
+          "hover:border-primary/40 hover:bg-card transition-all duration-300",
           selGlow.glow, selGlow.ring,
         )}>
           <span className={cn(
-            "w-6 h-6 rounded-full flex items-center justify-center text-sm transition-transform duration-300 group-hover:scale-110",
+            "flex h-5 w-5 items-center justify-center text-xs transition-transform duration-300 group-hover:scale-110",
             selGlow.iconBg
           )}>{selected ? getIcon(selected) : "🔮"}</span>
-          <span className="text-foreground/80 truncate max-w-[100px] sm:max-w-[130px]">{selected?.name || "Modelo"}</span>
+          <span className="max-w-[72px] truncate text-foreground/80 sm:max-w-[120px]">{selected?.name || "Oráculo"}</span>
           {selected?.oracleType && ORACLE_TYPE_BADGES[selected.oracleType] && (
             <Badge variant="outline" className={cn("text-[7px] px-1.5 py-0 h-3.5 font-mono", ORACLE_TYPE_BADGES[selected.oracleType].className)}>
               {ORACLE_TYPE_BADGES[selected.oracleType].label}
             </Badge>
           )}
-          {selected?.speed && (
+          {selected?.speed && <div className="hidden lg:block">
             <SpeedIndicator speed={selected.speed} />
-          )}
+          </div>}
           <ChevronDown className={cn("w-3 h-3 text-muted-foreground/50 group-hover:text-foreground/60 transition-all duration-200", open && "rotate-180")} />
         </button>
       </PopoverTrigger>
       <PopoverContent
-        className="w-[380px] p-0 bg-black/70 backdrop-blur-2xl border border-white/10 shadow-2xl shadow-black/50 animate-in zoom-in-95 fade-in duration-200"
+        className="w-[min(380px,calc(100vw-16px))] border border-border bg-popover/95 p-0 text-popover-foreground shadow-2xl backdrop-blur-2xl animate-in zoom-in-95 fade-in duration-200"
         align="center"
         sideOffset={8}
       >
@@ -156,13 +155,13 @@ export function ModelSelector({ value, onChange }: ModelSelectorProps) {
                           className={cn(
                             "flex items-center gap-3 py-3 px-2 rounded-lg cursor-pointer transition-all duration-150",
                             !model.available && "opacity-35 cursor-not-allowed",
-                            isSelected && cn("bg-white/5 border border-white/15", glow.glow),
-                            !isSelected && model.available && "hover:bg-white/[0.04] border border-transparent"
+                            isSelected && cn("bg-primary/5 border border-primary/20", glow.glow),
+                            !isSelected && model.available && "hover:bg-muted/30 border border-transparent"
                           )}
                         >
                           <div className={cn(
                             "w-9 h-9 rounded-lg border flex items-center justify-center text-base shrink-0 transition-all duration-300",
-                            isSelected ? cn(glow.iconBg, glow.ring, "border-transparent") : "bg-white/[0.03] border-white/10"
+                            isSelected ? cn(glow.iconBg, glow.ring, "border-transparent") : "bg-muted/20 border-border/60"
                           )}>
                             {getIcon(model)}
                           </div>

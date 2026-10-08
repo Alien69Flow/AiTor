@@ -55,7 +55,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
 
   // --- 1. Weather & atmosphere -------------------------------------------
   const rain = useRainViewer(on("precipitation"));
-  const surface = useSurfaceWeather(on("wind") || on("isobars"));
+  const surface = useSurfaceWeather(on("wind") || on("isobars") || on("temperature") || on("humidity"));
 
   // --- 2. Seismic & emergencies ------------------------------------------
   const emsc = useEmscQuakes(activeLayers ? on("earthquakes") : true);

@@ -142,7 +142,7 @@ export function LegendPanel({
                 {defs.map((def) => {
                   const locked = !hasAccess(def.requiredTier);
                   const statusKey = def.key === "precipitation" ? "rainRadar"
-                    : def.key === "wind" || def.key === "isobars" ? "surfaceWeather"
+                    : def.key === "wind" || def.key === "isobars" || def.key === "temperature" || def.key === "humidity" ? "surfaceWeather"
                     : def.key === "earthquakes" ? "quakesEmsc"
                     : def.key === "wildfires" ? "fires"
                     : def.key === "solarActivity" ? "aurora"

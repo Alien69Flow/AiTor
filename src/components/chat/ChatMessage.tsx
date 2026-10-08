@@ -1,9 +1,8 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/hooks/useChat";
-import { User, Copy, Check } from "lucide-react";
+import { User, Copy, Check, Cpu } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
-import alienflowLogo from "@/assets/alienflow-logo.webp";
 
 interface ChatMessageProps {
   message: Message;
@@ -37,7 +36,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           ) : (
             <div className="w-7 h-7 rounded-lg border border-secondary/30 overflow-hidden bg-card/60 flex items-center justify-center">
-              <img src={alienflowLogo} alt="AI Tor" className="w-6 h-6 object-contain" />
+              <Cpu className="h-4 w-4 text-secondary" aria-label="AI Tor" />
             </div>
           )}
         </div>
