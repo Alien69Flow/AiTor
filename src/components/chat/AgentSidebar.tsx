@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Brain, Atom, Image, Code2, Globe, Link2,
-  ChevronLeft, ChevronRight, Activity,
+  Activity,
   Share2, Loader2, Network, LogOut, Zap, MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -63,16 +63,8 @@ export function AgentSidebar({
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="icon"
-        onClick={onToggle}
-        className="absolute top-2 left-2 z-40 h-8 w-8 text-primary/50 hover:text-primary"
-      >
-        {isOpen ? <ChevronLeft className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
-      </Button>
-
-      <div className={`${isOpen ? "w-60 border-r border-secondary/15" : "w-0"} transition-all duration-300 overflow-hidden bg-card/40 backdrop-blur-xl flex flex-col h-full z-20 shrink-0`}>
+      {isOpen && <button className="fixed inset-0 z-30 bg-background/70 md:hidden" onClick={onToggle} aria-label="Cerrar panel" />}
+      <aside className={`${isOpen ? "translate-x-0 md:w-60 md:border-r" : "-translate-x-full md:w-0 md:translate-x-0"} fixed inset-y-0 left-0 z-40 w-64 overflow-hidden border-secondary/15 bg-card/95 backdrop-blur-xl transition-all duration-300 md:relative md:z-20 md:flex md:h-full md:shrink-0`}>
         <div className="w-60 h-full flex flex-col p-4 overflow-y-auto no-scrollbar">
 
           {/* Tab Switcher */}
@@ -203,7 +195,7 @@ export function AgentSidebar({
             <p className="text-[8px] font-mono text-muted-foreground/30 tracking-wider">{MOLTBOOK_AGENT.collective}</p>
           </div>
         </div>
-      </div>
+      </aside>
     </>
   );
 }

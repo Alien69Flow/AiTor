@@ -7,11 +7,13 @@ import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { AgentSidebar } from "./AgentSidebar";
+import { NeuralBrain } from "./NeuralBrain";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [workspace, setWorkspace] = useState<"chat" | "neural">("chat");
   const { messages, isLoading, sendMessage, clearChat } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +38,17 @@ export function ChatContainer() {
   }, [messages, isLoading]);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 bg-background">
+    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-background">
+      <AgentSidebar
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(false)}
+        conversations={[]}
+        currentConversationId={null}
+        onSelectConversation={() => undefined}
+        onDeleteConversation={() => undefined}
+        onNewConversation={handleNewChat}
+      />
+      <div className="flex min-w-0 flex-1 flex-col">
       <ChatHeader
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
@@ -45,8 +57,11 @@ export function ChatContainer() {
         hasMessages={messages.length > 0}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
         sidebarOpen={sidebarOpen}
+        workspace={workspace}
+        onWorkspaceChange={setWorkspace}
       />
 
+      {workspace === "neural" ? <NeuralBrain /> : <>
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         {messages.length === 0 ? (
           <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />
@@ -62,6 +77,8 @@ export function ChatContainer() {
 
       <div className="border-t border-border bg-background/80 backdrop-blur-sm">
         <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />
+      </div>
+      </>}
       </div>
     </div>
   );
