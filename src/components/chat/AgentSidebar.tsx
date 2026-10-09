@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Brain, Atom, Image, Code2, Globe, Link2,
   Activity,
-  Share2, Loader2, Network, LogOut, Zap, MessageSquare
+  Share2, Loader2, Network, LogOut, Zap, MessageSquare, X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -63,9 +63,12 @@ export function AgentSidebar({
 
   return (
     <>
-      {isOpen && <button className="fixed inset-0 z-30 bg-background/70 md:hidden" onClick={onToggle} aria-label="Cerrar panel" />}
-      <aside className={`${isOpen ? "translate-x-0 md:w-60 md:border-r" : "-translate-x-full md:w-0 md:translate-x-0"} fixed inset-y-0 left-0 z-40 w-64 overflow-hidden border-secondary/15 bg-card/95 backdrop-blur-xl transition-all duration-300 md:relative md:z-20 md:flex md:h-full md:shrink-0`}>
+      {isOpen && <button className="fixed inset-0 z-[60] bg-background/70 md:hidden" onClick={onToggle} aria-label="Cerrar panel" />}
+      <aside className={`${isOpen ? "translate-x-0 md:w-60 md:border-r" : "-translate-x-full md:w-0 md:translate-x-0"} fixed inset-y-0 left-0 z-[70] w-64 overflow-hidden border-secondary/15 bg-card/95 backdrop-blur-xl transition-all duration-300 md:relative md:z-20 md:flex md:h-full md:shrink-0`}>
         <div className="w-60 h-full flex flex-col p-4 overflow-y-auto no-scrollbar">
+          <div className="mb-2 flex justify-end md:hidden">
+            <Button variant="ghost" size="icon" onClick={onToggle} className="h-8 w-8 rounded-sm text-muted-foreground" aria-label="Cerrar panel lateral"><X className="h-4 w-4" /></Button>
+          </div>
 
           {/* Tab Switcher */}
           <div className="flex items-center gap-1 mb-4 p-0.5 rounded-lg bg-muted/20 border border-border/30">
