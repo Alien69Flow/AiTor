@@ -1,5 +1,6 @@
 import { X, Wallet, Loader as Loader2, CircleCheck as CheckCircle2, TriangleAlert as AlertTriangle, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useCryptoCheckout } from "@/hooks/useCryptoCheckout";
 import { useDaoAccess } from "@/hooks/useDaoAccess";
 import { useWalletAuth } from "@/hooks/useWalletAuth";
@@ -80,7 +81,7 @@ export function PricingModal({ open, onClose, reason, currentTier = "signal" }: 
     return "Verificar holdings";
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-background/90 p-2 backdrop-blur-md sm:p-4" onClick={onClose}>
       <div
         className="relative flex max-h-[calc(100dvh-16px)] w-full max-w-6xl flex-col overflow-hidden rounded-sm border border-primary/35 bg-card/95 shadow-[0_0_70px_hsl(var(--primary)/0.18)] sm:max-h-[calc(100dvh-32px)]"
@@ -189,7 +190,8 @@ export function PricingModal({ open, onClose, reason, currentTier = "signal" }: 
         </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
