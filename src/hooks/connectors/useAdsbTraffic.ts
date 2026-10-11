@@ -13,6 +13,7 @@ interface AdsbAircraft {
   track?: number;
   r?: string;
   t?: string;
+  category?: string;
 }
 
 /**
@@ -26,15 +27,30 @@ export function useAdsbTraffic(enabled: boolean, intervalMs = 15_000, maxAircraf
         signal,
         timeoutMs: 8000,
       });
-      const list = json.ac ?? [];
-      const now = new Date(json.now ?? Date.now()).toISOString();
+      if (!json || !Array.isArray(json.ac)) {
+        throw new Error("Invalid ADS-B response: expected an aircraft array");
+      }
+      const list = json.ac;
+      const responseTime = Number(json.now);
+      const now = Number.isFinite(responseTime) && responseTime > 0
+        ? new Date(responseTime < 1e12 ? responseTime * 1000 : responseTime).toISOString()
+        : new Date().toISOString();
       const out: Flight[] = [];
       for (const a of list) {
-        if (!Number.isFinite(a.lat) || !Number.isFinite(a.lon)) continue;
+        if (
+          !Number.isFinite(a.lat) ||
+          !Number.isFinite(a.lon) ||
+          (a.lat as number) < -90 ||
+          (a.lat as number) > 90 ||
+          (a.lon as number) < -180 ||
+          (a.lon as number) > 180
+        ) continue;
         out.push({
-          icao24: a.hex ?? "",
+          icao24: (a.hex ?? "").trim().toLowerCase(),
           callsign: (a.flight ?? a.r ?? a.hex ?? "").trim(),
-          origin: a.t ?? null,
+          aircraftType: a.t?.trim().toUpperCase() || null,
+          aircraftCategory: a.category?.trim().toUpperCase() || null,
+          origin: null,
           destination: null,
           latitude: a.lat as number,
           longitude: a.lon as number,
@@ -45,7 +61,9 @@ export function useAdsbTraffic(enabled: boolean, intervalMs = 15_000, maxAircraf
         });
         if (out.length >= maxAircraft) break;
       }
-      if (!out.length) throw new Error("no aircraft in feed");
+      if (out.length === 0) {
+        throw new Error("ADS-B response contained no valid aircraft positions");
+      }
       return out;
     },
     [],
