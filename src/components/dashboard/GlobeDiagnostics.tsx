@@ -186,7 +186,7 @@ export function GlobeDiagnostics() {
           </span>
           <span className="text-slate-300">Marine Traffic</span>
           {!diagnostics.marineTrafficWorking && (
-            <span className="text-slate-500 text-xs">Using mock data (need VesselFinder key)</span>
+            <span className="text-slate-500 text-xs">Live AIS unavailable</span>
           )}
         </div>
       </div>
