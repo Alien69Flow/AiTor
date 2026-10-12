@@ -7,7 +7,7 @@ import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { AgentSidebar } from "./AgentSidebar";
-import { NeuralBrain } from "./NeuralBrain";
+import { DaoCity } from "./city/DaoCity";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function ChatContainer() {
@@ -61,7 +61,7 @@ export function ChatContainer() {
         onWorkspaceChange={setWorkspace}
       />
 
-      {workspace === "neural" ? <NeuralBrain /> : <>
+      {workspace === "neural" ? <DaoCity messages={messages} isLoading={isLoading} onSend={(prompt) => sendMessage(prompt, selectedModel)} onChat={() => setWorkspace("chat")} /> : <>
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         {messages.length === 0 ? (
           <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />

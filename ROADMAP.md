@@ -365,6 +365,12 @@ SystemTab.tsx
 
 ## 📝 NOTES
 
+### DAO City
+- [x] Sustituir Neural por ciudad holográfica 3D con distritos seleccionables.
+- [x] Conectar AI Tor y encargos por distrito al chat existente con entregables reales.
+- [ ] Formación con evaluaciones y graduación persistente: pendiente de definir criterios de acreditación con la DAO.
+- [ ] Trabajo autónomo y ciudad multiusuario: pendiente de definir permisos y aprobación de acciones externas.
+
 ### Para implementar cada feature:
 1. Crear agent/workflow en `/backend/agents/` o `/backend/workflows/`
 2. Añadir skill en `/backend/rag/` si necesita knowledge base
