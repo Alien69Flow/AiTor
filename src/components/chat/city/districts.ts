@@ -1,0 +1,10 @@
+export const CITY_DISTRICTS = [
+  { id: "nexus", name: "NEXUS", agent: "AI Tor", role: "Coordinación DAO", position: [0, 0, 0], color: "gold", action: "Planificar misión", prompt: "Ayúdame a convertir este objetivo de AlienFlow.Space DAO en una misión con pasos, responsables sugeridos y entregables: " },
+  { id: "academy", name: "ACADEMY", agent: "Mentor", role: "Formación y evaluación", position: [-6, 0, -4], color: "cyan", action: "Diseñar formación", prompt: "Diseña un itinerario de formación y una prueba de evaluación para un agente de AlienFlow.Space DAO especializado en: " },
+  { id: "forge", name: "FORGE", agent: "Manus", role: "Código y automatización", position: [6, 0, -4], color: "lime", action: "Encargar desarrollo", prompt: "Actúa como asistente técnico Manus. Analiza esta tarea para AlienFlow.Space DAO y entrega una solución revisable, sin afirmar que ejecutaste cambios externos: " },
+  { id: "sentinel", name: "SENTINEL", agent: "Security", role: "Revisión de seguridad", position: [7, 0, 4], color: "cyan", action: "Solicitar revisión", prompt: "Revisa este código o diseño desde la seguridad. Distingue hallazgos comprobables de riesgos hipotéticos; no afirmes haber ejecutado escáneres: " },
+  { id: "signal", name: "SIGNAL LAB", agent: "Social Media", role: "Contenido y propuestas", position: [-7, 0, 4], color: "lime", action: "Crear propuesta", prompt: "Genera una propuesta de contenido para AlienFlow.Space DAO lista para revisión humana. No publiques ni programes nada. Tema y plataforma: " },
+  { id: "embassy", name: "ALIEN EMBASSY", agent: "Alien Research", role: "Investigación y conocimiento", position: [0, 0, 8], color: "gold", action: "Investigar tema", prompt: "Investiga este tema para AlienFlow.Space DAO. Separa hechos, hipótesis y fuentes que necesitan verificación: " },
+] as const;
+
+export type CityDistrict = typeof CITY_DISTRICTS[number];

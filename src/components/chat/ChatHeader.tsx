@@ -68,7 +68,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
       <div className="hidden items-center gap-2 md:flex">
         <div className="flex h-8 items-center border border-border/60 bg-muted/20 p-0.5">
           <Button variant="ghost" size="sm" onClick={() => onWorkspaceChange("chat")} className={`h-7 rounded-sm px-2 text-[9px] uppercase ${workspace === "chat" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><MessageSquare className="h-3 w-3" /> Chat</Button>
-          <Button variant="ghost" size="sm" onClick={() => onWorkspaceChange("neural")} className={`h-7 rounded-sm px-2 text-[9px] uppercase ${workspace === "neural" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><BrainCircuit className="h-3 w-3" /> Neural</Button>
+          <Button variant="ghost" size="sm" onClick={() => onWorkspaceChange("neural")} className={`h-7 rounded-sm px-2 text-[9px] uppercase ${workspace === "neural" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><BrainCircuit className="h-3 w-3" /> DAO City</Button>
         </div>
         <ModelSelector value={selectedModel} onChange={onModelChange} />
       </div>
@@ -79,7 +79,7 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
           <ModelSelector value={selectedModel} onChange={onModelChange} />
         </div>
 
-        <Button variant="ghost" size="icon" onClick={() => onWorkspaceChange(workspace === "chat" ? "neural" : "chat")} aria-label={workspace === "chat" ? "Mostrar núcleo neuronal" : "Volver al chat"} className="h-8 w-8 text-primary md:hidden">
+        <Button variant="ghost" size="icon" onClick={() => onWorkspaceChange(workspace === "chat" ? "neural" : "chat")} aria-label={workspace === "chat" ? "Mostrar DAO City" : "Volver al chat"} title={workspace === "chat" ? "DAO City" : "Chat"} className="h-8 w-8 text-primary md:hidden">
           {workspace === "chat" ? <BrainCircuit className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
         </Button>
 
