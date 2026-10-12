@@ -45,6 +45,14 @@
 
     --radius: 0.5rem;
 
+    /* DAO City holographic palette */
+    --city-background: 210 33% 5%;
+    --city-surface: 204 25% 13%;
+    --city-lime: 84 100% 34%;
+    --city-gold: 51 100% 50%;
+    --city-cyan: 182 72% 54%;
+    --city-text: 190 20% 88%;
+
     /* Custom glow colors */
     --glow-green: 120 100% 50%;
     --glow-lime: 75 100% 34%;
@@ -115,6 +123,17 @@
   h1, h2, h3, h4, h5, h6 {
     @apply font-heading;
   }
+}
+
+.dao-city {
+  --background: var(--city-background);
+  --foreground: var(--city-text);
+  --primary: var(--city-lime);
+  --secondary: var(--city-gold);
+  --muted-foreground: 195 15% 65%;
+  --card: var(--city-surface);
+  --border: 190 22% 23%;
+  letter-spacing: 0;
 }
 
 /* ============================================
