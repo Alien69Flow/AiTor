@@ -3,6 +3,7 @@ import { parseUnits } from "viem";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
 import { supabase } from "@/integrations/supabase/client";
+import { classifyError, track } from "@/lib/analytics";
 import {
   BILLING_CYCLES,
   ERC20_TRANSFER_ABI,
@@ -27,10 +28,12 @@ export function useCryptoCheckout() {
   const pay = useCallback(
     async (cycle: BillingCycle, chain: PayChain, token: PayToken) => {
       setTxHash(null);
+      track("checkout_started", { cycle, chain, token });
       const { data: sessionData } = await supabase.auth.getSession();
       if (!sessionData.session) {
         setStage("error");
         setMessage("Conecta tu wallet o inicia sesión para asociar el pago a tu cuenta.");
+        track("checkout_failed", { cycle, chain, token, reason: "auth" });
         return;
       }
       if (!isConnected) {
@@ -75,10 +78,17 @@ export function useCryptoCheckout() {
 
         setStage("done");
         setMessage("Plan SYNAPSE activado. ¡Bienvenido al Nexo Soberano!");
+        track("checkout_completed", { cycle, chain, token });
       } catch (error) {
         setStage("error");
         const raw = error instanceof Error ? error.message : String(error);
         setMessage(raw.includes("User rejected") ? "Pago cancelado en la wallet." : raw);
+        track("checkout_failed", {
+          cycle,
+          chain,
+          token,
+          reason: raw.includes("User rejected") ? "user_rejected" : classifyError(error),
+        });
       }
     },
     [isConnected, chainId, address, open, switchChainAsync, writeContractAsync],

@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { Database } from './types';
 import { brokeredPreviewStorage } from './previewAuthStorage';
+import { trackSupabaseError } from '@/lib/analytics';
 
 const SUPABASE_URL =
   (import.meta.env.VITE_SUPABASE_URL as string) ||
@@ -17,3 +18,16 @@ export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABL
     autoRefreshToken: true,
   }
 });
+
+// Route every Edge Function failure to analytics in one place, so the owner can
+// see which backend calls users actually hit errors on. Behaviour is unchanged:
+// the original result (error included) is always returned to the caller.
+type InvokeFn = typeof supabase.functions.invoke;
+const invokeUntracked = supabase.functions.invoke.bind(supabase.functions) as InvokeFn;
+supabase.functions.invoke = (async (...args: Parameters<InvokeFn>) => {
+  const result = await invokeUntracked(...args);
+  if (result && typeof result === 'object' && 'error' in result && result.error) {
+    trackSupabaseError(String(args[0]), result.error);
+  }
+  return result;
+}) as InvokeFn;

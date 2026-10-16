@@ -1,4 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
+
+// Constant-time string comparison so a secret can't be guessed byte-by-byte.
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
@@ -69,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const expectedSecret = process.env.MANUS_WEBHOOK_SECRET;
   const providedSecret =
     req.headers['x-manus-webhook-secret'] || req.headers['x-webhook-secret'];
-  if (!expectedSecret || providedSecret !== expectedSecret) {
+  if (!expectedSecret || typeof providedSecret !== 'string' || !safeEqual(providedSecret, expectedSecret)) {
     return res.status(401).send('Unauthorized');
   }
 

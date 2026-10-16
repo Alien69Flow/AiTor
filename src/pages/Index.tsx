@@ -41,10 +41,10 @@ const Index = () => {
       <Helmet>
         <title>Ai Tor — Real-Time Intelligence Terminal</title>
         <meta name="description" content="Multi-oracle AI intelligence hub for real-time OSINT, global monitoring, blockchain analytics, and decentralized research. Powered by ΔlieπFlΦw DAO." />
-        <link rel="canonical" href="https://aitor.lovable.app/" />
+        <link rel="canonical" href="https://aitor.alienflow.space/" />
         <meta property="og:title" content="Ai Tor — Real-Time Intelligence Terminal" />
         <meta property="og:description" content="Multi-oracle AI intelligence hub for real-time OSINT, global monitoring, blockchain analytics, and decentralized research. Powered by ΔlieπFlΦw DAO." />
-        <meta property="og:url" content="https://aitor.lovable.app/" />
+        <meta property="og:url" content="https://aitor.alienflow.space/" />
         <meta name="twitter:title" content="Ai Tor — Real-Time Intelligence Terminal" />
         <meta name="twitter:description" content="Multi-oracle AI intelligence hub for real-time OSINT, global monitoring, blockchain analytics, and decentralized research. Powered by ΔlieπFlΦw DAO." />
         <script type="application/ld+json">
@@ -52,7 +52,7 @@ const Index = () => {
             "@context": "https://schema.org",
             "@type": "WebSite",
             name: "Ai Tor",
-            url: "https://aitor.lovable.app/",
+            url: "https://aitor.alienflow.space/",
             description:
               "Multi-oracle AI intelligence hub for real-time OSINT, global monitoring, blockchain analytics, and decentralized research.",
           })}

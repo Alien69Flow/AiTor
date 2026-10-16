@@ -13,4 +13,4 @@ Allow: /
 User-agent: *
 Allow: /
 
-Sitemap: https://aitor.lovable.app/sitemap.xml
+Sitemap: https://aitor.alienflow.space/sitemap.xml

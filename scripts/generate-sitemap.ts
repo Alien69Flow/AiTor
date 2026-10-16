@@ -3,7 +3,7 @@
 import { writeFileSync } from "fs"
 import { resolve } from "path"
 
-const BASE_URL = "https://aitor.lovable.app"
+const BASE_URL = "https://aitor.alienflow.space"
 
 interface SitemapEntry {
   path: string

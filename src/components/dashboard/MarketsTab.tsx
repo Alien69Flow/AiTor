@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { RefreshCw, ExternalLink, Search, TrendingUp, ChartBar as BarChart3, Droplets } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { track } from "@/lib/analytics";
 import { toast } from "sonner";
 
 interface Market {
@@ -176,6 +177,7 @@ export function MarketsTab() {
                       href={`https://polymarket.com/event/${market.slug}?ref=${POLYMARKET_REF}`}
                       target="_blank"
                       rel="noopener noreferrer"
+                      onClick={() => track("affiliate_click", { partner: "polymarket" })}
                       className="flex items-center gap-1 text-[9px] font-mono text-primary/60 hover:text-primary transition-colors ml-auto"
                     >
                       Trade <ExternalLink className="w-2.5 h-2.5" />

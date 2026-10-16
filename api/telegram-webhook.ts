@@ -1,4 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { timingSafeEqual } from 'crypto';
+
+// Constant-time string comparison so a secret can't be guessed byte-by-byte.
+function safeEqual(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
+}
 
 // Variables de entorno (se configuran en Vercel)
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
@@ -139,15 +148,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Verify the request really comes from Telegram (setWebhook secret_token).
-  // Only enforced when a secret is configured AND the webhook was registered
-  // with it; otherwise the bot would go silent (Telegram sends no header).
+  // Fail closed: this endpoint is public and proxies to paid AI/Manus quota, so
+  // an unsigned request is rejected. Register the webhook with the matching
+  // secret_token so Telegram actually sends the header:
+  //   curl -F "url=<PUBLIC_URL>/api/telegram-webhook" \
+  //        -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+  //        "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
   const expectedSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
   const providedSecret = req.headers['x-telegram-bot-api-secret-token'];
-  if (expectedSecret && providedSecret && providedSecret !== expectedSecret) {
+  if (!expectedSecret) {
+    console.error(
+      'TELEGRAM_WEBHOOK_SECRET is not configured — refusing unsigned webhook requests.',
+    );
     return res.status(401).send('Unauthorized');
   }
-  if (expectedSecret && !providedSecret) {
-    console.warn('Telegram webhook received without secret_token header — re-register the webhook with secret_token.');
+  if (typeof providedSecret !== 'string' || !safeEqual(providedSecret, expectedSecret)) {
+    return res.status(401).send('Unauthorized');
   }
 
   const { message } = req.body || {};

@@ -1,0 +1,88 @@
+name: CI
+
+# Quality gate + dependency audit.
+# Uses only first-party GitHub actions (actions/*) and no secrets, so it is safe
+# on pull requests from forks. Merge control lives in the branch protection
+# "required status checks" — this workflow does not auto-merge anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: typecheck · lint · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      # lockfile is generated with npm 10 (Node 22); do not regenerate with npm 11.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      # The repo carries pre-existing lint debt (135 problems: src, supabase/functions,
+      # backend). Keep it non-blocking so this gate stays useful, and flip it to
+      # blocking once that backlog is cleared. New/changed files must be clean.
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          if-no-files-found: warn
+          retention-days: 7
+
+  audit:
+    name: audit (critical only)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Fails only on *critical* advisories: advisories without a patched release
+      # are expected (see docs/dependency-audit.md) and would make this gate noise.
+      - name: Fail on critical advisories
+        shell: bash
+        run: |
+          set -o pipefail
+          npm audit --json > audit.json || true
+          node -e '
+            const a = require("./audit.json");
+            const m = a.metadata.vulnerabilities;
+            console.log(`audit: total=${m.total} critical=${m.critical} high=${m.high} moderate=${m.moderate} low=${m.low}`);
+            const critical = Object.entries(a.vulnerabilities).filter(([, v]) => v.severity === "critical");
+            if (critical.length) {
+              for (const [name, v] of critical) console.error(`CRITICAL: ${name} (${JSON.stringify(v.fixAvailable)})`);
+              process.exit(1);
+            }
+          '

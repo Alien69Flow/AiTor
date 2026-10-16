@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useChat } from "@/hooks/useChat";
 import { AI_MODELS } from "@/lib/ai-models";
+import { track } from "@/lib/analytics";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
@@ -27,6 +28,11 @@ export function ChatContainer() {
   const handleNewChat = () => {
     clearChat();
   };
+
+  // Conversion: the chat is the core engagement surface.
+  useEffect(() => {
+    track("chat_opened");
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {

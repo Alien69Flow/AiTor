@@ -10,6 +10,7 @@ import { Helmet } from "react-helmet-async";
 import { z } from "zod";
 import { Separator } from "@/components/ui/separator";
 import { SpaceBackground } from "@/components/SpaceBackground";
+import { track } from "@/lib/analytics";
 import alienflowLogo from "@/assets/alienflow-logo.webp";
 import { Mail, Lock, ArrowRight, Loader2, Wallet } from "lucide-react";
 
@@ -66,6 +67,7 @@ export default function Auth() {
             ? "Este email ya está registrado" 
             : error.message);
         } else {
+          track("signup_completed", { method: "email" });
           toast.success("¡Cuenta creada! Revisa tu email para confirmar tu cuenta.");
         }
       }
@@ -103,10 +105,10 @@ export default function Auth() {
       <Helmet>
         <title>{isLogin ? "Iniciar Sesión" : "Registrarse"} | Ai Tor</title>
         <meta name="description" content="Accede a Ai Tor — Terminal de Inteligencia Autónoma de ΔlieπFlΦw DAO" />
-        <link rel="canonical" href="https://aitor.lovable.app/auth" />
+        <link rel="canonical" href="https://aitor.alienflow.space/auth" />
         <meta property="og:title" content={`${isLogin ? "Iniciar Sesión" : "Registrarse"} | Ai Tor`} />
         <meta property="og:description" content="Accede a Ai Tor — Terminal de Inteligencia Autónoma de ΔlieπFlΦw DAO" />
-        <meta property="og:url" content="https://aitor.lovable.app/auth" />
+        <meta property="og:url" content="https://aitor.alienflow.space/auth" />
         <meta name="twitter:title" content={`${isLogin ? "Iniciar Sesión" : "Registrarse"} | Ai Tor`} />
         <meta name="twitter:description" content="Accede a Ai Tor — Terminal de Inteligencia Autónoma de ΔlieπFlΦw DAO" />
       </Helmet>
