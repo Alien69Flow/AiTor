@@ -17,8 +17,8 @@ import { useMarineTraffic } from "@/hooks/useMarineTraffic";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
 import { CONFLICT_ZONES } from "@/lib/geo-datasets";
 import { DEFAULT_ACTIVE_LAYERS, TIER_LABEL, layerDef, type EnvLayerKey } from "@/lib/globe-layers";
-import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Radar, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen } from "lucide-react";
-import { LedIndicator } from "./GlassPanels";
+import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { GlobeCommandBar } from "./GlobeCommandBar";
 import { Button } from "@/components/ui/button";
 
 type MobilePanel = "legend" | "navigate" | "diagnostics" | "feed" | null;
@@ -80,17 +80,7 @@ export function GlobeDashboard() {
     <section className="flex flex-1 min-h-0 flex-col overflow-hidden bg-background font-mono" aria-label="Global strategic command">
       <h2 className="sr-only">Globo táctico en tiempo real: capas meteorológicas, OSINT y mercados</h2>
 
-      <header className="z-30 flex h-9 shrink-0 items-center justify-between border-b border-primary/25 bg-card/75 px-3 backdrop-blur-xl md:px-5">
-        <div className="flex min-w-0 items-center gap-2">
-          <LedIndicator color="#69af00" active pulse size="sm" />
-          <Radar className="h-3.5 w-3.5 shrink-0 text-primary" />
-          <span className="truncate text-[10px] font-bold uppercase text-foreground md:text-xs">Global Strategic Command</span>
-        </div>
-        <div className="flex items-center gap-2 text-[8px] uppercase md:gap-4">
-          <span className="text-muted-foreground">{activeSignals.toLocaleString()} signals</span>
-          <span className="hidden border border-primary/30 bg-primary/10 px-2 py-0.5 text-primary sm:inline">Mission active</span>
-        </div>
-      </header>
+      <GlobeCommandBar activeSignals={activeSignals} layerStatus={intel.layerStatus} layersCount={envLayers.size} />
 
       {/* LIVE MARKETS — must stay anchored at the TOP of the globe view.
           Do not move this into the bottom group with the alerts bar. */}
