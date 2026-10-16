@@ -1,0 +1,16 @@
+name: Dissent Review
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  dissent:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: itsarbit/dissent@v1
+        with:
+          api-key: ${{ secrets.OPENAI_API_KEY }}
