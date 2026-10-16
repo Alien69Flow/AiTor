@@ -3,6 +3,14 @@
 Estado medido el 2026-10-16 en este repositorio, con `package-lock.json` regenerado con
 **npm 10.9.4 (Node 22)** — el mismo npm que usa CI y Vercel.
 
+> **Nunca regeneres `package-lock.json` con npm 11.** npm 11 poda entradas opcionales que
+> npm 10 exige, y entonces `npm ci` muere con `EUSAGE` (`Missing: … from lock file`) en Node
+> 22. Eso rompe el build y **congela el despliegue en la última versión «buena»** sin que el
+> código cambie. Comprobado aquí: el lockfile anterior a este cambio fallaba
+> `npx npm@10.9.4 ci` con `Missing: p-locate@4.1.0 from lock file`. Usa siempre
+> `npx npm@10.9.4 install` para el lockfile, y verifica con `npx npm@10.9.4 ci` **antes** de
+> hacer push.
+
 | Recuento | Antes | Después |
 | --- | --- | --- |
 | total | 54 | 23 |

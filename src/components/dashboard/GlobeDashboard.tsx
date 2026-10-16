@@ -92,7 +92,8 @@ export function GlobeDashboard() {
         </div>
       </header>
 
-      {/* LIVE MARKETS at the top */}
+      {/* LIVE MARKETS — must stay anchored at the TOP of the globe view.
+          Do not move this into the bottom group with the alerts bar. */}
       <div className="z-30 shrink-0"><MarketTicker prices={intel.cryptoPrices} /></div>
 
       <div className="relative flex min-h-0 flex-1">
@@ -168,6 +169,8 @@ export function GlobeDashboard() {
         </div>}
       </div>
 
+      {/* LIVE ALERTS / events (fires, earthquakes, news) — must stay at the BOTTOM.
+          Keep it separate from the LIVE MARKETS bar above. */}
       <div className="z-30 shrink-0">
         <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} />
         <div className="flex h-6 items-center justify-between border-t border-border/60 bg-card/90 px-3 text-[8px] uppercase text-muted-foreground md:px-5">
