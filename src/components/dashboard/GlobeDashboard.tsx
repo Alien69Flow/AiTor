@@ -19,6 +19,7 @@ import { CONFLICT_ZONES } from "@/lib/geo-datasets";
 import { DEFAULT_ACTIVE_LAYERS, TIER_LABEL, layerDef, type EnvLayerKey } from "@/lib/globe-layers";
 import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { GlobeCommandBar } from "./GlobeCommandBar";
+import { CosmicZoom } from "../globe/CosmicZoom";
 import { Button } from "@/components/ui/button";
 
 type MobilePanel = "legend" | "navigate" | "diagnostics" | "feed" | null;
@@ -40,6 +41,20 @@ export function GlobeDashboard() {
   const { outages } = useInternetOutages(true);
   const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
+  // null = globe view; a number = log10(metres) the cosmic zoom opened at.
+  const [cosmicScale, setCosmicScale] = useState<number | null>(null);
+
+  /** Zooming out past the globe hands the view over to the cosmic zoom. */
+  const handleZoomFar = useCallback((altitudeMetres: number) => {
+    setCosmicScale((current) => current ?? Math.log10(Math.max(altitudeMetres, 1)));
+  }, []);
+
+  /** Coming back from the cosmic zoom drops the globe camera inside the threshold,
+   *  otherwise the next camera nudge would immediately re-open the overlay. */
+  const exitCosmicZoom = useCallback(() => {
+    setCosmicScale(null);
+    globeNavRef.current?.(20, 20, 2.5);
+  }, []);
 
   const toggleLayer = useCallback((key: LayerKey) => setVisibleLayers((previous) => {
     const next = new Set(previous);
@@ -88,7 +103,7 @@ export function GlobeDashboard() {
 
       <div className="relative flex min-h-0 flex-1">
         <div className="absolute inset-0 z-0">
-          <HybridGlobe layers={envLayers} onHotspotClick={setSelectedHotspot}
+          <HybridGlobe layers={envLayers} onHotspotClick={setSelectedHotspot} onZoomFar={handleZoomFar}
             onReady={(navigate) => { globeNavRef.current = navigate; }} externalMarkers={intel.eventMarkers}
             kpIndex={intel.spaceWeather?.kpIndex ?? 0} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents}
             sightings={sightings} flights={allFlights} ships={ships} satellites={intel.satellites}
@@ -96,6 +111,8 @@ export function GlobeDashboard() {
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
             gdeltEvents={intel.gdeltEvents} />
         </div>
+
+        {cosmicScale !== null && <CosmicZoom initialScale={cosmicScale} onExit={exitCosmicZoom} />}
 
         <GlobeOverlay selectedHotspot={selectedHotspot} onClose={() => setSelectedHotspot(null)}
           spaceWeather={intel.spaceWeather} earthquakeCount={intel.earthquakes.length}

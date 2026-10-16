@@ -32,6 +32,7 @@ import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey } from "@/lib/globe-layers";
+import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import type { SatellitePosition } from "@/hooks/useSatellites";
 import type { OutageEvent } from "@/hooks/useInternetOutages";
 import {
@@ -135,6 +136,9 @@ type LayerKey = "markets" | "uap" | "cryptozoo";
 
 interface CesiumGlobeProps {
   onHotspotClick?: (data: HotspotData | null) => void;
+  /** Fired when the camera pulls out past the globe, so the view can hand over
+   *  to the cosmic zoom. Receives the camera altitude in metres. */
+  onZoomFar?: (altitudeMetres: number) => void;
   sightings?: UAPSighting[];
   visibleLayers?: Set<LayerKey>;
   envLayers?: Set<EnvLayerKey>;
@@ -167,7 +171,7 @@ interface CesiumGlobeProps {
 }
 
 export function CesiumGlobe({
-  onHotspotClick, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
+  onHotspotClick, onZoomFar, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [], flights = [], ships = [],
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
@@ -196,6 +200,10 @@ export function CesiumGlobe({
     (data: HotspotData | null) => { onHotspotClick?.(data); },
     [onHotspotClick]
   );
+
+  // Keep the callback in a ref so the viewer is never re-created when it changes.
+  const onZoomFarRef = useRef(onZoomFar);
+  onZoomFarRef.current = onZoomFar;
 
   // Initialize viewer once
   useEffect(() => {
@@ -324,9 +332,20 @@ export function CesiumGlobe({
       duration: 0,
     });
 
+    // Hand over to the cosmic zoom once the camera is far enough out that the
+    // globe no longer fills the view. Threshold lives in CosmicZoom.
+    const onCameraChanged = () => {
+      const altitude = viewer.camera.positionCartographic?.height ?? 0;
+      if (altitude > COSMIC_TRIGGER_ALTITUDE_M) onZoomFarRef.current?.(altitude);
+    };
+    viewer.camera.changed.addEventListener(onCameraChanged);
+
     return () => {
       handler.destroy();
-      if (!viewer.isDestroyed()) viewer.destroy();
+      if (!viewer.isDestroyed()) {
+        viewer.camera.changed.removeEventListener(onCameraChanged);
+        viewer.destroy();
+      }
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);

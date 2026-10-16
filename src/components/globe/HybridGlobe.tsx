@@ -18,6 +18,8 @@ const CesiumGlobe = lazyWithRetry(() =>
 export interface HybridGlobeProps {
   layers: Set<EnvLayerKey>;
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
+  /** Camera pulled out past the globe → hand over to the cosmic zoom. */
+  onZoomFar?: (altitudeMetres: number) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
   kpIndex?: number;
@@ -49,6 +51,7 @@ function GlobeFallback() {
 export function HybridGlobe({
   layers,
   onHotspotClick,
+  onZoomFar,
   onReady,
   externalMarkers,
   kpIndex = 0,
@@ -92,6 +95,7 @@ export function HybridGlobe({
         <CesiumGlobe
           envLayers={layers}
           onHotspotClick={onHotspotClick as any}
+          onZoomFar={onZoomFar}
           sightings={sightings}
           flyTo={flyTo}
           kpIndex={layers.has("solarActivity") ? kpIndex : 0}
