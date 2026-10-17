@@ -64,6 +64,40 @@ export async function fetchUapSightingsRows() {
   }
 }
 
+/**
+ * Every stored report, including the ones without coordinates.
+ *
+ * Lists that do not place anything on the map must use this: the coordinate
+ * filter in `fetchUapSightingsRows` silently hides rows that the table does
+ * contain, which is how the anomaly feed ended up empty while the database had
+ * records.
+ */
+export async function fetchAllUapSightingsRows() {
+  if (uapTableStatus === "missing") return [] as UapSightingRow[];
+
+  const tableUrl = getUapTableUrl();
+  if (!tableUrl) return [] as UapSightingRow[];
+
+  try {
+    const response = await fetch(`${tableUrl}?select=*&order=date_reported.desc`, {
+      headers: getPublicHeaders(),
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      if (isMissingTableResponse(response.status, body)) {
+        uapTableStatus = "missing";
+      }
+      return [] as UapSightingRow[];
+    }
+
+    uapTableStatus = "available";
+    return (await response.json()) as UapSightingRow[];
+  } catch {
+    return [] as UapSightingRow[];
+  }
+}
+
 export async function fetchUapSightingsCount() {
   if (uapTableStatus === "missing") return 0;
 
