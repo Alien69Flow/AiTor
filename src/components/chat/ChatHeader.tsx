@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, BrainCircuit, Cpu } from "lucide-react";
+import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, BrainCircuit, Building2, Cpu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import type { ChatWorkspace } from "@/lib/chat-prefs";
 
 interface ChatHeaderProps {
   selectedModel: string;
@@ -14,9 +15,15 @@ interface ChatHeaderProps {
   hasMessages: boolean;
   onToggleSidebar: () => void;
   sidebarOpen: boolean;
-  workspace: "chat" | "neural";
-  onWorkspaceChange: (workspace: "chat" | "neural") => void;
+  workspace: ChatWorkspace;
+  onWorkspaceChange: (workspace: ChatWorkspace) => void;
 }
+
+const WORKSPACES: { id: ChatWorkspace; label: string; icon: typeof MessageSquare; title: string }[] = [
+  { id: "chat", label: "Chat", icon: MessageSquare, title: "Conversación con el oráculo" },
+  { id: "neural", label: "Núcleo", icon: BrainCircuit, title: "Núcleo neural: skills, RAG y workflows en vivo" },
+  { id: "city", label: "Ciudad", icon: Building2, title: "AlienFlow.Space DAO City" },
+];
 
 export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, workspace, onWorkspaceChange }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
@@ -35,6 +42,9 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
     if (error) toast.error("Error al cerrar sesión");
   };
 
+  const currentIndex = WORKSPACES.findIndex((entry) => entry.id === workspace);
+  const nextWorkspace = WORKSPACES[(currentIndex + 1) % WORKSPACES.length];
+
   return (
     <header className={`flex items-center justify-between border-b border-border/60 bg-card/40 backdrop-blur-md shrink-0 ${isCompact ? "h-10 px-1.5" : "h-12 px-2 sm:px-3"}`}>
       {hasMessages && <h1 className="sr-only">AI Tor — Real-Time Intelligence Terminal</h1>}
@@ -45,7 +55,10 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
           size="icon"
           onClick={onToggleSidebar}
           aria-label={sidebarOpen ? "Cerrar barra lateral" : "Abrir barra lateral"}
-          className="h-8 w-8 text-muted-foreground/50 hover:text-foreground shrink-0"
+          aria-expanded={sidebarOpen}
+          aria-controls="agent-sidebar"
+          title={sidebarOpen ? "Cerrar barra lateral (Esc)" : "Abrir barra lateral"}
+          className={`h-8 w-8 shrink-0 border transition-colors ${sidebarOpen ? "border-primary/40 bg-primary/10 text-primary" : "border-transparent text-muted-foreground/60 hover:text-foreground hover:border-border/60"}`}
         >
           {sidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
         </Button>
@@ -67,8 +80,23 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
       {/* Center: workspace + oracle selector */}
       <div className="hidden items-center gap-2 md:flex">
         <div className="flex h-8 items-center border border-border/60 bg-muted/20 p-0.5">
-          <Button variant="ghost" size="sm" onClick={() => onWorkspaceChange("chat")} className={`h-7 rounded-sm px-2 text-[9px] uppercase ${workspace === "chat" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><MessageSquare className="h-3 w-3" /> Chat</Button>
-          <Button variant="ghost" size="sm" onClick={() => onWorkspaceChange("neural")} className={`h-7 rounded-sm px-2 text-[9px] uppercase ${workspace === "neural" ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}><BrainCircuit className="h-3 w-3" /> DAO City</Button>
+          {WORKSPACES.map((entry) => {
+            const active = workspace === entry.id;
+            return (
+              <Button
+                key={entry.id}
+                variant="ghost"
+                size="sm"
+                onClick={() => onWorkspaceChange(entry.id)}
+                aria-pressed={active}
+                title={entry.title}
+                className={`h-7 rounded-sm px-2 text-[9px] uppercase ${active ? "bg-primary/10 text-primary" : "text-muted-foreground"}`}
+              >
+                <entry.icon className="h-3 w-3" />
+                <span className="hidden lg:inline">{entry.label}</span>
+              </Button>
+            );
+          })}
         </div>
         <ModelSelector value={selectedModel} onChange={onModelChange} />
       </div>
@@ -79,8 +107,15 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
           <ModelSelector value={selectedModel} onChange={onModelChange} />
         </div>
 
-        <Button variant="ghost" size="icon" onClick={() => onWorkspaceChange(workspace === "chat" ? "neural" : "chat")} aria-label={workspace === "chat" ? "Mostrar DAO City" : "Volver al chat"} title={workspace === "chat" ? "DAO City" : "Chat"} className="h-8 w-8 text-primary md:hidden">
-          {workspace === "chat" ? <BrainCircuit className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={() => onWorkspaceChange(nextWorkspace.id)}
+          aria-label={`Cambiar a ${nextWorkspace.label}`}
+          title={`Cambiar a ${nextWorkspace.label}`}
+          className="h-8 w-8 text-primary md:hidden"
+        >
+          <nextWorkspace.icon className="h-4 w-4" />
         </Button>
 
         <Button variant="ghost" size="icon" onClick={onNewChat} aria-label="Nuevo chat" className="h-8 w-8 text-muted-foreground/40 hover:text-primary" title="Nuevo chat">

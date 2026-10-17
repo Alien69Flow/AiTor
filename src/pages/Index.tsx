@@ -4,6 +4,7 @@ import { TopNavBar } from "@/components/dashboard/TopNavBar";
 import { BottomNav } from "@/components/dashboard/BottomNav";
 import { SpaceBackground } from "@/components/SpaceBackground";
 import { ChatContainer } from "@/components/chat/ChatContainer";
+import { ChatDock } from "@/components/chat/ChatDock";
 import { UFOMonitorTab } from "@/components/dashboard/UFOMonitorTab";
 import { SolarSystemTab } from "@/components/dashboard/SolarSystemTab";
 import { GlobeDashboard } from "@/components/dashboard/GlobeDashboard";
@@ -70,6 +71,10 @@ const Index = () => {
           {renderTab()}
         </main>
       </div>
+
+      {/* The full workspace owns the conversation on its own tab; everywhere else
+          the floating dock keeps the same thread one tap away. */}
+      {activeTab !== "agents" && <ChatDock onOpenAgents={() => setActiveTab("agents")} />}
 
       <BottomNav activeTab={activeTab} onTabChange={setActiveTab} />
     </>
