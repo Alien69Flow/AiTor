@@ -171,6 +171,62 @@ export function useAuth() {
     [nativeOAuth],
   );
 
+  /**
+   * Passwordless email. Supabase sends a magic link by default and the same
+   * call backs the six-digit code — only the email template differs — so both
+   * modes share one function. Email auth is already on for the password form.
+   */
+  const sendEmailOtp = useCallback(
+    async (email: string, redirectTo?: string) => {
+      const { error } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: redirectTo || window.location.origin,
+          shouldCreateUser: true,
+        },
+      });
+      return { error };
+    },
+    [],
+  );
+
+  const verifyEmailCode = useCallback(async (email: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    return { error };
+  }, []);
+
+  /**
+   * SMS codes. Supabase only relays them: an SMS provider (Twilio, MessageBird
+   * or Vonage) has to be configured in Authentication → Phone, otherwise the
+   * call answers with an explicit error that the UI shows as it comes.
+   */
+  const sendPhoneCode = useCallback(async (phone: string) => {
+    const { error } = await supabase.auth.signInWithOtp({ phone });
+    return { error };
+  }, []);
+
+  const verifyPhoneCode = useCallback(async (phone: string, token: string) => {
+    const { error } = await supabase.auth.verifyOtp({ phone, token, type: "sms" });
+    return { error };
+  }, []);
+
+  /**
+   * Passkeys (WebAuthn). The whole ceremony lives in supabase-js since v2.105:
+   * the browser prompts for a fingerprint, face or hardware key and Supabase
+   * verifies the challenge. A signed-in user registers one with
+   * `registerPasskey`, a visitor consumes one with `signInWithPasskey`; both
+   * still need the feature switched on in Authentication → Sign In → Passkeys.
+   */
+  const signInWithPasskey = useCallback(async () => {
+    const { error } = await supabase.auth.signInWithPasskey();
+    return { error };
+  }, []);
+
+  const registerPasskey = useCallback(async () => {
+    const { error } = await supabase.auth.registerPasskey();
+    return { error };
+  }, []);
+
   const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     return { error };
@@ -185,6 +241,12 @@ export function useAuth() {
     signInWithGoogle,
     signInWithApple,
     signInWithProvider,
+    sendEmailOtp,
+    verifyEmailCode,
+    sendPhoneCode,
+    verifyPhoneCode,
+    signInWithPasskey,
+    registerPasskey,
     signOut,
   };
 }

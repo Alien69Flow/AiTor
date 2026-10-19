@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, Loader2, Mail, Lock, Wallet, ShieldCheck, LogOut } from "lucide-react";
+import { ArrowRight, Fingerprint, Loader2, Mail, Lock, Phone, Wallet, ShieldCheck, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth, SOCIAL_PROVIDERS, type SocialProvider } from "@/hooks/useAuth";
@@ -76,6 +76,21 @@ const PROVIDER_ICON: Record<SocialProvider, (props: { className?: string }) => J
 };
 
 /** Where to enable each provider in the Supabase dashboard, for the toast. */
+/**
+ * Ways in that need no social provider at all: Supabase backs the four of them
+ * from the same Auth service, so they share one form and one verification step.
+ * `password` and `magic` need nothing new in Supabase; `code` and `phone` send
+ * a six-digit token, and the SMS one needs a configured provider.
+ */
+type DirectMode = "password" | "magic" | "code" | "phone";
+
+const DIRECT_MODES: { id: DirectMode; label: string }[] = [
+  { id: "password", label: "Clave" },
+  { id: "magic", label: "Enlace" },
+  { id: "code", label: "Código" },
+  { id: "phone", label: "SMS" },
+];
+
 const ENABLE_AT: Partial<Record<SocialProvider, string>> = {
   reddit: "Authentication → Providers → Custom Providers → custom:reddit",
   wechat: "Authentication → Providers → Custom Providers → custom:wechat",
@@ -101,7 +116,9 @@ interface AuthMethodsProps {
  * Single implementation of every way into the account: the OAuth providers
  * Supabase supports (Google, Apple, Microsoft, GitHub, X, Discord, Facebook,
  * LinkedIn, Reddit, Twitch, GitLab, Bitbucket, Slack, Spotify, Notion, Figma,
- * Zoom, Kakao, WeChat), a Reown wallet signature (SIWE) and email + password. Meta
+ * Zoom, Kakao, WeChat), a Reown wallet signature (SIWE), a passkey (WebAuthn),
+ * and the four direct modes that need no provider: password, magic link, the
+ * six-digit email code and the SMS code. Meta
  * offers no "sign in with Instagram", so Instagram is not offered at all.
  * The auth page and the System → DAO panel both render this component, so a
  * method can never work in one place and be dead in the other.
@@ -113,7 +130,19 @@ export function AuthMethods({
   onSignedIn,
   className = "",
 }: AuthMethodsProps) {
-  const { user, signIn, signUp, signInWithProvider, signOut } = useAuth();
+  const {
+    user,
+    signIn,
+    signUp,
+    signInWithProvider,
+    signOut,
+    sendEmailOtp,
+    verifyEmailCode,
+    sendPhoneCode,
+    verifyPhoneCode,
+    signInWithPasskey,
+    registerPasskey,
+  } = useAuth();
   const {
     signIn: walletSignIn,
     busy: walletBusy,
@@ -124,9 +153,23 @@ export function AuthMethods({
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [pending, setPending] = useState<SocialProvider | "email" | null>(null);
+  const [pending, setPending] = useState<SocialProvider | "email" | "passkey" | null>(null);
+  const [directMode, setDirectMode] = useState<DirectMode>("password");
+  const [phone, setPhone] = useState("");
+  const [code, setCode] = useState("");
+  /** Which destination already got a link or a code, so the form knows. */
+  const [sentTo, setSentTo] = useState<"email" | "phone" | null>(null);
 
   const target = redirectTo ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+
+  const submitLabel =
+    directMode === "password"
+      ? isLogin ? "Acceder al Nexo" : "Crear Identidad"
+      : directMode === "magic"
+        ? sentTo ? "Reenviar enlace" : "Enviar enlace mágico"
+        : sentTo
+          ? "Verificar y entrar"
+          : directMode === "phone" ? "Enviar código SMS" : "Enviar código";
   const gridClass = columns === 4 ? "grid-cols-2 sm:grid-cols-4" : "grid-cols-2";
 
   const handleProvider = async (provider: SocialProvider) => {
@@ -150,32 +193,126 @@ export function AuthMethods({
     }
   };
 
+  /** Supabase's raw wording, translated to the panel where the feature lives. */
+  const otpHint = (raw: string, channel: "email" | "phone") => {
+    // Supabase answers "Unable to get SMS provider" (sin proveedor conectado),
+    // "Email logins are disabled" y "provider is not enabled", entre otras.
+    const missing = channel === "phone"
+      ? /provider|unable|not enabled|not supported|disabled/i
+      : /not enabled|not supported|disabled/i;
+    if (!missing.test(raw)) return raw;
+    return channel === "phone"
+      ? "El teléfono no está activado: conecta un proveedor SMS (Twilio, MessageBird o Vonage) en Supabase → Authentication → Phone."
+      : "El acceso por email no está activado en Supabase → Authentication → Email.";
+  };
+
   const handleEmail = async (event: FormEvent) => {
     event.preventDefault();
-    const validation = authSchema.safeParse({ email, password });
-    if (!validation.success) {
-      toast.error(validation.error.errors[0].message);
+
+    if (directMode === "password") {
+      const validation = authSchema.safeParse({ email, password });
+      if (!validation.success) {
+        toast.error(validation.error.errors[0].message);
+        return;
+      }
+      setPending("email");
+      try {
+        if (isLogin) {
+          const { error } = await signIn(email, password);
+          if (error) {
+            toast.error(error.message.includes("Invalid login credentials") ? "Credenciales incorrectas" : error.message);
+          } else {
+            toast.success("¡Bienvenido, Soberano!");
+            onSignedIn?.();
+          }
+        } else {
+          const { error } = await signUp(email, password, target);
+          if (error) {
+            toast.error(error.message.includes("already registered") ? "Este email ya está registrado" : error.message);
+          } else {
+            track("signup_completed", { method: "email" });
+            toast.success("Cuenta creada. Revisa tu email para confirmarla.");
+          }
+        }
+      } finally {
+        setPending(null);
+      }
       return;
     }
+
     setPending("email");
     try {
-      if (isLogin) {
-        const { error } = await signIn(email, password);
+      if (directMode === "magic") {
+        const { error } = await sendEmailOtp(email, target);
         if (error) {
-          toast.error(error.message.includes("Invalid login credentials") ? "Credenciales incorrectas" : error.message);
-        } else {
-          toast.success("¡Bienvenido, Soberano!");
-          onSignedIn?.();
+          toast.error(otpHint(error.message, "email"));
+          return;
         }
-      } else {
-        const { error } = await signUp(email, password, target);
-        if (error) {
-          toast.error(error.message.includes("already registered") ? "Este email ya está registrado" : error.message);
-        } else {
-          track("signup_completed", { method: "email" });
-          toast.success("Cuenta creada. Revisa tu email para confirmarla.");
-        }
+        track("signup_started", { method: "magic_link" });
+        setSentTo("email");
+        toast.success(`Abre el enlace de acceso que te hemos enviado a ${email}.`);
+        return;
       }
+
+      // Two steps for the code modes: first send, then verify the six digits.
+      if (!sentTo) {
+        const byPhone = directMode === "phone";
+        const { error } = byPhone ? await sendPhoneCode(phone) : await sendEmailOtp(email, target);
+        if (error) {
+          toast.error(otpHint(error.message, byPhone ? "phone" : "email"));
+          return;
+        }
+        setSentTo(byPhone ? "phone" : "email");
+        toast.success(byPhone ? `Código SMS enviado a ${phone}.` : `Código de 6 dígitos enviado a ${email}.`);
+        return;
+      }
+
+      const { error = null } =
+        sentTo === "phone"
+          ? await verifyPhoneCode(phone, code)
+          : await verifyEmailCode(email, code);
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      track("signup_completed", { method: sentTo === "phone" ? "phone" : "email_code" });
+      toast.success("¡Bienvenido, Soberano!");
+      onSignedIn?.();
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const handlePasskey = async () => {
+    setPending("passkey");
+    try {
+      track("signup_started", { method: "passkey" });
+      const { error } = await signInWithPasskey();
+      if (error) {
+        const raw = error.message || "No se pudo usar la passkey";
+        toast.error(
+          /not enabled|disabled|not found|no passkey/i.test(raw)
+            ? "Passkeys sin configurar: actívalas en Supabase → Authentication → Sign In → Passkeys y guarda una desde tu cuenta."
+            : raw,
+        );
+        return;
+      }
+      toast.success("Passkey verificada. ¡Bienvenido, Soberano!");
+      onSignedIn?.();
+    } finally {
+      setPending(null);
+    }
+  };
+
+  const handleAddPasskey = async () => {
+    setPending("passkey");
+    try {
+      const { error } = await registerPasskey();
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
+      toast.success("Passkey añadida. La próxima vez entras con huella o Face ID.");
     } finally {
       setPending(null);
     }
@@ -202,6 +339,16 @@ export function AuthMethods({
               {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
             </span>
           )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 border-border/50 text-[10px]"
+            disabled={pending !== null}
+            onClick={handleAddPasskey}
+            title="Guardar una passkey en este dispositivo"
+          >
+            <Fingerprint className="mr-1 h-3 w-3" /> Passkey
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -242,6 +389,21 @@ export function AuthMethods({
           <Button
             type="button"
             variant="outline"
+            className="h-10 w-full border-border/40 bg-card/40 text-muted-foreground transition-all hover:border-primary/40 hover:bg-primary/10"
+            disabled={pending !== null}
+            onClick={handlePasskey}
+          >
+            {pending === "passkey" ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <Fingerprint className="mr-2 h-4 w-4" />
+            )}
+            <span className="text-xs">Entrar con Passkey (huella o Face ID)</span>
+          </Button>
+
+          <Button
+            type="button"
+            variant="outline"
             className="h-10 w-full border-secondary/40 bg-secondary/5 text-secondary transition-all hover:border-secondary/60 hover:bg-secondary/15"
             disabled={walletBusy || pending !== null}
             onClick={handleWallet}
@@ -264,29 +426,74 @@ export function AuthMethods({
               <Separator className="w-full bg-border/30" />
             </div>
             <div className="relative flex justify-center text-[10px] uppercase tracking-[0.2em]">
-              <span className="bg-card px-3 font-mono text-muted-foreground/50">o con email</span>
+              <span className="bg-card px-3 font-mono text-muted-foreground/50">o directo</span>
             </div>
           </div>
 
+          <div className="grid grid-cols-4 gap-1 rounded-lg border border-border/40 bg-card/40 p-1">
+            {DIRECT_MODES.map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => {
+                  setDirectMode(option.id);
+                  setSentTo(null);
+                  setCode("");
+                }}
+                className={`h-7 rounded font-mono text-[9px] uppercase tracking-wider transition-colors ${
+                  directMode === option.id
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground/60 hover:text-foreground/80"
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+
           <form onSubmit={handleEmail} className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="auth-email" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
-                Email
-              </Label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
-                <Input
-                  id="auth-email"
-                  type="email"
-                  placeholder="tu@email.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  autoComplete="email"
-                  className="h-10 border-border/30 bg-muted/30 pl-10"
-                />
+            {directMode !== "phone" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-email" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                  Email
+                </Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
+                  <Input
+                    id="auth-email"
+                    type="email"
+                    placeholder="tu@email.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    required
+                    autoComplete="email"
+                    className="h-10 border-border/30 bg-muted/30 pl-10"
+                  />
+                </div>
               </div>
-            </div>
+            )}
+
+            {directMode === "phone" && (
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-phone" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                  Teléfono
+                </Label>
+                <div className="relative">
+                  <Phone className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
+                  <Input
+                    id="auth-phone"
+                    type="tel"
+                    placeholder="+51 999 888 777"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    required
+                    autoComplete="tel"
+                    className="h-10 border-border/30 bg-muted/30 pl-10"
+                  />
+                </div>
+              </div>
+            )}
+            {directMode === "password" && (
             <div className="space-y-1.5">
               <Label htmlFor="auth-password" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
                 Contraseña
@@ -305,6 +512,27 @@ export function AuthMethods({
                 />
               </div>
             </div>
+            )}
+
+            {(directMode === "code" || directMode === "phone") && sentTo && (
+              <div className="space-y-1.5">
+                <Label htmlFor="auth-code" className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70">
+                  Código de 6 dígitos
+                </Label>
+                <Input
+                  id="auth-code"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="••••••"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+                  required
+                  autoFocus
+                  className="h-10 border-border/30 bg-muted/30 text-center font-mono text-base tracking-[0.5em]"
+                />
+              </div>
+            )}
             <Button
               type="submit"
               className="h-10 w-full bg-primary/90 font-heading text-sm uppercase tracking-wider text-primary-foreground hover:bg-primary"
@@ -314,20 +542,22 @@ export function AuthMethods({
                 <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
                 <>
-                  {isLogin ? "Acceder al Nexo" : "Crear Identidad"}
+                  {submitLabel}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </>
               )}
             </Button>
           </form>
 
-          <button
-            type="button"
-            onClick={() => setIsLogin((v) => !v)}
-            className="w-full text-center font-mono text-[11px] tracking-wide text-muted-foreground/60 transition-colors hover:text-primary"
-          >
-            {isLogin ? "¿Sin identidad? → Crear cuenta" : "¿Ya tienes acceso? → Iniciar sesión"}
-          </button>
+          {directMode === "password" && (
+            <button
+              type="button"
+              onClick={() => setIsLogin((v) => !v)}
+              className="w-full text-center font-mono text-[11px] tracking-wide text-muted-foreground/60 transition-colors hover:text-primary"
+            >
+              {isLogin ? "¿Sin identidad? → Crear cuenta" : "¿Ya tienes acceso? → Iniciar sesión"}
+            </button>
+          )}
         </>
       )}
     </div>
