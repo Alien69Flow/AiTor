@@ -26,6 +26,7 @@ import {
   SlackIcon,
   SpotifyIcon,
   TwitchIcon,
+  WeChatIcon,
   XIcon,
   ZoomIcon,
 } from "./BrandIcons";
@@ -49,6 +50,7 @@ const PROVIDER_LABEL: Record<SocialProvider, string> = {
   figma: "Figma",
   zoom: "Zoom",
   kakao: "Kakao",
+  wechat: "WeChat",
 };
 
 const PROVIDER_ICON: Record<SocialProvider, (props: { className?: string }) => JSX.Element> = {
@@ -70,11 +72,13 @@ const PROVIDER_ICON: Record<SocialProvider, (props: { className?: string }) => J
   figma: FigmaIcon,
   zoom: ZoomIcon,
   kakao: KakaoIcon,
+  wechat: WeChatIcon,
 };
 
 /** Where to enable each provider in the Supabase dashboard, for the toast. */
 const ENABLE_AT: Partial<Record<SocialProvider, string>> = {
   reddit: "Authentication → Providers → Custom Providers → custom:reddit",
+  wechat: "Authentication → Providers → Custom Providers → custom:wechat",
 };
 
 const authSchema = z.object({
@@ -97,7 +101,7 @@ interface AuthMethodsProps {
  * Single implementation of every way into the account: the OAuth providers
  * Supabase supports (Google, Apple, Microsoft, GitHub, X, Discord, Facebook,
  * LinkedIn, Reddit, Twitch, GitLab, Bitbucket, Slack, Spotify, Notion, Figma,
- * Zoom, Kakao), a Reown wallet signature (SIWE) and email + password. Meta
+ * Zoom, Kakao, WeChat), a Reown wallet signature (SIWE) and email + password. Meta
  * offers no "sign in with Instagram", so Instagram is not offered at all.
  * The auth page and the System → DAO panel both render this component, so a
  * method can never work in one place and be dead in the other.

@@ -11,6 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
  *
  * Instagram is deliberately absent: Meta does not offer a "sign in with
  * Instagram" flow at all, so the login page does not offer it either.
+ *
+ * WeChat is offered, but as a custom provider (`custom:wechat`): Supabase has
+ * no built-in WeChat connector, because WeChat's login is a QR/code exchange
+ * without OIDC discovery. It is registered under Authentication → Providers →
+ * Custom Providers (the free plan allows three custom providers).
  */
 export const SOCIAL_PROVIDERS = [
   "google",
@@ -31,6 +36,7 @@ export const SOCIAL_PROVIDERS = [
   "figma",
   "zoom",
   "kakao",
+  "wechat",
 ] as const;
 
 export type SocialProvider = (typeof SOCIAL_PROVIDERS)[number];
@@ -39,8 +45,9 @@ export type SocialProvider = (typeof SOCIAL_PROVIDERS)[number];
  * Supabase provider id for each button. The UI name and the GoTrue id do not
  * always match: X moved to OAuth 2.0 under the id `x` (the old `twitter` is the
  * deprecated OAuth 1.0a flow), Slack uses the OIDC variant, LinkedIn uses
- * `linkedin_oidc`, Microsoft is `azure`, and Reddit is not built-in — it is a
- * manual custom provider registered in Supabase as `custom:reddit`.
+ * `linkedin_oidc`, Microsoft is `azure`, and two are not built-in at all:
+ * Reddit and WeChat are manual custom providers registered in Supabase as
+ * `custom:reddit` and `custom:wechat`.
  */
 const GOTRUE_PROVIDER: Record<SocialProvider, string> = {
   google: "google",
@@ -61,6 +68,7 @@ const GOTRUE_PROVIDER: Record<SocialProvider, string> = {
   figma: "figma",
   zoom: "zoom",
   kakao: "kakao",
+  wechat: "custom:wechat",
 };
 
 export function useAuth() {
