@@ -207,6 +207,8 @@ async function routeToLovable(model: string, processedMessages: unknown[]) {
         ...processedMessages,
       ],
       stream: true,
+      // Ask the gateway for the final usage chunk so tokens are measured, not guessed.
+      stream_options: { include_usage: true },
     }),
   });
 }
@@ -241,6 +243,7 @@ async function routeToGrok(model: string, processedMessages: unknown[]) {
         ...processedMessages,
       ],
       stream: true,
+      stream_options: { include_usage: true },
     }),
   });
 }
@@ -286,6 +289,7 @@ async function routeToDeepSeek(model: string, processedMessages: unknown[]) {
       model: dsModel,
       messages: [{ role: "system", content: SYSTEM_PROMPT }, ...textMessages],
       stream: true,
+      stream_options: { include_usage: true },
     }),
   });
 }

@@ -21,12 +21,23 @@ está definido y el header no coincide (comparación en tiempo constante con
 > re-registrar el webhook con el mismo `secret_token`, o el bot dejará de responder:
 >
 > ```bash
+> node scripts/telegram-webhook.mjs --set   # registra URL + secret y muestra getWebhookInfo
+> ```
+>
+> Equivalente a mano:
+>
+> ```bash
 > curl -F "url=https://<PUBLIC_URL>/api/telegram-webhook" \
 >      -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
 >      "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
 > ```
 
-Limitación: no se ha probado contra Telegram real (no hay acceso al bot en esta sesión).
+Comprobado en vivo el 2026-10-19: `POST https://aitor.alienflow.space/api/telegram-webhook`
+sin la cabecera devuelve `401 Unauthorized`, es decir el endpoint *está* desplegado en fail
+closed. Si el bot no responde, la causa está en la configuración (secreto en Vercel y
+`setWebhook`), no en el código. El comportamiento del handler está cubierto por pruebas
+ejecutadas con `tsx` (401 sin secreto / con secreto incorrecto, 200 con secreto correcto,
+500 si falta `TELEGRAM_BOT_TOKEN`, 405 a métodos que no sean POST).
 
 ### `api/manus-callback.ts` — correcto, endurecido
 

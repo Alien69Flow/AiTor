@@ -1,15 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  Activity, BrainCircuit, Building2, Cpu, Database, Layers3, MessageSquare,
+  Activity, ArrowRight, Building2, Cpu, Database, Layers3, MessageSquare,
   Pause, Play, Radio, Route as RouteIcon, Timer, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AiTorMark } from "@/components/AiTorMark";
 import type { Message } from "@/hooks/useChat";
 import {
   ACTIVE_ORACLES,
   CORE_META,
   DOCUMENTED_DOMAINS,
+  ROUTE_PROMPTS,
   SKILL_NODES,
+  SKILL_PROMPTS,
+  TOKEN_ESTIMATE_NOTE,
   WORKFLOW_ROUTES,
   formatLatency,
   formatTokens,
@@ -24,6 +28,8 @@ interface NeuralCoreProps {
   modelId: string;
   onChat: () => void;
   onCity: () => void;
+  /** Runs a real task in the chat with the active oracle. */
+  onPrompt: (prompt: string) => void;
 }
 
 type Palette = {
@@ -71,7 +77,7 @@ const FONT = "ui-monospace, SFMono-Regular, Menlo, monospace";
  * generated from the real session state (a query in flight surges the flow,
  * the deterministic supervisor router lights the matching lane).
  */
-export function NeuralCore({ messages, isLoading, modelId, onChat, onCity }: NeuralCoreProps) {
+export function NeuralCore({ messages, isLoading, modelId, onChat, onCity, onPrompt }: NeuralCoreProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const feed = useNeuralFeed(messages, isLoading);
@@ -639,7 +645,7 @@ export function NeuralCore({ messages, isLoading, modelId, onChat, onCity }: Neu
       <div className="pointer-events-none relative z-10 flex items-start justify-between gap-3 p-3 sm:p-5">
         <div className="min-w-0">
           <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-wider text-primary/80">
-            <BrainCircuit className="h-3.5 w-3.5" aria-hidden="true" />
+            <AiTorMark className="h-4 w-4" tile={false} label="" />
             {CORE_META.collective} · {CORE_META.protocol}
           </p>
           <h1 className="mt-1 text-base font-heading text-foreground sm:text-xl">
@@ -694,15 +700,34 @@ export function NeuralCore({ messages, isLoading, modelId, onChat, onCity }: Neu
           <Panel title="Sesión" icon={<Activity className="h-3.5 w-3.5" aria-hidden="true" />}>
             <Stat label="Consultas" value={String(feed.stats.userMessages)} />
             <Stat label="Respuestas" value={String(feed.stats.replies)} />
-            <Stat label="Tokens est." value={formatTokens(feed.stats.tokens)} />
+            <div title={feed.stats.tokensExact ? "Tokens reales reportados por el proveedor." : TOKEN_ESTIMATE_NOTE}>
+              <Stat label={feed.stats.tokensExact ? "Tokens" : "Tokens ≈"} value={formatTokens(feed.stats.tokens)} />
+            </div>
             <Stat label="Latencia media" value={formatLatency(feed.stats.avgLatencyMs)} />
             <Stat label="Última latencia" value={formatLatency(feed.stats.lastLatencyMs)} tone="secondary" />
           </Panel>
           <Panel title="Protocolo" icon={<Cpu className="h-3.5 w-3.5" aria-hidden="true" />}>
             <Stat label="Núcleo" value={`${CORE_META.name} ${CORE_META.version}`} />
             <Stat label="Frecuencia" value={CORE_META.frequency} tone="secondary" />
-            <Stat label="Tareas" value={CORE_META.tasksCompleted.toLocaleString("es-ES")} />
+            <Stat label="Contexto" value={activeOracle?.contextWindow ?? "—"} />
             <Stat label="Oráculo activo" value={activeOracle?.name ?? "—"} />
+          </Panel>
+          <Panel title="Skills" icon={<Zap className="h-3.5 w-3.5" aria-hidden="true" />}>
+            {SKILL_NODES.map((skill) => (
+              <button
+                key={skill.id}
+                type="button"
+                onClick={() => onPrompt(SKILL_PROMPTS[skill.id] ?? `${skill.label}: `)}
+                title={`Lanzar la skill "${skill.label}" en el chat`}
+                className="group flex w-full items-center justify-between gap-2 py-0.5 text-left font-mono text-[9px] text-muted-foreground transition-colors hover:text-secondary"
+              >
+                <span className="min-w-0 truncate">{skill.label}</span>
+                <span className="flex shrink-0 items-center gap-1 text-[8px] uppercase opacity-70">
+                  {skill.status === "active" ? "activa" : "latente"}
+                  <ArrowRight className="h-2.5 w-2.5 opacity-0 transition-opacity group-hover:opacity-100" aria-hidden="true" />
+                </span>
+              </button>
+            ))}
           </Panel>
         </aside>
 
@@ -778,14 +803,17 @@ export function NeuralCore({ messages, isLoading, modelId, onChat, onCity }: Neu
             const count = feed.routeCounts[route.id] ?? 0;
             const active = feed.activeRoute === route.id;
             return (
-              <div
+              <button
                 key={route.id}
-                className={`min-w-[132px] shrink-0 border px-2 py-1.5 font-mono transition-colors ${
+                type="button"
+                onClick={() => onPrompt(ROUTE_PROMPTS[route.id])}
+                title={`Ejecutar una tarea de ${route.agent} en el chat`}
+                className={`min-w-[132px] shrink-0 border px-2 py-1.5 text-left font-mono transition-colors ${
                   active && isLoading
                     ? "border-secondary/70 bg-secondary/10 text-secondary"
                     : active
                       ? "border-primary/60 bg-primary/10 text-primary"
-                      : "border-border/60 bg-card/30 text-muted-foreground"
+                      : "border-border/60 bg-card/30 text-muted-foreground hover:border-secondary/40 hover:text-secondary"
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
@@ -799,7 +827,7 @@ export function NeuralCore({ messages, isLoading, modelId, onChat, onCity }: Neu
                     style={{ width: `${routeShare(count)}%` }}
                   />
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

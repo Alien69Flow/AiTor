@@ -2,6 +2,8 @@ import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
 import { ManusAgent } from "./manus";
+import { SocialPlatform } from "./socialMediaManager";
+import { PriceAlert } from "./tradingSignals";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
@@ -139,7 +141,7 @@ export class SwarmOrchestrator {
     else if (input.includes('anual')) frequency = 'yearly';
 
     // Detectar plataforma
-    let platform: any = undefined;
+    let platform: SocialPlatform | undefined = undefined;
     if (input.includes('twitter')) platform = 'twitter';
     else if (input.includes('linkedin')) platform = 'linkedin';
     else if (input.includes('instagram')) platform = 'instagram';
@@ -266,7 +268,7 @@ export class SwarmOrchestrator {
     }
 
     // Análisis general de mercado
-    return await MarketKnowledge.retrieveContext('marketSentiment' as any);
+    return await MarketKnowledge.retrieveContext('marketSentiment');
   }
 
   /**
@@ -283,7 +285,7 @@ export class SwarmOrchestrator {
       if (input.includes('btc')) symbols.push('BTC');
       if (input.includes('eth')) symbols.push('ETH');
       
-      const condition = input.includes('sobre') ? 'above' : input.includes('bajo') ? 'below' : 'crosses';
+      const condition: PriceAlert['condition'] = input.includes('sobre') ? 'above' : input.includes('bajo') ? 'below' : 'crosses';
       
       // Extraer número del mensaje
       const priceMatch = userInput.match(/\$?([\d,]+)/);
@@ -292,7 +294,7 @@ export class SwarmOrchestrator {
       if (symbols.length > 0 && price > 0) {
         const alert = TradingSignals.createPriceAlert(
           symbols[0],
-          condition as any,
+          condition,
           price,
           `Alerta ${condition} $${price}`
         );

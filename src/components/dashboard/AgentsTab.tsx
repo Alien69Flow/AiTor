@@ -15,7 +15,7 @@ interface AgentsTabProps {
 
 export function AgentsTab({ onNavigateToChat }: AgentsTabProps) {
   return (
-    <div className="flex-1 flex flex-col items-center justify-start p-6 overflow-auto">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-start overflow-y-auto overscroll-contain p-6 pb-[calc(4rem+env(safe-area-inset-bottom))] md:pb-6">
       <div className="w-full max-w-4xl">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-3">

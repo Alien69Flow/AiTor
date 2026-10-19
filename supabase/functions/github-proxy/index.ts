@@ -135,7 +135,7 @@ Deno.serve(async (req) => {
           ...(sha && { sha }), // Include SHA if updating existing file
         });
         break;
-      case 'create_branch':
+      case 'create_branch': {
         // Create a new branch from a reference
         url = `https://api.github.com/repos/${owner}/${repo}/git/refs`;
         method = 'POST';
@@ -146,10 +146,12 @@ Deno.serve(async (req) => {
           sha: refSha,
         });
         break;
-      case 'get_ref':
+      }
+      case 'get_ref': {
         // Get a reference (branch) SHA
         url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch || 'main'}`;
         break;
+      }
       default:
         return new Response(
           JSON.stringify({ error: `Unknown action: ${action}` }),

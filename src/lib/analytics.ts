@@ -13,6 +13,7 @@ import { track as vercelTrack } from "@vercel/analytics";
 /** The money/activation events we actually care about measuring. */
 export type ConversionEvent =
   | "chat_opened"
+  | "signup_started"
   | "signup_completed"
   | "checkout_started"
   | "checkout_completed"

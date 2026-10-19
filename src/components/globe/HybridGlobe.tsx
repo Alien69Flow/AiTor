@@ -4,6 +4,11 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { type UnifiedHotspotData } from "./GlobeScene";
 import type { EnvLayerKey } from "@/lib/globe-layers";
 import type { Earthquake } from "@/hooks/useEarthquakes";
+import type { SurfaceWeatherPoint } from "@/hooks/connectors/useSurfaceWeather";
+import type { SubmarineCable } from "@/hooks/connectors/useSubmarineCables";
+import type { BitcoinNode } from "@/hooks/connectors/useBitcoinNodes";
+import type { GdeltEvent } from "@/hooks/connectors/useGdeltEvents";
+import type { FireDetection } from "@/hooks/connectors/useFirmsFires";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { UAPSighting } from "@/hooks/useUAPSightings";
 import type { Flight } from "@/hooks/useAirTraffic";
@@ -30,12 +35,12 @@ export interface HybridGlobeProps {
   ships?: Ship[];
   satellites?: { id: string; name: string; lat: number; lon: number; altKm: number }[];
   rainTileUrl?: string | null;
-  surfaceWeather?: any[];
-  fires?: any[];
+  surfaceWeather?: SurfaceWeatherPoint[];
+  fires?: FireDetection[];
   auroraCells?: { lat: number; lon: number; probability: number }[];
-  cables?: any[];
-  bitcoinNodes?: any[];
-  gdeltEvents?: any[];
+  cables?: SubmarineCable[];
+  bitcoinNodes?: BitcoinNode[];
+  gdeltEvents?: GdeltEvent[];
 }
 
 function GlobeFallback() {
@@ -94,7 +99,7 @@ export function HybridGlobe({
       <Suspense fallback={<GlobeFallback />}>
         <CesiumGlobe
           envLayers={layers}
-          onHotspotClick={onHotspotClick as any}
+          onHotspotClick={onHotspotClick}
           onZoomFar={onZoomFar}
           sightings={sightings}
           flyTo={flyTo}

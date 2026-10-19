@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, Suspense, lazy } from "react";
 import { Plane, Ship, Building2, User, Globe, OctagonAlert as AlertOctagon, Ban, Network, Maximize2, Minimize2, X, Loader as Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { ForceGraphMethods, LinkObject, NodeObject } from "react-force-graph-2d";
 
 const ForceGraph2D = lazy(() => import("react-force-graph-2d"));
 
@@ -16,7 +17,7 @@ export interface EntityNode {
     | "event"
     | "sanction"
     | "ip";
-  properties?: Record<string, any>;
+  properties?: Record<string, unknown>;
 }
 
 export interface EntityLink {
@@ -24,6 +25,15 @@ export interface EntityLink {
   target: string;
   label: string;
 }
+
+/** Nodo del grafo: lo que dibuja react-force-graph-2d sobre nuestra entidad. */
+type GraphNodeObject = NodeObject & EntityNode;
+
+/** Enlace: source/target son id o el objeto ya resuelto por la librería. */
+type GraphLinkObject = Omit<LinkObject, "source" | "target"> & {
+  source: string | GraphNodeObject;
+  target: string | GraphNodeObject;
+};
 
 interface EntityGraphPanelProps {
   nodes: EntityNode[];
@@ -55,7 +65,7 @@ export function EntityGraphPanel({
   const [maximized, setMaximized] = useState(false);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const fgRef = useRef<any>(null);
+  const fgRef = useRef<ForceGraphMethods | null>(null);
   const [dimensions, setDimensions] = useState({ width: 360, height: 300 });
 
   useEffect(() => {
@@ -168,33 +178,33 @@ export function EntityGraphPanel({
                 backgroundColor="rgba(2,6,23,0.5)"
                 nodeRelSize={6}
                 nodeId="id"
-                nodeColor={(node: any) => {
+                nodeColor={(node: GraphNodeObject) => {
                   const cfg = NODE_CONFIG[node.type as EntityNode["type"]];
                   if (hoveredNode && node.id !== hoveredNode && highlightedLinks && !highlightedLinks.has(node.id)) {
                     return "#334155";
                   }
                   return cfg?.color ?? "#64748b";
                 }}
-                linkColor={(link: any) => {
+                linkColor={(link: GraphLinkObject) => {
                   if (!hoveredNode) return "#47556955";
                   const src = typeof link.source === "object" ? link.source.id : link.source;
                   const tgt = typeof link.target === "object" ? link.target.id : link.target;
                   if (src === hoveredNode || tgt === hoveredNode) return "#22d3ee";
                   return "#1e293b55";
                 }}
-                linkWidth={(link: any) => {
+                linkWidth={(link: GraphLinkObject) => {
                   if (!hoveredNode) return 1;
                   const src = typeof link.source === "object" ? link.source.id : link.source;
                   const tgt = typeof link.target === "object" ? link.target.id : link.target;
                   return src === hoveredNode || tgt === hoveredNode ? 2 : 0.5;
                 }}
-                onNodeHover={(node: any) => {
+                onNodeHover={(node: GraphNodeObject | null) => {
                   setHoveredNode(node?.id ?? null);
                   if (containerRef.current) {
                     containerRef.current.style.cursor = node ? "pointer" : "default";
                   }
                 }}
-                onNodeClick={(node: any) => {
+                onNodeClick={(node: GraphNodeObject) => {
                   if (node && onNodeClick) {
                     onNodeClick({
                       id: node.id,
@@ -204,7 +214,7 @@ export function EntityGraphPanel({
                     });
                   }
                 }}
-                nodeCanvasObject={(node: any, ctx: any, globalScale: number) => {
+                nodeCanvasObject={(node: GraphNodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
                   const cfg = NODE_CONFIG[node.type as EntityNode["type"]];
                   if (!cfg) return;
                   const r = cfg.size / 2;

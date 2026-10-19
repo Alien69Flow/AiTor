@@ -520,6 +520,28 @@
   transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Fixed bottom navigation must clear the device home indicator, and every
+   scrollable tab must reserve room for it or its last row hides behind it. */
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Scroll container used by the tab panes. Momentum on iOS and an explicit
+   vertical gesture keep the content reachable inside the fixed shell. */
+.scroll-pane {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / 0.35) transparent;
+}
+.scroll-pane::-webkit-scrollbar { width: 6px; }
+.scroll-pane::-webkit-scrollbar-track { background: transparent; }
+.scroll-pane::-webkit-scrollbar-thumb {
+  background: hsl(var(--primary) / 0.35);
+  border-radius: 9999px;
+}
+
 /* Visible thin scrollbar for the globe legend / mobile sheets */
 .legend-scroll {
   scrollbar-width: thin;
@@ -592,3 +614,34 @@
   z-index: 10;
 }
 
+/* ============================================
+   Motion, selection & focus preferences
+   ============================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  html,
+  body {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+::selection {
+  background: hsl(var(--primary) / 0.28);
+  color: hsl(var(--foreground));
+}
+
+/* Keyboard users get a visible ring on every custom interactive element,
+   including the ones that opt out of the default outline. */
+:where(button, a, [role="button"], [tabindex]):focus-visible {
+  outline: 2px solid hsl(var(--primary) / 0.7);
+  outline-offset: 2px;
+}

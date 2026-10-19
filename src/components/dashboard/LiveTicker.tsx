@@ -74,7 +74,11 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
   useEffect(() => {
     if (spaceWeather?.solarStorm && !prevStormRef.current) {
       try {
-        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const AudioContextCtor =
+          window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (!AudioContextCtor) return;
+        const ctx = new AudioContextCtor();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sine";

@@ -5,11 +5,8 @@ import { SwarmOrchestrator } from './agents/orchestrator'; // <- Importamos tu O
 
 // Hack cuántico para variables de entorno (invisible para escáneres estáticos)
 const getEnv = (key: string) => {
-  const g = globalThis as any;
-  if (g.process && g.process.env) {
-    return g.process.env[key] || '';
-  }
-  return '';
+  const g = globalThis as { process?: { env?: Record<string, string | undefined> } };
+  return g.process?.env?.[key] || '';
 };
 
 // Configuración manual para asegurar que funciona en cualquier entorno Node

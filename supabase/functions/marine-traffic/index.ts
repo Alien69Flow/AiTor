@@ -7,6 +7,18 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+/** One row of the VesselFinder `/vessels` response (its keys are uppercase). */
+interface VesselFinderVessel {
+  MMSI?: string;
+  NAME?: string | null;
+  TYPE?: string | null;
+  LAT?: number | null;
+  LON?: number | null;
+  SPEED?: number | null;
+  HEADING?: number | null;
+  DESTINATION?: string | null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   
@@ -32,7 +44,7 @@ Deno.serve(async (req) => {
         
         if (response.ok) {
           const data = await response.json();
-          const ships = (data.vessels || []).slice(0, 100).map((v: any) => ({
+          const ships = ((data.vessels ?? []) as VesselFinderVessel[]).slice(0, 100).map((v) => ({
             mmsi: v.MMSI,
             name: v.NAME || "Unknown",
             type: v.TYPE || "Cargo",

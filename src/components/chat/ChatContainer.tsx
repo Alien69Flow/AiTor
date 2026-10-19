@@ -13,7 +13,14 @@ import { DaoCity } from "./city/DaoCity";
 import { NeuralCore } from "./neural/NeuralCore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export function ChatContainer() {
+type WorkspaceTab = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
+
+interface ChatContainerProps {
+  /** Open another workspace from the DAO City districts. */
+  onOpenTab?: (tab: WorkspaceTab) => void;
+}
+
+export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
   const [selectedModel, setSelectedModel] = useState(readPreferredModel);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspace, setWorkspace] = useState<ChatWorkspace>("chat");
@@ -35,6 +42,15 @@ export function ChatContainer() {
     setSelectedModel(model);
     writePreferredModel(model);
   }, []);
+
+  // Skill / utility / district actions all run a real turn in the chat.
+  const runPrompt = useCallback(
+    (prompt: string) => {
+      setWorkspace("chat");
+      void sendMessage(prompt, selectedModel);
+    },
+    [selectedModel, sendMessage]
+  );
 
   // One toggle drives the header button and the panel's own close controls,
   // so the drawer can always be opened and closed from either side.
@@ -65,6 +81,16 @@ export function ChatContainer() {
       updatedAt: messages[messages.length - 1].timestamp.getTime(),
     }];
   }, [messages]);
+
+  const assistantReplies = useMemo(
+    () => messages.filter((message) => message.role === "assistant" && message.content),
+    [messages]
+  );
+  const tokensExact = assistantReplies.length > 0 && assistantReplies.every((message) => message.usage);
+  const tokensUsed = messages.reduce(
+    (total, message) => total + (message.usage?.totalTokens ?? Math.ceil(message.content.length / 4)),
+    0
+  );
 
   // Conversion: the chat is the core engagement surface.
   useEffect(() => {
@@ -104,10 +130,12 @@ export function ChatContainer() {
         onNewConversation={handleNewChat}
         workspace={workspace}
         onWorkspaceChange={handleWorkspaceChange}
+        onPrompt={runPrompt}
         sessionStats={{
           queries: messages.filter(message => message.role === "user").length,
-          replies: messages.filter(message => message.role === "assistant" && message.content).length,
-          tokens: Math.ceil(messages.reduce((total, message) => total + message.content.length, 0) / 4),
+          replies: assistantReplies.length,
+          tokens: tokensUsed,
+          tokensExact,
           thinking: isLoading,
         }}
       />
@@ -122,6 +150,7 @@ export function ChatContainer() {
         sidebarOpen={sidebarOpen}
         workspace={workspace}
         onWorkspaceChange={handleWorkspaceChange}
+        messages={messages}
       />
 
       {workspace === "neural" ? (
@@ -131,6 +160,7 @@ export function ChatContainer() {
           modelId={selectedModel}
           onChat={() => handleWorkspaceChange("chat")}
           onCity={() => handleWorkspaceChange("city")}
+          onPrompt={runPrompt}
         />
       ) : workspace === "city" ? (
         <DaoCity
@@ -138,6 +168,7 @@ export function ChatContainer() {
           isLoading={isLoading}
           onSend={(prompt) => sendMessage(prompt, selectedModel)}
           onChat={() => handleWorkspaceChange("chat")}
+          onOpenTab={onOpenTab}
         />
       ) : <>
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>

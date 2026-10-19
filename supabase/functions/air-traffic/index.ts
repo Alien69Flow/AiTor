@@ -8,6 +8,30 @@ const corsHeaders = {
 
 const OPENSKY_API = "https://opensky-network.org/api";
 
+/**
+ * One row of the OpenSky `/states/all` response: 17 positional fields, typed
+ * following https://opensky-network.org/apidoc/rest.html#operation/getStates
+ */
+type OpenSkyState = [
+  icao24: string,
+  callsign: string | null,
+  originCountry: string,
+  timePosition: number | null,
+  lastContact: number | null,
+  longitude: number | null,
+  latitude: number | null,
+  baroAltitude: number | null,
+  onGround: boolean,
+  velocity: number | null,
+  trueTrack: number | null,
+  verticalRate: number | null,
+  sensors: number[] | null,
+  geoAltitude: number | null,
+  squawk: string | null,
+  spi: boolean,
+  positionSource: number,
+];
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
   
@@ -34,7 +58,7 @@ Deno.serve(async (req) => {
 
     const data = await response.json();
     
-    const flights = (data.states || []).slice(0, 80).map((state: any) => ({
+    const flights = ((data.states ?? []) as OpenSkyState[]).slice(0, 80).map((state) => ({
       icao24: state[0],
       callsign: state[1]?.trim() || "UNKNOWN",
       origin: state[2] || null,

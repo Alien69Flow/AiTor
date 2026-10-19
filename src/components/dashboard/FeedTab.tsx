@@ -69,7 +69,7 @@ export function FeedTab() {
       if (error) throw error;
       const items = data?.data || data?.results || [];
       setNews(
-        items.map((r: any) => ({
+        items.map((r: { title?: string; description?: string; markdown?: string; url?: string }) => ({
           title: r.title || "Untitled",
           description: (r.description || r.markdown || "").substring(0, 300),
           url: r.url || "#",

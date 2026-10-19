@@ -1,4 +1,4 @@
-import { Radio, Network, BrainCircuit, Gem, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
+import { Radio, Network, Sparkles, Gem, Infinity as InfinityIcon, type LucideIcon } from "lucide-react";
 import type { Tier } from "@/lib/globe-layers";
 
 export type AccessKind = "free" | "login" | "subscription" | "nft" | "nft+tokens";
@@ -57,7 +57,7 @@ export const PLANS: PlanDef[] = [
     priceNote: "USDC · USDT en Base o Polygon",
     access: "subscription",
     accent: "#FFD700",
-    Icon: BrainCircuit,
+    Icon: Sparkles,
     features: [
       "Skills completas de los agentes",
       "Capas meteorológicas y orbitales",

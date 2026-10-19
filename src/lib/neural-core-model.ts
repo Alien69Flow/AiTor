@@ -175,9 +175,33 @@ export function classifyIntent(text: string): RouteId {
   return best.id;
 }
 
-/** Rough token estimate (≈4 characters per token). Labelled "est." wherever shown. */
+/** Rough token estimate (≈4 characters per token). Labelled "≈" wherever shown. */
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
+}
+
+/** Usage reported by the provider when the stream includes it. */
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+/** Real usage when the provider reported it, otherwise the documented estimate. */
+export function messageTokens(content: string, usage?: TokenUsage | null): number {
+  return usage?.totalTokens ?? estimateTokens(content);
+}
+
+/** Reads an OpenAI-style `usage` object from a stream chunk. */
+export function parseUsage(raw: unknown): TokenUsage | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  const promptTokens = typeof value.prompt_tokens === "number" ? value.prompt_tokens : 0;
+  const completionTokens = typeof value.completion_tokens === "number" ? value.completion_tokens : 0;
+  const totalTokens =
+    typeof value.total_tokens === "number" ? value.total_tokens : promptTokens + completionTokens;
+  if (promptTokens === 0 && completionTokens === 0 && totalTokens === 0) return null;
+  return { promptTokens, completionTokens, totalTokens };
 }
 
 export function routeById(id: RouteId): WorkflowRoute {
@@ -193,7 +217,30 @@ export const CORE_META = {
   protocol: MOLTBOOK_AGENT.protocol,
   collective: MOLTBOOK_AGENT.collective,
   frequency: MOLTBOOK_AGENT.frequency,
-  tasksCompleted: MOLTBOOK_AGENT.metrics.tasksCompleted,
+};
+
+/** Shown wherever a token figure appears, so the number is never mistaken for billing. */
+export const TOKEN_ESTIMATE_NOTE =
+  "Estimación: 4 caracteres ≈ 1 token sobre los mensajes guardados. No incluye el prompt de sistema, las imágenes ni los tokens de facturación.";
+
+/** Real, runnable task for each skill — the sidebar launches it in the chat. */
+export const SKILL_PROMPTS: Record<string, string> = {
+  "1": "Razona con el marco 3-6-9 este problema y separa hechos verificables de hipótesis: ",
+  "2": "Busca en fuentes oficiales y devuelve enlaces con fecha para verificar esto: ",
+  "3": "Genera una pieza creativa breve (texto + guion visual) para la DAO sobre: ",
+  "4": "Audita este contrato o flujo on-chain: enumera riesgos comprobables, supuestos y qué falta por verificar: ",
+  "5": "Explica con rigor qué física hay detrás de este fenómeno y qué parte es especulativa: ",
+  "6": "Propón una automatización concreta para operar esto desde Ai Tor, con pasos y comprobaciones: ",
+};
+
+/** Example order for each supervisor lane, ready to send to the agent. */
+export const ROUTE_PROMPTS: Record<RouteId, string> = {
+  RAG_PHYSICS: "Aplica el marco de física 3-6-9 y el factor 16.18 a este fenómeno, marcando qué es cálculo y qué es interpretación: ",
+  MARKET_DAO: "Analiza el mercado DeFi actual: liquidez, TVL y riesgos. Cita las fuentes y la fecha de los datos: ",
+  TASK_MANUS: "Actúa como Manus: desglosa esta tarea técnica en pasos ejecutables con criterios de aceptación: ",
+  SOCIAL_MEDIA: "Prepara una propuesta de contenido lista para revisión humana, sin publicar: ",
+  SECURITY_SCAN: "Haz una revisión de seguridad de este código o diseño, distinguiendo hallazgos comprobables de riesgos hipotéticos: ",
+  CHAT_GENERAL: "Resume la sesión y propón el siguiente paso más útil para la DAO.",
 };
 
 export function formatTokens(value: number): string {

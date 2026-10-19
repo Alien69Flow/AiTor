@@ -5,12 +5,54 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+/** Market block of a Gamma API event; every field is optional upstream. */
+interface PolymarketMarket {
+  liquidity?: number | string;
+  volume24hr?: number | string;
+  volume?: number | string;
+  bestBid?: number | null;
+  bestAsk?: number | null;
+  outcomes?: string | null;
+  outcomePrices?: string | null;
+}
+
+/** Event of the Gamma API as returned by polymarket.com. */
+interface PolymarketEvent {
+  id?: number | string;
+  title?: string;
+  description?: string;
+  tag?: string;
+  endDate?: string | null;
+  image?: string | null;
+  slug?: string | null;
+  markets?: PolymarketMarket[];
+}
+
+/** Coin entry of the CoinGecko `/search/trending` response. */
+interface TrendingCoin {
+  item?: {
+    id?: string;
+    name?: string;
+    symbol?: string;
+    market_cap_rank?: number;
+    thumb?: string;
+    small?: string;
+    data?: {
+      price?: number;
+      price_change_percentage_24h?: { usd?: number };
+      sparkline?: string;
+      market_cap?: number;
+      total_volume?: number;
+    };
+  };
+}
+
 async function fetchPolymarketEvents() {
   try {
     const res = await fetch("https://gamma-api.polymarket.com/events?closed=false&limit=30&active=true&order=volume24hr&ascending=false");
     if (!res.ok) throw new Error(`Polymarket API error: ${res.status}`);
-    const events = await res.json();
-    return events.map((event: any) => {
+    const events: PolymarketEvent[] = await res.json();
+    return events.map((event) => {
       const market = event.markets?.[0];
       const liquidity = market?.liquidity ?? 0;
       const volume24hr = market?.volume24hr ?? 0;
@@ -49,8 +91,8 @@ async function fetchCoinGeckoTrending() {
   try {
     const res = await fetch("https://api.coingecko.com/api/v3/search/trending");
     if (!res.ok) throw new Error(`CoinGecko API error: ${res.status}`);
-    const data = await res.json();
-    return (data.coins || []).map((c: any) => ({
+    const data: { coins?: TrendingCoin[] } = await res.json();
+    return (data.coins ?? []).map((c) => ({
       id: c.item?.id || crypto.randomUUID(),
       title: `${c.item?.name} (${c.item?.symbol?.toUpperCase()})`,
       description: `Rank #${c.item?.market_cap_rank || "?"} — trending on CoinGecko`,
@@ -78,7 +120,7 @@ serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const action = body.action || "all";
 
-    let result: any = {};
+    const result: { polymarket?: unknown[]; trending?: unknown[] } = {};
 
     if (action === "polymarket" || action === "all") {
       result.polymarket = await fetchPolymarketEvents();
@@ -92,7 +134,7 @@ serve(async (req) => {
     });
   } catch (e) {
     console.error("crypto-signals error:", e);
-    return new Response(JSON.stringify({ error: e.message }), {
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

@@ -167,7 +167,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       }
     });
 
-    realtime.sightings.slice(0, 60).forEach((s: any) => {
+    realtime.sightings.slice(0, 60).forEach((s) => {
       if (typeof s.lat === "number" && typeof s.lon === "number") {
         markers.push({
           lat: s.lat,

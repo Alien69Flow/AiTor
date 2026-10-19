@@ -11,6 +11,12 @@ const llm = new ChatGoogleGenerativeAI({
   temperature: 0.3,
 });
 
+/** Evento de mercado con el que se correlacionan movimientos de precio. */
+export interface MarketEvent {
+  title?: string;
+  description?: string;
+}
+
 export interface PriceData {
   symbol: string;
   price: number;
@@ -157,7 +163,7 @@ export class MarketAnalyzer {
   /**
    * Análisis de correlación con eventos
    */
-  static async correlateWithEvents(prices: PriceData[], events: any[]): Promise<string> {
+  static async correlateWithEvents(prices: PriceData[], events: MarketEvent[]): Promise<string> {
     const volatileCoins = prices.filter(p => Math.abs(p.change24h) > 5);
     
     if (volatileCoins.length === 0 || events.length === 0) {
@@ -203,15 +209,15 @@ export class MarketAnalyzer {
       technical: {
         support: priceData.price * 0.95,
         resistance: priceData.price * 1.05,
-        trend: trend as any,
+        trend,
       },
       summary: `Análisis de ${priceData.symbol}: tendencia ${trend}`,
       signals: [
         change > 0 ? 'Momentum positivo' : 'Momentum negativo',
         `Cambio 24h: ${change.toFixed(2)}%`,
       ],
-      riskLevel: riskLevel as any,
-      recommendation: recommendation as any,
+      riskLevel,
+      recommendation,
     };
   }
 }

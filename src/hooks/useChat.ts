@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { parseUsage, type TokenUsage } from "@/lib/neural-core-model";
 
 export interface Message {
   id: string;
@@ -8,6 +9,8 @@ export interface Message {
   content: string;
   timestamp: Date;
   imageData?: string;
+  /** Present only when the backend stream reports real provider usage. */
+  usage?: TokenUsage;
 }
 
 export interface Conversation {
@@ -47,8 +50,8 @@ export function useChat() {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
+        const parsed = JSON.parse(saved) as Array<Omit<Message, "timestamp"> & { timestamp: string | number }>;
+        return parsed.map((message) => ({ ...message, timestamp: new Date(message.timestamp) }));
       } catch {
         return [];
       }
@@ -83,11 +86,14 @@ export function useChat() {
           PENDING_KEY,
           JSON.stringify({ content, model, imageData, ts: Date.now() })
         );
-      } catch {}
+      } catch {
+        // Storage can be unavailable in private mode; the request still runs.
+      }
 
       const assistantId = crypto.randomUUID();
       let assistantText = "";
       let assistantStarted = false;
+      let usage: TokenUsage | null = null;
 
       const upsertAssistant = (chunk: string) => {
         assistantText += chunk;
@@ -180,7 +186,7 @@ export function useChat() {
             }
             dismissWaiting();
             return resp;
-          } catch (err: any) {
+          } catch (err: unknown) {
             // network / timeout / supabase paused — retry
             if (attempt < MAX_RETRIES - 1) {
               showWaiting();
@@ -226,6 +232,10 @@ export function useChat() {
             }
             try {
               const parsed = JSON.parse(json);
+              // Real usage arrives in a final chunk when the provider is asked
+              // for it; nothing is inferred from it if the field is absent.
+              const reportedUsage = parseUsage(parsed.usage);
+              if (reportedUsage) usage = reportedUsage;
               const delta = parsed.choices?.[0]?.delta?.content;
               if (delta) upsertAssistant(delta);
             } catch {
@@ -235,15 +245,26 @@ export function useChat() {
           }
         }
 
+        const finalUsage = usage;
+        if (finalUsage && assistantStarted) {
+          setMessages((prev) =>
+            prev.map((message) => (message.id === assistantId ? { ...message, usage: finalUsage } : message))
+          );
+        }
+
         if (!assistantStarted) {
           toast.error("Sin respuesta del oráculo");
         }
-      } catch (error: any) {
-        console.warn("Chat error after retries:", error?.message);
+      } catch (error: unknown) {
+        console.warn("Chat error after retries:", error instanceof Error ? error.message : String(error));
         toast.error("Oráculo en espera — backend pausado. Reintenta en unos segundos.");
       } finally {
         dismissWaiting();
-        try { localStorage.removeItem(PENDING_KEY); } catch {}
+        try {
+          localStorage.removeItem(PENDING_KEY);
+        } catch {
+          // Nothing to clean up if storage is blocked.
+        }
         setIsLoading(false);
       }
     },

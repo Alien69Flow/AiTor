@@ -8,6 +8,13 @@ const corsHeaders = {
 
 const IODA = "https://api.ioda.inetintel.cc.gatech.edu/v2/outages/summary";
 
+/** One entry of the IODA `/v2/outages/summary` feed. */
+interface IodaOutageSummary {
+  entity?: { code?: string; name?: string };
+  event_cnt?: number;
+  scores?: { overall?: number };
+}
+
 async function outages() {
   const until = Math.floor(Date.now() / 1000);
   const from = until - 24 * 3600;
@@ -17,11 +24,11 @@ async function outages() {
   );
   if (!res.ok) throw new Error(`IODA ${res.status}`);
   const json = await res.json();
-  return (json?.data ?? [])
-    .filter((d: any) => d?.entity?.code && (d?.event_cnt ?? 0) > 0)
-    .map((d: any) => ({
-      code: String(d.entity.code).toUpperCase(),
-      name: d.entity.name as string,
+  return ((json?.data ?? []) as IodaOutageSummary[])
+    .filter((d) => d?.entity?.code && (d?.event_cnt ?? 0) > 0)
+    .map((d) => ({
+      code: String(d.entity?.code).toUpperCase(),
+      name: d.entity?.name as string,
       events: d.event_cnt as number,
       score: Math.round(d?.scores?.overall ?? 0),
     }));

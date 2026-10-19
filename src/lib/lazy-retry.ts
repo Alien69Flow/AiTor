@@ -5,9 +5,10 @@ const RELOAD_KEY = "chunk-reload-ts";
 /**
  * React.lazy with resilience against stale/missing chunks after a redeploy.
  * Retries once, then forces a single full reload to fetch the new manifest.
+ * The component type is inferred as-is, so callers keep their exact props.
  */
-export function lazyWithRetry<T extends ComponentType<any>>(
-  factory: () => Promise<{ default: T }>
+export function lazyWithRetry<C extends ComponentType<never>>(
+  factory: () => Promise<{ default: C }>
 ) {
   return lazy(async () => {
     try {
@@ -24,7 +25,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
           sessionStorage.setItem(RELOAD_KEY, String(Date.now()));
           window.location.reload();
           // never resolves; page is reloading
-          return await new Promise<{ default: T }>(() => {});
+          return await new Promise<{ default: C }>(() => {});
         }
         throw err2;
       }

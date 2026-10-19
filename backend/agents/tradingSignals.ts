@@ -14,6 +14,20 @@ const llm = new ChatGoogleGenerativeAI({
 export type SignalType = 'entry' | 'exit' | 'alert' | 'update';
 export type SignalStrength = 'strong' | 'moderate' | 'weak';
 
+/** Señal propuesta por el modelo, antes de completarla con id y fechas. */
+interface LlmSignalDraft {
+  symbol?: string;
+  timeframe?: string;
+  direction?: string;
+  type?: string;
+  strength?: string;
+  entryPrice?: number;
+  targetPrice?: number;
+  stopLoss?: number;
+  reason?: string;
+  riskReward?: number;
+}
+
 export interface TradingSignal {
   id: string;
   symbol: string;
@@ -165,7 +179,7 @@ export class TradingSignals {
   /**
    * Genera nuevas señales de trading
    */
-  static async generateSignals(prices: any[], technicalData: any[]): Promise<TradingSignal[]> {
+  static async generateSignals(prices: unknown[], technicalData: unknown[]): Promise<TradingSignal[]> {
     try {
       const chain = signalGenerationPrompt.pipe(llm);
       const response = await chain.invoke({
@@ -178,7 +192,7 @@ export class TradingSignals {
 
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const signals: TradingSignal[] = (parsed.signals || []).map((s: any) => ({
+        const signals: TradingSignal[] = (parsed.signals || []).map((s: LlmSignalDraft) => ({
           ...s,
           id: `sig_${s.symbol}_${Date.now()}`,
           timestamp: new Date(),

@@ -1,14 +1,36 @@
 import { lazy, Suspense, useRef, useState } from "react";
-import { Building2, Compass, Pause, Play, Send, X, Bot, ArrowUpRight, Loader2 } from "lucide-react";
+import { Building2, Compass, Pause, Play, Send, X, Bot, ArrowUpRight, Loader2, Coins } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CITY_DISTRICTS } from "./districts";
+import { useDaoTreasury } from "@/hooks/useDaoTreasury";
+import { DAOS } from "@/lib/ecosystem";
 import type { Message } from "@/hooks/useChat";
 import ReactMarkdown from "react-markdown";
 
 const CityScene = lazy(() => import("./CityScene"));
-interface DaoCityProps { messages: Message[]; isLoading: boolean; onSend: (prompt: string) => Promise<void>; onChat: () => void }
 
-export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
+type WorkspaceTab = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
+
+interface DaoCityProps {
+  messages: Message[];
+  isLoading: boolean;
+  onSend: (prompt: string) => Promise<void>;
+  onChat: () => void;
+  /** Opens the real module a district operates. */
+  onOpenTab?: (tab: WorkspaceTab) => void;
+}
+
+/** Each district maps to the module where its work actually happens. */
+const DISTRICT_MODULE: Record<string, { tab: WorkspaceTab; label: string }> = {
+  nexus: { tab: "system", label: "Centro de control" },
+  forge: { tab: "system", label: "Consola de mando" },
+  sentinel: { tab: "system", label: "Acceso y niveles" },
+  signal: { tab: "system", label: "Niveles y monetización" },
+  embassy: { tab: "alien", label: "Fuentes y registro" },
+  academy: { tab: "agents", label: "Chat" },
+};
+
+export function DaoCity({ messages, isLoading, onSend, onChat, onOpenTab }: DaoCityProps) {
   const [selected, setSelected] = useState("nexus");
   const [moving, setMoving] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [reset, setReset] = useState(0);
@@ -16,7 +38,9 @@ export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
   const [objective, setObjective] = useState("");
   const [mission, setMission] = useState<{ baseline: number; agent: string } | null>(null);
   const busy = useRef(false);
+  const { rows: treasury, blockNumber } = useDaoTreasury();
   const district = CITY_DISTRICTS.find(d => d.id === selected) ?? CITY_DISTRICTS[0];
+  const module = DISTRICT_MODULE[district.id];
   const results = mission ? messages.slice(mission.baseline).filter(m => m.role === "assistant") : [];
   const response = results[results.length - 1];
   const choose = (id: string) => { setSelected(id); setPanelOpen(true); };
@@ -55,6 +79,38 @@ export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
             <div><p className="font-mono text-[9px] text-muted-foreground">DISTRITO / {district.name}</p><h2 className="mt-1 text-base text-secondary">{district.agent}</h2><p className="mt-1 text-xs text-muted-foreground">{district.role}</p></div>
             <Building2 className="mt-1 h-6 w-6 text-primary" />
           </div>
+          {district.id === "nexus" && (
+            <div className="mb-3 border border-border/60 bg-card/40 px-2 py-1.5 font-mono text-[9px]">
+              <p className="flex items-center gap-1.5 text-muted-foreground">
+                <Coins className="h-3 w-3 text-primary" aria-hidden="true" /> Tesorería on-chain
+                <span className="ml-auto text-[8px] opacity-60">
+                  {blockNumber ? `bloque ${blockNumber.toLocaleString("es-ES")}` : "leyendo…"}
+                </span>
+              </p>
+              {DAOS.map((dao) => {
+                const row = treasury.find((entry) => entry.id === dao.id);
+                return (
+                  <p key={dao.id} className="mt-0.5 flex items-center justify-between gap-2">
+                    <span className="truncate text-muted-foreground/70">{dao.name}</span>
+                    <span className="shrink-0 text-secondary">
+                      {row?.balancePol ? `${row.balancePol} POL` : row?.error ? "sin RPC" : "—"}
+                    </span>
+                  </p>
+                );
+              })}
+            </div>
+          )}
+          {module && onOpenTab && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onOpenTab(module.tab)}
+              className="mb-3 h-7 w-full justify-between border-secondary/25 bg-secondary/5 font-mono text-[9px] uppercase tracking-wider text-secondary/85 hover:bg-secondary/15"
+            >
+              {module.label}
+              <ArrowUpRight className="h-3 w-3" />
+            </Button>
+          )}
           <form onSubmit={e => { e.preventDefault(); void submit(); }}>
             <label htmlFor="city-objective" className="font-mono text-[10px] text-muted-foreground">Objetivo de la misión</label>
             <textarea id="city-objective" value={objective} onChange={e => setObjective(e.target.value)} maxLength={6000} rows={3} placeholder={district.id === "academy" ? "Especialidad y conocimientos a evaluar…" : "¿Qué necesita la DAO?"} className="mt-2 w-full resize-none rounded-sm border border-border bg-card/60 p-2 text-xs leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />

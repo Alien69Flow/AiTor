@@ -58,7 +58,8 @@ export function GlobeDashboard() {
 
   const toggleLayer = useCallback((key: LayerKey) => setVisibleLayers((previous) => {
     const next = new Set(previous);
-    next.has(key) ? next.delete(key) : next.add(key);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
     return next;
   }), []);
 
@@ -70,7 +71,8 @@ export function GlobeDashboard() {
     }
     setEnvLayers((previous) => {
       const next = new Set(previous);
-      next.has(key) ? next.delete(key) : next.add(key);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
       return next;
     });
   }, [hasAccess]);

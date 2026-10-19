@@ -29,7 +29,7 @@ export function initAppKit() {
       name: "AI Tor · AlienFlowSpace DAO",
       description: "Neural intelligence core — Sovereign Nexus access",
       url: typeof window !== "undefined" ? window.location.origin : "https://aitor.alienflow.space",
-      icons: ["https://aitor.alienflow.space/favicon.ico"],
+      icons: ["https://aitor.alienflow.space/icon-512.png"],
     },
     features: { analytics: false, email: false, socials: [] },
     themeMode: "dark",

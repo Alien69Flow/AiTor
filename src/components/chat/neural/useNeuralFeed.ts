@@ -7,6 +7,7 @@ import {
   WORKFLOW_ROUTES,
   classifyIntent,
   estimateTokens,
+  messageTokens,
   routeById,
   type KnowledgeBase,
   type RouteId,
@@ -34,6 +35,8 @@ export interface NeuralStats {
   userMessages: number;
   replies: number;
   tokens: number;
+  /** True only when every reply reported provider usage. */
+  tokensExact: boolean;
   avgLatencyMs: number | null;
   lastLatencyMs: number | null;
   lastActivity: Date | null;
@@ -56,6 +59,7 @@ function buildFeed(messages: Message[]): { events: FeedEvent[]; routeCounts: Rec
   let pending: Message | null = null;
   let tokens = 0;
   let replies = 0;
+  let repliesWithoutUsage = 0;
   let userMessages = 0;
   let latencyTotal = 0;
   let latencySamples = 0;
@@ -63,7 +67,7 @@ function buildFeed(messages: Message[]): { events: FeedEvent[]; routeCounts: Rec
 
   for (const message of messages) {
     const content = message.content.replace("[DEEP THINK] ", "");
-    tokens += estimateTokens(content);
+    tokens += messageTokens(content, message.usage);
 
     if (message.role === "user") {
       userMessages += 1;
@@ -91,6 +95,7 @@ function buildFeed(messages: Message[]): { events: FeedEvent[]; routeCounts: Rec
 
     if (!message.content) continue;
     replies += 1;
+    if (!message.usage) repliesWithoutUsage += 1;
     const latency = pending ? message.timestamp.getTime() - pending.timestamp.getTime() : null;
     if (latency !== null && latency >= 0) {
       latencyTotal += latency;
@@ -116,6 +121,7 @@ function buildFeed(messages: Message[]): { events: FeedEvent[]; routeCounts: Rec
       userMessages,
       replies,
       tokens,
+      tokensExact: replies > 0 && repliesWithoutUsage === 0,
       avgLatencyMs: latencySamples ? Math.round(latencyTotal / latencySamples) : null,
       lastLatencyMs,
       lastActivity: messages.length ? messages[messages.length - 1].timestamp : null,

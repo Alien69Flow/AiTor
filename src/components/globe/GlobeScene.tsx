@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import Globe from "react-globe.gl";
+import type { GlobeMethods } from "react-globe.gl";
 import * as THREE from "three";
 import { useSpaceWeather } from "@/hooks/useSpaceWeather";
 import type { EnvLayerKey } from "@/lib/globe-layers";
@@ -11,6 +12,33 @@ import {
   createTelluricGrid,
   getGIBSCloudTexture,
 } from "./layers/HighFidelityLayers";
+
+/** Arco entre dos nodos DAO del grafo del globo. */
+interface DaoArc {
+  startLat: number;
+  startLng: number;
+  endLat: number;
+  endLng: number;
+  color: string[];
+}
+
+/** Fila posicional de OpenSky (`/states/all`); solo leemos los índices 0-10. */
+type OpenSkyRow = [
+  icao24: string,
+  callsign: string | null,
+  originCountry: string,
+  timePosition: number | null,
+  lastContact: number | null,
+  longitude: number | null,
+  latitude: number | null,
+  baroAltitude: number | null,
+  onGround: boolean,
+  velocity: number | null,
+  trueTrack: number | null,
+];
+
+/** react-globe.gl usa nightImageUrl en runtime pero no lo declara en sus tipos. */
+type NightImageLayer = { nightImageUrl: string };
 
 export interface UnifiedHotspotData {
   lat: number;
@@ -139,10 +167,10 @@ export function GlobeScene({
   const quakesEnabled = has("earthquakes");
   const solarEnabled = has("solarActivity");
 
-  const globeRef = useRef<any>();
+  const globeRef = useRef<GlobeMethods>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [pointsData, setPointsData] = useState<UnifiedHotspotData[]>(DAO_BASE_HOTSPOTS);
-  const [arcsData, setArcsData] = useState<any[]>([]);
+  const [arcsData, setArcsData] = useState<DaoArc[]>([]);
   const [weatherHeat, setWeatherHeat] = useState<{ lat: number; lng: number; weight: number }[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [altitude, setAltitude] = useState(2.2);
@@ -249,12 +277,12 @@ export function GlobeScene({
 
   useEffect(() => {
     const pairs = [[0, 5], [2, 8], [11, 13], [14, 6], [9, 1], [15, 7], [4, 12], [10, 3]];
-    const newArcs: any[] = pairs.map(([a, b]) => {
+    const newArcs: DaoArc[] = pairs.map(([a, b]) => {
       const start = DAO_BASE_HOTSPOTS[a];
       const end = DAO_BASE_HOTSPOTS[b];
       if (!start || !end) return null;
       return { startLat: start.lat, startLng: start.lon, endLat: end.lat, endLng: end.lon, color: [start.color + "cc", end.color + "cc"] };
-    }).filter(Boolean);
+    }).filter((arc): arc is DaoArc => arc !== null);
 
     const zaragoza = DAO_BASE_HOTSPOTS[DAO_BASE_HOTSPOTS.length - 1];
     [5, 8, 12, 11].forEach(idx => {
@@ -271,13 +299,15 @@ export function GlobeScene({
         if (!res.ok) return;
         const data = await res.json();
         if (!data?.states) return;
-        const aircraft: UnifiedHotspotData[] = data.states.slice(0, 80).map((s: any[]) => ({
+        const aircraft: UnifiedHotspotData[] = (data.states as OpenSkyRow[]).slice(0, 80).map((s) => ({
           lat: s[6] || 0, lon: s[5] || 0, intensity: 0.15, color: "#ffffff",
           name: (s[1] || "").trim() || s[0] || "Aircraft", country: s[2] || "Unknown",
           marketVolume: `${Math.round(s[7] || 0)}m alt`, trend: `${Math.round(s[9] || 0)}m/s`, topTokens: [], type: "aircraft" as const,
         })).filter((a: UnifiedHotspotData) => a.lat !== 0 && a.lon !== 0);
         setPointsData(prev => [...prev.filter(p => p.type !== 'aircraft'), ...aircraft]);
-      } catch {} finally { clearTimeout(timeoutId); }
+      } catch {
+        // Sin datos de OpenSky: el globo sigue con los puntos ya cargados.
+      } finally { clearTimeout(timeoutId); }
     })();
     return () => { clearTimeout(timeoutId); controller.abort(); };
   }, []);
@@ -321,7 +351,7 @@ export function GlobeScene({
     })));
   }, [weatherEnabled]);
 
-  const visiblePoints = pointsData.filter((p: any) => {
+  const visiblePoints = pointsData.filter((p: UnifiedHotspotData) => {
     if (p.type === 'aircraft') return aircraftEnabled;
     if (p.type === 'nasa') return firesEnabled;
     if (p.type === 'finance') return marketsEnabled;
@@ -329,9 +359,9 @@ export function GlobeScene({
     return true;
   });
 
-  const getPointColor = useCallback((d: any) => d.type === 'aircraft' ? '#ffffff' : d.type === 'quake' ? '#facc15' : d.type === 'dao_node' ? '#ffffff' : d.color, []);
-  const getPointAlt = useCallback((d: any) => d.type === 'aircraft' ? 0.06 : d.type === 'quake' ? 0.008 : d.type === 'dao_node' ? 0.03 : 0.02 + d.intensity * 0.01, []);
-  const getPointRadius = useCallback((d: any) => d.type === 'aircraft' ? 0.08 : d.type === 'quake' ? d.intensity * 0.5 : d.type === 'dao_node' ? 0.6 : d.intensity * 0.35, []);
+  const getPointColor = useCallback((d: UnifiedHotspotData) => d.type === 'aircraft' ? '#ffffff' : d.type === 'quake' ? '#facc15' : d.type === 'dao_node' ? '#ffffff' : d.color, []);
+  const getPointAlt = useCallback((d: UnifiedHotspotData) => d.type === 'aircraft' ? 0.06 : d.type === 'quake' ? 0.008 : d.type === 'dao_node' ? 0.03 : 0.02 + d.intensity * 0.01, []);
+  const getPointRadius = useCallback((d: UnifiedHotspotData) => d.type === 'aircraft' ? 0.08 : d.type === 'quake' ? d.intensity * 0.5 : d.type === 'dao_node' ? 0.6 : d.intensity * 0.35, []);
 
   return (
     <div className="relative w-full h-full overflow-hidden bg-black">
@@ -346,7 +376,7 @@ export function GlobeScene({
             globeImageUrl={globeImageUrl}
             bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
             backgroundImageUrl="//unpkg.com/three-globe/example/img/night-sky.png"
-            {...{ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as any}
+            {...({ nightImageUrl: "//unpkg.com/three-globe/example/img/earth-night.jpg" } as NightImageLayer)}
             showGraticules={true}
             showAtmosphere={true}
             atmosphereColor={atmosphereColor}
@@ -357,7 +387,7 @@ export function GlobeScene({
             pointColor={getPointColor}
             pointAltitude={getPointAlt}
             pointRadius={getPointRadius}
-            onPointClick={(point: any) => onHotspotClick?.(point as UnifiedHotspotData)}
+            onPointClick={(point: UnifiedHotspotData) => onHotspotClick?.(point as UnifiedHotspotData)}
             labelsData={visiblePoints.filter(d => d.type !== 'quake' && d.type !== 'aircraft')}
             labelLat="lat"
             labelLng="lon"
@@ -392,7 +422,7 @@ export function GlobeScene({
               heatmapColorSaturation: 3.0,
               heatmapBaseAltitude: 0.01,
               heatmapTopAltitude: 0.08,
-            } as any}
+            }}
           />
         )}
       </div>

@@ -2,7 +2,9 @@ import {
 	Wind, Cloud, Gauge, Compass, Thermometer, Droplets,
 	Sun, Flame, Activity, Plane, Ship, TrendingUp,
 	Satellite, AlertTriangle, Shield, Landmark, Radio,
-	Bitcoin, Zap, Crosshair, Waves, type LucideIcon,
+	Bitcoin, Zap, Crosshair, Waves,
+	CloudFog, Tornado, SunMedium, MoonStar, Contrast, Camera,
+	type LucideIcon,
 } from "lucide-react";
 
 export type EnvLayerKey =
@@ -28,7 +30,15 @@ export type EnvLayerKey =
 	| "chokepoints"
 	| "satellites"
 	| "internetOutages"
-	| "economicCenters";
+	| "economicCenters"
+	// Earth-observation layers (NASA GIBS rasters)
+	| "satelliteImagery"
+	| "airQuality"
+	| "dust"
+	| "seaTemperature"
+	| "uvIndex"
+	| "nightLights"
+	| "dayNight";
 
 export type Tier = "signal" | "node" | "synapse" | "oracle" | "quantum";
 
@@ -63,6 +73,25 @@ export interface globeLayerDef {
 	Icon: LucideIcon;
 	/** OpenWeatherMap tile layer id, proxied server-side */
 	owm?: string;
+	/**
+	 * NASA GIBS raster tile config (open, no API key). Each layer links its own
+	 * TileMatrixSet — asking for the wrong level returns `TILEMATRIXSET is
+	 * invalid for LAYER` — and its own TIME availability window, so level and
+	 * date policy live here instead of being hard-coded in the renderer.
+	 */
+	gibs?: {
+		/** GIBS layer identifier (WMTS) */
+		layer: string;
+		/** GoogleMapsCompatible level linked by that layer (6, 8, 9…) */
+		level: number;
+		alpha?: number;
+		/** Hours to subtract from today for daily products (default 36 ≈ ayer) */
+		dateOffsetHours?: number;
+		/** Fixed TIME value for layers that no longer publish daily data */
+		date?: string;
+		/** No TIME segment — layer only serves its timeless template */
+		timeless?: boolean;
+	};
 	requiredTier: Tier;
 	/** Data source attribution */
 	source?: string;
@@ -141,44 +170,127 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Barometric pressure lines and gradients"
-	},
-	{ 
-		key: "wind", 
-		label: "Wind Speed & Dir.", 
-		group: "Atmospheric & Weather", 
-		color: "#6ee7b7", 
-		Icon: Compass, 
-		owm: "wind_new", 
+	},	{
+		key: "wind",
+		label: "Wind Speed & Dir.",
+		group: "Atmospheric & Weather",
+		color: "#6ee7b7",
+		Icon: Compass,
+		owm: "wind_new",
 		requiredTier: "synapse",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Global wind patterns and direction"
 	},
+	{
+		key: "satelliteImagery",
+		label: "Satellite (True Color)",
+		group: "Atmospheric & Weather",
+		color: "#e2e8f0",
+		Icon: Camera,
+		requiredTier: "signal",
+		source: "NASA GIBS · MODIS Terra",
+		freshness: "1 día",
+		description: "Composición real color del pase MODIS de hoy",
+		gibs: { layer: "MODIS_Terra_CorrectedReflectance_TrueColor", level: 9, alpha: 1, dateOffsetHours: 36 },
+	},
+	{
+		key: "airQuality",
+		label: "Air Quality (AOD)",
+		group: "Atmospheric & Weather",
+		color: "#a3e635",
+		Icon: CloudFog,
+		requiredTier: "signal",
+		source: "NASA GIBS · MODIS AOD 3km",
+		freshness: "1 día",
+		description: "Espesor óptico de aerosoles — contaminación y smog global",
+		gibs: { layer: "MODIS_Terra_Aerosol_Optical_Depth_3km", level: 6, alpha: 0.7 },
+	},
+	{
+		key: "dust",
+		label: "Dust / Polvo",
+		group: "Atmospheric & Weather",
+		color: "#d6d3d1",
+		Icon: Tornado,
+		requiredTier: "signal",
+		source: "NASA GIBS · AIRS",
+		freshness: "1 día",
+		description: "Puntajes de polvo en suspensión (Sahara, tormentas de arena)",
+		gibs: { layer: "AIRS_L2_Dust_Score_Day", level: 6, alpha: 0.7 },
+	},
+	{
+		key: "seaTemperature",
+		label: "Sea Temperature (SST)",
+		group: "Atmospheric & Weather",
+		color: "#38bdf8",
+		Icon: Waves,
+		requiredTier: "signal",
+		source: "NASA GIBS · GHRSST MUR25",
+		freshness: "1-2 días",
+		description: "Temperatura superficial del océano (1/25°)",
+		gibs: { layer: "GHRSST_L4_MUR25_Sea_Surface_Temperature", level: 6, alpha: 0.8, dateOffsetHours: 60 },
+	},
+	{
+		key: "uvIndex",
+		label: "UV Index",
+		group: "Atmospheric & Weather",
+		color: "#e879f9",
+		Icon: SunMedium,
+		requiredTier: "signal",
+		source: "NASA GIBS · CERES (climatología)",
+		freshness: "Clima",
+		description: "Índice ultravioleta medio — patrón global estacional",
+		gibs: { layer: "CERES_Combined_Surface_UV_Index_All_Sky_Monthly", level: 6, alpha: 0.75, timeless: true },
+	},
+	{
+		key: "dayNight",
+		label: "Day / Night",
+		group: "Atmospheric & Weather",
+		color: "#facc15",
+		Icon: Contrast,
+		requiredTier: "signal",
+		source: "Cesium (sol)",
+		freshness: "En vivo",
+		description: "Terminador día/noche — sombras reales según el sol"
+	},
 
 	// === Space & Cosmos ===
-	{ 
-		key: "solarActivity", 
-		label: "Solar Activity", 
-		group: "Space & Cosmos", 
-		color: "#c084fc", 
-		Icon: Sun, 
+	{
+		key: "solarActivity",
+		label: "Solar Activity",
+		group: "Space & Cosmos",
+		color: "#c084fc",
+		Icon: Sun,
 		requiredTier: "synapse",
 		source: "NOAA SWPC",
 		freshness: "30 min",
-		description: "Kp index and aurora borealis intensity"
+		description: "Kp index and aurora borealis intensity",
+		gibs: { layer: "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance", level: 8, alpha: 0.35 },
+	},
+	{
+		key: "nightLights",
+		label: "Night Lights",
+		group: "Space & Cosmos",
+		color: "#fde68a",
+		Icon: MoonStar,
+		requiredTier: "signal",
+		source: "NASA GIBS · VIIRS Black Marble",
+		freshness: "Mosaico 2016",
+		description: "Luces nocturnas vistas desde el espacio",
+		gibs: { layer: "VIIRS_Black_Marble", level: 8, alpha: 0.9, date: "2016-01-01" },
 	},
 
 	// === OSINT & Hazards ===
-	{ 
-		key: "wildfires", 
-		label: "Wildfires (FIRMS)", 
-		group: "OSINT & Hazards", 
-		color: "#fb923c", 
-		Icon: Flame, 
+	{
+		key: "wildfires",
+		label: "Wildfires (FIRMS)",
+		group: "OSINT & Hazards",
+		color: "#fb923c",
+		Icon: Flame,
 		requiredTier: "signal",
 		source: "NASA FIRMS",
 		freshness: "3 hours",
-		description: "Active wildfire detection from NASA"
+		description: "Detecciones activas de fuego (puntos FIRMS NRT)"
 	},
 	{ 
 		key: "earthquakes", 
@@ -348,6 +460,7 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	"earthquakes",
 	"airTraffic",
 	"marketData",
+	"dayNight",
 ];
 
 export function layerDef(key: EnvLayerKey): globeLayerDef | undefined {

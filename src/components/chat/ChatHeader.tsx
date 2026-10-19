@@ -1,7 +1,9 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
-import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, BrainCircuit, Building2, Cpu } from "lucide-react";
+import { ConversationExport } from "./ConversationExport";
+import type { Message } from "@/hooks/useChat";
+import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, Network, Building2, Cpu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -17,15 +19,17 @@ interface ChatHeaderProps {
   sidebarOpen: boolean;
   workspace: ChatWorkspace;
   onWorkspaceChange: (workspace: ChatWorkspace) => void;
+  /** Live thread, used by the export menu. */
+  messages: Message[];
 }
 
 const WORKSPACES: { id: ChatWorkspace; label: string; icon: typeof MessageSquare; title: string }[] = [
   { id: "chat", label: "Chat", icon: MessageSquare, title: "Conversación con el oráculo" },
-  { id: "neural", label: "Núcleo", icon: BrainCircuit, title: "Núcleo neural: skills, RAG y workflows en vivo" },
+  { id: "neural", label: "Núcleo", icon: Network, title: "Núcleo neural: skills, RAG y workflows en vivo" },
   { id: "city", label: "Ciudad", icon: Building2, title: "AlienFlow.Space DAO City" },
 ];
 
-export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, workspace, onWorkspaceChange }: ChatHeaderProps) {
+export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, workspace, onWorkspaceChange, messages }: ChatHeaderProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isCompact, setIsCompact] = useState(false);
@@ -121,6 +125,8 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
         <Button variant="ghost" size="icon" onClick={onNewChat} aria-label="Nuevo chat" className="h-8 w-8 text-muted-foreground/40 hover:text-primary" title="Nuevo chat">
           <Plus className="h-4 w-4" />
         </Button>
+
+        <ConversationExport messages={messages} />
 
         {hasMessages && (
           <Button variant="ghost" size="icon" onClick={onClear} aria-label="Limpiar chat" className="h-8 w-8 text-muted-foreground/40 hover:text-destructive" title="Limpiar chat">

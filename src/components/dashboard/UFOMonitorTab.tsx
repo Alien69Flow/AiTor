@@ -6,11 +6,13 @@ import {
   Radio, RefreshCw, ShieldCheck, SlidersHorizontal, Users,
 } from "lucide-react";
 import { fetchAllUapSightingsRows, isUapSightingsTableMissing } from "@/lib/uap-sightings";
+import { fetchNuforcRecords, fetchNuforcMeta, NUFORC_SOURCE, type NuforcMeta } from "@/lib/nuforc-records";
 import {
-  LIVE_CATEGORIES, LIVE_SIGNALS, LIVE_VERIFIED_ON, OFFICIAL_SOURCES,
+  LIVE_CATEGORIES, LIVE_SIGNALS, LIVE_VERIFIED_ON,
   signalThumb, signalsByCategory, type LiveCategoryId, type LiveSignal,
 } from "@/lib/live-signals";
 import { LiveStage } from "./LiveStage";
+import { HistoricCasesStrip, OfficialSourcesStrip } from "./OfficialSourcesStrip";
 import { toast } from "sonner";
 
 type Sighting = {
@@ -136,10 +138,15 @@ export function UFOMonitorTab() {
   const [category, setCategory] = useState<LiveCategoryId>("orbit");
   const [selectedId, setSelectedId] = useState(LIVE_SIGNALS[0].id);
   const [failures, setFailures] = useState<Record<string, string>>({});
+  const [nuforcMeta, setNuforcMeta] = useState<NuforcMeta | null>(null);
 
   const selected = LIVE_SIGNALS.find((signal) => signal.id === selectedId) ?? LIVE_SIGNALS[0];
   const categorySignals = useMemo(() => signalsByCategory(category), [category]);
   const liveCount = LIVE_SIGNALS.filter((signal) => signal.liveAtBuild && !failures[signal.id]).length;
+  const nuforcCount = useMemo(
+    () => sightings.filter((record) => record.source === NUFORC_SOURCE.label).length,
+    [sightings]
+  );
 
   const visibleSightings = useMemo(
     () => (severity === "all" ? sightings : sightings.filter((s) => (s.severity || "signal") === severity)),
@@ -147,40 +154,57 @@ export function UFOMonitorTab() {
   );
 
   const fetchSightings = useCallback(async () => {
-    try {
-      const data = (await fetchAllUapSightingsRows()) as Sighting[];
+    // The database table and the open NUFORC mirror are independent feeds:
+    // one of them dying must not empty the registry on its own.
+    const [table, external, externalMeta] = await Promise.all([
+      fetchAllUapSightingsRows()
+        .then((rows) => ({ rows: rows as Sighting[], unreachable: false }))
+        .catch(() => ({ rows: [] as Sighting[], unreachable: true })),
+      fetchNuforcRecords(180),
+      fetchNuforcMeta(),
+    ]);
+    setNuforcMeta(externalMeta);
 
-      // The table currently stores repeated placeholder rows ("Global", no
-      // description), so fold identical records together before deciding
-      // whether there is anything worth showing.
-      const seen = new Set<string>();
-      const unique = data.filter((row) => {
-        const key = [row.location, row.type, row.date_reported, (row.description ?? "").slice(0, 80)].join("|");
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      const informative = unique.filter(
-        (row) => (row.description ?? "").trim().length > 0 || (row.location ?? "").trim().toLowerCase() !== "global"
+    // The table currently stores repeated placeholder rows ("Global", no
+    // description), so fold identical records together before deciding
+    // whether there is anything worth showing.
+    const seen = new Set<string>();
+    const unique = table.rows.filter((row) => {
+      const key = [row.location, row.type, row.date_reported, (row.description ?? "").slice(0, 80)].join("|");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+    const informative = unique.filter(
+      (row) => (row.description ?? "").trim().length > 0 || (row.location ?? "").trim().toLowerCase() !== "global"
+    );
+
+    const byDateDesc = (a: Sighting, b: Sighting) => {
+      const toTime = (value: string | null) => {
+        const time = Date.parse(value ?? "");
+        return Number.isNaN(time) ? 0 : time;
+      };
+      return toTime(b.date_reported) - toTime(a.date_reported);
+    };
+
+    if (informative.length > 0 || external.length > 0) {
+      setSightings([...informative, ...external].sort(byDateDesc).slice(0, 300));
+      setFeedNote(
+        informative.length > 0
+          ? null
+          : `La tabla UAP no aporta registros propios: el registro se completa con ${external.length} informes del espejo abierto de NUFORC (avistamientos entre ${externalMeta?.dateFrom ?? "?"} y ${externalMeta?.dateTo ?? "?"}).`
       );
-
-      if (informative.length > 0) {
-        setSightings(informative.slice(0, 60));
-        setFeedNote(null);
-      } else {
-        setSightings(SAMPLE_SIGHTINGS);
-        setFeedNote(
-          unique.length > 0
+    } else {
+      setSightings(SAMPLE_SIGHTINGS);
+      setFeedNote(
+        table.unreachable
+          ? "No se pudo consultar la tabla UAP ni el espejo NUFORC. Se muestran ejemplos locales, no informes reales."
+          : unique.length > 0
             ? `La tabla UAP sólo contiene ${unique.length} registro(s) sin ubicación ni descripción. Se muestran ejemplos locales hasta que se completen.`
             : "La tabla UAP no devolvió registros. Se muestran ejemplos locales, no informes reales."
-        );
-      }
-    } catch {
-      setSightings(SAMPLE_SIGHTINGS);
-      setFeedNote("No se pudo consultar la tabla UAP. Se muestran ejemplos locales, no informes reales.");
-    } finally {
-      setLoading(false);
+      );
     }
+    setLoading(false);
   }, []);
 
   const refreshFeed = async () => {
@@ -242,6 +266,10 @@ export function UFOMonitorTab() {
       </header>
 
       <div className="flex flex-col gap-5 p-3">
+        {/* --- Sources first ---------------------------------------------- */}
+        <OfficialSourcesStrip />
+        <HistoricCasesStrip />
+
         {/* --- Live stage ------------------------------------------------- */}
         <section aria-label="Señales en directo" className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -295,6 +323,15 @@ export function UFOMonitorTab() {
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400/80" aria-hidden="true" />
             <h3 className="font-heading text-[11px] uppercase tracking-wider text-foreground/85">Registro de anomalías</h3>
             <span className="font-mono text-[9px] text-muted-foreground">{visibleSightings.length} de {sightings.length}</span>
+            {nuforcCount > 0 && (
+              <span
+                className="font-mono text-[9px] text-muted-foreground/55"
+                title={`${sightings.length - nuforcCount} registros de la tabla UAP · ${nuforcCount} del espejo abierto de NUFORC (dataset DataHerb, ordenado por fecha de avistamiento). Instantánea generada el ${nuforcMeta?.generatedAt.slice(0, 10) ?? "—"}.`}
+              >
+                {sightings.length - nuforcCount} tabla UAP · {nuforcCount} NUFORC
+                {nuforcMeta?.dateFrom && nuforcMeta?.dateTo && ` (${nuforcMeta.dateFrom} → ${nuforcMeta.dateTo})`}
+              </span>
+            )}
             <div className="ml-auto flex flex-wrap items-center gap-1">
               <SlidersHorizontal className="h-3 w-3 text-muted-foreground/50" aria-hidden="true" />
               {SEVERITY_FILTERS.map((option) => (
@@ -376,27 +413,8 @@ export function UFOMonitorTab() {
           )}
         </section>
 
-        {/* --- Sources + method ------------------------------------------- */}
+        {/* --- Method ----------------------------------------------------- */}
         <footer className="flex flex-col gap-2 border-t border-border/40 pt-3">
-          <div className="flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5 text-cyan-400/70" aria-hidden="true" />
-            <h3 className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">Fuentes oficiales</h3>
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {OFFICIAL_SOURCES.map((source) => (
-              <a
-                key={source.label}
-                href={source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={source.desc}
-                className="flex items-center gap-1 border border-cyan-400/20 bg-cyan-500/5 px-2 py-1 font-mono text-[9px] uppercase tracking-wider text-cyan-300/70 transition-all hover:border-cyan-400/40 hover:bg-cyan-500/10 hover:text-cyan-200"
-              >
-                {source.label}
-                <ExternalLink className="h-2 w-2" aria-hidden="true" />
-              </a>
-            ))}
-          </div>
           <p className="flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[9px] leading-4 text-muted-foreground/55">
             <span className="flex items-center gap-1">
               <Users className="h-2.5 w-2.5" aria-hidden="true" />

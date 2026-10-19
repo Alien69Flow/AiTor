@@ -9,10 +9,12 @@ en el destino. No pegues claves en GitHub ni en el chat.
 - Proyecto Supabase: `wkdtvrxavkhbifjtvvdw` (ya es del propietario). Las funciones Edge están
   versionadas en `supabase/functions/` y el frontend las invoca con
   `supabase.functions.invoke(...)` a través de `src/integrations/supabase/client.ts`.
-- El **login social sigue siendo de Lovable**: `src/hooks/useAuth.ts` llama a
-  `lovable.auth.signInWithOAuth(...)` de `src/integrations/lovable/index.ts`, que envuelve
-  `@lovable.dev/cloud-auth-js`. En el bundle desplegado aparece `oauth.lovable.app`.
-  Email/contraseña y wallet **ya son nativos de Supabase** y no dependen de Lovable.
+- El **login social ya no usa Lovable en el código**: `src/hooks/useAuth.ts` llama a
+  `supabase.auth.signInWithOAuth(...)` para los 18 proveedores y `src/integrations/lovable/`
+  (envoltorio de `@lovable.dev/cloud-auth-js`) se borró. En el **bundle desplegado** (17-10)
+  todavía aparecen `oauth.lovable.app` y `~oauth/initiate`: eso es lo que el usuario ve en
+  `aitor.alienflow.space` hasta que se redespliegue. Email/contraseña y wallet ya eran
+  nativos de Supabase.
 - Enlaces de dominio ya corregidos en este cambio: `aitor.lovable.app` ya **no** aparece en
   el bundle (canonical/og de `Index`/`Auth`, `scripts/generate-sitemap.ts`, `robots.txt`,
   `sitemap.xml`).
@@ -21,7 +23,7 @@ en el destino. No pegues claves en GitHub ni en el chat.
 
 | Artefacto | Qué es | Se puede quitar ahora |
 | --- | --- | --- |
-| `@lovable.dev/cloud-auth-js` + `src/integrations/lovable/index.ts` + uso en `useAuth.ts` | Login OAuth Google/Apple | **No** — requiere probar el login nativo primero |
+| `@lovable.dev/cloud-auth-js` + `src/integrations/lovable/index.ts` + uso en `useAuth.ts` | Login OAuth Google/Apple | ✅ **Hecho**: `useAuth` es 100 % Supabase y el directorio `src/integrations/lovable/` se borró (queda retirar la dependencia de `package.json`) |
 | `@lovable.dev/mcp-js` + `src/lib/mcp/*` + `mcpPlugin()` en `vite.config.ts` + `supabase/functions/mcp/` | Servidor MCP y herramientas | Después del login; quita features |
 | `lovable-tagger` en `vite.config.ts` (solo `dev`) | Tags de componentes en desarrollo | Sí, es solo dev, pero va en el orden 4 |
 | `.lovable/` | Config del editor | Orden 4 |
@@ -62,6 +64,97 @@ SUPABASE_SERVICE_ROLE_KEY=...
 
 ## Orden para salir del login de Lovable (sin romper nada)
 
+> **Actualización (2026-10-19).** Se comprobó en vivo que el broker de Lovable rechaza el
+> dominio propio: `GET https://oauth.lovable.app/initiate?...&redirect_uri=https://aitor.alienflow.space/`
+> responde `400 redirect_uri is not allowed` (solo admite `aitor.lovable.app`), y
+> `/~oauth/initiate` no existe fuera del hosting de Lovable (`404` en Vercel). Por eso el
+> paso 1 ya está implementado y es el camino por defecto:
+>
+> - `useAuth.ts` usa `supabase.auth.signInWithOAuth` para Google y Apple, con un
+>   *pre-flight* de `/authorize?skip_http_redirect=true` para que un proveedor sin
+>   credenciales muestre un aviso en la app en vez de dejar al usuario en una página JSON.
+> - `VITE_LOVABLE_OAUTH=true` restaura el flujo antiguo de Lovable (solo útil si la app se
+>   sirve desde un dominio `*.lovable.app`).
+> - **Paso 2 pendiente, del propietario**: crear un cliente OAuth de Google (redirect
+>   `https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback`) y guardarlo en Supabase →
+>   Authentication → Providers → Google, más `https://aitor.alienflow.space/**` en Site URL /
+>   Redirect URLs. Hasta entonces el botón Google muestra el aviso exacto.
+>
+> Verificado el 2026-10-19: `tsc -b`, `vite build` y el flujo en `localhost:8080/auth`
+> (Google → aviso, email → «Credenciales incorrectas»).
+
+## Inventario de métodos de acceso (2026-10-19)
+
+La pantalla de acceso (`src/components/auth/AuthMethods.tsx`, usada en `/auth` y en el panel
+DAO de `SystemTab`) ofrece **18 botones OAuth + Instagram (informativo) + wallet + email**,
+todos por Supabase Auth. El build desplegado en `aitor.alienflow.space` es del 17-10 y
+antecede a `AuthMethods`, por eso allí solo se ven 4 (búsqueda en el bundle: `linkedin_oidc`
+= 0, `~oauth/initiate` = 1): al redesplegar desaparecen el 404 de `~oauth/initiate` y el
+salto a `oauth.lovable.app`.
+
+| Método | Id en GoTrue | Estado en código | Qué falta (consola del propietario) |
+| --- | --- | --- | --- |
+| Email + contraseña (entrar/crear) | — | ✅ funciona | nada |
+| Wallet Reown (SIWE → `wallet-auth`) | — | ✅ abre el conector | nada |
+| Google | `google` | código listo | Cliente OAuth de Google → Providers → Google (`missing OAuth secret` verificado por API el 19-10) |
+| Apple | `apple` | código listo | Apple Developer (Services ID + secret) → Providers → Apple (igual: `missing OAuth secret`) |
+| Microsoft | `azure` | código listo | app de Azure AD → Providers → Azure |
+| GitHub | `github` | código listo | OAuth App de GitHub → Providers → GitHub |
+| X | `x` | código listo | app OAuth 2.0 de X → Providers → X |
+| Discord | `discord` | código listo | application de Discord → Providers → Discord |
+| Facebook | `facebook` | código listo | app de Meta → Providers → Facebook |
+| LinkedIn | `linkedin_oidc` | código listo | app de LinkedIn → Providers → LinkedIn |
+| Reddit | `custom:reddit` | código listo | Custom Provider manual (ver receta abajo) |
+| Twitch | `twitch` | código listo | app de Twitch → Providers → Twitch |
+| GitLab | `gitlab` | código listo | app OAuth de GitLab → Providers → GitLab |
+| Bitbucket | `bitbucket` | código listo | OAuth consumer de Bitbucket → Providers |
+| Slack | `slack_oidc` | código listo | app de Slack (OIDC) → Providers → Slack |
+| Spotify | `spotify` | código listo | app de Spotify → Providers → Spotify |
+| Notion | `notion` | código listo | integration de Notion → Providers → Notion |
+| Figma | `figma` | código listo | app de Figma → Providers → Figma |
+| Zoom | `zoom` | código listo | app de Zoom (OAuth) → Providers → Zoom |
+| Kakao | `kakao` | código listo | app de Kakao → Providers → Kakao |
+| Instagram | — (no existe) | informativo | Meta no ofrece login con Instagram; usar Facebook |
+
+> `keycloak`, `workos` y `fly` no se muestran a propósito: son IdP corporativos que
+> necesitan una URL de realm propia y un botón siempre fallaría para usuarios reales.
+
+### Receta Reddit (proveedor manual)
+
+Reddit no es un proveedor integrado de Supabase; se registra como OAuth 2.0 manual en
+Authentication → Providers → Custom Providers → New Provider:
+
+| Campo | Valor |
+| --- | --- |
+| Identifier | `custom:reddit` |
+| Authorization URL | `https://www.reddit.com/api/v1/authorize` |
+| Token URL | `https://www.reddit.com/api/v1/access_token` |
+| User Info URL | `https://oauth.reddit.com/api/v1/me` |
+| Scope | `identity` |
+| `email_optional` | `true` (Reddit no devuelve email con `identity`) |
+| `pkce_enabled` | `false` (el flujo documentado de Reddit no admite PKCE) |
+
+La URL de *callback* que muestra Supabase hay que registrarla en la app de Reddit
+(redirect URI). Fuente: [Custom OAuth/OIDC Providers](https://supabase.com/docs/guides/auth/custom-oauth-providers).
+
+Requisitos comunes a todos los sociales: `Site URL = https://aitor.alienflow.space` y
+`Redirect URLs = https://aitor.alienflow.space/**` (más `http://localhost:8080/**` para
+desarrollo). Cada proveedor sin configurar muestra en la app: «… no está activado en Supabase
+(Authentication → Providers)» o «Faltan las credenciales de … (Client ID + Secret)».
+
+Pruebas del 2026-10-19 sobre `localhost:8080/auth`: los 18 botones OAuth muestran su aviso
+**sin salir de `/auth`**, Instagram explica por qué no puede existir, el email responde
+«Credenciales incorrectas» y la wallet abre el conector de Reown.
+
+Sondeo directo de `/auth/v1/authorize` (19-10, con `redirect_to` de producción): Google y
+Apple → `400 missing OAuth secret`; GitHub → `400 provider is not enabled`; Reddit
+(`custom:reddit`) → `400` (aún sin registrar como Custom Provider). O sea: **ningún
+proveedor está activado todavía en este proyecto Supabase**; hasta que el propietario cree
+los clientes OAuth, todos — incluidos Google y Apple — mostrarán su aviso, que es el
+comportamiento esperado del flujo nativo. En el build viejo desplegado Google/Apple
+"funcionaban" porque los hacía el broker de Lovable, que en el dominio propio terminaba
+en el 404 de `~oauth/initiate`.
+
 El login social es el único bloqueante real del propietario de la cuenta, así que va primero.
 Cada paso es reversible hasta el 4.
 
@@ -73,9 +166,11 @@ Cada paso es reversible hasta el 4.
 2. **Probar login y sesión reales** con el flag activo: entrar, refrescar, cerrar sesión y
    comprobar que `supabase.auth.getSession()` persiste. Esto exige **navegador** y los
    proveedores configurados: *no verificable desde aquí*.
-3. **Solo entonces** quitar `oauth.lovable.app`: borrar el uso de `lovable.auth.*` en
+3. ~~**Solo entonces** quitar `oauth.lovable.app`: borrar el uso de `lovable.auth.*` en
    `useAuth.ts`, eliminar `src/integrations/lovable/` y la dependencia
-   `@lovable.dev/cloud-auth-js`.
+   `@lovable.dev/cloud-auth-js`.~~ **Hecho en código (2026-10-19)**: el uso y el directorio
+   ya no existen; falta quitar `@lovable.dev/cloud-auth-js` de `package.json` en el siguiente
+   paso de limpieza.
 4. **Después**: quitar `@lovable.dev/mcp-js` (+ `mcpPlugin()` de `vite.config.ts`,
    `src/lib/mcp/*`, `supabase/functions/mcp/`), `lovable-tagger` de `vite.config.ts` y del
    `devDependencies`, `.lovable/`, `src/integrations/supabase/previewAuthStorage.ts` y las

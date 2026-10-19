@@ -461,7 +461,7 @@ export class SocialMediaManager {
     return new Date(d.setDate(diff));
   }
 
-  private static parseContentResponse(response: string): any {
+  private static parseContentResponse(response: string): Record<string, unknown> | null {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -473,7 +473,7 @@ export class SocialMediaManager {
     return null;
   }
 
-  private static parseWeeklyResponse(response: string): any[] {
+  private static parseWeeklyResponse(response: string): unknown[] {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
@@ -486,7 +486,7 @@ export class SocialMediaManager {
     return [];
   }
 
-  private static parseMonthlyResponse(response: string): any {
+  private static parseMonthlyResponse(response: string): Record<string, unknown> | null {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {

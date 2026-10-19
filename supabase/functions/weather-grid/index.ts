@@ -7,6 +7,23 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// One sample of the grid: OpenWeather `/data/2.5/weather` fields, flattened.
+interface GridWeatherCell {
+  lat: number;
+  lon: number;
+  temp: number | null;
+  humidity: number | null;
+  pressure: number | null;
+  clouds: number | null;
+  windSpeed: number | null;
+  windDir: number | null;
+  weather: string | null;
+  description: string | null;
+  visibility: number | null;
+  icon: string | null;
+  cityName: string | null;
+}
+
 // Default: Zaragoza center coordinates
 const DEFAULT_CENTER = { lat: 41.6561, lon: -0.8773 };
 const GRID_SIZE = 7; // 7x7 grid
@@ -56,7 +73,7 @@ Deno.serve(async (req) => {
     }
     
     // Fetch weather for all grid points (batch requests with rate limiting)
-    const weatherData: any[] = [];
+    const weatherData: Array<GridWeatherCell | null> = [];
     
     for (const point of grid) {
       try {
@@ -93,13 +110,13 @@ Deno.serve(async (req) => {
     }
     
     // Filter out failed requests
-    const validData = weatherData.filter(Boolean);
+    const validData = weatherData.filter((cell): cell is GridWeatherCell => cell !== null);
     
     // Calculate grid statistics
-    const temps = validData.map(d => d.temp).filter((t: number) => t !== null) as number[];
-    const humidities = validData.map(d => d.humidity).filter((h: number) => h !== null) as number[];
-    const pressures = validData.map(d => d.pressure).filter((p: number) => p !== null) as number[];
-    const windSpeeds = validData.map(d => d.windSpeed).filter((w: number) => w !== null) as number[];
+    const temps = validData.map(d => d.temp).filter((t): t is number => t !== null);
+    const humidities = validData.map(d => d.humidity).filter((h): h is number => h !== null);
+    const pressures = validData.map(d => d.pressure).filter((p): p is number => p !== null);
+    const windSpeeds = validData.map(d => d.windSpeed).filter((w): w is number => w !== null);
     
     const stats = {
       avgTemp: temps.length ? Math.round((temps.reduce((a, b) => a + b, 0) / temps.length) * 10) / 10 : null,

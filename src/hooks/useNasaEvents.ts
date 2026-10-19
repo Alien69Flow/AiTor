@@ -10,6 +10,15 @@ export interface NasaEvent {
   link: string;
 }
 
+/** One event of the NASA EONET v3 feed (geometry is chronological). */
+interface EonetEvent {
+  id?: string;
+  title?: string;
+  link?: string;
+  categories?: { title?: string }[];
+  geometry?: { date?: string; coordinates?: [number, number] }[];
+}
+
 const EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=30";
 
 export function useNasaEvents(intervalMs = 600_000) {
@@ -21,9 +30,9 @@ export function useNasaEvents(intervalMs = 600_000) {
       const res = await fetch(EONET_URL);
       if (!res.ok) throw new Error("NASA EONET fetch failed");
       const json = await res.json();
-      const parsed: NasaEvent[] = (json.events || [])
-        .filter((e: any) => e.geometry?.length > 0)
-        .map((e: any) => {
+      const parsed: NasaEvent[] = ((json.events ?? []) as EonetEvent[])
+        .filter((e) => (e.geometry?.length ?? 0) > 0)
+        .map((e) => {
           const geo = e.geometry[e.geometry.length - 1];
           return {
             id: e.id,

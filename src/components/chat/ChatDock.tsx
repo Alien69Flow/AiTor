@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import ReactMarkdown from "react-markdown";
 import {
-  ArrowUpRight, BrainCircuit, Loader2, Maximize2, MessageSquare, Send, Sparkles, Trash2, X,
+  ArrowUpRight, Loader2, Maximize2, Send, Sparkles, Trash2, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { NeuralChatIcon } from "./NeuralChatIcon";
 import { useChat } from "@/hooks/useChat";
 import { AI_MODELS } from "@/lib/ai-models";
 import { readPreferredModel } from "@/lib/chat-prefs";
@@ -130,7 +131,7 @@ export function ChatDock({ onOpenAgents }: ChatDockProps) {
           {isLoading && (
             <span className="absolute inset-0 animate-spin rounded-full border border-transparent border-t-secondary [animation-duration:3s]" aria-hidden="true" />
           )}
-          <BrainCircuit className="h-5 w-5 text-primary" aria-hidden="true" />
+          <NeuralChatIcon className="h-7 w-7 text-primary drop-shadow-[0_0_6px_hsl(var(--primary)/0.45)]" sparkClassName="text-secondary" />
           {unread > 0 && (
             <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-secondary px-1 font-mono text-[10px] font-bold text-background">
               {unread > 9 ? "9+" : unread}
@@ -152,7 +153,7 @@ export function ChatDock({ onOpenAgents }: ChatDockProps) {
       <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-background/60 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <div className="relative flex h-7 w-7 items-center justify-center border border-primary/35 bg-primary/10">
-            <BrainCircuit className="h-4 w-4 text-primary" aria-hidden="true" />
+            <NeuralChatIcon className="h-4 w-4 text-primary" sparkClassName="text-secondary" />
           </div>
           <div className="min-w-0">
             <p className="truncate font-mono text-[10px] uppercase tracking-wider text-foreground/85">AI Tor · Canal rápido</p>
@@ -207,7 +208,7 @@ export function ChatDock({ onOpenAgents }: ChatDockProps) {
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-3 py-3">
         {messages.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-            <MessageSquare className="h-6 w-6 text-muted-foreground/30" aria-hidden="true" />
+            <NeuralChatIcon className="h-7 w-7 text-muted-foreground/30" />
             <p className="font-mono text-[10px] text-muted-foreground">
               Pregunta lo que sea sin salir de esta pestaña.
             </p>

@@ -1,5 +1,32 @@
 import { supabase } from "@/integrations/supabase/client";
 
+// --- Tipos de las respuestas de los proxies ---
+
+/** Resultado de búsqueda devuelto por el proxy de Firecrawl. */
+interface SearchHit {
+  title?: string;
+  url?: string;
+  description?: string;
+  markdown?: string;
+}
+
+/** Entrada del árbol de un repo de GitHub (`git/trees`). */
+interface GitHubTreeEntry {
+  path?: string;
+  type?: string;
+}
+
+/** Commit de GitHub usado solo para mostrar su primer mensaje. */
+interface GitHubCommit {
+  commit?: { message?: string };
+}
+
+/** Cotización de CoinGecko para un moneda. */
+interface CoinQuote {
+  usd?: number;
+  usd_24h_change?: number;
+}
+
 // --- Helpers ---
 
 function parseRepoUrl(input: string): { owner: string; repo: string } | null {
@@ -34,7 +61,7 @@ export async function fetchWebContext(query: string): Promise<string | null> {
     }
     const results = data?.data || [];
     if (results.length === 0) return null;
-    return results.map((r: any, i: number) =>
+    return results.map((r: SearchHit, i: number) =>
       `[${i + 1}] ${r.title || "Sin título"}\nURL: ${r.url || ""}\n${r.description || ""}\n${r.markdown ? r.markdown.slice(0, 500) : ""}`
     ).join("\n\n---\n\n");
   } catch (e) {
@@ -69,12 +96,12 @@ export async function analyzeRepo(repoInput: string): Promise<string | null> {
       ctx += `## Info\n- **Desc**: ${repoInfo.description || "N/A"}\n- **Lang**: ${repoInfo.language || "N/A"}\n- ⭐ ${repoInfo.stargazers_count} | 🍴 ${repoInfo.forks_count}\n- **Visibilidad**: ${repoInfo.private ? "Privado" : "Público"}\n\n`;
     }
     if (tree?.tree) {
-      const files = tree.tree.filter((f: any) => f.type === "blob").slice(0, 100).map((f: any) => f.path);
+      const files = tree.tree.filter((f: GitHubTreeEntry) => f.type === "blob").slice(0, 100).map((f: GitHubTreeEntry) => f.path);
       ctx += `## Archivos (${files.length})\n\`\`\`\n${files.join("\n")}\n\`\`\`\n\n`;
     }
     if (commits?.length) {
       ctx += `## Últimos Commits\n`;
-      commits.slice(0, 8).forEach((c: any) => {
+      commits.slice(0, 8).forEach((c: GitHubCommit) => {
         ctx += `- ${c.commit?.message?.split("\n")[0] || "?"}\n`;
       });
       ctx += "\n";
@@ -83,7 +110,9 @@ export async function analyzeRepo(repoInput: string): Promise<string | null> {
       try {
         const decoded = atob(readme.content.replace(/\n/g, ""));
         ctx += `## README\n${decoded.slice(0, 2000)}\n\n`;
-      } catch {}
+      } catch {
+        // README ilegible (base64 corrupto): se omite sin abortar el análisis.
+      }
     }
     return ctx;
   } catch (e) {
@@ -119,11 +148,13 @@ export async function fetchRepoFilesForEdit(owner: string, repo: string) {
   const keyFiles = new Map<string, string>();
   for (const filePath of priorityFiles) {
     if (keyFiles.size >= 6) break;
-    const inTree = tree.tree.find((f: any) => f.path === filePath && f.type === "blob");
+    const inTree = tree.tree.find((f: GitHubTreeEntry) => f.path === filePath && f.type === "blob");
     if (inTree) {
       const fileData = await githubFetch("get_file", { owner, repo, path: filePath });
       if (fileData?.content) {
-        try { keyFiles.set(filePath, atob(fileData.content.replace(/\n/g, "")).slice(0, 5000)); } catch {}
+        try { keyFiles.set(filePath, atob(fileData.content.replace(/\n/g, "")).slice(0, 5000)); } catch {
+          // Contenido no válido en base64: se descarta este fichero.
+        }
       }
     }
   }
@@ -164,7 +195,7 @@ export async function fetchCryptoPrice(coinIds: string[]): Promise<string | null
     if (!data?.prices) return null;
 
     let ctx = "## Precios Crypto en Tiempo Real\n\n";
-    for (const [coin, info] of Object.entries(data.prices) as [string, any][]) {
+    for (const [coin, info] of Object.entries(data.prices) as [string, CoinQuote][]) {
       ctx += `- **${coin.toUpperCase()}**: $${info.usd?.toLocaleString() ?? "N/A"}`;
       if (info.usd_24h_change != null) ctx += ` (${info.usd_24h_change > 0 ? "+" : ""}${info.usd_24h_change.toFixed(2)}%)`;
       ctx += "\n";

@@ -1,4 +1,3 @@
-// @ts-nocheck
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   Ion,
@@ -31,7 +30,7 @@ import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
-import { GLOBE_LAYERS, type EnvLayerKey } from "@/lib/globe-layers";
+import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import type { SatellitePosition } from "@/hooks/useSatellites";
 import type { OutageEvent } from "@/hooks/useInternetOutages";
@@ -64,17 +63,20 @@ const OWM_ALPHA: Record<string, number> = {
 };
 
 /**
- * NASA GIBS (open, no API key) — VIIRS thermal anomalies give global wildfire
- * detection including Spain and the rest of Europe, which the EONET point feed
- * misses. GIBS publishes yesterday's full mosaic reliably.
+ * NASA GIBS (open, no API key) rasters. Every layer links its own
+ * TileMatrixSet and TIME window — the wrong level answers `TILEMATRIXSET is
+ * invalid for LAYER` and an out-of-range date answers 404 — so the level and
+ * the date policy live in each layer's `gibs` config in globe-layers.ts.
  */
-function gibsDate(): string {
-  const d = new Date(Date.now() - 36 * 3600 * 1000);
+function gibsDate(offsetHours = 36): string {
+  const d = new Date(Date.now() - offsetHours * 3600 * 1000);
   return d.toISOString().slice(0, 10);
 }
 
-const GIBS_URL = (layer: string, level = 8) =>
-  `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${gibsDate()}/GoogleMapsCompatible_Level${level}/{z}/{y}/{x}.png`;
+function gibsTileUrl(cfg: NonNullable<globeLayerDef["gibs"]>): string {
+  const time = cfg.timeless ? "" : `${cfg.date ?? gibsDate(cfg.dateOffsetHours ?? 36)}/`;
+  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${cfg.layer}/default/${time}GoogleMapsCompatible_Level${cfg.level}/{z}/{y}/{x}.png`;
+}
 
 // The Cesium Ion token is never shipped to the browser bundle; it is fetched
 // at runtime from the server-side `cesium-tiles` proxy.
@@ -122,14 +124,50 @@ const MARKER_GLYPHS: Record<string, string> = {
   conflict: "✕", news: "!", bitcoin: "₿", outage: "⌁", market: "$", uap: "◉",
 };
 
+/**
+ * Pulse helper for the paired axes of a pulsing ellipse.
+ *
+ * `semiMajorAxis` and `semiMinorAxis` are two independent CallbackProperties:
+ * evaluating the pulse in each one let a 50ms quantization-bucket straddle
+ * make the minor axis larger than the major one, and
+ * `semiMajorAxis must be >= semiMinorAxis` then froze the whole globe
+ * (DeveloperError from EllipseGeometry). Cesium rebuilds the geometry reading
+ * `semiMajorAxis` before `semiMinorAxis`, so `minor` clamps itself against the
+ * major value computed in the same pass — the invariant now holds on every
+ * evaluation, whatever the clock does.
+ */
+function makePulsePair(startTime: number, periodMs: number, amplitude: number, phase = 0) {
+  let lastBucket = -1;
+  let lastPulse = 1;
+  let lastMajor = 0;
+  const pulse = () => {
+    const t = Math.floor((Date.now() - startTime) / 50) * 50;
+    if (t !== lastBucket) {
+      lastBucket = t;
+      lastPulse = 1 + amplitude * Math.sin(((t % periodMs) / periodMs) * Math.PI * 2 + phase);
+    }
+    return lastPulse;
+  };
+  return {
+    major: (base: number) => {
+      lastMajor = base * pulse();
+      return lastMajor;
+    },
+    minor: (base: number, factor: number) => Math.min(lastMajor, base * pulse() * factor),
+  };
+}
+
 function markerIcon(type: string, color: string): string {
   const glyph = MARKER_GLYPHS[type] || "•";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 2 36 11v18L20 38 4 29V11Z" fill="#05070a" fill-opacity=".9" stroke="${color}" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="${color}" fill-opacity=".16"/><text x="20" y="25" text-anchor="middle" font-family="monospace" font-size="16" font-weight="700" fill="${color}">${glyph}</text></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-function eventPayload(data: Record<string, unknown>) {
-  return { sightingData: JSON.stringify(data) } as any;
+/** Propiedades planas de entidad: Cesium las envuelve en ConstantProperty. */
+type PlainEntityProperties = Record<string, string | number | boolean>;
+
+function eventPayload(data: Record<string, unknown>): PlainEntityProperties {
+  return { sightingData: JSON.stringify(data) };
 }
 
 type LayerKey = "markets" | "uap" | "cryptozoo";
@@ -179,9 +217,9 @@ export function CesiumGlobe({
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
-  const owmLayersRef = useRef<Record<string, any>>({});
-  const gibsLayersRef = useRef<Record<string, any>>({});
-  const rainLayerRef = useRef<any>(null);
+  const owmLayersRef = useRef<Record<string, ImageryLayer>>({});
+  const gibsLayersRef = useRef<Record<string, ImageryLayer>>({});
+  const rainLayerRef = useRef<ImageryLayer | null>(null);
   const rainUrlRef = useRef<string | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
@@ -219,7 +257,7 @@ export function CesiumGlobe({
       contextOptions: { webgl: { alpha: false } },
       // Start with no base layer so async imagery never wipes overlays that
       // were already added (that race made toggled-on layers invisible).
-      baseLayer: false as any,
+      baseLayer: false,
     });
 
     // Enable built-in Cesium sky with stars and atmosphere
@@ -285,17 +323,17 @@ export function CesiumGlobe({
           nl.brightness = 2.0;
           viewer.imageryLayers.lowerToBottom(nl);
           viewer.imageryLayers.raise(nl);
-        } catch (e: any) {
+        } catch (e) {
           console.warn("Night lights failed:", e);
         }
-      } catch (e: any) {
+      } catch (e) {
         console.warn("ArcGIS base imagery failed:", e);
       }
     })();
 
     // Click handler
     const handler = new ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click: any) => {
+    handler.setInputAction((click: { position: Cartesian2 }) => {
       const picked = viewer.scene.pick(click.position);
       if (defined(picked) && picked.id?.properties) {
         const idx = picked.id.properties.hotspotIndex?.getValue();
@@ -389,26 +427,26 @@ export function CesiumGlobe({
     });
 
     // NASA GIBS imagery overlays (no key required).
-    const GIBS_OVERLAYS: { key: EnvLayerKey; layer: string; alpha: number; level?: number }[] = [
-      { key: "wildfires", layer: "VIIRS_NOAA20_Thermal_Anomalies_375m_All", alpha: 0.95, level: 8 },
-      { key: "solarActivity", layer: "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance", alpha: 0.35, level: 8 },
-    ];
-    GIBS_OVERLAYS.forEach(({ key, layer: layerId, alpha, level }) => {
-      const shouldShow = active.has(key);
-      const existing = gibsLayersRef.current[layerId];
+    // NASA GIBS raster overlays (no key required), driven by the `gibs` config
+    // on each layer definition so panel data and renderer can never drift.
+    GLOBE_LAYERS.filter((l) => l.gibs).forEach((def) => {
+      const cfg = def.gibs as NonNullable<globeLayerDef["gibs"]>;
+      const shouldShow = active.has(def.key);
+      const alpha = cfg.alpha ?? 0.8;
+      const existing = gibsLayersRef.current[cfg.layer];
       if (shouldShow && !existing) {
         try {
           const provider = new UrlTemplateImageryProvider({
-            url: GIBS_URL(layerId, level),
-            maximumLevel: level ?? 8,
+            url: gibsTileUrl(cfg),
+            maximumLevel: cfg.level,
             minimumLevel: 0,
             credit: "NASA GIBS / EOSDIS",
           });
           const l = viewer.imageryLayers.addImageryProvider(provider);
           l.alpha = alpha;
-          gibsLayersRef.current[layerId] = l;
+          gibsLayersRef.current[cfg.layer] = l;
         } catch (e) {
-          console.error("[CesiumGlobe] GIBS layer add failed:", layerId, e);
+          console.error("[CesiumGlobe] GIBS layer add failed:", cfg.layer, e);
         }
       } else if (existing) {
         existing.show = shouldShow;
@@ -419,6 +457,12 @@ export function CesiumGlobe({
     // Atmosphere halo toggle
     if (viewer.scene.skyAtmosphere) {
       viewer.scene.skyAtmosphere.show = active.has("atmosphere");
+    }
+
+    // Day/night terminator: real solar lighting. Only applied when the caller
+    // supplies an env-layer set, so callers without one keep the init default.
+    if (envLayers) {
+      viewer.scene.globe.enableLighting = active.has("dayNight");
     }
   }, [envLayers]);
 
@@ -453,22 +497,14 @@ export function CesiumGlobe({
         const entityId = `aurora-${suffix}-${ring}`;
         const baseRadius = 400000 + ring * 200000;
         const color = colors[ring];
+        const pulse = makePulsePair(startTime, 6000, 0.15, ring);
 
         viewer.entities.add({
           id: entityId,
           position: Cartesian3.fromDegrees(0, ringLat, 80000 + ring * 30000),
           ellipse: {
-            semiMajorAxis: new CallbackProperty(() => {
-              // Quantize time so major/minor callbacks always agree within a frame
-              const t = Math.floor((Date.now() - startTime) / 50) * 50;
-              const pulse = 1 + 0.15 * Math.sin(((t % 6000) / 6000) * Math.PI * 2 + ring);
-              return baseRadius * pulse;
-            }, false) as any,
-            semiMinorAxis: new CallbackProperty(() => {
-              const t = Math.floor((Date.now() - startTime) / 50) * 50;
-              const pulse = 1 + 0.15 * Math.sin(((t % 6000) / 6000) * Math.PI * 2 + ring);
-              return baseRadius * pulse * 0.6;
-            }, false) as any,
+            semiMajorAxis: new CallbackProperty(() => pulse.major(baseRadius), false),
+            semiMinorAxis: new CallbackProperty(() => pulse.minor(baseRadius, 0.6), false),
             material: hexToColor(color, 0.03 + intensity * 0.05),
             outline: true,
             outlineColor: hexToColor(color, 0.08 + intensity * 0.12),
@@ -498,21 +534,14 @@ export function CesiumGlobe({
       const entityId = `quake-${i}`;
       const baseRadius = Math.max(20000, q.magnitude * 30000);
       const startTime = Date.now();
+      const pulse = makePulsePair(startTime, 4000, 0.3);
 
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(q.lon, q.lat, 0),
         ellipse: {
-          semiMajorAxis: new CallbackProperty(() => {
-            const t = Math.floor((Date.now() - startTime) / 50) * 50;
-            const pulse = 1 + 0.3 * Math.sin(((t % 4000) / 4000) * Math.PI * 2);
-            return baseRadius * pulse;
-          }, false) as any,
-          semiMinorAxis: new CallbackProperty(() => {
-            const t = Math.floor((Date.now() - startTime) / 50) * 50;
-            const pulse = 1 + 0.3 * Math.sin(((t % 4000) / 4000) * Math.PI * 2);
-            return baseRadius * pulse * 0.98;
-          }, false) as any,
+          semiMajorAxis: new CallbackProperty(() => pulse.major(baseRadius), false),
+          semiMinorAxis: new CallbackProperty(() => pulse.minor(baseRadius, 0.98), false),
           material: Color.fromCssColorString("#FF4444").withAlpha(
             Math.min(0.6, q.magnitude / 10)
           ),
@@ -640,7 +669,7 @@ export function CesiumGlobe({
           scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-        properties: { hotspotIndex: idx } as any,
+        properties: { hotspotIndex: idx } as PlainEntityProperties,
       });
       marketEntityIdsRef.current.push(entityId);
     });
@@ -717,7 +746,7 @@ export function CesiumGlobe({
             type: s.type, severity: s.severity, source: s.source, category: s.category,
             date_reported: s.date_reported,
           }),
-        } as any,
+        } satisfies PlainEntityProperties,
       });
       sightingEntityIdsRef.current.push(entityId);
     });
@@ -896,7 +925,7 @@ export function CesiumGlobe({
           scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-        properties: payload ? ({ sightingData: JSON.stringify(payload) } as any) : undefined,
+        properties: payload ? ({ sightingData: JSON.stringify(payload) } as PlainEntityProperties) : undefined,
       });
       staticEntityIdsRef.current.push(id);
     };
@@ -965,7 +994,7 @@ export function CesiumGlobe({
             color: Color.fromCssColorString(color).withAlpha(0.6),
           }),
         },
-        properties: { cableName: name } as any,
+        properties: { cableName: name } as PlainEntityProperties,
       });
       staticEntityIdsRef.current.push(id);
     };
@@ -1065,7 +1094,7 @@ export function CesiumGlobe({
             type: "outage", severity: "medium", source: "IODA / Georgia Tech",
             category: "intel", date_reported: "24h",
           }),
-        } as any,
+        } satisfies PlainEntityProperties,
       });
       outageEntityIdsRef.current.push(entityId);
     });
@@ -1158,7 +1187,7 @@ export function CesiumGlobe({
               type: "fire", severity: "high", source: "NASA FIRMS (VIIRS)",
               category: "conflict", date_reported: "24h",
             }),
-          } as any,
+          } satisfies PlainEntityProperties,
         });
         track(id);
       });
@@ -1180,7 +1209,7 @@ export function CesiumGlobe({
                 color: Color.fromCssColorString(cable.color || "#0891b2").withAlpha(0.55),
               }),
             },
-            properties: { cableName: cable.name } as any,
+            properties: { cableName: cable.name } as PlainEntityProperties,
           });
           track(id);
         });
@@ -1228,7 +1257,7 @@ export function CesiumGlobe({
               description: g.url, type: "news", severity: "medium",
               source: `GDELT · ${g.domain}`, category: "intel", date_reported: "24h",
             }),
-          } as any,
+          } satisfies PlainEntityProperties,
         });
         track(id);
       });

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
-import { Activity, BrainCircuit, Cpu, Network } from "lucide-react";
+import { Activity, Cpu, Network } from "lucide-react";
+import { AiTorMark } from "@/components/AiTorMark";
 
 const NODES = [
   { x: 50, y: 13 }, { x: 29, y: 24 }, { x: 70, y: 25 },
@@ -40,7 +41,7 @@ export function NeuralBrain() {
           </div>
         </div>
       </div>
-      <div className="absolute left-3 top-3 flex items-center gap-2 text-[10px] uppercase text-primary"><BrainCircuit className="h-4 w-4" /> Machine mind</div>
+      <div className="absolute left-3 top-3 flex items-center gap-2 text-[10px] uppercase text-primary"><AiTorMark className="h-4 w-4" tile={false} label="" /> Machine mind</div>
     </div>
   );
 }

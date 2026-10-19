@@ -57,7 +57,9 @@ export function AlertsTab() {
       if (error) return;
       const coins = data?.coins || [];
       const priceMap: Record<string, number> = {};
-      coins.forEach((c: any) => { priceMap[c.id] = c.current_price; });
+      coins.forEach((c: { id?: string; current_price?: number }) => {
+        if (c.id) priceMap[c.id] = c.current_price ?? 0;
+      });
 
       setAlerts(prev => prev.map(a => {
         if (!a.active || a.type !== "price" || !a.coinId || !a.threshold) return a;

@@ -11,6 +11,13 @@ export interface Earthquake {
   url: string;
 }
 
+/** One feature of the USGS GeoJSON summary feed. */
+interface UsgsFeature {
+  id?: string;
+  geometry?: { coordinates?: [number, number, number] };
+  properties?: { mag?: number; place?: string; time?: number; url?: string };
+}
+
 const USGS_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
 
 export function useEarthquakes(intervalMs = 300_000) {
@@ -22,7 +29,7 @@ export function useEarthquakes(intervalMs = 300_000) {
       const res = await fetch(USGS_URL);
       if (!res.ok) throw new Error("USGS fetch failed");
       const json = await res.json();
-      const quakes: Earthquake[] = (json.features || []).map((f: any) => ({
+      const quakes: Earthquake[] = ((json.features ?? []) as UsgsFeature[]).map((f) => ({
         id: f.id,
         lat: f.geometry.coordinates[1],
         lon: f.geometry.coordinates[0],
