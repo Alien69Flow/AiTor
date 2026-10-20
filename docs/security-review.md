@@ -86,15 +86,43 @@ guarda `paid_tier: "basic"`. Conviene alinear la nomenclatura.
 
 No forman parte del CI nuevo (`.github/workflows/ci.yml`), pero conviene señalarlos:
 
-- `.github/workflows/repoheart.yml` usa `OpenAgentHQ/repoheart@main` (**rama móvil, sin
-  pin**) y pide `contents: write`, `issues: write`, `pull-requests: write`. `actionlint`
-  además lo marca: `workflow_run` sin filtro `workflows`. Un tercero con permiso de
-  escritura y versión no fijada es el mayor riesgo de cadena de suministro del repo.
+- ~~`.github/workflows/repoheart.yml`~~ — **eliminado**. Usaba `OpenAgentHQ/repoheart@main`
+  (rama móvil, sin pin) con `contents: write`, `issues: write` y `pull-requests: write`, y
+  fallaba en el 100 % de los eventos con un run de 0 s sin logs: su paso pide
+  `config: repoheart.yml` y ese fichero no existe en la raíz. Si se vuelve a necesitar, que
+  sea con la acción fijada a un SHA concreto y sin permiso de escritura de contenido.
 - `.github/workflows/dissent.yml` (`itsarbit/dissent@v1`) y `pr-reviewer.yml`
   (`pip3 install agentic-pr-reviewer`) son acciones de terceros que consumen
-  `secrets.OPENAI_API_KEY`. No tienen permisos de escritura de contenido.
+  `secrets.OPENAI_API_KEY`. No tienen permisos de escritura de contenido, solo se ejecutan
+  en pull requests y ambos fallan mientras esa secreto no exista. Revisar si siguen siendo
+  deseados; si no, eliminarlos.
 
-Recomendación: eliminar los bots con permiso de escritura (o fijarlos a un SHA concreto y
-quitarles `contents: write`), y controlar el merge con **required status checks** de la
-protección de rama en lugar de con bots. No se han borrado aquí porque no se pidió y puede
-haber decisión de producto detrás.
+**Estado: la recomendación de este informe ya está aplicada.** `main` tiene protección de
+rama con el required status check `typecheck · lint · build` (job `quality` de `ci.yml`),
+`enforce_admins` activo y force-push deshabilitado, así que un push directo a `main` se
+rechaza si el chequeo no pasa y los bots de revisión ya no son el único control. Para
+relajarlo temporalmente:
+
+```bash
+gh api -X DELETE repos/Alien69Flow/AiTor/branches/main/protection
+```
+
+## 5. Abuso de los envíos de código — Turnstile
+
+El registro y cada envío de OTP (email o SMS) cuestan dinero por unidad y cualquier
+visitante puede dispararlos en bucle desde el formulario de acceso. Supabase verifica un
+CAPTCHA en esas rutas cuando el proyecto lo tiene activo en **Settings → Captcha**, y el
+cliente adjunta el token con `options.captchaToken`.
+
+- `src/lib/turnstile.ts` carga el widget de Cloudflare una sola vez, lo deja fuera de pantalla
+  y devuelve un token de un solo uso; cada llamada lo reinicia para el siguiente intento.
+- Sin `VITE_TURNSTILE_SITEKEY` la función devuelve `null`, la llamada sale sin token y todo
+  se comporta como antes: habilitar la protección es crear el widget en el panel de
+  Cloudflare, poner la site key en VITE y la secret key en Supabase.
+- Cubiertos: registro con clave, envío de enlace mágico, envío de código por email y por
+  SMS, y passkey. No cubre el inicio de sesión con clave ya existente (no envía nada) ni el
+  intercambio OAuth, que lo limita el proveedor.
+
+Pendiente de verificación real: el token solo se puede comprobar de punta a punta con el
+widget activo en el panel de Supabase; hasta entonces el camino sin token es el mismo de
+siempre.
