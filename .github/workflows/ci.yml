@@ -36,6 +36,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # jsdom needs require(esm), so these only run on Node >= 20 (this job uses
+      # 22). Vitest 3 is pinned: vitest 5 requires Vite 6 and this app is on 5.
+      - name: Unit tests
+        run: npm test
+
       # The repo carries pre-existing lint debt (135 problems: src, supabase/functions,
       # backend). Keep it non-blocking so this gate stays useful, and flip it to
       # blocking once that backlog is cleared. New/changed files must be clean.
