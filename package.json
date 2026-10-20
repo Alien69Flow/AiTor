@@ -43,6 +43,7 @@
     "typecheck": "tsc -b",
     "prebuild": "tsx scripts/generate-sitemap.ts && node scripts/sync-nuforc.mjs",
     "sync:nuforc": "node scripts/sync-nuforc.mjs",
+    "auth:providers": "node scripts/check-auth-providers.mjs",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
