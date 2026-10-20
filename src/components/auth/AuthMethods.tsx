@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,6 +7,7 @@ import { ArrowRight, Fingerprint, Loader2, Mail, Lock, Phone, Wallet, ShieldChec
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth, SOCIAL_PROVIDERS, type SocialProvider } from "@/hooks/useAuth";
+import { turnstileToken } from "@/lib/turnstile";
 import { useWalletAuth } from "@/hooks/useWalletAuth";
 import { track } from "@/lib/analytics";
 import {
@@ -84,6 +85,33 @@ const PROVIDER_ICON: Record<SocialProvider, (props: { className?: string }) => J
  */
 type DirectMode = "password" | "magic" | "code" | "phone";
 
+/** Human name for every provider Supabase can report as linked to an account. */
+const IDENTITY_LABEL: Record<string, string> = {
+  email: "email",
+  phone: "teléfono",
+  siwe: "wallet",
+  passkey: "passkey",
+  google: "Google",
+  apple: "Apple",
+  azure: "Microsoft",
+  github: "GitHub",
+  x: "X",
+  discord: "Discord",
+  facebook: "Facebook",
+  linkedin_oidc: "LinkedIn",
+  "custom:reddit": "Reddit",
+  "custom:wechat": "WeChat",
+  twitch: "Twitch",
+  gitlab: "GitLab",
+  bitbucket: "Bitbucket",
+  slack_oidc: "Slack",
+  spotify: "Spotify",
+  notion: "Notion",
+  figma: "Figma",
+  zoom: "Zoom",
+  kakao: "Kakao",
+};
+
 const DIRECT_MODES: { id: DirectMode; label: string }[] = [
   { id: "password", label: "Clave" },
   { id: "magic", label: "Enlace" },
@@ -116,9 +144,10 @@ interface AuthMethodsProps {
  * Single implementation of every way into the account: the OAuth providers
  * Supabase supports (Google, Apple, Microsoft, GitHub, X, Discord, Facebook,
  * LinkedIn, Reddit, Twitch, GitLab, Bitbucket, Slack, Spotify, Notion, Figma,
- * Zoom, Kakao, WeChat), a Reown wallet signature (SIWE), a passkey (WebAuthn),
- * and the four direct modes that need no provider: password, magic link, the
- * six-digit email code and the SMS code. Meta
+ * Zoom, Kakao, WeChat), a Reown wallet signature (SIWE), a passkey (WebAuthn,
+ * also offered through the browser's autofill), and the four direct modes that
+ * need no provider: password, magic link, the six-digit email code and the SMS
+ * code. The session bar lists the identities actually linked to the account. Meta
  * offers no "sign in with Instagram", so Instagram is not offered at all.
  * The auth page and the System → DAO panel both render this component, so a
  * method can never work in one place and be dead in the other.
@@ -161,6 +190,46 @@ export function AuthMethods({
   const [sentTo, setSentTo] = useState<"email" | "phone" | null>(null);
 
   const target = redirectTo ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+
+  /** Providers actually linked to this account, so the session bar tells the truth. */
+  const linkedIdentities = useMemo(() => {
+    if (!user) return [];
+    const providers = new Set<string>();
+    for (const identity of user.identities ?? []) providers.add(identity.provider);
+    if (user.email) providers.add("email");
+    if (user.phone) providers.add("phone");
+    return [...providers];
+  }, [user]);
+
+  /**
+   * WebAuthn Conditional UI: while the visitor sits on the form the browser
+   * offers their passkey through the email field's autofill. The challenge is
+   * only fetched when the device really has a usable authenticator, and every
+   * rejection caused by the visitor ignoring the prompt is swallowed — that is
+   * the expected path, not an error worth a toast.
+   */
+  useEffect(() => {
+    if (user) return;
+    const webauthn = window.PublicKeyCredential;
+    if (typeof webauthn?.isUserVerifyingPlatformAuthenticatorAvailable !== "function") return;
+
+    let cancelled = false;
+    webauthn
+      .isUserVerifyingPlatformAuthenticatorAvailable()
+      .then((available) => {
+        if (!available || cancelled) return;
+        return signInWithPasskey({ options: { mediation: "conditional" } }).then(({ error }) => {
+          if (!cancelled && error && !/abort|not allowed|no passkey|not found|timeout/i.test(error.message)) {
+            console.warn("[auth] passkey autofill:", error.message);
+          }
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, signInWithPasskey]);
 
   const submitLabel =
     directMode === "password"
@@ -217,8 +286,11 @@ export function AuthMethods({
       }
       setPending("email");
       try {
+        // Turnstile solo protege lo que cuesta dinero servir: el registro y
+        // cada envío de código. Iniciar sesión con clave no envía nada.
+        const captcha = isLogin ? undefined : (await turnstileToken()) ?? undefined;
         if (isLogin) {
-          const { error } = await signIn(email, password);
+          const { error } = await signIn(email, password, captcha);
           if (error) {
             toast.error(error.message.includes("Invalid login credentials") ? "Credenciales incorrectas" : error.message);
           } else {
@@ -226,7 +298,7 @@ export function AuthMethods({
             onSignedIn?.();
           }
         } else {
-          const { error } = await signUp(email, password, target);
+          const { error } = await signUp(email, password, target, captcha);
           if (error) {
             toast.error(error.message.includes("already registered") ? "Este email ya está registrado" : error.message);
           } else {
@@ -243,7 +315,7 @@ export function AuthMethods({
     setPending("email");
     try {
       if (directMode === "magic") {
-        const { error } = await sendEmailOtp(email, target);
+        const { error } = await sendEmailOtp(email, target, (await turnstileToken()) ?? undefined);
         if (error) {
           toast.error(otpHint(error.message, "email"));
           return;
@@ -257,7 +329,10 @@ export function AuthMethods({
       // Two steps for the code modes: first send, then verify the six digits.
       if (!sentTo) {
         const byPhone = directMode === "phone";
-        const { error } = byPhone ? await sendPhoneCode(phone) : await sendEmailOtp(email, target);
+        const captcha = (await turnstileToken()) ?? undefined;
+        const { error } = byPhone
+          ? await sendPhoneCode(phone, captcha)
+          : await sendEmailOtp(email, target, captcha);
         if (error) {
           toast.error(otpHint(error.message, byPhone ? "phone" : "email"));
           return;
@@ -287,7 +362,7 @@ export function AuthMethods({
     setPending("passkey");
     try {
       track("signup_started", { method: "passkey" });
-      const { error } = await signInWithPasskey();
+      const { error } = await signInWithPasskey({ options: { captchaToken: (await turnstileToken()) ?? undefined } });
       if (error) {
         const raw = error.message || "No se pudo usar la passkey";
         toast.error(
@@ -334,6 +409,19 @@ export function AuthMethods({
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/85">
             {user.email ?? user.id}
           </span>
+          {linkedIdentities.length > 0 && (
+            <span className="flex min-w-0 flex-wrap items-center gap-1 font-mono text-[9px] text-muted-foreground/70">
+              {linkedIdentities.map((provider) => (
+                <span
+                  key={provider}
+                  className="border border-border/40 px-1 py-0.5 uppercase tracking-wider"
+                  title={`Identidad enlazada: ${provider}`}
+                >
+                  {IDENTITY_LABEL[provider] ?? provider}
+                </span>
+              ))}
+            </span>
+          )}
           {walletConnected && walletAddress && (
             <span className="font-mono text-[9px] text-secondary/80">
               {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
@@ -466,7 +554,7 @@ export function AuthMethods({
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    autoComplete="email"
+                    autoComplete="username webauthn"
                     className="h-10 border-border/30 bg-muted/30 pl-10"
                   />
                 </div>

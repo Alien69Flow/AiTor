@@ -94,19 +94,29 @@ export function useAuth() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const signIn = useCallback(async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    return { error };
-  }, []);
-
-  const signUp = useCallback(async (email: string, password: string, redirectTo?: string) => {
-    const { error } = await supabase.auth.signUp({
+  const signIn = useCallback(async (email: string, password: string, captchaToken?: string) => {
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
-      options: { emailRedirectTo: redirectTo || window.location.origin },
+      options: captchaToken ? { captchaToken } : undefined,
     });
     return { error };
   }, []);
+
+  const signUp = useCallback(
+    async (email: string, password: string, redirectTo?: string, captchaToken?: string) => {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: redirectTo || window.location.origin,
+          ...(captchaToken ? { captchaToken } : {}),
+        },
+      });
+      return { error };
+    },
+    [],
+  );
 
   /**
    * Every social provider goes through Supabase's own OAuth flow.
@@ -177,12 +187,13 @@ export function useAuth() {
    * modes share one function. Email auth is already on for the password form.
    */
   const sendEmailOtp = useCallback(
-    async (email: string, redirectTo?: string) => {
+    async (email: string, redirectTo?: string, captchaToken?: string) => {
       const { error } = await supabase.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: redirectTo || window.location.origin,
           shouldCreateUser: true,
+          ...(captchaToken ? { captchaToken } : {}),
         },
       });
       return { error };
@@ -200,8 +211,11 @@ export function useAuth() {
    * or Vonage) has to be configured in Authentication → Phone, otherwise the
    * call answers with an explicit error that the UI shows as it comes.
    */
-  const sendPhoneCode = useCallback(async (phone: string) => {
-    const { error } = await supabase.auth.signInWithOtp({ phone });
+  const sendPhoneCode = useCallback(async (phone: string, captchaToken?: string) => {
+    const { error } = await supabase.auth.signInWithOtp({
+      phone,
+      options: captchaToken ? { captchaToken } : undefined,
+    });
     return { error };
   }, []);
 
@@ -216,11 +230,20 @@ export function useAuth() {
    * verifies the challenge. A signed-in user registers one with
    * `registerPasskey`, a visitor consumes one with `signInWithPasskey`; both
    * still need the feature switched on in Authentication → Sign In → Passkeys.
+   *
+   * `mediation: "conditional"` turns the same call into WebAuthn Conditional
+   * UI: the browser offers the passkey through the email field's autofill
+   * instead of opening a modal picker.
    */
-  const signInWithPasskey = useCallback(async () => {
-    const { error } = await supabase.auth.signInWithPasskey();
-    return { error };
-  }, []);
+  const signInWithPasskey = useCallback(
+    async (credentials?: {
+      options?: { mediation?: CredentialMediationRequirement; captchaToken?: string };
+    }) => {
+      const { error } = await supabase.auth.signInWithPasskey(credentials);
+      return { error };
+    },
+    [],
+  );
 
   const registerPasskey = useCallback(async () => {
     const { error } = await supabase.auth.registerPasskey();
