@@ -154,6 +154,84 @@ export function polymarketEventUrl(slug: string): string {
   return `https://polymarket.com/event/${slug}?ref=${POLY_REF}`;
 }
 
+/* ------------------------------------------------------- lectores de respaldo */
+
+/**
+ * Polymarket está bloqueado por país (España incluida) y no manda CORS, así que
+ * el camino normal es el proxy de mismo origen. Cuando ese proxy tampoco puede
+ * salir —desplegado en una región europea, sin función serverless, o caído— se
+ * usa un lector HTTP con salida fuera de la UE que devuelve el JSON original.
+ *
+ * `r.jina.ai` envuelve la respuesta en un preámbulo (`Title:`, `URL Source:`,
+ * `Markdown Content:`); aquí se recorta y se parsea. Es el último recurso, no
+ * la vía principal: añade ~1,5 s y depende de un tercero.
+ */
+const READER_PREFIX = "https://r.jina.ai/";
+
+export function parseReaderPayload(text: string): unknown {
+  const marker = text.lastIndexOf("Markdown Content:");
+  const body = marker >= 0 ? text.slice(marker + "Markdown Content:".length) : text;
+  const start = body.search(/[[{]/);
+  if (start < 0) throw new Error("el lector no devolvió JSON");
+  const parsed = JSON.parse(body.slice(start).trim()) as unknown;
+
+  // El lector contesta con su propio sobre `{ data: { content, httpStatus } }`
+  // cuando la petición pide JSON; `content` es otra cadena con el cuerpo real.
+  const data = (parsed as { data?: unknown } | null)?.data;
+  if (!data || typeof data !== "object" || Array.isArray(data) || !("content" in data)) return parsed;
+  const { content, httpStatus } = data as { content?: unknown; httpStatus?: unknown };
+  if (typeof httpStatus === "number" && (httpStatus < 200 || httpStatus >= 300)) {
+    throw new Error(`el lector recibió HTTP ${httpStatus} del origen`);
+  }
+  return typeof content === "string" ? JSON.parse(content) : content;
+}
+
+async function fetchJsonViaReader<T>(url: string, signal?: AbortSignal, timeoutMs = 15_000): Promise<T> {
+  const text = await safeFetchText(`${READER_PREFIX}${url}`, { signal, timeoutMs });
+  return parseReaderPayload(text) as T;
+}
+
+interface FetchAttempt<T> {
+  label: string;
+  run: () => Promise<T>;
+}
+
+/**
+ * Prueba los caminos en orden (proxy → lector → directo) con un presupuesto
+ * global, y devuelve el primer resultado no vacío. Antes cada fallo consumía su
+ * propio timeout y el usuario esperaba 40 s para ver un error.
+ */
+async function firstNonEmpty<T>(
+  attempts: FetchAttempt<T>[],
+  opts: { signal?: AbortSignal; budgetMs?: number } = {},
+): Promise<{ value: T; via: string } | { error: string }> {
+  const { signal, budgetMs = 26_000 } = opts;
+  const deadline = Date.now() + budgetMs;
+  const failures: string[] = [];
+
+  for (const attempt of attempts) {
+    if (signal?.aborted) throw new DOMException("aborted", "AbortError");
+    if (Date.now() >= deadline) {
+      failures.push(`${attempt.label}: sin tiempo`);
+      continue;
+    }
+    try {
+      const value = await attempt.run();
+      const empty = Array.isArray(value) ? value.length === 0 : !value;
+      if (empty) {
+        failures.push(`${attempt.label}: respuesta vacía`);
+        continue;
+      }
+      return { value, via: attempt.label };
+    } catch (error) {
+      if (signal?.aborted) throw error;
+      failures.push(`${attempt.label}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  return { error: failures.join(" · ") || "sin respuesta" };
+}
+
 interface GammaMarket {
   id?: string;
   slug?: string;
@@ -332,74 +410,100 @@ function gammaEventsToPredictionEvents(rows: GammaMarket[]): PredictionEvent[] {
 }
 
 /**
+ * Accepts every shape Gamma returns: `{ markets }` from `/markets/keyset`,
+ * `GammaEvent[]` from `/events`, and `GammaMarket[]` from `/markets`.
+ */
+function parseGammaPayload(payload: unknown): PredictionEvent[] {
+  const markets = (payload as { markets?: GammaMarket[] } | null)?.markets;
+  if (Array.isArray(markets)) return gammaEventsToPredictionEvents(markets);
+  if (!Array.isArray(payload)) return [];
+  const rows = payload as (GammaEvent | GammaMarket)[];
+  if (rows.some((row) => Array.isArray((row as GammaEvent).markets))) {
+    return gammaEventsToPredictionEvents(
+      (rows as GammaEvent[]).flatMap((event) =>
+        (event.markets ?? []).map((market) => ({ ...market, events: [event] })),
+      ),
+    );
+  }
+  return gammaEventsToPredictionEvents(rows as GammaMarket[]);
+}
+
+/**
  * Highest-volume live markets, grouped back into their events so each card can
  * show every outcome with its own price, volume and liquidity.
  *
- * `/markets` is deprecated upstream (the response carries a `sunset` header),
- * so the keyset feed is tried first, then a light `/events` page, then the old
- * endpoint. A browser that cannot reach Gamma at all gets a human error instead
- * of a bare "Failed to fetch".
+ * Gamma blocks a good part of Europe (Cloudflare) and never sends CORS headers,
+ * so the same-origin `/api/predictions?venue=polymarket` proxy is tried first;
+ * the direct Gamma endpoints remain as a fallback for static/preview builds that
+ * have no serverless function. A browser that cannot reach either gets a human
+ * error instead of a bare "Failed to fetch".
  */
 export async function fetchPolymarketMarkets(limit = 60, signal?: AbortSignal): Promise<PredictionEvent[]> {
   const query = `limit=${limit}&closed=false&active=true&order=volume24hr&ascending=false`;
-  const attempts: { url: string; parse: (payload: unknown) => PredictionEvent[] }[] = [
-    {
-      url: `${POLY_GAMMA}/markets/keyset?${query}`,
-      parse: (payload) => {
-        const rows = (payload as { markets?: GammaMarket[] } | null)?.markets;
-        return Array.isArray(rows) ? gammaEventsToPredictionEvents(rows) : [];
-      },
-    },
-    {
-      url: `${POLY_GAMMA}/events?${query}`,
-      parse: (payload) => {
-        if (!Array.isArray(payload)) return [];
-        const rows = (payload as GammaEvent[]).flatMap((event) =>
-          (event.markets ?? []).map((market) => ({ ...market, events: [event] })),
-        );
-        return gammaEventsToPredictionEvents(rows);
-      },
-    },
-    {
-      url: `${POLY_GAMMA}/markets?${query}`,
-      parse: (payload) => (Array.isArray(payload) ? gammaEventsToPredictionEvents(payload as GammaMarket[]) : []),
-    },
-  ];
+  const gammaUrl = `${POLY_GAMMA}/events?${query}`;
 
-  let lastError: unknown = null;
-  for (const attempt of attempts) {
-    try {
-      const payload = await safeFetchJson<unknown>(attempt.url, { signal, timeoutMs: 14_000 });
-      const events = attempt.parse(payload);
-      if (events.length) return events;
-      lastError = new Error("la respuesta llegó vacía");
-    } catch (error) {
-      lastError = error;
-      if (signal?.aborted) throw error;
-    }
-  }
-
-  const raw = lastError instanceof Error ? lastError.message : String(lastError ?? "error desconocido");
-  throw new Error(
-    /fetch|network|load failed/i.test(raw)
-      ? "el navegador no pudo conectar con Polymarket (red, CORS o bloqueo de Cloudflare). Reintenta o usa Manifold."
-      : raw,
+  const result = await firstNonEmpty<PredictionEvent[]>(
+    [
+      {
+        label: "proxy",
+        run: async () =>
+          parseGammaPayload(
+            await safeFetchJson<unknown>(`/api/predictions?venue=polymarket&limit=${limit}`, {
+              signal,
+              timeoutMs: 20_000,
+            }),
+          ),
+      },
+      { label: "lector", run: async () => parseGammaPayload(await fetchJsonViaReader(gammaUrl, signal, 15_000)) },
+      {
+        label: "directo",
+        run: async () => parseGammaPayload(await safeFetchJson(gammaUrl, { signal, timeoutMs: 6_000 })),
+      },
+    ],
+    { signal },
   );
+
+  if ("error" in result) {
+    throw new Error(
+      `Polymarket no respondió (${result.error}). El proxy tiene que salir desde fuera de la UE: ` +
+        "revisa el despliegue de /api/predictions o usa Manifold.",
+    );
+  }
+  return result.value;
 }
 
 /** All live legs of one event (the "see every option" expansion). */
 export async function fetchPolymarketEventLegs(slug: string, signal?: AbortSignal): Promise<PredictionOutcome[]> {
-  const rows = await safeFetchJson<GammaEvent[]>(`${POLY_GAMMA}/events?slug=${encodeURIComponent(slug)}`, {
-    signal,
-    timeoutMs: 12_000,
-  });
-  const event = Array.isArray(rows) ? rows[0] : undefined;
-  if (!event?.markets?.length) return [];
-  const legs = event.markets
-    .filter((m) => !m.closed && m.active !== false)
-    .flatMap((m) => gammaLegs(m, event.slug ?? slug))
-    .filter((leg) => leg.label);
-  return legs.sort((a, b) => b.volume24h - a.volume24h || b.volumeTotal - a.volumeTotal);
+  const gammaUrl = `${POLY_GAMMA}/events?slug=${encodeURIComponent(slug)}`;
+  const toLegs = (rows: unknown): PredictionOutcome[] => {
+    const event = Array.isArray(rows) ? (rows as GammaEvent[])[0] : undefined;
+    if (!event?.markets?.length) return [];
+    return event.markets
+      .filter((m) => !m.closed && m.active !== false)
+      .flatMap((m) => gammaLegs(m, event.slug ?? slug))
+      .filter((leg) => leg.label)
+      .sort((a, b) => b.volume24h - a.volume24h || b.volumeTotal - a.volumeTotal);
+  };
+
+  const result = await firstNonEmpty<PredictionOutcome[]>(
+    [
+      {
+        label: "proxy",
+        run: async () =>
+          toLegs(
+            await safeFetchJson<unknown>(
+              `/api/predictions?venue=polymarket&slug=${encodeURIComponent(slug)}`,
+              { signal, timeoutMs: 20_000 },
+            ),
+          ),
+      },
+      { label: "lector", run: async () => toLegs(await fetchJsonViaReader(gammaUrl, signal, 15_000)) },
+      { label: "directo", run: async () => toLegs(await safeFetchJson(gammaUrl, { signal, timeoutMs: 6_000 })) },
+    ],
+    { signal },
+  );
+
+  return "error" in result ? [] : result.value;
 }
 
 const historyCache = new Map<string, { at: number; points: number[] }>();
@@ -417,12 +521,33 @@ export async function fetchPolymarketHistory(
   const cached = historyCache.get(key);
   if (cached && Date.now() - cached.at < 120_000) return cached.points;
 
-  const res = await safeFetchJson<{ history?: { t: number; p: number }[] }>(
-    `${POLY_CLOB}/prices-history?market=${encodeURIComponent(tokenId)}&interval=${interval}&fidelity=60`,
-    { signal, timeoutMs: 10_000 },
+  const clobUrl = `${POLY_CLOB}/prices-history?market=${encodeURIComponent(tokenId)}&interval=${interval}&fidelity=60`;
+  const toPoints = (payload: unknown): number[] =>
+    ((payload as { history?: { t: number; p: number }[] } | null)?.history ?? [])
+      .map((p) => num(p.p))
+      .filter((p) => p > 0);
+
+  const result = await firstNonEmpty<number[]>(
+    [
+      {
+        label: "proxy",
+        run: async () =>
+          toPoints(
+            await safeFetchJson<unknown>(
+              `/api/predictions?venue=polymarket&token=${encodeURIComponent(tokenId)}&interval=${interval}&limit=1`,
+              { signal, timeoutMs: 20_000 },
+            ),
+          ),
+      },
+      { label: "lector", run: async () => toPoints(await fetchJsonViaReader(clobUrl, signal, 15_000)) },
+      { label: "directo", run: async () => toPoints(await safeFetchJson(clobUrl, { signal, timeoutMs: 6_000 })) },
+    ],
+    { signal, budgetMs: 20_000 },
   );
-  const points = (res.history ?? []).map((p) => num(p.p)).filter((p) => p > 0);
-  historyCache.set(key, { at: Date.now(), points });
+
+  // Un histórico vacío es mejor que un error: la tarjeta se queda sin sparkline.
+  const points = "error" in result ? [] : result.value;
+  if (points.length) historyCache.set(key, { at: Date.now(), points });
   return points;
 }
 
@@ -518,24 +643,38 @@ export async function fetchManifoldMarkets(limit = 60, signal?: AbortSignal): Pr
  * legacy (centavos enteros) como el fixed-point en dólares de 2026.
  */
 export async function fetchKalshiMarkets(limit = 30, signal?: AbortSignal): Promise<PredictionEvent[]> {
-  let payload: unknown;
-  try {
-    payload = await safeFetchJson<unknown>(`/api/predictions?venue=kalshi&limit=${limit}`, {
-      signal,
-      timeoutMs: 15_000,
-    });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    const raw = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      /HTTP 400|unknown venue/.test(raw)
-        ? "el proxy de Kalshi no está desplegado en este entorno; usa Polymarket o Manifold."
-        : `el proxy de Kalshi no respondió (${raw}).`,
-    );
-  }
-  const events = kalshiEventsToPredictionEvents(payload);
-  if (!events.length) throw new Error("Kalshi devolvió eventos sin mercados negociables");
-  return events;
+  // Kalshi responde 403 con cabecera Origin y además está inaccesible desde
+  // España: el proxy (o el lector) es obligatorio, no un extra.
+  const kalshiUrl =
+    "https://api.elections.kalshi.com/trade-api/v2/events?status=open&with_nested_markets=true" +
+    `&limit=${Math.min(100, limit)}`;
+
+  const result = await firstNonEmpty<PredictionEvent[]>(
+    [
+      {
+        label: "proxy",
+        run: async () =>
+          kalshiEventsToPredictionEvents(
+            await safeFetchJson<unknown>(`/api/predictions?venue=kalshi&limit=${limit}`, {
+              signal,
+              timeoutMs: 20_000,
+            }),
+          ),
+      },
+      {
+        label: "lector",
+        run: async () => kalshiEventsToPredictionEvents(await fetchJsonViaReader(kalshiUrl, signal, 15_000)),
+      },
+      {
+        label: "directo",
+        run: async () => kalshiEventsToPredictionEvents(await safeFetchJson(kalshiUrl, { signal, timeoutMs: 6_000 })),
+      },
+    ],
+    { signal },
+  );
+
+  if ("error" in result) throw new Error(`Kalshi no respondió (${result.error}).`);
+  return result.value;
 }
 
 /**
@@ -543,24 +682,35 @@ export async function fetchKalshiMarkets(limit = 30, signal?: AbortSignal): Prom
  * (5 min… diarios) sobre precio de cripto, con precios Up/Down en `prices`.
  */
 export async function fetchLimitlessMarkets(limit = 25, signal?: AbortSignal): Promise<PredictionEvent[]> {
-  let payload: unknown;
-  try {
-    payload = await safeFetchJson<unknown>(`/api/predictions?venue=limitless&limit=${limit}`, {
-      signal,
-      timeoutMs: 15_000,
-    });
-  } catch (error) {
-    if (signal?.aborted) throw error;
-    const raw = error instanceof Error ? error.message : String(error);
-    throw new Error(
-      /HTTP 400|unknown venue/.test(raw)
-        ? "el proxy de Limitless no está desplegado en este entorno; usa Polymarket o Manifold."
-        : `el proxy de Limitless no respondió (${raw}).`,
-    );
-  }
-  const events = limitlessMarketsToPredictionEvents(payload);
-  if (!events.length) throw new Error("Limitless devolvió mercados sin precios válidos");
-  return events;
+  // Un 5xx puede ser un fallo pasajero del proxy o del venue; se reintenta una
+  // vez con cache-buster para no quedarse con la respuesta cacheada del CDN.
+  const limitlessUrl = `https://api.limitless.exchange/markets/active?limit=${Math.min(25, limit)}`;
+  const result = await firstNonEmpty<PredictionEvent[]>(
+    [
+      {
+        label: "proxy",
+        run: async () =>
+          limitlessMarketsToPredictionEvents(
+            await safeFetchJson<unknown>(`/api/predictions?venue=limitless&limit=${limit}`, {
+              signal,
+              timeoutMs: 20_000,
+            }),
+          ),
+      },
+      {
+        label: "lector",
+        run: async () => limitlessMarketsToPredictionEvents(await fetchJsonViaReader(limitlessUrl, signal, 15_000)),
+      },
+      {
+        label: "directo",
+        run: async () => limitlessMarketsToPredictionEvents(await safeFetchJson(limitlessUrl, { signal, timeoutMs: 8_000 })),
+      },
+    ],
+    { signal },
+  );
+
+  if ("error" in result) throw new Error(`Limitless no respondió (${result.error}).`);
+  return result.value;
 }
 
 /* --------------------------------------------------------------- DEX / AMM */

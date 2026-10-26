@@ -1,201 +1,412 @@
-import { useState, useEffect, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Bell, Plus, Trash2, TrendingUp, AlertTriangle, Radio, Globe, X } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+import { AlertTriangle, Bell, Pencil, Plus, Trash2, TrendingUp, X } from "lucide-react";
 import { toast } from "sonner";
+import { useCryptoPrices } from "@/hooks/useCryptoPrices";
+import { fetchAllUapSightingsRows } from "@/lib/uap-sightings";
+import {
+  ALERTS_STORAGE_KEY,
+  ALERT_COINS,
+  EMPTY_DRAFT,
+  alertFromDraft,
+  describeAlert,
+  draftFromAlert,
+  parseStoredAlerts,
+  priceConditionMet,
+  uapMatches,
+  upsertAlert,
+  validateDraft,
+  type Alert,
+  type AlertDraft,
+  type AlertKind,
+  type UapAlert,
+} from "@/lib/alerts";
 
-interface AlertConfig {
-  id: string;
-  type: "price" | "volume" | "uap" | "geopolitical";
-  label: string;
-  condition: string;
-  coinId?: string;
-  threshold?: number;
-  direction?: "above" | "below";
-  active: boolean;
-  triggered?: boolean;
-}
+const UAP_POLL_MS = 5 * 60_000;
 
-const STORAGE_KEY = "alienflow-alerts";
-
-function loadAlerts(): AlertConfig[] {
+function readStoredAlerts(): Alert[] {
   try {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [
-      { id: "1", type: "price", label: "BTC > $70,000", condition: "Price above threshold", coinId: "bitcoin", threshold: 70000, direction: "above", active: true },
-      { id: "2", type: "price", label: "ETH < $2,000", condition: "Price below threshold", coinId: "ethereum", threshold: 2000, direction: "below", active: true },
-    ];
-  } catch { return []; }
+    return parseStoredAlerts(localStorage.getItem(ALERTS_STORAGE_KEY));
+  } catch {
+    return [];
+  }
 }
 
-const typeIcons = { price: TrendingUp, volume: Radio, uap: AlertTriangle, geopolitical: Globe };
-const typeColors = {
-  price: "text-secondary border-secondary/30",
-  volume: "text-primary border-primary/30",
-  uap: "text-destructive border-destructive/30",
-  geopolitical: "text-primary/70 border-primary/20",
-};
+/** `$1.234,5` para precios; el umbral lo formatea `describeAlert`. */
+function formatPrice(value: number): string {
+  const digits = value < 1 ? 4 : value < 100 ? 2 : 0;
+  return `$${value.toLocaleString("es-ES", { maximumFractionDigits: digits })}`;
+}
 
 export function AlertsTab() {
-  const [alerts, setAlerts] = useState<AlertConfig[]>(loadAlerts);
-  const [showForm, setShowForm] = useState(false);
-  const [newCoin, setNewCoin] = useState("bitcoin");
-  const [newThreshold, setNewThreshold] = useState("");
-  const [newDirection, setNewDirection] = useState<"above" | "below">("above");
+  const [alerts, setAlerts] = useState<Alert[]>(readStoredAlerts);
+  const [draft, setDraft] = useState<AlertDraft>(EMPTY_DRAFT);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  // Persist
+  const { prices } = useCryptoPrices(60_000);
+  const priceById = useMemo(() => new Map(prices.map((coin) => [coin.id, coin.price])), [prices]);
+
+  // The async checks read the latest list without restarting their timers.
+  const alertsRef = useRef(alerts);
+  alertsRef.current = alerts;
+
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(alerts));
+    try {
+      localStorage.setItem(ALERTS_STORAGE_KEY, JSON.stringify(alerts));
+    } catch {
+      // Private mode: the alerts live for this session only.
+    }
   }, [alerts]);
 
-  // Check alerts against live prices
-  const checkAlerts = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.functions.invoke("crypto-feed", { body: { action: "movers" } });
-      if (error) return;
-      const coins = data?.coins || [];
-      const priceMap: Record<string, number> = {};
-      coins.forEach((c: { id?: string; current_price?: number }) => {
-        if (c.id) priceMap[c.id] = c.current_price ?? 0;
-      });
+  /* ------------------------------------------------------- price checks */
 
-      setAlerts(prev => prev.map(a => {
-        if (!a.active || a.type !== "price" || !a.coinId || !a.threshold) return a;
-        const price = priceMap[a.coinId];
-        if (!price) return a;
+  useEffect(() => {
+    if (priceById.size === 0) return;
 
-        const wasTriggered = a.triggered;
-        const isTriggered = a.direction === "above" ? price > a.threshold : price < a.threshold;
+    setAlerts((previous) => {
+      let changed = false;
+      const next = previous.map((alert) => {
+        if (alert.kind !== "price" || !alert.active) return alert;
+        const price = priceById.get(alert.coinId);
+        if (price === undefined || price === 0) return alert;
+        const met = priceConditionMet(alert, price);
+        if (met === alert.triggered) return alert;
 
-        if (isTriggered && !wasTriggered) {
-          toast.success(`🔔 Alert: ${a.label}`, { description: `Current price: $${price.toLocaleString()}` });
+        changed = true;
+        if (met) {
+          toast.success(`🔔 ${describeAlert(alert)}`, {
+            description: `Precio actual: ${formatPrice(price)}`,
+          });
         }
-        return { ...a, triggered: isTriggered };
-      }));
-    } catch { /* silent */ }
+        return { ...alert, triggered: met };
+      });
+      return changed ? next : previous;
+    });
+  }, [priceById]);
+
+  /* --------------------------------------------------------- UAP checks */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      const keywords = alertsRef.current.filter((alert): alert is UapAlert => alert.kind === "uap" && alert.active);
+      if (keywords.length === 0) return;
+
+      const rows = await fetchAllUapSightingsRows().catch(() => []);
+      if (cancelled || rows.length === 0) return;
+
+      setAlerts((previous) => {
+        let changed = false;
+        const next = previous.map((alert) => {
+          if (alert.kind !== "uap" || !alert.active) return alert;
+          const fresh = rows.filter((row) => !alert.seen.includes(row.id) && uapMatches(alert, row));
+          if (fresh.length === 0) return alert;
+
+          changed = true;
+          const first = fresh[0];
+          toast.info(`🛰️ ${alert.keyword}: ${first.location ?? "sin ubicación"}`, {
+            description: (first.description ?? first.date_reported ?? "registro nuevo").slice(0, 140),
+          });
+          return {
+            ...alert,
+            triggered: true,
+            seen: [...alert.seen, ...fresh.map((row) => row.id)].slice(-200),
+          };
+        });
+        return changed ? next : previous;
+      });
+    };
+
+    void run();
+    const timer = setInterval(run, UAP_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
   }, []);
 
-  useEffect(() => { checkAlerts(); }, [checkAlerts]);
-  useEffect(() => {
-    const interval = setInterval(checkAlerts, 60000);
-    return () => clearInterval(interval);
-  }, [checkAlerts]);
+  /* --------------------------------------------------------------- form */
+
+  const openCreate = useCallback(() => {
+    setDraft(EMPTY_DRAFT);
+    setEditingId(null);
+    setFormError(null);
+    setFormOpen(true);
+  }, []);
+
+  const openEdit = useCallback((alert: Alert) => {
+    setDraft(draftFromAlert(alert));
+    setEditingId(alert.id);
+    setFormError(null);
+    setFormOpen(true);
+  }, []);
+
+  const closeForm = useCallback(() => {
+    setFormOpen(false);
+    setEditingId(null);
+    setFormError(null);
+  }, []);
+
+  const submit = () => {
+    const error = validateDraft(draft);
+    if (error) {
+      setFormError(error);
+      return;
+    }
+    const existing = editingId ? alerts.find((alert) => alert.id === editingId) : undefined;
+    const alert = alertFromDraft(draft, existing);
+    setAlerts((previous) => upsertAlert(previous, alert));
+    toast.success(editingId ? "Alerta actualizada" : "Alerta creada");
+    closeForm();
+  };
 
   const toggleAlert = (id: string) => {
-    setAlerts(prev => prev.map(a => a.id === id ? { ...a, active: !a.active, triggered: false } : a));
+    setAlerts((previous) =>
+      previous.map((alert) =>
+        alert.id === id ? { ...alert, active: !alert.active, triggered: false } : alert,
+      ),
+    );
   };
 
   const removeAlert = (id: string) => {
-    setAlerts(prev => prev.filter(a => a.id !== id));
+    setAlerts((previous) => previous.filter((alert) => alert.id !== id));
+    if (editingId === id) closeForm();
   };
 
-  const addAlert = () => {
-    if (!newThreshold) return;
-    const sym = newCoin === "bitcoin" ? "BTC" : newCoin === "ethereum" ? "ETH" : newCoin === "solana" ? "SOL" : newCoin.toUpperCase();
-    const label = `${sym} ${newDirection === "above" ? ">" : "<"} $${parseFloat(newThreshold).toLocaleString()}`;
-    setAlerts(prev => [...prev, {
-      id: crypto.randomUUID(),
-      type: "price",
-      label,
-      condition: `Price ${newDirection} threshold`,
-      coinId: newCoin,
-      threshold: parseFloat(newThreshold),
-      direction: newDirection,
-      active: true,
-    }]);
-    setNewThreshold("");
-    setShowForm(false);
-  };
+  const activeCount = alerts.filter((alert) => alert.active).length;
+  const triggeredCount = alerts.filter((alert) => alert.triggered).length;
+  const preview = validateDraft(draft) === null ? describeAlert(alertFromDraft(draft)) : null;
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 p-4">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-2">
-          <Bell className="w-4 h-4 text-primary" />
-          <h2 className="text-sm font-heading text-primary uppercase tracking-wider">Alert Configuration</h2>
-        </div>
-        <Button variant="outline" size="sm" className="h-7 text-[10px]" onClick={() => setShowForm(!showForm)}>
-          {showForm ? <X className="w-3 h-3 mr-1" /> : <Plus className="w-3 h-3 mr-1" />}
-          {showForm ? "Cancel" : "New Alert"}
+    <div className="flex min-h-0 flex-1 flex-col p-4">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <Bell className="h-4 w-4 text-primary" aria-hidden="true" />
+        <h2 className="font-heading text-sm uppercase tracking-wider text-primary">Alertas</h2>
+        <span className="font-mono text-[9px] text-muted-foreground/60">
+          {activeCount} activas · {triggeredCount} disparadas
+        </span>
+        <Button variant="outline" size="sm" className="ml-auto h-7 text-[10px]" onClick={formOpen ? closeForm : openCreate}>
+          {formOpen ? <X className="mr-1 h-3 w-3" /> : <Plus className="mr-1 h-3 w-3" />}
+          {formOpen ? "Cancelar" : "Nueva alerta"}
         </Button>
       </div>
 
-      {showForm && (
-        <div className="bg-card/60 border border-border/20 rounded-lg p-3 mb-4 space-y-2">
-          <div className="flex gap-2">
-            <select value={newCoin} onChange={e => setNewCoin(e.target.value)} className="flex-1 h-8 rounded-md border border-input bg-background px-2 text-xs">
-              <option value="bitcoin">Bitcoin (BTC)</option>
-              <option value="ethereum">Ethereum (ETH)</option>
-              <option value="solana">Solana (SOL)</option>
-              <option value="ripple">XRP</option>
-              <option value="dogecoin">Dogecoin (DOGE)</option>
-            </select>
-            <select value={newDirection} onChange={e => setNewDirection(e.target.value as "above" | "below")} className="h-8 rounded-md border border-input bg-background px-2 text-xs">
-              <option value="above">Above (&gt;)</option>
-              <option value="below">Below (&lt;)</option>
-            </select>
+      {formOpen && (
+        <form
+          className="mb-4 space-y-2 rounded-lg border border-border/30 bg-card/60 p-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+        >
+          <div className="flex flex-wrap gap-1" role="group" aria-label="Tipo de alerta">
+            {(
+              [
+                { id: "price", label: "Precio", icon: TrendingUp },
+                { id: "uap", label: "Avistamiento UAP", icon: AlertTriangle },
+              ] as { id: AlertKind; label: string; icon: typeof TrendingUp }[]
+            ).map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => {
+                  setDraft((current) => ({ ...current, kind: id }));
+                  setFormError(null);
+                }}
+                aria-pressed={draft.kind === id}
+                className={`flex items-center gap-1 rounded-full border px-2.5 py-1 text-[9px] uppercase tracking-wider transition-colors ${
+                  draft.kind === id
+                    ? "border-primary/40 bg-primary/15 text-primary"
+                    : "border-border/40 text-muted-foreground/60 hover:text-foreground"
+                }`}
+              >
+                <Icon className="h-3 w-3" aria-hidden="true" />
+                {label}
+              </button>
+            ))}
           </div>
-          <div className="flex gap-2">
-            <Input placeholder="Price threshold ($)" type="number" value={newThreshold} onChange={e => setNewThreshold(e.target.value)} className="h-8 text-xs" />
-            <Button size="sm" className="h-8 text-[10px]" onClick={addAlert}>Create</Button>
+
+          {draft.kind === "price" ? (
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <label className="sr-only" htmlFor="alert-coin">
+                Moneda
+              </label>
+              <select
+                id="alert-coin"
+                value={draft.coinId}
+                onChange={(event) => setDraft((current) => ({ ...current, coinId: event.target.value }))}
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs sm:w-44"
+              >
+                {ALERT_COINS.map((coin) => (
+                  <option key={coin.id} value={coin.id}>
+                    {coin.name} ({coin.symbol})
+                  </option>
+                ))}
+              </select>
+              <label className="sr-only" htmlFor="alert-direction">
+                Condición
+              </label>
+              <select
+                id="alert-direction"
+                value={draft.direction}
+                onChange={(event) =>
+                  setDraft((current) => ({ ...current, direction: event.target.value === "below" ? "below" : "above" }))
+                }
+                className="h-8 rounded-md border border-input bg-background px-2 text-xs sm:w-36"
+              >
+                <option value="above">Por encima de</option>
+                <option value="below">Por debajo de</option>
+              </select>
+              <Input
+                aria-label="Umbral en dólares"
+                inputMode="decimal"
+                placeholder="Umbral en USD"
+                value={draft.threshold}
+                onChange={(event) => setDraft((current) => ({ ...current, threshold: event.target.value }))}
+                className="h-8 flex-1 text-xs"
+              />
+            </div>
+          ) : (
+            <Input
+              aria-label="Palabra clave del avistamiento"
+              placeholder="Palabra clave: volcán, orbe, triángulo…"
+              value={draft.keyword}
+              onChange={(event) => setDraft((current) => ({ ...current, keyword: event.target.value }))}
+              className="h-8 text-xs"
+            />
+          )}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-[180px] flex-1 font-mono text-[9px] text-muted-foreground/60">
+              {formError ? (
+                <span className="text-destructive" role="alert">
+                  {formError}
+                </span>
+              ) : preview ? (
+                <>Se guardará como: {preview}</>
+              ) : (
+                "Completa los campos para ver la alerta."
+              )}
+            </p>
+            <Button type="submit" size="sm" className="h-8 text-[10px]">
+              {editingId ? "Guardar cambios" : "Crear alerta"}
+            </Button>
           </div>
-        </div>
+        </form>
       )}
 
-      {/* Alert types */}
-      <div className="flex gap-2 mb-4 flex-wrap">
-        {(["price", "volume", "uap", "geopolitical"] as const).map((t) => {
-          const Icon = typeIcons[t];
-          return (
-            <Badge key={t} variant="outline" className={`text-[9px] px-2 py-0.5 ${typeColors[t]}`}>
-              <Icon className="w-3 h-3 mr-1" />
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </Badge>
-          );
-        })}
-      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+        {alerts.length === 0 ? (
+          <p className="py-10 text-center text-[11px] text-muted-foreground/50">
+            Todavía no hay alertas. Crea una de precio (BTC, ETH…) o una de avistamientos por palabra clave.
+          </p>
+        ) : (
+          alerts.map((alert) => {
+            const Icon = alert.kind === "price" ? TrendingUp : AlertTriangle;
+            const price = alert.kind === "price" ? priceById.get(alert.coinId) : undefined;
+            const distance =
+              alert.kind === "price" && price !== undefined && alert.threshold > 0
+                ? ((price - alert.threshold) / alert.threshold) * 100
+                : null;
 
-      {/* Alerts list */}
-      <div className="flex-1 overflow-y-auto space-y-2">
-        {alerts.map((alert) => {
-          const Icon = typeIcons[alert.type];
-          return (
-            <div
-              key={alert.id}
-              className={`flex items-center justify-between p-3 rounded-lg bg-card/60 border transition-colors ${
-                alert.triggered ? "border-secondary/40 bg-secondary/5" : alert.active ? "border-primary/20" : "border-border/10 opacity-50"
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <Icon className={`w-4 h-4 ${typeColors[alert.type].split(" ")[0]}`} />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-foreground/90">{alert.label}</span>
-                    {alert.triggered && <Badge variant="outline" className="text-[7px] px-1 py-0 h-3.5 text-secondary border-secondary/30 animate-pulse">TRIGGERED</Badge>}
+            return (
+              <div
+                key={alert.id}
+                className={`flex flex-wrap items-center gap-3 rounded-lg border p-3 transition-colors ${
+                  alert.triggered
+                    ? "border-secondary/40 bg-secondary/5"
+                    : alert.active
+                      ? "border-primary/20 bg-card/60"
+                      : "border-border/10 bg-card/30 opacity-60"
+                }`}
+              >
+                <Icon
+                  className={`h-4 w-4 ${alert.kind === "price" ? "text-secondary" : "text-destructive/80"}`}
+                  aria-hidden="true"
+                />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-foreground/90">{describeAlert(alert)}</span>
+                    {alert.triggered && (
+                      <Badge
+                        variant="outline"
+                        className="h-3.5 animate-pulse border-secondary/30 px-1 py-0 text-[7px] text-secondary"
+                      >
+                        DISPARADA
+                      </Badge>
+                    )}
+                    {!alert.active && (
+                      <span className="font-mono text-[8px] uppercase tracking-wider text-muted-foreground/50">
+                        en pausa
+                      </span>
+                    )}
                   </div>
-                  <span className="text-[9px] text-muted-foreground block">{alert.condition}</span>
+                  <span className="mt-0.5 block font-mono text-[9px] text-muted-foreground/55">
+                    {alert.kind === "price" ? (
+                      <>
+                        {price !== undefined ? `Ahora ${formatPrice(price)}` : "esperando precio…"}
+                        {distance !== null && (
+                          <>
+                            {" · "}
+                            {Math.abs(distance).toFixed(1)}% {distance >= 0 ? "por encima" : "por debajo"} del umbral
+                          </>
+                        )}
+                      </>
+                    ) : (
+                      <>Vigila el registro de anomalías · {alert.seen.length} notificados</>
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-1.5 text-muted-foreground/60 hover:text-foreground"
+                    onClick={() => openEdit(alert)}
+                    aria-label={`Editar ${describeAlert(alert)}`}
+                    title="Editar"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => toggleAlert(alert.id)}
+                    aria-pressed={alert.active}
+                    aria-label={alert.active ? `Pausar ${describeAlert(alert)}` : `Activar ${describeAlert(alert)}`}
+                    className={`h-4 w-8 rounded-full transition-colors ${alert.active ? "bg-primary" : "bg-muted/40"}`}
+                  >
+                    <div
+                      className={`h-3 w-3 rounded-full bg-background transition-transform ${
+                        alert.active ? "translate-x-4" : "translate-x-0.5"
+                      }`}
+                    />
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-1.5 text-destructive/60 hover:text-destructive"
+                    onClick={() => removeAlert(alert.id)}
+                    aria-label={`Eliminar ${describeAlert(alert)}`}
+                    title="Eliminar"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => toggleAlert(alert.id)}
-                  className={`w-8 h-4 rounded-full transition-colors ${alert.active ? "bg-primary" : "bg-muted/40"}`}
-                >
-                  <div className={`w-3 h-3 rounded-full bg-background transition-transform ${alert.active ? "translate-x-4" : "translate-x-0.5"}`} />
-                </button>
-                <button onClick={() => removeAlert(alert.id)} className="p-1 hover:bg-destructive/10 rounded transition-colors">
-                  <Trash2 className="w-3 h-3 text-destructive/60" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          })
+        )}
       </div>
 
-      <p className="text-[9px] text-muted-foreground/40 text-center mt-3">
-        Alerts check live prices every 60s. Persistent via localStorage.
+      <p className="mt-3 text-center font-mono text-[9px] text-muted-foreground/40">
+        Precio: CoinGecko cada 60 s · Avistamientos: registro UAP cada 5 min · Las alertas se guardan en este navegador
+        ({ALERT_COINS.length} monedas disponibles).
       </p>
     </div>
   );

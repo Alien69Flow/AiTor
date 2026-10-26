@@ -46,7 +46,7 @@ export function OfficialSourcesStrip({ className = "" }: OfficialSourcesStripPro
         <ShieldCheck className="h-3.5 w-3.5 text-cyan-300/80" aria-hidden="true" />
         <h3 className="font-heading text-[10px] uppercase tracking-widest text-cyan-200/85">Fuentes oficiales</h3>
         <span className="font-mono text-[9px] text-muted-foreground/55">
-          {OFFICIAL_SOURCES.length} fuentes · {officialCount} cámaras oficiales · {cameras} en directo
+          {OFFICIAL_SOURCES.length} fuentes · {officialCount} cámaras oficiales · {cameras} cámaras en total
         </span>
         <div className="ml-auto flex flex-wrap items-center gap-1">
           <button

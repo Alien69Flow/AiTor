@@ -10,6 +10,10 @@
  * Provenance is never hidden: every record keeps the mirror as its source and
  * the UI labels the block, because these are third-party reports and not
  * records published by an agency.
+ *
+ * The mirror is frozen at 2022-05-12, so the snapshot carries `datasetAgeDays`
+ * and `stale`; the registry renders them instead of calling four-year-old
+ * sightings "recent".
  */
 
 export interface NuforcRecord {
@@ -33,6 +37,11 @@ interface NuforcSnapshot {
   totalInTail: number;
   dateFrom: string | null;
   dateTo: string | null;
+  /** Newest sighting in the source dataset, and how old it is. */
+  datasetLatest?: string | null;
+  datasetAgeDays?: number | null;
+  /** The mirror has not grown past `STALE_DAYS`; the UI says so. */
+  stale?: boolean;
   records: { date: string; location: string; shape: string | null; duration: string | null; summary: string }[];
 }
 
@@ -47,6 +56,9 @@ export interface NuforcMeta {
   dateFrom: string | null;
   dateTo: string | null;
   generatedAt: string;
+  /** Age of the newest record, not of the file: the mirror stopped in 2022. */
+  datasetAgeDays: number | null;
+  stale: boolean;
 }
 
 let snapshotPromise: Promise<NuforcSnapshot | null> | null = null;
@@ -95,5 +107,7 @@ export async function fetchNuforcMeta(): Promise<NuforcMeta | null> {
     dateFrom: snapshot.dateFrom,
     dateTo: snapshot.dateTo,
     generatedAt: snapshot.generatedAt,
+    datasetAgeDays: snapshot.datasetAgeDays ?? null,
+    stale: snapshot.stale === true,
   };
 }

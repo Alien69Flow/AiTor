@@ -10,6 +10,12 @@
   "rewrites": [
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
+  "functions": {
+    "api/predictions.ts": {
+      "maxDuration": 30,
+      "regions": ["iad1"]
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

@@ -13,7 +13,14 @@
  * with the panel where it gets fixed, so enabling them is a checklist instead
  * of a guessing game.
  *
- * Usage: npm run auth:providers
+ * Usage:
+ *   npm run auth:providers        report; exits 1 while any method is not ready
+ *   npm run auth:providers:gate   CI gate; exits 1 only when a provider is
+ *                                 switched on without credentials, when an
+ *                                 exception in scripts/auth-providers.baseline.json
+ *                                 has expired, or when a provider answers
+ *                                 something unexplained. A provider that was
+ *                                 never enabled is a choice, not a failure.
  *
  * The URL and publishable key are read from the environment first
  * (VITE_SUPABASE_URL / VITE_SUPABASE_PUBLISHABLE_KEY, also from .env.local),
@@ -25,8 +32,11 @@
 import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { evaluateGate } from "./auth-providers-gate.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const gateMode = process.argv.includes("--gate");
+const baselinePath = resolve(root, "scripts/auth-providers.baseline.json");
 
 /** Every method the login page offers, with its GoTrue id and panel path. */
 const METHODS = [
@@ -93,6 +103,27 @@ async function enabledProviders() {
 }
 
 /**
+ * A transport failure is not a misconfiguration. If Supabase cannot be reached
+ * the gate says so and passes, instead of turning a network blip into a red
+ * build; a rejected key or a malformed URL still fails hard, because that is
+ * configuration and the gate should catch it.
+ */
+async function measureSettings() {
+  try {
+    return await enabledProviders();
+  } catch (error) {
+    const transport =
+      error instanceof TypeError || /fetch failed|ENOTFOUND|ECONN|ETIMEDOUT|EAI_AGAIN/i.test(error.message);
+    if (gateMode && transport) {
+      console.warn(`\nNo se pudo contactar con ${url}: ${error.message}`);
+      console.warn("No es un problema de configuración; el gate no falla por esto.\n");
+      process.exit(0);
+    }
+    throw error;
+  }
+}
+
+/**
  * `authorize` without following redirects: 302 means the provider is ready and
  * would hand the browser to it; a 4xx body says why it cannot start.
  */
@@ -122,7 +153,7 @@ const ICON = {
   error: "❌ error",
 };
 
-const { external } = await enabledProviders();
+const { external } = await measureSettings();
 const toggledOn = METHODS.filter((m) => external[m.id]);
 const rows = [];
 
@@ -159,7 +190,39 @@ if (pending.length) {
     "\nCada proveedor necesita, además de su Client ID + Secret, esta URL de callback registrada en su consola:\n" +
       `  ${url}/auth/v1/callback\n`,
   );
-  process.exit(1);
 }
 
-console.log("\nTodos los métodos responden.\n");
+if (!gateMode) {
+  if (pending.length) process.exit(1);
+  console.log("\nTodos los métodos responden.\n");
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------------------
+// Gate mode: only misconfiguration fails, not the providers nobody switched on.
+// ---------------------------------------------------------------------------
+const baseline = existsSync(baselinePath) ? JSON.parse(readFileSync(baselinePath, "utf8")) : {};
+const gate = evaluateGate({ rows, baseline, today: new Date().toISOString().slice(0, 10) });
+
+for (const warning of gate.warnings) {
+  console.log(`ℹ️  ${warning.label.padEnd(11)} ${warning.message}`);
+}
+
+if (gate.ok) {
+  const acknowledged = gate.warnings.filter((w) => w.kind === "acknowledged").length;
+  console.log(
+    acknowledged
+      ? `\n✅ Sin misconfiguraciones nuevas. ${acknowledged} proveedor(es) siguen encendidos sin credenciales bajo una excepción vigente.\n`
+      : "\n✅ Ningún proveedor encendido está sin credenciales.\n",
+  );
+  process.exit(0);
+}
+
+console.error(`\n❌ ${gate.failures.length} problema(s) de configuración de acceso:\n`);
+for (const failure of gate.failures) {
+  console.error(`  · ${failure.label} (${failure.id}): ${failure.message}`);
+}
+console.error(
+  `\nCallback que hay que registrar en la consola de cada proveedor:\n  ${url}/auth/v1/callback\n`,
+);
+process.exit(1);

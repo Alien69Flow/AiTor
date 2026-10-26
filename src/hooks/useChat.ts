@@ -2,6 +2,16 @@ import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { parseUsage, type TokenUsage } from "@/lib/neural-core-model";
+import { routeSkills } from "@/lib/ai-skills";
+import { AI_MODELS } from "@/lib/ai-models";
+import { peekChatHealth, resolveOracles } from "@/lib/ai-health";
+import { buildSkillContext, runSkills, type SkillRunResult } from "@/services/skills-runner";
+
+export interface MessageSkill {
+  label: string;
+  ok: boolean;
+  error?: string;
+}
 
 export interface Message {
   id: string;
@@ -9,6 +19,8 @@ export interface Message {
   content: string;
   timestamp: Date;
   imageData?: string;
+  /** Sources this turn consulted, so the transcript shows what the answer rests on. */
+  skills?: MessageSkill[];
   /** Present only when the backend stream reports real provider usage. */
   usage?: TokenUsage;
 }
@@ -69,6 +81,24 @@ export function useChat() {
     async (content: string, model: string, imageData?: string) => {
       if (!content.trim()) return;
 
+      // A stored choice can outlive its key (rotated, removed). If the last
+      // health report says this oracle cannot answer, send with one that can
+      // instead of spending the turn on a 500. Only a cached report is used, so
+      // the first message never waits on the health probe.
+      const health = peekChatHealth();
+      let effectiveModel = model;
+      if (health) {
+        const oracles = resolveOracles(AI_MODELS, health);
+        const requested = oracles.find((oracle) => oracle.model.id === model);
+        if (requested && !requested.available) {
+          const replacement = oracles.find((oracle) => oracle.available);
+          if (replacement) {
+            effectiveModel = replacement.model.id;
+            toast.warning(`${requested.model.name} no tiene clave configurada. Respondiendo con ${replacement.model.name}.`);
+          }
+        }
+      }
+
       const userMessage: Message = {
         id: crypto.randomUUID(),
         role: "user",
@@ -80,11 +110,28 @@ export function useChat() {
       const baseMessages = [...messages, userMessage];
       setMessages(baseMessages);
       setIsLoading(true);
+
+      // Skills run before the request, in parallel, and the turn continues even
+      // when one of them fails: the model is told what could not be consulted.
+      const skillIds = routeSkills(content);
+      let skillResults: SkillRunResult[] = [];
+      if (skillIds.length > 0) {
+        skillResults = await runSkills(skillIds, content);
+        const chips: MessageSkill[] = skillResults.map((result) => ({
+          label: result.label,
+          ok: result.ok,
+          ...(result.error && { error: result.error }),
+        }));
+        setMessages((prev) =>
+          prev.map((message) => (message.id === userMessage.id ? { ...message, skills: chips } : message)),
+        );
+      }
+      const skillContext = buildSkillContext(skillResults);
       // Persist pending so we can recover if the page reloads mid-request
       try {
         localStorage.setItem(
           PENDING_KEY,
-          JSON.stringify({ content, model, imageData, ts: Date.now() })
+          JSON.stringify({ content, model: effectiveModel, imageData, ts: Date.now() })
         );
       } catch {
         // Storage can be unavailable in private mode; the request still runs.
@@ -155,7 +202,8 @@ export function useChat() {
               },
               signal: controller.signal,
               body: JSON.stringify({
-                model,
+                model: effectiveModel,
+                ...(skillContext.length > 0 && { context: skillContext }),
                 messages: baseMessages.map((m) => ({
                   role: m.role,
                   content: m.content,

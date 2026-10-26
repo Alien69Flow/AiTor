@@ -1,0 +1,35 @@
+{
+  "$comment": "Funciones retiradas del repositorio que siguen (o siguieron) desplegadas en Supabase. `scripts/retire-functions.mjs` usa esta lista como semilla de candidatas: sin SUPABASE_ACCESS_TOKEN es la única forma de volver a preguntar por una función que ya no está en el código. Añade una entrada al retirar una función, nunca la borres: si se despliega otra vez y se olvida, el verificador la ve por aquí. Ver docs/function-decommission-runbook.md.",
+  "retired": [
+    {
+      "name": "mcp",
+      "removedFromRepo": "2026-07-23",
+      "reason": "Servidor MCP de la integración de Lovable; el cliente, el SDK y el manifiesto se retiraron en el commit b58eaf9.",
+      "replacedBy": null
+    },
+    {
+      "name": "agenticworkflows",
+      "removedFromRepo": "2026-07-23",
+      "reason": "Router de tool-use sobre Anthropic que nunca se conectó a la UI; el chat usa supabase/functions/chat.",
+      "replacedBy": "chat"
+    },
+    {
+      "name": "consume-credits",
+      "removedFromRepo": "2026-07-23",
+      "reason": "Descontaba créditos con la RPC consume_credits; el cobro vive ahora en verify-crypto-payment y el flujo de monetización del chat.",
+      "replacedBy": "verify-crypto-payment"
+    },
+    {
+      "name": "skills-ingest",
+      "removedFromRepo": "2026-07-23",
+      "reason": "Ingesta de skills del editor de Lovable. Confirmada como ya borrada en producción el 2026-10-25.",
+      "replacedBy": null
+    },
+    {
+      "name": "secrets-diag",
+      "removedFromRepo": "2026-05-07",
+      "reason": "Diagnóstico temporal que publicaba sin autenticación la longitud y las iniciales de 12 secretos; se borró del repo pero siguió respondiendo 200 en producción.",
+      "replacedBy": null
+    }
+  ]
+}

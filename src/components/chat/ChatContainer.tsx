@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { useChat, type Conversation } from "@/hooks/useChat";
 import { AI_MODELS } from "@/lib/ai-models";
+import { resolveOracles, useChatHealth } from "@/lib/ai-health";
 import { readPreferredModel, writePreferredModel, type ChatWorkspace } from "@/lib/chat-prefs";
 import { track } from "@/lib/analytics";
 import { ChatHeader } from "./ChatHeader";
@@ -25,6 +26,7 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspace, setWorkspace] = useState<ChatWorkspace>("chat");
   const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const { health } = useChatHealth();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -42,6 +44,18 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
     setSelectedModel(model);
     writePreferredModel(model);
   }, []);
+
+  // The stored preference can point at an oracle whose key was removed since.
+  // Once the health report arrives, move the selection to one that can answer,
+  // so the header never claims a model the backend cannot reach.
+  useEffect(() => {
+    if (!health) return;
+    const oracles = resolveOracles(AI_MODELS, health);
+    const current = oracles.find((oracle) => oracle.model.id === selectedModel);
+    if (!current || current.available) return;
+    const replacement = oracles.find((oracle) => oracle.available);
+    if (replacement) handleModelChange(replacement.model.id);
+  }, [health, selectedModel, handleModelChange]);
 
   // Skill / utility / district actions all run a real turn in the chat.
   const runPrompt = useCallback(

@@ -41,3 +41,30 @@ verify_jwt = false
 
 [functions.noaa-space-weather]
 verify_jwt = false
+
+# Every deployed function must be listed here with an explicit value. A
+# function that is missing falls back to verify_jwt = true on the next
+# `supabase functions deploy`, which would silently break the ones whose own
+# code already does the checking:
+#   · wallet-auth, verify-crypto-payment, verify-dao-holdings — validate the
+#     caller's Bearer token themselves (admin.auth.getUser), so the gateway
+#     must let the request through first.
+#   · web3-recipient, globe-feeds, firecrawl-osint — public proxies guarded by
+#     the shared origin allowlist + rate limit, no session involved.
+[functions.wallet-auth]
+verify_jwt = false
+
+[functions.verify-crypto-payment]
+verify_jwt = false
+
+[functions.verify-dao-holdings]
+verify_jwt = false
+
+[functions.web3-recipient]
+verify_jwt = false
+
+[functions.globe-feeds]
+verify_jwt = false
+
+[functions.firecrawl-osint]
+verify_jwt = false

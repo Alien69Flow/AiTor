@@ -13,6 +13,8 @@ interface LiveStageProps {
   /** Reason already recorded for this signal, if a previous attempt failed. */
   blockedReason?: string | null;
   onUnavailable: (signal: LiveSignal, reason: string) => void;
+  /** El reproductor arrancó: la cámara emite, aunque el informe semanal diga que no. */
+  onLive?: (signal: LiveSignal) => void;
 }
 
 /**
@@ -21,9 +23,19 @@ interface LiveStageProps {
  * box: an embed that answers "unavailable" or "embedding not allowed" raises
  * onError, which switches this component to its fallback with real links.
  */
-export function LiveStage({ signal, blockedReason, onUnavailable }: LiveStageProps) {
+export function LiveStage({ signal, blockedReason, onUnavailable, onLive }: LiveStageProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YouTubePlayerLike | null>(null);
+  // `onReady` sólo dice que el reproductor se montó: un directo que aún no ha
+  // arrancado también lo dispara. La cámara se declara emitiendo cuando el
+  // estado pasa a PLAYING, para no retirar la marca de «sin emisión» de un canal
+  // que sigue apagado.
+  const liveReportedRef = useRef(false);
+  const confirmLive = useCallback(() => {
+    if (liveReportedRef.current) return;
+    liveReportedRef.current = true;
+    onLive?.(signal);
+  }, [onLive, signal]);
   const [status, setStatus] = useState<StageStatus>(blockedReason ? "error" : "loading");
   const [reason, setReason] = useState<string | null>(blockedReason ?? null);
   const [muted, setMuted] = useState(true);
@@ -39,7 +51,10 @@ export function LiveStage({ signal, blockedReason, onUnavailable }: LiveStagePro
   );
 
   useEffect(() => {
-    if (blockedReason) {
+    // El motivo guardado es solo el punto de partida: «Reintentar» lo ignora y
+    // vuelve a montar el reproductor, que es la única forma de descubrir que la
+    // cámara ha vuelto a emitir.
+    if (blockedReason && attempt === 0) {
       setStatus("error");
       setReason(blockedReason);
       return;
@@ -49,6 +64,7 @@ export function LiveStage({ signal, blockedReason, onUnavailable }: LiveStagePro
     if (!mount) return;
 
     let cancelled = false;
+    liveReportedRef.current = false;
     setStatus("loading");
     setReason(null);
 
@@ -78,6 +94,15 @@ export function LiveStage({ signal, blockedReason, onUnavailable }: LiveStagePro
               event.target.mute();
               event.target.playVideo();
               setStatus("ready");
+              // Segundo intento por si el evento de estado llegó antes que
+              // `onReady`: si el reproductor ya está reproduciendo, emite.
+              window.setTimeout(() => {
+                if (!cancelled && event.target.getPlayerState?.() === 1) confirmLive();
+              }, 2500);
+            },
+            onStateChange: (event) => {
+              if (cancelled) return;
+              if (event.data === 1) confirmLive();
             },
             onError: (event) => {
               if (cancelled) return;
@@ -102,7 +127,7 @@ export function LiveStage({ signal, blockedReason, onUnavailable }: LiveStagePro
       playerRef.current = null;
       mount.replaceChildren();
     };
-  }, [signal, blockedReason, handleError, attempt]);
+  }, [signal, blockedReason, handleError, attempt, confirmLive]);
 
   const toggleMute = () => {
     const player = playerRef.current;

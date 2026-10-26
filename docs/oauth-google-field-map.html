@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<title>Google OAuth → Supabase: qué valor va en cada campo</title>
+<style>
+  :root {
+    --ink: #0d1117; --muted: #5b6472; --line: #d7dce3; --bg: #f6f7f9;
+    --google: #1a73e8; --supa: #3fcf8e; --warn: #b45309; --field: #ffffff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.45 -apple-system, "Segoe UI", Inter, system-ui, sans-serif; }
+  .wrap { width: 1180px; margin: 0 auto; padding: 28px 24px 34px; }
+  h1 { margin: 0 0 4px; font-size: 21px; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 12.5px; margin: 0 0 22px; }
+  .flow { display: grid; grid-template-columns: 1fr 96px 1fr; gap: 0; align-items: start; }
+  .panel { background: #fff; border: 1px solid var(--line); border-radius: 10px; overflow: hidden;
+    box-shadow: 0 1px 2px rgba(13,17,23,.04); }
+  .panel > header { padding: 10px 14px; font-weight: 600; font-size: 12.5px; color: #fff; }
+  .panel.g > header { background: var(--google); }
+  .panel.s > header { background: #143d2e; }
+  .panel .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px;
+    color: #e8f0fe; opacity: .92; font-weight: 400; }
+  .body { padding: 12px 14px 16px; }
+  .row { margin-bottom: 12px; }
+  label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .02em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .field { background: var(--field); border: 1px solid var(--line); border-radius: 6px;
+    padding: 7px 9px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px;
+    word-break: break-all; }
+  .field.empty { color: #98a1ad; }
+  .field.out { border-color: #f0c36d; background: #fffdf5; }
+  .hint { font-size: 10.5px; color: var(--muted); margin-top: 4px; }
+  .hint.warn { color: var(--warn); }
+  .center { display: flex; flex-direction: column; justify-content: center; gap: 74px; padding-top: 130px; }
+  .arrow { text-align: center; font-size: 10.5px; color: var(--muted); font-weight: 600; }
+  .arrow .bar { height: 2px; background: repeating-linear-gradient(90deg, var(--muted) 0 5px, transparent 5px 9px);
+    margin: 5px 6px; position: relative; }
+  .arrow .bar::after { content: ""; position: absolute; right: -1px; top: -3.5px;
+    border-left: 8px solid var(--muted); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+  .arrow.back { color: var(--warn); }
+  .arrow.back .bar { background: repeating-linear-gradient(90deg, var(--warn) 0 5px, transparent 5px 9px); }
+  .arrow.back .bar::before { content: ""; position: absolute; left: -1px; top: -3.5px;
+    border-right: 8px solid var(--warn); border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+  .arrow.back .bar::after { display: none; }
+  .ok { margin-top: 20px; border: 1px solid var(--line); border-left: 4px solid var(--supa);
+    background: #fff; border-radius: 8px; padding: 12px 14px; font-size: 12.5px; }
+  .ok code { background: #eef1f5; padding: 1px 5px; border-radius: 4px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 11.5px; }
+  .diagram { font-size: 10.5px; color: var(--muted); margin-top: 14px; text-align: right; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Google OAuth → Supabase: qué valor va en cada campo</h1>
+  <p class="sub">Proyecto <strong>wkdtvrxavkhbifjtvvdw</strong> · sitio <strong>aitor.alienflow.space</strong>. Los valores en amarillo son los que se copian de un panel al otro; el resto se teclea.</p>
+
+  <div class="flow">
+    <section class="panel g">
+      <header>Google Cloud <span class="path">→ Google Auth Platform → Clients → Create client → Web application</span></header>
+      <div class="body">
+        <div class="row">
+          <label>Name</label>
+          <div class="field">Ai Tor · AlienFlow</div>
+          <div class="hint">Solo para ti; no se muestra al usuario.</div>
+        </div>
+        <div class="row">
+          <label>Authorized JavaScript origins</label>
+          <div class="field">https://aitor.alienflow.space<br />http://localhost:8080</div>
+          <div class="hint">Solo esquema + host, sin ruta ni barra final.</div>
+        </div>
+        <div class="row">
+          <label>Authorized redirect URIs</label>
+          <div class="field out">https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback</div>
+          <div class="hint warn">Es el callback de Supabase, no la URL de tu web. Debe coincidir carácter a carácter.</div>
+        </div>
+        <div class="row">
+          <label>Client ID <span style="text-transform:none;font-weight:400">(se muestra al guardar)</span></label>
+          <div class="field out">1234567890-abcdefg.apps.googleusercontent.com</div>
+        </div>
+        <div class="row" style="margin-bottom:0">
+          <label>Client secret</label>
+          <div class="field out">GOCSPX-••••••••••••••••••••</div>
+          <div class="hint warn">Se enseña una sola vez. No va al repositorio ni al chat.</div>
+        </div>
+      </div>
+    </section>
+
+    <div class="center">
+      <div class="arrow"><div>Client ID</div><div class="bar"></div><div>→</div></div>
+      <div class="arrow"><div>Client secret</div><div class="bar"></div><div>→</div></div>
+      <div class="arrow back"><div>← Callback</div><div class="bar"></div><div>copiar de Supabase</div></div>
+    </div>
+
+    <section class="panel s">
+      <header>Supabase <span class="path">→ Authentication → Providers → Google</span></header>
+      <div class="body">
+        <div class="row">
+          <label>Client IDs (for OAuth)</label>
+          <div class="field">1234567890-abcdefg.apps.googleusercontent.com</div>
+          <div class="hint">Aquí va el <strong>Client ID</strong> de Google.</div>
+        </div>
+        <div class="row">
+          <label>Client secret (for OAuth)</label>
+          <div class="field">GOCSPX-••••••••••••••••••••</div>
+          <div class="hint">Aquí va el <strong>secret</strong>, no el ID. Si se deja vacío, el proveedor figura activado y responde <em>missing OAuth secret</em>.</div>
+        </div>
+        <div class="row">
+          <label>Authorized Client IDs <span style="text-transform:none;font-weight:400">(opcional)</span></label>
+          <div class="field empty">(vacío para web)</div>
+          <div class="hint">Solo para client IDs de Android / One Tap / extensiones.</div>
+        </div>
+        <div class="row">
+          <label>Skip nonce checks</label>
+          <div class="field empty">desactivado</div>
+        </div>
+        <div class="row" style="margin-bottom:0">
+          <label>Callback URL (la que muestra el panel)</label>
+          <div class="field out">https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback</div>
+          <div class="hint">Se copia <strong>a Google</strong>, en Authorized redirect URIs.</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="ok">
+    Cuando ambas cajas tengan sus valores, <code>npm run auth:providers</code> debe pasar Google de
+    <em>sin credenciales</em> a <strong>✅ listo</strong>, y el botón de Google deja de estar atenuado en la página de acceso
+    (ese estado se lee de <code>/auth/v1/settings</code> + <code>/authorize</code>, no de una lista escrita a mano).
+  </div>
+
+  <p class="diagram">Diagrama de campos, no una captura de la consola: los paneles reales cambian de nombre con el tiempo.</p>
+</div>
+</body>
+</html>

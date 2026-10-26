@@ -1,52 +1,45 @@
 // Edge function for AI chat routing
 
+import {
+  buildChatHealth,
+  DEFAULT_MODEL,
+  FALLBACK_MODEL,
+  modelsForProvider,
+  ROUTED_MODELS,
+} from "../_shared/ai-providers.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Lovable AI Gateway models
-const LOVABLE_MODELS = [
-  "google/gemini-2.5-flash",
-  "google/gemini-2.5-pro",
-  "google/gemini-3-flash-preview",
-  "google/gemini-2.5-flash-lite",
-  "openai/gpt-5",
-  "openai/gpt-5-mini",
-  "openai/gpt-5-nano",
-];
+// Model lists come from _shared/ai-providers.ts, which is also what
+// `?health=1` publishes. Deriving them here keeps the two from drifting: a
+// model added to the registry becomes both routable and visible in the report.
+
+// Lovable AI Gateway models (Gemini + OpenAI)
+const LOVABLE_MODELS = modelsForProvider("lovable");
 
 // Grok models (direct xAI API)
-const GROK_MODELS = [
-  "xai/grok-2",
-];
+const GROK_MODELS = modelsForProvider("xai");
 
 // Anthropic models (direct Anthropic API)
-const ANTHROPIC_MODELS = [
-  "anthropic/claude-sonnet-4",
-];
+const ANTHROPIC_MODELS = modelsForProvider("anthropic");
 
 // DeepSeek models (direct DeepSeek API)
-const DEEPSEEK_MODELS = [
-  "deepseek/deepseek-v3",
-  "deepseek/deepseek-chat",
-  "deepseek/deepseek-reasoner",
-];
+const DEEPSEEK_MODELS = modelsForProvider("deepseek");
 
-const ALLOWED_MODELS = [
-  ...LOVABLE_MODELS,
-  ...GROK_MODELS,
-  ...ANTHROPIC_MODELS,
-  ...DEEPSEEK_MODELS,
-];
-
-// Used when a third-party provider key is out of credits / unauthorized
-const FALLBACK_MODEL = "google/gemini-2.5-flash";
+const ALLOWED_MODELS = ROUTED_MODELS;
 
 // Validation constants
 const MAX_MESSAGES = 100;
 const MAX_MESSAGE_LENGTH = 10000;
 const MAX_IMAGE_DATA_LENGTH = 5000000; // ~5MB base64
+// Sources the client consulted before sending (web, market, repo, OSINT…).
+// Bounded so a misbehaving caller cannot inflate the prompt.
+const MAX_CONTEXT_BLOCKS = 5;
+const MAX_CONTEXT_BLOCK_CHARS = 4000;
+const MAX_CONTEXT_CHARS = 12000;
 
 // System prompt for AI Tor.v69 - ΔlieπFlΦw DAO Synapse Collective
 const SYSTEM_PROMPT = `# IDENTIDAD: AI TOR.v69 - ORÁCULO CUÁNTICO
@@ -95,6 +88,42 @@ Para consultas sobre salud, finanzas personales o decisiones críticas, SIEMPRE 
 
 > "El universo no es solo lo que ves, es lo que eres capaz de procesar y transmutar."`;
 
+/**
+ * Appends the tool data to the system prompt. The model is told these are facts
+ * from this turn, so it cites them instead of answering from memory — and told
+ * to say when a source was missing, so a failed skill never becomes a guess.
+ */
+function buildSystemPrompt(context: string[]): string {
+  if (context.length === 0) return SYSTEM_PROMPT;
+  return [
+    SYSTEM_PROMPT,
+    "\n## DATOS DE HERRAMIENTAS (consultados en este mismo turno)",
+    "Trata estos bloques como hechos actuales y cita la fuente (URL o nombre de la fuente) al usar un dato.",
+    "Si un dato no aparece aquí, dilo explícitamente en vez de suponerlo o inventar cifras.",
+    "",
+    context.join("\n\n---\n\n"),
+  ].join("\n");
+}
+
+/** Keeps only usable strings, capped in count and size. */
+function normalizeContext(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const blocks: string[] = [];
+  let total = 0;
+
+  for (const item of raw) {
+    if (typeof item !== "string") continue;
+    const block = item.trim().slice(0, MAX_CONTEXT_BLOCK_CHARS);
+    if (!block) continue;
+    if (total + block.length > MAX_CONTEXT_CHARS) break;
+    blocks.push(block);
+    total += block.length;
+    if (blocks.length >= MAX_CONTEXT_BLOCKS) break;
+  }
+
+  return blocks;
+}
+
 // Validate message structure
 function validateMessage(msg: unknown): { valid: boolean; error?: string } {
   if (typeof msg !== "object" || msg === null) {
@@ -131,7 +160,7 @@ function validateMessage(msg: unknown): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-function validateRequest(body: unknown): { valid: boolean; error?: string; data?: { messages: Array<{ role: string; content: string; imageData?: string }>; model: string } } {
+function validateRequest(body: unknown): { valid: boolean; error?: string; data?: { messages: Array<{ role: string; content: string; imageData?: string }>; model: string; context: string[] } } {
   if (typeof body !== "object" || body === null) {
     return { valid: false, error: "Invalid request body" };
   }
@@ -157,7 +186,7 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     }
   }
   
-  const model = typeof request.model === "string" ? request.model : "google/gemini-2.5-flash";
+  const model = typeof request.model === "string" ? request.model : DEFAULT_MODEL;
   if (!ALLOWED_MODELS.includes(model)) {
     return { valid: false, error: `Invalid model. Allowed models: ${ALLOWED_MODELS.join(", ")}` };
   }
@@ -166,7 +195,8 @@ function validateRequest(body: unknown): { valid: boolean; error?: string; data?
     valid: true, 
     data: { 
       messages: request.messages as Array<{ role: string; content: string; imageData?: string }>,
-      model 
+      model,
+      context: normalizeContext(request.context),
     } 
   };
 }
@@ -188,7 +218,7 @@ function buildProcessedMessages(messages: Array<{ role: string; content: string;
 }
 
 // Route to Lovable AI Gateway
-async function routeToLovable(model: string, processedMessages: unknown[]) {
+async function routeToLovable(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) {
     throw new Error("LOVABLE_API_KEY is not configured");
@@ -203,7 +233,7 @@ async function routeToLovable(model: string, processedMessages: unknown[]) {
     body: JSON.stringify({
       model,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: system },
         ...processedMessages,
       ],
       stream: true,
@@ -214,7 +244,7 @@ async function routeToLovable(model: string, processedMessages: unknown[]) {
 }
 
 // Route to xAI Grok API
-async function routeToGrok(model: string, processedMessages: unknown[]) {
+async function routeToGrok(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
   const GROK_API_KEY = Deno.env.get("GROK_API_KEY");
   if (!GROK_API_KEY) {
     throw new Error("GROK_API_KEY is not configured");
@@ -239,7 +269,7 @@ async function routeToGrok(model: string, processedMessages: unknown[]) {
     body: JSON.stringify({
       model: xaiModel,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: system },
         ...processedMessages,
       ],
       stream: true,
@@ -249,12 +279,12 @@ async function routeToGrok(model: string, processedMessages: unknown[]) {
 }
 
 // Route to Anthropic API and convert stream to OpenAI-compatible SSE
-async function routeToAnthropic(model: string, processedMessages: unknown[]) {
-  return await routeToAnthropicImpl(model, processedMessages);
+async function routeToAnthropic(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
+  return await routeToAnthropicImpl(model, processedMessages, system);
 }
 
 // Route to DeepSeek (OpenAI-compatible API)
-async function routeToDeepSeek(model: string, processedMessages: unknown[]) {
+async function routeToDeepSeek(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
   const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
   if (!DEEPSEEK_API_KEY) {
     throw new Error("DEEPSEEK_API_KEY is not configured");
@@ -287,14 +317,14 @@ async function routeToDeepSeek(model: string, processedMessages: unknown[]) {
     },
     body: JSON.stringify({
       model: dsModel,
-      messages: [{ role: "system", content: SYSTEM_PROMPT }, ...textMessages],
+      messages: [{ role: "system", content: system }, ...textMessages],
       stream: true,
       stream_options: { include_usage: true },
     }),
   });
 }
 
-async function routeToAnthropicImpl(model: string, processedMessages: unknown[]) {
+async function routeToAnthropicImpl(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
   const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY is not configured");
@@ -317,7 +347,7 @@ async function routeToAnthropicImpl(model: string, processedMessages: unknown[])
     },
     body: JSON.stringify({
       model: anthropicModel,
-      system: SYSTEM_PROMPT,
+      system,
       messages: anthropicMessages,
       max_tokens: 4096,
       stream: true,
@@ -413,9 +443,33 @@ function classifyProviderError(status: number, errorText: string) {
   };
 }
 
+/**
+ * Public health report: which providers have a real key and which models can
+ * answer. It never returns a secret — only whether one exists and whether it
+ * looks like a key instead of a pasted placeholder.
+ */
+function healthResponse(): Response {
+  return new Response(JSON.stringify(buildChatHealth((name) => Deno.env.get(name))), {
+    status: 200,
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      // Provider secrets can change on deploy; never serve a stale verdict.
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
+  }
+
+  // Health is a read: a bare GET, `?health=1`, or a `/health` suffix all answer
+  // it, so a monitor can use whichever URL it already knows.
+  const url = new URL(req.url);
+  if (req.method === "GET" || url.pathname.endsWith("/health") || url.searchParams.has("health")) {
+    return healthResponse();
   }
 
   try {
@@ -428,6 +482,16 @@ Deno.serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Same report for clients that can only POST.
+    if (
+      typeof requestBody === "object" &&
+      requestBody !== null &&
+      ((requestBody as Record<string, unknown>).health === true ||
+        (requestBody as Record<string, unknown>).action === "health")
+    ) {
+      return healthResponse();
+    }
     
     const validation = validateRequest(requestBody);
     if (!validation.valid || !validation.data) {
@@ -437,22 +501,25 @@ Deno.serve(async (req) => {
       );
     }
     
-    const { messages, model } = validation.data;
+    const { messages, model, context } = validation.data;
     const processedMessages = buildProcessedMessages(messages);
+    const system = buildSystemPrompt(context);
 
-    console.log(`Processing chat request with model: ${model}, message count: ${messages.length}`);
+    console.log(
+      `Processing chat request with model: ${model}, message count: ${messages.length}, context blocks: ${context.length}`,
+    );
 
     // Route to appropriate provider
     let response: Response;
     try {
       if (GROK_MODELS.includes(model)) {
-        response = await routeToGrok(model, processedMessages);
+        response = await routeToGrok(model, processedMessages, system);
       } else if (ANTHROPIC_MODELS.includes(model)) {
-        response = await routeToAnthropic(model, processedMessages);
+        response = await routeToAnthropic(model, processedMessages, system);
       } else if (DEEPSEEK_MODELS.includes(model)) {
-        response = await routeToDeepSeek(model, processedMessages);
+        response = await routeToDeepSeek(model, processedMessages, system);
       } else {
-        response = await routeToLovable(model, processedMessages);
+        response = await routeToLovable(model, processedMessages, system);
       }
     } catch (configError) {
       console.error("Provider config error:", configError instanceof Error ? configError.message : "Unknown");
@@ -483,7 +550,7 @@ Deno.serve(async (req) => {
       if (isThirdParty && (classified.status === 402 || classified.status === 401 || classified.status === 502)) {
         console.log(`Falling back to Lovable gateway for model: ${model}`);
         try {
-          const fallback = await routeToLovable(FALLBACK_MODEL, processedMessages);
+          const fallback = await routeToLovable(FALLBACK_MODEL, processedMessages, system);
           if (fallback.ok) {
             return new Response(fallback.body, {
               headers: { ...corsHeaders, "Content-Type": "text/event-stream" },

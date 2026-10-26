@@ -13,6 +13,8 @@ import {
 } from "@/lib/live-signals";
 import { LiveStage } from "./LiveStage";
 import { HistoricCasesStrip, OfficialSourcesStrip } from "./OfficialSourcesStrip";
+import { LIVE_STATUS_CHECKED_ON, signalLiveState } from "@/lib/live-status";
+import { markRevived, readRevived, writeRevived } from "@/lib/live-revived";
 import { toast } from "sonner";
 
 type Sighting = {
@@ -41,6 +43,11 @@ const SAMPLE_SIGHTINGS: Sighting[] = [
   { id: "sample-5", location: "Fukuoka, Japan", date_reported: "2026-03-04", type: "Disc-shaped Object", severity: "investigating", description: "JASDF radar tracked an unidentified object at 40,000 ft moving at Mach 3. No flight plan filed.", source: "JASDF", source_url: "https://www.mod.go.jp/asdf/", lat: 33.6, lon: 130.4 },
   { id: "sample-6", location: "Rendlesham Forest, UK", date_reported: "2026-03-06", type: "Ground Trace", severity: "signal", description: "Unusual ground markings found with elevated radiation readings. Triangular pattern, 3 m each side.", source: "UK MOD", source_url: "https://www.gov.uk/government/organisations/ministry-of-defence", lat: 52.1, lon: 1.4 },
 ];
+
+/** Reports painted per page: enough to read the newest, short enough that the
+ * historical record and the camera wall stay a scroll away instead of 20 000 px
+down. */
+const REGISTRY_PAGE = 18;
 
 const SEVERITY_FILTERS = [
   { id: "all", label: "Todas" },
@@ -81,14 +88,23 @@ function SignalCard({
   signal,
   active,
   failed,
+  offline,
   onSelect,
 }: {
   signal: LiveSignal;
   active: boolean;
   failed: boolean;
+  /** La última reverificación semanal no encontró emisión. */
+  offline: boolean;
   onSelect: () => void;
 }) {
-  const state = failed ? "No disponible" : signal.liveAtBuild ? "En directo" : "En espera";
+  const state = failed
+    ? "No disponible"
+    : offline
+      ? "Sin emisión"
+      : signal.liveAtBuild
+        ? "En directo"
+        : "En espera";
   return (
     <button
       type="button"
@@ -104,25 +120,35 @@ function SignalCard({
         alt=""
         aria-hidden="true"
         loading="lazy"
-        className={`h-[97px] w-full object-cover transition-opacity ${failed ? "opacity-20" : active ? "opacity-95" : "opacity-70 group-hover:opacity-95"}`}
+        className={`h-[97px] w-full object-cover transition-opacity ${
+          failed || offline ? "opacity-25 grayscale" : active ? "opacity-95" : "opacity-70 group-hover:opacity-95"
+        }`}
       />
       <span
         className={`absolute left-1 top-1 flex items-center gap-1 border px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider backdrop-blur ${
-          failed
+          failed || offline
             ? "border-border/60 bg-background/80 text-muted-foreground"
             : signal.liveAtBuild
               ? "border-destructive/50 bg-destructive/30 text-destructive-foreground"
               : "border-amber-400/40 bg-background/75 text-amber-300"
         }`}
       >
-        <span className={`h-1 w-1 rounded-full ${failed ? "bg-muted-foreground" : signal.liveAtBuild ? "animate-pulse bg-red-400" : "bg-amber-400"}`} />
+        <span
+          className={`h-1 w-1 rounded-full ${
+            failed || offline ? "bg-muted-foreground" : signal.liveAtBuild ? "animate-pulse bg-red-400" : "bg-amber-400"
+          }`}
+        />
         {state}
       </span>
       <span className="absolute right-1 top-1 border border-border/60 bg-background/80 px-1 py-0.5 font-mono text-[8px] text-muted-foreground backdrop-blur">
         {signal.official ? "Oficial" : "Colab."}
       </span>
       <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-background via-background/85 to-transparent px-1.5 pb-1.5 pt-4">
-        <span className="block truncate font-heading text-[10px] uppercase tracking-wide text-foreground/90">{signal.label}</span>
+        {/* Two lines instead of an ellipsis: with fifteen volcanoes and four
+            airports, the distinguishing part of a name is often the end. */}
+        <span className="line-clamp-2 font-heading text-[10px] uppercase leading-tight tracking-wide text-foreground/90">
+          {signal.label}
+        </span>
         <span className="block truncate font-mono text-[8px] text-muted-foreground">{signal.source}</span>
       </span>
     </button>
@@ -135,18 +161,52 @@ export function UFOMonitorTab() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [severity, setSeverity] = useState<(typeof SEVERITY_FILTERS)[number]["id"]>("all");
-  const [category, setCategory] = useState<LiveCategoryId>("orbit");
-  const [selectedId, setSelectedId] = useState(LIVE_SIGNALS[0].id);
+  /** The registry holds ~190 reports; only the newest page is painted at first. */
+  const [visibleCount, setVisibleCount] = useState(REGISTRY_PAGE);
+  // No category is preselected: the stage and its iframes only mount after the
+  // visitor asks for one, so the anomaly registry paints first.
+  const [category, setCategory] = useState<LiveCategoryId | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [failures, setFailures] = useState<Record<string, string>>({});
+  // Cámaras que el informe semanal dio por apagadas pero que sí emiten.
+  const [revived, setRevived] = useState<Record<string, string>>(() => readRevived());
+
+  useEffect(() => {
+    writeRevived(revived);
+  }, [revived]);
+
+  const liveState = useCallback(
+    (signal: LiveSignal) => {
+      if (revived[signal.id]) return "live" as const;
+      const state = signalLiveState(signal);
+      // Sin dato fiable de la sonda se mantiene la foto del build: `unknown` no
+      // es lo mismo que «apagada».
+      if (state === "unknown" && signal.liveAtBuild) return "live" as const;
+      return state;
+    },
+    [revived],
+  );
   const [nuforcMeta, setNuforcMeta] = useState<NuforcMeta | null>(null);
 
-  const selected = LIVE_SIGNALS.find((signal) => signal.id === selectedId) ?? LIVE_SIGNALS[0];
-  const categorySignals = useMemo(() => signalsByCategory(category), [category]);
-  const liveCount = LIVE_SIGNALS.filter((signal) => signal.liveAtBuild && !failures[signal.id]).length;
+  const selected = useMemo(
+    () => LIVE_SIGNALS.find((signal) => signal.id === selectedId) ?? null,
+    [selectedId]
+  );
+  const categorySignals = useMemo(() => (category ? signalsByCategory(category) : []), [category]);
+  const liveCount = LIVE_SIGNALS.filter((signal) => liveState(signal) === "live" && !failures[signal.id]).length;
+  const officialCams = LIVE_SIGNALS.filter((signal) => signal.official).length;
   const nuforcCount = useMemo(
     () => sightings.filter((record) => record.source === NUFORC_SOURCE.label).length,
     [sightings]
   );
+  /** Newest report the UAP table itself returned, so its last sync is visible. */
+  const tableNewest = useMemo(() => {
+    const dates = sightings
+      .filter((record) => record.source !== NUFORC_SOURCE.label && record.date_reported)
+      .map((record) => record.date_reported as string)
+      .sort();
+    return dates.at(-1) ?? null;
+  }, [sightings]);
 
   const visibleSightings = useMemo(
     () => (severity === "all" ? sightings : sightings.filter((s) => (s.severity || "signal") === severity)),
@@ -227,8 +287,27 @@ export function UFOMonitorTab() {
     void fetchSightings();
   }, [fetchSightings]);
 
+  // A new severity filter starts from the newest page again, not from the last
+  // expanded position.
+  useEffect(() => {
+    setVisibleCount(REGISTRY_PAGE);
+  }, [severity]);
+
   const handleUnavailable = useCallback((signal: LiveSignal, reason: string) => {
     setFailures((prev) => (prev[signal.id] ? prev : { ...prev, [signal.id]: reason }));
+  }, []);
+
+  // El reproductor está reproduciendo: se retira la marca de «sin emisión» que
+  // dejó la última verificación, en este navegador, hasta que caduque, y se
+  // borra el fallo de esta sesión para que el contador de la categoría suba.
+  const handleLive = useCallback((signal: LiveSignal) => {
+    setRevived((previous) => (previous[signal.id] ? previous : markRevived(previous, signal.id)));
+    setFailures((previous) => {
+      if (!previous[signal.id]) return previous;
+      const next = { ...previous };
+      delete next[signal.id];
+      return next;
+    });
   }, []);
 
   const pickCategory = (id: LiveCategoryId) => {
@@ -250,7 +329,7 @@ export function UFOMonitorTab() {
             {sightings.length} registros
           </Chip>
           <Chip icon={<ShieldCheck className="h-3 w-3" aria-hidden="true" />}>
-            {LIVE_SIGNALS.filter((signal) => signal.official).length} fuentes oficiales
+            {officialCams} cámaras oficiales
           </Chip>
         </div>
         <Button
@@ -266,55 +345,90 @@ export function UFOMonitorTab() {
       </header>
 
       <div className="flex flex-col gap-5 p-3">
-        {/* --- Sources first ---------------------------------------------- */}
+        {/* --- Official sources, right under the header ------------------- */}
         <OfficialSourcesStrip />
-        <HistoricCasesStrip />
 
-        {/* --- Live stage ------------------------------------------------- */}
+        {/* --- Cameras, right after the sources (on demand) --------------- */}
         <section aria-label="Señales en directo" className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Radio className="h-3.5 w-3.5 text-destructive/80" aria-hidden="true" />
+            <h3 className="font-heading text-[11px] uppercase tracking-wider text-foreground/85">Cámaras en directo</h3>
+            <span className="font-mono text-[9px] text-muted-foreground/55">
+              {officialCams} oficiales · {liveCount} emitiendo
+            </span>
+          </div>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Categorías de señal">
               {LIVE_CATEGORIES.map((entry) => {
                 const active = category === entry.id;
-                const count = signalsByCategory(entry.id).length;
+                const signals = signalsByCategory(entry.id);
+                // El contador dice cuántas emiten ahora, no cuántas hay listadas:
+                // una categoría con 30 fichas y 2 en directo engaña.
+                const liveInCategory = signals.filter(
+                  (signal) => liveState(signal) === "live" && !failures[signal.id],
+                ).length;
                 return (
                   <button
                     key={entry.id}
                     type="button"
                     onClick={() => pickCategory(entry.id)}
                     aria-pressed={active}
-                    title={entry.hint}
+                    title={`${entry.hint} · ${liveInCategory} en directo de ${signals.length}`}
                     className={`flex items-center gap-1.5 border px-2.5 py-1.5 font-heading text-[10px] uppercase tracking-wider transition-colors ${
                       active ? "border-primary/50 bg-primary/10 text-primary" : "border-border/50 bg-card/30 text-muted-foreground hover:text-foreground"
                     }`}
                   >
                     {entry.label}
-                    <span className="font-mono text-[8px] opacity-60">{count}</span>
+                    <span className="font-mono text-[8px] opacity-60">{liveInCategory}</span>
                   </button>
                 );
               })}
             </div>
             <p className="font-mono text-[9px] text-muted-foreground/60">
-              {LIVE_CATEGORIES.find((entry) => entry.id === category)?.hint}
+              {category
+                ? `${categorySignals.filter((signal) => liveState(signal) === "live").length} de ${categorySignals.length} emitiendo`
+                : "Elige una categoría para cargar sus cámaras"}
             </p>
           </div>
 
-          <LiveStage signal={selected} blockedReason={failures[selected.id]} onUnavailable={handleUnavailable} />
-
-          <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar" aria-label="Canales disponibles">
-            {categorySignals.map((signal) => (
-              <SignalCard
-                key={signal.id}
-                signal={signal}
-                active={signal.id === selected.id}
-                failed={Boolean(failures[signal.id])}
-                onSelect={() => setSelectedId(signal.id)}
+          {selected ? (
+            <>
+              <LiveStage
+                signal={selected}
+                blockedReason={failures[selected.id]}
+                onUnavailable={handleUnavailable}
+                onLive={handleLive}
               />
-            ))}
-          </div>
-          <p className="font-mono text-[9px] text-muted-foreground/60">
-            Estado de emisión verificado el {LIVE_VERIFIED_ON}. Si un canal deja de emitir, el reproductor lo detecta y ofrece la fuente oficial.
-          </p>
+              {liveState(selected) === "offline" && !failures[selected.id] && (
+                <p className="border border-amber-400/30 bg-amber-400/5 px-2 py-1.5 font-mono text-[9px] leading-4 text-amber-300/90">
+                  La verificación del {LIVE_STATUS_CHECKED_ON} no encontró emisión en esta cámara. Se está probando
+                  de nuevo: si arranca, se desmarca sola.
+                </p>
+              )}
+
+              <div className="flex gap-2 overflow-x-auto pb-1 no-scrollbar" aria-label="Canales disponibles">
+                {categorySignals.map((signal) => (
+                  <SignalCard
+                    key={signal.id}
+                    signal={signal}
+                    active={signal.id === selected.id}
+                    failed={Boolean(failures[signal.id])}
+                    offline={liveState(signal) === "offline"}
+                    onSelect={() => setSelectedId(signal.id)}
+                  />
+                ))}
+              </div>
+              <p className="font-mono text-[9px] text-muted-foreground/60">
+                Lista curada el {LIVE_VERIFIED_ON}
+                {LIVE_STATUS_CHECKED_ON ? ` · reverificada el ${LIVE_STATUS_CHECKED_ON}` : ""}. Las cámaras marcadas «sin emisión»
+                no emitían en esa comprobación; el reproductor también detecta cortes y ofrece la fuente oficial.
+              </p>
+            </>
+          ) : (
+            <p className="border border-dashed border-border/50 bg-card/20 px-3 py-6 text-center font-mono text-[10px] leading-5 text-muted-foreground/70">
+              Elige una categoría para cargar sus cámaras: no se descarga ningún vídeo ni miniatura hasta que la abras.
+            </p>
+          )}
         </section>
 
         {/* --- Anomaly feed ----------------------------------------------- */}
@@ -322,14 +436,20 @@ export function UFOMonitorTab() {
           <div className="flex flex-wrap items-center gap-2">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-400/80" aria-hidden="true" />
             <h3 className="font-heading text-[11px] uppercase tracking-wider text-foreground/85">Registro de anomalías</h3>
-            <span className="font-mono text-[9px] text-muted-foreground">{visibleSightings.length} de {sightings.length}</span>
+            <span className="font-mono text-[9px] text-muted-foreground">
+              {Math.min(visibleCount, visibleSightings.length)} de {visibleSightings.length}
+              {visibleSightings.length !== sightings.length ? ` de ${sightings.length}` : ""} · más recientes primero
+            </span>
             {nuforcCount > 0 && (
               <span
                 className="font-mono text-[9px] text-muted-foreground/55"
                 title={`${sightings.length - nuforcCount} registros de la tabla UAP · ${nuforcCount} del espejo abierto de NUFORC (dataset DataHerb, ordenado por fecha de avistamiento). Instantánea generada el ${nuforcMeta?.generatedAt.slice(0, 10) ?? "—"}.`}
               >
-                {sightings.length - nuforcCount} tabla UAP · {nuforcCount} NUFORC
+                {sightings.length - nuforcCount} tabla UAP{tableNewest ? ` (última ${tableNewest})` : ""} · {nuforcCount} NUFORC
                 {nuforcMeta?.dateFrom && nuforcMeta?.dateTo && ` (${nuforcMeta.dateFrom} → ${nuforcMeta.dateTo})`}
+                {nuforcMeta?.stale &&
+                  nuforcMeta.datasetAgeDays !== null &&
+                  ` · origen congelado hace ${Math.floor(nuforcMeta.datasetAgeDays / 365)} años`}
               </span>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -368,7 +488,7 @@ export function UFOMonitorTab() {
             </p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {visibleSightings.map((s) => (
+              {visibleSightings.slice(0, visibleCount).map((s) => (
                 <article
                   key={s.id}
                   className="flex flex-col gap-2 border border-border/40 bg-card/40 p-3 transition-colors hover:border-primary/35 hover:bg-card/60"
@@ -411,7 +531,23 @@ export function UFOMonitorTab() {
               ))}
             </div>
           )}
+
+          {visibleSightings.length > visibleCount && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setVisibleCount((count) => count + REGISTRY_PAGE)}
+              className="mx-auto h-8 px-3 font-mono text-[9px] uppercase tracking-wider text-primary hover:text-primary/80"
+            >
+              Ver {Math.min(REGISTRY_PAGE, visibleSightings.length - visibleCount)} más ·
+              {" "}
+              {visibleSightings.length - visibleCount} restantes
+            </Button>
+          )}
         </section>
+
+        {/* --- Historical record ------------------------------------------ */}
+        <HistoricCasesStrip />
 
         {/* --- Method ----------------------------------------------------- */}
         <footer className="flex flex-col gap-2 border-t border-border/40 pt-3">

@@ -1,10 +1,8 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
-import { componentTagger } from "lovable-tagger";
 import cesium from "vite-plugin-cesium";
-import { mcpPlugin } from "@lovable.dev/mcp-js/stacks/supabase/vite";
-import { fetchVenue, isVenueId } from "./api/_venues";
+import { fetchVenue, isSafeInterval, isSafeSlug, isSafeToken, isVenueId } from "./api/_venues";
 
 /**
  * En local no hay función de Vercel, así que el middleware reproduce
@@ -21,15 +19,31 @@ function predictionsDevApi(): Plugin {
         if (!isVenueId(venue)) {
           res.statusCode = 400;
           res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify({ error: "unknown venue; use kalshi or limitless" }));
+          res.end(JSON.stringify({ error: "unknown venue; use polymarket, kalshi or limitless" }));
           return;
         }
         const limit = Number(url.searchParams.get("limit") ?? "25");
+        const slug = url.searchParams.get("slug");
+        const token = url.searchParams.get("token");
+        const interval = url.searchParams.get("interval");
         try {
-          const result = await fetchVenue(venue, limit);
+          const result = await fetchVenue({
+            venue,
+            limit,
+            slug: isSafeSlug(slug) ? slug : null,
+            token: isSafeToken(token) ? token : null,
+            interval: isSafeInterval(interval) ? interval : null,
+          });
           res.statusCode = result.ok ? 200 : 502;
           res.setHeader("content-type", "application/json");
-          res.end(JSON.stringify(result.ok ? result.body : { error: `${venue} respondió HTTP ${result.status}` }));
+          res.setHeader("x-aitor-egress", result.egress);
+          res.end(
+            JSON.stringify(
+              result.ok
+                ? result.body
+                : { error: `${venue} no respondió por ninguno de los dos caminos`, detail: result.reason },
+            ),
+          );
         } catch (error) {
           const message = error instanceof Error ? error.message : "upstream fetch failed";
           res.statusCode = 502;
@@ -42,18 +56,12 @@ function predictionsDevApi(): Plugin {
 }
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   server: {
     host: "::",
     port: 8080,
   },
-  plugins: [
-    react(),
-    cesium(),
-    mcpPlugin(),
-    predictionsDevApi(),
-    mode === "development" && componentTagger(),
-  ].filter(Boolean),
+  plugins: [react(), cesium(), predictionsDevApi()],
 
   build: {
     // The globe pulls three.js and the wallet stack pulls viem/wagmi; keeping
@@ -82,4 +90,4 @@ export default defineConfig(({ mode }) => ({
     ],
     dedupe: ["three", "react", "react-dom"],
   },
-}));
+});

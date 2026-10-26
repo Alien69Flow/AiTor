@@ -19,6 +19,9 @@ Estado medido el 2026-10-16 en este repositorio, con `package-lock.json` regener
 | moderate | 10 | 7 |
 | low | 1 | 0 |
 
+El 2026-10-20 el total bajó a **19** al retirar el SDK de Lovable (ver abajo); el resto
+de la tabla es la medición original.
+
 Comandos:
 
 ```bash
@@ -64,7 +67,7 @@ pasan; los ficheros nuevos/modificados pasan `eslint` sin errores.
 Ninguno de estos tiene parche aplicable sin un **major**, o no tiene parche en absoluto.
 No se han forzado.
 
-### `@vercel/node` 3.x → 24 (una sola migración cierra 11 de los 23)
+### `@vercel/node` 3.x → 24 (una sola migración cierra 11 de los 19)
 
 `@vercel/node` es `devDependency` y solo aporta los tipos `VercelRequest`/`VercelResponse`
 de `api/*.ts`; su árbol transitivo no se ejecuta en el build ni en producción. Su cadena
@@ -83,9 +86,8 @@ Arrastra `chokidar`, `braces`, `micromatch` y `fast-glob`:
 
 - `braces` `GHSA-vfj7-8cjw-p6xm` afecta a `<=3.0.3` y **3.0.3 es la última publicada**:
   no existe versión parcheada. Solo desaparece migrando a Tailwind 4 (que ya no usa esa cadena).
-- `lovable-tagger` y `@tailwindcss/typography` se marcan por la misma cadena.
-  El "fix" que sugiere npm (`@tailwindcss/typography@0.5.4`) es en realidad un *downgrade*;
-  no se aplica.
+- `@tailwindcss/typography` se marca por la misma cadena. El "fix" que sugiere npm
+  (`@tailwindcss/typography@0.5.4`) es en realidad un *downgrade*; no se aplica.
 
 ### `postcss-selector-parser` `GHSA-rj75-hqrm-r3gf` (`<7.1.6`)
 
@@ -114,11 +116,14 @@ cambio aparte.
 
 ### `@lovable.dev/mcp-js` → `@modelcontextprotocol/sdk` `GHSA-6qxp-vccf-f47h`
 
-Sin parche disponible en el rango instalado. Desaparece con la salida de Lovable
-(ver `docs/lovable-supabase-migration.md`).
+**Resuelto el 2026-10-20**: el SDK, el plugin de Vite, `.lovable/` y la función `mcp`
+se retiraron con el resto de la integración de Lovable (ver
+`docs/lovable-supabase-migration.md`). El total baja de **23 a 19** avisos sin tocar
+ningún otro paquete. La función `mcp` ya desplegada sigue viva hasta que se ejecute
+`npx supabase functions delete mcp` con un token.
 
 ## Regla
 
-`npm audit` **no** está en 0 a propósito: 23 avisos no tienen arreglo sin forzar un major o
+`npm audit` **no** está en 0 a propósito: 19 avisos no tienen arreglo sin forzar un major o
 no tienen parche publicado. El job `audit` de CI falla **solo** con advisories `critical`,
 que hoy son 0.

@@ -9,7 +9,6 @@ import {
   Gem,
   Globe2,
   Landmark,
-  Layers,
   Plug,
   ShieldCheck,
   Sparkles,
@@ -24,6 +23,7 @@ import { useAccount, useDisconnect } from "wagmi";
 import { AuthMethods } from "@/components/auth/AuthMethods";
 import { TelegramBridge } from "@/components/TelegramBridge";
 import { DaoTreasury } from "./DaoTreasury";
+import { AuthProvidersPanel } from "@/components/auth/AuthProvidersPanel";
 import { CommandConsole } from "./CommandConsole";
 import { PricingModal } from "./PricingModal";
 import { Button } from "@/components/ui/button";
@@ -39,11 +39,14 @@ import alienflowLogo from "@/assets/alienflow-logo.webp";
 import aceLogo from "@/assets/ace.png";
 import adexLogo from "@/assets/adex.png";
 import aitorLogo from "@/assets/aitor-icon.png";
+import atripLogo from "@/assets/atrip.png";
 
 const LOGOS: Record<NonNullable<EcosystemProduct["logo"]>, string> = {
   ace: aceLogo,
   adex: adexLogo,
   aitor: aitorLogo,
+  atrip: atripLogo,
+  dao: alienflowLogo,
 };
 
 const TIER_LABEL: Record<Tier, string> = {
@@ -138,7 +141,8 @@ export function SystemTab() {
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex shrink-0 items-center gap-2 border-b border-border/30 px-3 py-2.5 md:px-5">
         <div className="flex min-w-0 items-center gap-2">
-          <Layers className="h-4 w-4 shrink-0 text-primary" />
+          {/* The official mark, the same one the terminal carries top-left. */}
+          <img src={alienflowLogo} alt="ΔlieπFlΦw DAO" className="h-5 w-5 shrink-0 object-contain" />
           <div className="min-w-0">
             <p className="truncate font-heading text-[11px] uppercase tracking-widest text-foreground/90">
               Centro de control
@@ -259,6 +263,11 @@ export function SystemTab() {
               </div>
 
               <AuthMethods showEmailForm={showEmailForm} onSignedIn={() => setShowEmailForm(false)} />
+
+              {/* A locked button says nothing about why it is locked; this panel
+                  names the console, the dashboard path and the one callback URL
+                  every provider needs. */}
+              <AuthProvidersPanel />
 
               <div className="flex flex-wrap items-center gap-2 border-t border-border/25 pt-3">
                 <Button

@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { ArrowRight, Fingerprint, Loader2, Mail, Lock, Phone, Wallet, ShieldCheck, LogOut } from "lucide-react";
+import { ArrowRight, Fingerprint, Loader2, Mail, Lock, LockKeyhole, Phone, RotateCw, Wallet, ShieldCheck, LogOut } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth, SOCIAL_PROVIDERS, type SocialProvider } from "@/hooks/useAuth";
+import { providerStateLabel, useProviderAvailability } from "@/lib/auth-provider-status";
 import { turnstileToken } from "@/lib/turnstile";
 import { useWalletAuth } from "@/hooks/useWalletAuth";
 import { track } from "@/lib/analytics";
@@ -188,8 +189,47 @@ export function AuthMethods({
   const [code, setCode] = useState("");
   /** Which destination already got a link or a code, so the form knows. */
   const [sentTo, setSentTo] = useState<"email" | "phone" | null>(null);
+  /** Segundos que faltan para poder reenviar el enlace (límite de Supabase). */
+  const [cooldown, setCooldown] = useState(0);
+  const emailRef = useRef<HTMLInputElement>(null);
 
   const target = redirectTo ?? (typeof window !== "undefined" ? window.location.origin : undefined);
+  // A provider can be switched on in /auth/v1/settings and still have no Client
+  // ID + Secret, which turns its button into a dead end. This asks the same
+  // endpoint the button uses, so the page can say so before the click.
+  const { states: providerStates, checked: providersChecked, refresh: refreshProviders } =
+    useProviderAvailability(SOCIAL_PROVIDERS, target ?? "");
+  const configuredCount = SOCIAL_PROVIDERS.filter((provider) => providerStates[provider] === "ready").length;
+  const missingSecretCount = SOCIAL_PROVIDERS.filter(
+    (provider) => providerStates[provider] === "missing-secret",
+  ).length;
+  const disabledCount = SOCIAL_PROVIDERS.filter(
+    (provider) => providerStates[provider] === "disabled",
+  ).length;
+  /**
+   * Providers that were never switched on are collapsed behind one line:
+   * seventeen locked buttons pushed the form past the fold on a laptop. What is
+   * enabled (even when it is broken), what works and what could not be checked
+   * are always rendered, so a provider never disappears by being unverified —
+   * and the amber lock stays in sight until the credentials are saved.
+   */
+  const [showDisabledProviders, setShowDisabledProviders] = useState(false);
+  const visibleProviders = SOCIAL_PROVIDERS.filter(
+    (provider) => showDisabledProviders || providerStates[provider] !== "disabled",
+  );
+  const deadCount = SOCIAL_PROVIDERS.filter((provider) => {
+    const state = providerStates[provider];
+    return state === "missing-secret" || state === "disabled";
+  }).length;
+
+  // Un solo temporizador por cuenta atrás: el reenvío se bloquea 30 s para no
+  // chocar con el rate limit de envíos de Supabase, que es por usuario y por hora.
+  const cooling = cooldown > 0;
+  useEffect(() => {
+    if (!cooling) return;
+    const id = window.setInterval(() => setCooldown((seconds) => (seconds <= 1 ? 0 : seconds - 1)), 1000);
+    return () => window.clearInterval(id);
+  }, [cooling]);
 
   /** Providers actually linked to this account, so the session bar tells the truth. */
   const linkedIdentities = useMemo(() => {
@@ -275,6 +315,54 @@ export function AuthMethods({
       : "El acceso por email no está activado en Supabase → Authentication → Email.";
   };
 
+  /** El límite de envíos de Supabase, traducido; el resto, como siempre. */
+  const magicHint = (raw: string) => {
+    if (/rate limit|too many|for security purposes|only request this after/i.test(raw)) {
+      return "Demasiadas peticiones seguidas: espera un minuto y reintenta. Supabase limita los envíos de email por usuario (Authentication → Rate Limits).";
+    }
+    return otpHint(raw, "email");
+  };
+
+  /**
+   * Un único envío para el enlace mágico, compartido por el formulario y por el
+   * reenvío de la tarjeta de enviado: así la cuenta atrás y el mensaje de error
+   * no pueden divergir entre los dos botones.
+   */
+  const sendMagicLink = async (address: string) => {
+    const { error } = await sendEmailOtp(address, target, (await turnstileToken()) ?? undefined);
+    if (error) {
+      toast.error(magicHint(error.message));
+      return false;
+    }
+    setSentTo("email");
+    setCooldown(30);
+    toast.success(`Abre el enlace de acceso que te hemos enviado a ${address}.`);
+    return true;
+  };
+
+  const handleResendMagic = async () => {
+    setPending("email");
+    try {
+      await sendMagicLink(email);
+    } finally {
+      setPending(null);
+    }
+  };
+
+  /** Entrada directa al respaldo: elige el modo y deja el cursor en el email. */
+  const startMagic = () => {
+    setDirectMode("magic");
+    setSentTo(null);
+    setCooldown(0);
+    window.setTimeout(() => emailRef.current?.focus(), 0);
+  };
+
+  const changeEmail = () => {
+    setSentTo(null);
+    setCooldown(0);
+    window.setTimeout(() => emailRef.current?.focus(), 0);
+  };
+
   const handleEmail = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -315,14 +403,12 @@ export function AuthMethods({
     setPending("email");
     try {
       if (directMode === "magic") {
-        const { error } = await sendEmailOtp(email, target, (await turnstileToken()) ?? undefined);
-        if (error) {
-          toast.error(otpHint(error.message, "email"));
+        const check = authSchema.shape.email.safeParse(email);
+        if (!check.success) {
+          toast.error(check.error.errors[0].message);
           return;
         }
-        track("signup_started", { method: "magic_link" });
-        setSentTo("email");
-        toast.success(`Abre el enlace de acceso que te hemos enviado a ${email}.`);
+        if (await sendMagicLink(email)) track("signup_started", { method: "magic_link" });
         return;
       }
 
@@ -451,28 +537,94 @@ export function AuthMethods({
         </div>
       ) : (
         <>
-          <div className={`grid ${gridClass} gap-2`}>
-            {SOCIAL_PROVIDERS.map((provider) => {
+          <div className={`grid ${gridClass} gap-1.5`}>
+            {visibleProviders.map((provider) => {
               const Icon = PROVIDER_ICON[provider];
+              const state = providerStates[provider];
+              const dead = state === "missing-secret" || state === "disabled";
+              const badge = providerStateLabel(state);
               return (
                 <Button
                   key={provider}
                   type="button"
                   variant="outline"
                   onClick={() => handleProvider(provider)}
-                  disabled={pending !== null}
-                  className="h-9 border-border/40 bg-card/40 px-2 text-[10px] transition-all hover:border-primary/40 hover:bg-primary/10"
+                  disabled={pending !== null || dead}
+                  aria-disabled={dead || undefined}
+                  aria-label={`${PROVIDER_LABEL[provider]}${badge ? ` — ${badge}` : ""}`}
+                  title={
+                    state === "missing-secret"
+                      ? `${PROVIDER_LABEL[provider]}: el interruptor está encendido en Supabase pero faltan Client ID + Secret. No se puede iniciar sesión hasta configurarlo (${ENABLE_AT[provider] ?? "Authentication → Providers"}).`
+                      : state === "disabled"
+                        ? `${PROVIDER_LABEL[provider]} no está activado en este proyecto (${ENABLE_AT[provider] ?? "Authentication → Providers"}).`
+                        : undefined
+                  }
+                  className={`relative h-8 justify-start gap-1.5 border-border/40 bg-card/40 px-1.5 text-[10px] transition-all ${
+                    dead
+                      ? "cursor-not-allowed border-dashed text-muted-foreground/50"
+                      : "hover:border-primary/40 hover:bg-primary/10"
+                  }`}
                 >
                   {pending === provider ? (
-                    <Loader2 className="mr-1.5 h-3.5 w-3.5 shrink-0 animate-spin" />
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
                   ) : (
-                    <Icon className="mr-1.5 h-3.5 w-3.5 shrink-0" />
+                    <Icon className="h-3 w-3 shrink-0" />
                   )}
-                  <span className="truncate">{PROVIDER_LABEL[provider]}</span>
+                  {/* The name keeps its room: the state lives in the tooltip,
+                      the dashboard guide and this lock glyph, not in a second
+                      label that would squeeze the provider out of the button. */}
+                  <span className="min-w-0 truncate">{PROVIDER_LABEL[provider]}</span>
+                  {dead && (
+                    <LockKeyhole
+                      className={`absolute right-1 top-1/2 h-2.5 w-2.5 -translate-y-1/2 ${
+                        state === "missing-secret" ? "text-amber-400/80" : "text-muted-foreground/50"
+                      }`}
+                      aria-hidden
+                    />
+                  )}
                 </Button>
               );
             })}
           </div>
+
+          {disabledCount > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowDisabledProviders((shown) => !shown)}
+              className="w-full rounded border border-dashed border-border/40 py-1.5 font-mono text-[10px] uppercase tracking-wider text-muted-foreground/70 transition-colors hover:border-primary/30 hover:text-foreground/80"
+              aria-expanded={showDisabledProviders}
+            >
+              {showDisabledProviders
+                ? `Ocultar los ${disabledCount} no activados`
+                : `Ver los ${disabledCount} no activados`}
+            </button>
+          )}
+
+          {deadCount > 0 && (
+            <div className="flex items-start gap-2 pr-1 text-[10px] leading-4 text-muted-foreground/70" role="status">
+              <p className="min-w-0 flex-1">
+                {missingSecretCount > 0
+                  ? `${SOCIAL_PROVIDERS.filter((p) => providerStates[p] === "missing-secret")
+                      .map((p) => PROVIDER_LABEL[p])
+                      .join(" y ")}: interruptor encendido sin Client ID + Secret, el servidor rechaza el inicio. `
+                  : configuredCount === 0
+                    ? "Ningún proveedor social está listo todavía. "
+                    : `${configuredCount} de ${SOCIAL_PROVIDERS.length} listos. `}
+                {disabledCount > 0 && `Otros ${disabledCount} sin activar. `}
+                {"Se arreglan en Authentication → Providers (docs/oauth-google.md)."}
+              </p>
+              <button
+                type="button"
+                onClick={refreshProviders}
+                className="mt-px flex shrink-0 items-center gap-1 font-mono text-[9px] uppercase tracking-wider text-primary/70 transition-colors hover:text-primary disabled:opacity-50"
+                disabled={!providersChecked}
+                title="Volver a preguntar a Supabase, sin recargar la página"
+              >
+                <RotateCw className={`h-2.5 w-2.5 ${providersChecked ? "" : "animate-spin"}`} aria-hidden />
+                {providersChecked ? "revisar" : "revisando"}
+              </button>
+            </div>
+          )}
 
           <Button
             type="button"
@@ -504,6 +656,29 @@ export function AuthMethods({
             </span>
           </Button>
           {walletError && <p className="text-center text-[10px] text-destructive">{walletError}</p>}
+
+          {/* Acceso de respaldo: un camino que no depende de ningún proveedor
+              externo. Va aquí, visible y sin plegar, porque el día que OAuth
+              falla es justo cuando no se puede buscar entre pestañas. */}
+          {showEmailForm && (
+            <div className="rounded-lg border border-dashed border-primary/25 bg-primary/[0.04] px-3 py-2.5">
+              <p className="flex items-center gap-1.5 font-mono text-[9px] uppercase tracking-[0.22em] text-primary/80">
+                <Mail className="h-3 w-3" aria-hidden /> Acceso de respaldo
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-muted-foreground/70">
+                Sin Google, Apple, passkey ni wallet: un enlace de un solo uso al email con el que entras.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                className="mt-2 h-8 w-full border-primary/30 bg-card/40 text-[11px] text-foreground/85 transition-all hover:border-primary/50 hover:bg-primary/10"
+                disabled={pending !== null}
+                onClick={startMagic}
+              >
+                <Mail className="mr-2 h-3.5 w-3.5" /> Entrar con un enlace por email
+              </Button>
+            </div>
+          )}
         </>
       )}
 
@@ -539,6 +714,48 @@ export function AuthMethods({
             ))}
           </div>
 
+          {directMode === "magic" && sentTo === "email" ? (
+            <div
+              role="status"
+              className="space-y-2 rounded-lg border border-primary/30 bg-primary/[0.06] px-3 py-2.5 text-[10px] leading-4 text-muted-foreground/75"
+            >
+              <p className="flex items-start gap-1.5 text-primary/90">
+                <Mail className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+                <span>
+                  Enlace enviado a <span className="font-mono text-foreground/90">{email}</span>. Caduca en 1 hora y
+                  solo sirve una vez.
+                </span>
+              </p>
+              <p>Si no llega en un minuto, revisa spam o promociones y reenvíalo.</p>
+              <div className="flex flex-wrap gap-2 pt-0.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 border-primary/40 text-[10px]"
+                  disabled={pending !== null || cooling}
+                  onClick={handleResendMagic}
+                >
+                  {pending === "email" ? (
+                    <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                  ) : (
+                    <RotateCw className="mr-1 h-3 w-3" />
+                  )}
+                  {cooling ? `Reenviar en ${cooldown}s` : "Reenviar enlace"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-[10px] text-muted-foreground"
+                  disabled={pending !== null}
+                  onClick={changeEmail}
+                >
+                  Usar otro email
+                </Button>
+              </div>
+            </div>
+          ) : (
           <form onSubmit={handleEmail} className="space-y-3">
             {directMode !== "phone" && (
               <div className="space-y-1.5">
@@ -549,6 +766,7 @@ export function AuthMethods({
                   <Mail className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/40" />
                   <Input
                     id="auth-email"
+                    ref={emailRef}
                     type="email"
                     placeholder="tu@email.com"
                     value={email}
@@ -636,6 +854,7 @@ export function AuthMethods({
               )}
             </Button>
           </form>
+          )}
 
           {directMode === "password" && (
             <button
