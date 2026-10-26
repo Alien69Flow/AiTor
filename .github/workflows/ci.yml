@@ -60,6 +60,28 @@ jobs:
           if-no-files-found: warn
           retention-days: 7
 
+  # The login page offers every method GoTrue has switched on, so an enabled
+  # provider without credentials is a button that dies on click (that is how
+  # Google and Apple broke when the Lovable broker was retired). This probes the
+  # real project exactly like the browser does — /settings and /authorize are
+  # public, so no secret is involved — and fails only in that state, never for a
+  # provider nobody turned on. `scripts/auth-providers.baseline.json` records the
+  # accepted exceptions with an expiry date, so "later" cannot become "never".
+  providers:
+    name: auth providers gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No `npm ci`: the gate only uses node's fetch and the publishable key that
+      # already ships inside the browser bundle.
+      - name: Probe Supabase sign-in providers
+        run: npm run auth:providers:gate
+
   audit:
     name: audit (critical only)
     runs-on: ubuntu-latest
