@@ -8,6 +8,8 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { HelmetProvider } from "react-helmet-async";
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
+import Privacy from "./pages/Privacy";
+import Terms from "./pages/Terms";
 import OAuthConsent from "./pages/OAuthConsent";
 import NotFound from "./pages/NotFound";
 import { Web3Provider } from "./components/web3/Web3Provider";
@@ -29,6 +31,10 @@ const App = () => (
               <Routes>
                 <Route path="/" element={<Index />} />
                 <Route path="/auth" element={<Auth />} />
+                {/* Páginas legales: Google revisa estas URLs al publicar la app
+                    OAuth, así que son rutas reales y no el catch-all. */}
+                <Route path="/privacy" element={<Privacy />} />
+                <Route path="/terms" element={<Terms />} />
                 <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
