@@ -1,0 +1,97 @@
+name: Predictions proxy health
+
+# El proxy de predicciones vive en una función de Vercel y depende de tres APIs
+# externas (Polymarket, Kalshi, Limitless). Cuando una de ellas cambia su forma
+# de responder, o la función se cae, el síntoma en el producto es «la pestaña de
+# markets no carga» — y eso no rompe ningún build: se descubre cuando alguien
+# entra. Este job ejecuta `scripts/verify-predictions-proxy.mjs` contra
+# producción cada hora, así que un 502/503 aparece en la primera pasada y no
+# tres días después.
+#
+# El aviso es el propio run en rojo: GitHub notifica por correo los fallos de
+# workflows programados a quien haya tocado este cron. Además los 5xx salen como
+# anotación `5xx en producción` (con el venue y el código) y el resumen del run
+# guarda la salida del verificador, así que el correo lleva al diagnóstico
+# directo sin tener que reproducir nada.
+#
+# Solo `schedule` y `workflow_dispatch`: un proveedor caído no debe bloquear un
+# merge, y en cada push ya corre CI. Se puede lanzar a mano desde Actions.
+
+on:
+  schedule:
+    # Cada hora en el minuto 17 — fuera de la hora en punto, para no competir con
+    # otros crons del repo (Edge health) ni con las ventanas de Vercel.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: predictions-health
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: proxy de predicciones
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Sin `npm ci`: el verificador solo usa fetch de Node y hace peticiones
+      # HTTP a producción, no importa nada del proyecto.
+      - name: Verificar producción
+        shell: bash
+        run: |
+          # pipefail: el código del verificador tiene que sobrevivir al `tee`,
+          # que si no devolvería 0 y el job quedaría verde con el proxy roto.
+          set -o pipefail
+          node scripts/verify-predictions-proxy.mjs 2>&1 | tee predictions.log
+
+      # Las líneas de fallo del verificador empiezan por «✘»; las de 5xx además
+      # llevan el código. Se separan para que la anotación diga «5xx en
+      # producción» y no una comprobación cualquiera (una respuesta vacía, por
+      # ejemplo, es utra cosa y no debe confundirse con el 502).
+      - name: Anotar 5xx como error del run
+        if: failure()
+        shell: bash
+        run: |
+          grep -E '✘ .*5[0-9][0-9]' predictions.log | while IFS= read -r line; do
+            echo "::error title=5xx en producción::$line"
+          done || true
+
+      - name: Resumen del run
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Proxy de predicciones · $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo
+            echo '```'
+            if [ -s predictions.log ]; then
+              grep -E '✘|✔|Http|HTTP|egress|fallida|Todo pasa' predictions.log || cat predictions.log
+            else
+              echo "el verificador no llegó a escribir nada"
+            fi
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Última línea del run: qué hacer cuando aparece el rojo.
+      - name: Qué hacer si falla
+        if: failure()
+        run: |
+          cat <<'EOF'
+          El proxy de predicciones no está sirviendo producción.
+
+          1. ¿5xx (500/502/503)? Es la función de Vercel o un venue inalcanzable:
+             revisa los logs de la función `api/predictions` en Vercel y luego
+             `node scripts/verify-predictions-proxy.mjs --base <deployment>`.
+          2. ¿200 con 0 filas? El venue cambió su forma de responder: mira
+             `src/lib/prediction-mappers.ts` y `api/predictions.ts`.
+          3. Reintentos: if es un bloqueo puntual del venue, un run posterior
+             vuelve a verde solo; no hace falta cambiar nada.
+          EOF
