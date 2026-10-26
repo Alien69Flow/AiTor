@@ -39,12 +39,19 @@ La configuración ya no es un formulario único, está repartida en cuatro secci
 | **User support email** | un correo que leas; Google lo muestra si alguien pide ayuda |
 | **App logo** | opcional, y **no** lo subas hasta publicar: un logo sin verificar retrasa la de la app |
 | **Application home page** | `https://aitor.alienflow.space` |
-| **Application privacy policy link** | `https://aitor.alienflow.space/privacy` (debe existir de verdad) |
-| **Application terms of service link** | `https://aitor.alienflow.space/terms` |
+| **Application privacy policy link** | `https://aitor.alienflow.space/privacy` — página real en [`src/pages/Privacy.tsx`](../src/pages/Privacy.tsx) |
+| **Application terms of service link** | `https://aitor.alienflow.space/terms` — página real en [`src/pages/Terms.tsx`](../src/pages/Terms.tsx) |
 | **Authorized domains** | `alienflow.space` — sin `https://`, sin subdominio, sin barra |
 | **Developer contact information** | tu correo de trabajo |
 
 `Authorized domains` es lo que autoriza a que las URLs legales de arriba cuelguen de ese dominio.
+
+Las dos páginas legales se sirven como rutas de la SPA (`/privacy` y `/terms`, en
+`src/App.tsx`) gracias al rewrite de `vercel.json`, y comparten maqueta en
+[`src/components/legal/LegalPage.tsx`](../src/components/legal/LegalPage.tsx). Google comprueba que
+cada URL responde con contenido propio y un contacto; si alguna vuelve al catch-all o queda vacía, la
+verificación se queda en «revisión pendiente». Por eso `src/pages/Legal.test.tsx` exige un mínimo de
+secciones, el responsable, el correo de contacto y los derechos GDPR.
 
 **2b. Audience** (`Google Auth Platform → Audience`):
 

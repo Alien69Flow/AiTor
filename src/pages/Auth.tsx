@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { Helmet } from "react-helmet-async";
 import { SpaceBackground } from "@/components/SpaceBackground";
@@ -86,8 +86,22 @@ export default function Auth() {
 
             <div className="px-6 pb-7 sm:px-8">
               <AuthMethods redirectTo={nextUrl} columns={4} showEmailForm />
-              <p className="mt-3 text-center font-mono text-[7px] leading-relaxed text-muted-foreground/30">
-                Al acceder aceptas los términos del protocolo ΔlieπFlΦw. Tu soberanía digital es sagrada.
+              <p className="mt-3 text-center font-mono text-[8px] leading-relaxed text-muted-foreground/50">
+                Al acceder aceptas los{" "}
+                <Link
+                  to="/terms"
+                  className="underline underline-offset-2 transition-colors hover:text-primary"
+                >
+                  términos de servicio
+                </Link>{" "}
+                y la{" "}
+                <Link
+                  to="/privacy"
+                  className="underline underline-offset-2 transition-colors hover:text-primary"
+                >
+                  política de privacidad
+                </Link>{" "}
+                del protocolo ΔlieπFlΦw.
               </p>
             </div>
           </div>

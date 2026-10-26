@@ -320,6 +320,12 @@ export function SystemTab() {
                 <Link to="/auth" className="font-mono text-[9px] text-primary/60 transition-colors hover:text-primary">
                   Página de acceso →
                 </Link>
+                <Link to="/privacy" className="font-mono text-[9px] text-primary/60 transition-colors hover:text-primary">
+                  Privacidad
+                </Link>
+                <Link to="/terms" className="font-mono text-[9px] text-primary/60 transition-colors hover:text-primary">
+                  Términos
+                </Link>
               </div>
 
               <TelegramBridge />
