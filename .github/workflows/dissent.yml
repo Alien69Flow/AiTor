@@ -1,4 +1,18 @@
 name: Dissent Review
+
+# Revisión del PR por IA. Necesita la clave de OpenAI para llamar al modelo.
+#
+# Desde que falta `OPENAI_API_KEY` en el repo, este job moría en cada PR con
+# `openai.OpenAIError: Missing credentials` y dejaba un ✗ rojo que no dependía
+# del código revisado: ruido que tapa los fallos de verdad. Ahora los pasos se
+# saltan mientras el secreto no exista y el job queda en verde.
+#
+# En cuanto guardes `OPENAI_API_KEY` en Settings → Secrets and variables →
+# Actions, la revisión vuelve sola: no hay que tocar este fichero.
+#
+# El `if` va a nivel de paso y usa `env` (no `secrets`) porque el contexto
+# `secrets` no está disponible en los `if` de GitHub Actions.
+
 on:
   pull_request:
     types: [opened, synchronize]
@@ -9,8 +23,13 @@ jobs:
     permissions:
       pull-requests: write
       contents: read
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: itsarbit/dissent@v1
+      - if: env.OPENAI_API_KEY != ''
+        uses: actions/checkout@v4
+
+      - if: env.OPENAI_API_KEY != ''
+        uses: itsarbit/dissent@v1
         with:
           api-key: ${{ secrets.OPENAI_API_KEY }}

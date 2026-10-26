@@ -1,4 +1,13 @@
 name: PR Reviewer
+
+# Revisor de PR con IA (`agentic-pr-reviewer`). Igual que Dissent Review,
+# necesita `OPENAI_API_KEY`: sin ella el proceso aborta y el PR aparece con un ✗
+# que no tiene nada que ver con el cambio.
+#
+# Los pasos se saltan mientras el secreto no exista, así que un PR sin clave
+# queda en verde en vez de rojo. Al guardar `OPENAI_API_KEY` en
+# Settings → Secrets and variables → Actions, el revisor se activa solo.
+
 on:
   pull_request:
     types: [opened, synchronize]
@@ -6,14 +15,26 @@ on:
 jobs:
   review:
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
     steps:
-      - uses: actions/checkout@v4
+      - if: env.OPENAI_API_KEY != ''
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+
+      - if: env.OPENAI_API_KEY != ''
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip3 install agentic-pr-reviewer
-      - run: agentic-pr-reviewer --diff "$(git diff origin/main...HEAD)"
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+
+      - if: env.OPENAI_API_KEY != ''
+        run: pip3 install agentic-pr-reviewer
+
+      # `origin/main` existe porque el checkout de arriba trae el historial
+      # completo; con fetch-depth 1 el diff saldría incompleto.
+      - if: env.OPENAI_API_KEY != ''
+        shell: bash
+        run: |
+          set -o pipefail
+          agentic-pr-reviewer --diff "$(git diff origin/main...HEAD)"
