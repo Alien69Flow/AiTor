@@ -55,7 +55,7 @@ jobs:
       # Las líneas de fallo del verificador empiezan por «✘»; las de 5xx además
       # llevan el código. Se separan para que la anotación diga «5xx en
       # producción» y no una comprobación cualquiera (una respuesta vacía, por
-      # ejemplo, es utra cosa y no debe confundirse con el 502).
+      # ejemplo, es otra cosa y no debe confundirse con el 502).
       - name: Anotar 5xx como error del run
         if: failure()
         shell: bash
@@ -92,6 +92,6 @@ jobs:
              `node scripts/verify-predictions-proxy.mjs --base <deployment>`.
           2. ¿200 con 0 filas? El venue cambió su forma de responder: mira
              `src/lib/prediction-mappers.ts` y `api/predictions.ts`.
-          3. Reintentos: if es un bloqueo puntual del venue, un run posterior
+          3. Reintentos: si es un bloqueo puntual del venue, un run posterior
              vuelve a verde solo; no hace falta cambiar nada.
           EOF
