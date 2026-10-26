@@ -3,7 +3,17 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { Stars } from "@react-three/drei";
 import * as THREE from "three";
 import { ArrowDown, ArrowUp, MousePointer2, X } from "lucide-react";
-import { EARTH_SCALE, SCALE_MAX, SCALE_MIN, STAGES, formatScale, stageOpacity } from "@/lib/cosmic-scale";
+import {
+  COSMIC_STEP,
+  EARTH_SCALE,
+  SCALE_MAX,
+  SCALE_MIN,
+  STAGES,
+  formatScale,
+  nextCosmicScale,
+  stageOpacity,
+  type CosmicDirection,
+} from "@/lib/cosmic-scale";
 
 /**
  * Continuous "powers of ten" zoom out from the globe.
@@ -455,9 +465,9 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onExit();
       if (event.key === "ArrowDown" || event.key === "PageDown") {
-        setScale((current) => Math.min(SCALE_MAX, current + 0.35));
+        setScale((current) => Math.min(SCALE_MAX, current + COSMIC_STEP));
       }
-      if (event.key === "ArrowUp" || event.key === "PageUp") setScale((current) => Math.max(SCALE_MIN, current - 0.35));
+      if (event.key === "ArrowUp" || event.key === "PageUp") setScale((current) => Math.max(SCALE_MIN, current - COSMIC_STEP));
     };
     window.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("keydown", onKey);
@@ -494,6 +504,25 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
   const activeStage = [...STAGES].reverse().find((stage) => scale >= stage.from) ?? STAGES[0];
   const exponent = Math.floor(scale);
   const progress = (scale - SCALE_MIN) / (SCALE_MAX - SCALE_MIN);
+  const canZoomOut = nextCosmicScale(scale, "out") !== null;
+
+  /**
+   * Mismo salto que las flechas del teclado. Al llegar al suelo del rango el
+   * acercamiento devuelve al globo, igual que hace la rueda, en vez de quedarse
+   * pulsando un botón que no puede seguir.
+   */
+  const step = (direction: CosmicDirection) => {
+    const next = nextCosmicScale(scale, direction);
+    if (next === null) {
+      if (direction === "in") onExit();
+      return;
+    }
+    if (direction === "in" && next <= SCALE_MIN + 0.02) {
+      onExit();
+      return;
+    }
+    setScale(next);
+  };
 
   return (
     <div
@@ -569,14 +598,30 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
         </button>
       </div>
 
-      {/* Vertical zoom affordances */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-24 flex justify-center gap-2 md:bottom-28">
-        <span className="flex items-center gap-1 rounded-sm border border-border/30 bg-black/50 px-2 py-1 text-[8px] uppercase tracking-[0.16em] text-primary/60">
-          <ArrowDown className="h-3 w-3" /> alejar
-        </span>
-        <span className="flex items-center gap-1 rounded-sm border border-border/30 bg-black/50 px-2 py-1 text-[8px] uppercase tracking-[0.16em] text-primary/60">
-          <ArrowUp className="h-3 w-3" /> acercar
-        </span>
+      {/* Zoom por botones: mismo gesto que en la barra de escala del globo, para
+          que el overlay no dependa de la rueda ni del trackpad. */}
+      <div className="absolute inset-x-0 bottom-24 flex justify-center gap-2 md:bottom-28">
+        <button
+          type="button"
+          onClick={() => step("out")}
+          onPointerDown={(event) => event.stopPropagation()}
+          disabled={!canZoomOut}
+          aria-label="Alejar"
+          title={`Alejar · hasta ${formatScale(SCALE_MAX)}`}
+          className="flex items-center gap-1 rounded-sm border border-primary/30 bg-black/60 px-2 py-1 text-[8px] uppercase tracking-[0.16em] text-primary backdrop-blur-md transition-colors hover:bg-primary/15 disabled:cursor-default disabled:border-border/20 disabled:text-primary/25"
+        >
+          <ArrowDown className="h-3 w-3" aria-hidden="true" /> alejar
+        </button>
+        <button
+          type="button"
+          onClick={() => step("in")}
+          onPointerDown={(event) => event.stopPropagation()}
+          aria-label="Acercar"
+          title={`Acercar · al llegar a ${formatScale(SCALE_MIN)} vuelve al globo`}
+          className="flex items-center gap-1 rounded-sm border border-primary/30 bg-black/60 px-2 py-1 text-[8px] uppercase tracking-[0.16em] text-primary backdrop-blur-md transition-colors hover:bg-primary/15"
+        >
+          <ArrowUp className="h-3 w-3" aria-hidden="true" /> acercar
+        </button>
       </div>
     </div>
   );
