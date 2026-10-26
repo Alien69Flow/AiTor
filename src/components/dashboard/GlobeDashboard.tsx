@@ -4,6 +4,7 @@ import { MarketTicker } from "./MarketTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
 import type { UnifiedHotspotData } from "../globe/GlobeScene";
 import { HybridGlobe } from "../globe/HybridGlobe";
+import { GlobeScaleHud, type ViewScale } from "../globe/GlobeScaleHud";
 import { LegendPanel, type LayerKey } from "./LegendPanel";
 import { NavigatePanel } from "./NavigatePanel";
 import { ChatFeedPanel } from "./ChatFeedPanel";
@@ -17,7 +18,7 @@ import { useMarineTraffic } from "@/hooks/useMarineTraffic";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
 import { CONFLICT_ZONES } from "@/lib/geo-datasets";
 import { DEFAULT_ACTIVE_LAYERS, TIER_LABEL, layerDef, type EnvLayerKey } from "@/lib/globe-layers";
-import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen, TriangleAlert } from "lucide-react";
 import { GlobeCommandBar } from "./GlobeCommandBar";
 import { CosmicZoom } from "../globe/CosmicZoom";
 import { Button } from "@/components/ui/button";
@@ -36,13 +37,21 @@ export function GlobeDashboard() {
   const intel = useUnifiedIntel(envLayers);
   const { sightings } = useUAPSightings();
   const { tier, hasAccess } = useTier();
-  const { flights } = useAirTraffic();
-  const { ships } = useMarineTraffic();
+  const { flights, isMockData: airTrafficMock } = useAirTraffic();
+  const { ships, isMockData: shipsMock } = useMarineTraffic();
   const { outages } = useInternetOutages(true);
   const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
+  // The warning must describe what is actually on the globe: when the intel
+  // layer supplies more aircraft than the proxy, the simulated fallback is not
+  // what the user is looking at.
+  const flightsMock = intel.aviation.length > flights.length ? false : airTrafficMock;
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
   // null = globe view; a number = log10(metres) the cosmic zoom opened at.
   const [cosmicScale, setCosmicScale] = useState<number | null>(null);
+  /** Escala real de la cámara (metros por píxel), para la barra de escala. */
+  const [viewScale, setViewScale] = useState<ViewScale | null>(null);
+  /** Pasos de zoom que expone el globo, para los botones de la barra de escala. */
+  const zoomControlsRef = useRef<{ zoomIn: () => void; zoomOut: () => void } | null>(null);
 
   /** Zooming out past the globe hands the view over to the cosmic zoom. */
   const handleZoomFar = useCallback((altitudeMetres: number) => {
@@ -106,6 +115,8 @@ export function GlobeDashboard() {
       <div className="relative flex min-h-0 flex-1">
         <div className="absolute inset-0 z-0">
           <HybridGlobe layers={envLayers} onHotspotClick={setSelectedHotspot} onZoomFar={handleZoomFar}
+            onViewScale={setViewScale}
+            onZoomControls={(controls) => { zoomControlsRef.current = controls; }}
             onReady={(navigate) => { globeNavRef.current = navigate; }} externalMarkers={intel.eventMarkers}
             kpIndex={intel.spaceWeather?.kpIndex ?? 0} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents}
             sightings={sightings} flights={allFlights} ships={ships} satellites={intel.satellites}
@@ -115,6 +126,17 @@ export function GlobeDashboard() {
         </div>
 
         {cosmicScale !== null && <CosmicZoom initialScale={cosmicScale} onExit={exitCosmicZoom} />}
+
+        {/* Barra de escala real: cuánto mide lo que se ve y cuánto queda por
+            acercar. Se oculta con el zoom cósmico, que trae su propia escala. */}
+        {cosmicScale === null && viewScale && (
+          <GlobeScaleHud
+            scale={viewScale}
+            onZoomIn={() => zoomControlsRef.current?.zoomIn()}
+            onZoomOut={() => zoomControlsRef.current?.zoomOut()}
+            className="absolute bottom-2 left-2 z-20 md:bottom-3 md:left-[3.25rem]"
+          />
+        )}
 
         <GlobeOverlay selectedHotspot={selectedHotspot} onClose={() => setSelectedHotspot(null)}
           spaceWeather={intel.spaceWeather} earthquakeCount={intel.earthquakes.length}
@@ -183,7 +205,19 @@ export function GlobeDashboard() {
       <div className="z-30 shrink-0">
         <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} />
         <div className="flex h-6 items-center justify-between border-t border-border/60 bg-card/90 px-3 text-[8px] uppercase text-muted-foreground md:px-5">
-          <div className="flex items-center gap-3"><Wifi className="h-3 w-3 text-primary" /><span className="hidden sm:inline">Aerospace OSINT interface</span><span>{envLayers.size} layers</span></div>
+          <div className="flex items-center gap-3"><Wifi className="h-3 w-3 text-primary" /><span className="hidden sm:inline">Aerospace OSINT interface</span><span>{envLayers.size} layers</span>
+            {/* air-traffic / marine-traffic fall back to invented flights and
+                ships when their upstream is throttled. The hooks already report
+                that as `mock`; without this badge the globe showed fabricated
+                traffic as if it were live. */}
+            {(flightsMock || shipsMock) && (
+              <span className="flex items-center gap-1 border border-amber-400/40 bg-amber-400/10 px-1.5 text-amber-300"
+                title={`${[flightsMock && "aéreo", shipsMock && "marítimo"].filter(Boolean).join(" y ")} simulado: la fuente externa no respondió, estos puntos no son tráfico real`}>
+                <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
+                {[flightsMock && "AÉREO", shipsMock && "MARÍTIMO"].filter(Boolean).join("+")} SIMULADO
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-3">{["NASA", "USGS", "NOAA", "GDELT"].map((source) => <span key={source} className="flex items-center gap-1"><CheckCircle2 className="h-2.5 w-2.5 text-primary" />{source}</span>)}</div>
         </div>
       </div>

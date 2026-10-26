@@ -119,6 +119,16 @@ serve(async (req) => {
   try {
     const body = await req.json().catch(() => ({}));
     const action = body.action || "all";
+    const ACTIONS = ["all", "polymarket", "trending"];
+
+    // An unknown action used to fall through every branch and answer `{}` with
+    // status 200, which looks like an empty feed instead of a bad request.
+    if (!ACTIONS.includes(action)) {
+      return new Response(
+        JSON.stringify({ error: `Acción no soportada: ${action}`, actions: ACTIONS }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const result: { polymarket?: unknown[]; trending?: unknown[] } = {};
 

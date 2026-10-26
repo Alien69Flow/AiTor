@@ -106,8 +106,18 @@ function OutcomeRow({ outcome }: { outcome: PredictionOutcome }) {
         >
           {formatPoints(move)}
         </div>
-        <div className="text-right text-[10px] font-mono text-muted-foreground/70">{formatUsd(outcome.volume24h)}</div>
-        <div className="text-right text-[10px] font-mono text-cyan-300/70">{formatUsd(outcome.liquidity)}</div>
+        <div
+          className="text-right text-[10px] font-mono text-muted-foreground/70"
+          title="Volumen 24 h; si el venue no lo publica, el acumulado de la opción"
+        >
+          {formatUsd(outcome.volume24h || outcome.volumeTotal)}
+        </div>
+        <div
+          className="text-right text-[10px] font-mono text-cyan-300/70"
+          title={outcome.liquidity > 0 ? "Liquidez de esta opción" : "el venue no publica liquidez por opción"}
+        >
+          {outcome.liquidity > 0 ? formatUsd(outcome.liquidity) : "n/d"}
+        </div>
         <div className="flex items-center justify-end gap-2">
           {outcome.bestBid !== null && outcome.bestAsk !== null ? (
             <span className="text-[9px] font-mono text-muted-foreground/60" title="Best bid / ask">
@@ -150,8 +160,10 @@ function OutcomeRow({ outcome }: { outcome: PredictionOutcome }) {
           <span className={move === null ? "" : move >= 0 ? "text-primary" : "text-destructive"}>
             {formatPoints(move)} pp
           </span>
-          <span>Vol {formatUsd(outcome.volume24h)}</span>
-          <span className="text-cyan-300/70">Liq {formatUsd(outcome.liquidity)}</span>
+          <span>Vol {formatUsd(outcome.volume24h || outcome.volumeTotal)}</span>
+          <span className="text-cyan-300/70">
+            Liq {outcome.liquidity > 0 ? formatUsd(outcome.liquidity) : "n/d"}
+          </span>
           {outcome.bestBid !== null && outcome.bestAsk !== null && (
             <span>
               {(outcome.bestBid * 100).toFixed(1)}/{(outcome.bestAsk * 100).toFixed(1)}
@@ -271,7 +283,7 @@ function EventCard({
         <span>Opción</span>
         <span className="text-right">Precio</span>
         <span className="text-right">24h pp</span>
-        <span className="text-right">Vol 24h</span>
+        <span className="text-right">Vol</span>
         <span className="text-right">Liquidez</span>
         <span className="text-right">Bid/Ask</span>
       </div>
@@ -288,10 +300,15 @@ function EventCard({
 
       <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border/25 px-3 py-2">
         <span className="flex items-center gap-1 text-[9px] font-mono text-muted-foreground/60">
-          <TrendingUp className="h-3 w-3" /> {formatUsd(event.volume24h)} / 24h
+          <TrendingUp className="h-3 w-3" />
+          {event.volume24h > 0
+            ? `${formatUsd(event.volume24h)} / 24h`
+            : event.volumeTotal > 0
+              ? `${formatUsd(event.volumeTotal)} acum.`
+              : "sin volumen publicado"}
         </span>
         <span className="flex items-center gap-1 text-[9px] font-mono text-cyan-300/70">
-          <Droplets className="h-3 w-3" /> {formatUsd(event.liquidity)}
+          <Droplets className="h-3 w-3" /> {event.liquidity > 0 ? formatUsd(event.liquidity) : "liq. n/d"}
         </span>
         {event.openInterest !== null && event.openInterest > 0 && (
           <span className="text-[9px] font-mono text-muted-foreground/50">OI {formatUsd(event.openInterest)}</span>
@@ -529,7 +546,11 @@ export function PredictionsTab() {
       <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
         {[
           { label: stats.volumeLabel, value: formatUsd(stats.volume), tone: "text-foreground" },
-          { label: "Liquidez abierta", value: formatUsd(stats.liquidity), tone: "text-cyan-300/80" },
+          {
+            label: "Liquidez abierta",
+            value: stats.liquidity > 0 ? formatUsd(stats.liquidity) : "n/d",
+            tone: "text-cyan-300/80",
+          },
           { label: "Mercados activos", value: `${stats.markets} · ${stats.options} opciones`, tone: "text-foreground" },
           {
             label: "Mayor movimiento",

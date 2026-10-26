@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { NeuralChatIcon } from "./NeuralChatIcon";
 import { useChat } from "@/hooks/useChat";
 import { AI_MODELS } from "@/lib/ai-models";
+import { resolveOracles, useChatHealth } from "@/lib/ai-health";
 import { readPreferredModel } from "@/lib/chat-prefs";
 
 interface ChatDockProps {
@@ -31,7 +32,19 @@ export function ChatDock({ onOpenAgents }: ChatDockProps) {
   const [unread, setUnread] = useState(0);
   const [dismissedPreview, setDismissedPreview] = useState(false);
   const { messages, isLoading, sendMessage, clearChat } = useChat();
-  const model = useMemo(() => readPreferredModel(), []);
+  // The dock has no model picker, but it must not keep sending to an oracle
+  // whose key disappeared: the header would name a model that cannot answer.
+  const { health } = useChatHealth();
+  const preferred = useMemo(() => readPreferredModel(), []);
+  const model = useMemo(() => {
+    if (!health) return preferred;
+    const oracles = resolveOracles(AI_MODELS, health);
+    return (
+      oracles.find((oracle) => oracle.model.id === preferred && oracle.available)?.model.id ??
+      oracles.find((oracle) => oracle.available)?.model.id ??
+      preferred
+    );
+  }, [health, preferred]);
   const modelName = AI_MODELS.find((entry) => entry.id === model)?.name ?? "AI Tor";
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);

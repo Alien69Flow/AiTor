@@ -29,7 +29,7 @@ export interface EcosystemProduct {
   group: EcosystemGroup;
   Icon: LucideIcon;
   /** Imported logo asset; falls back to the icon when absent. */
-  logo?: "ace" | "adex" | "aitor";
+  logo?: "ace" | "adex" | "aitor" | "atrip" | "dao";
   accent: string;
 }
 
@@ -79,6 +79,8 @@ export const PRODUCTS: EcosystemProduct[] = [
     detail: "Reservas y experiencias del ecosistema",
     group: "commerce",
     Icon: Plane,
+    // Same mark as the DAO menu at alienflow.space/lovable-uploads/apps/atrip.png.
+    logo: "atrip",
     accent: "#FFD700",
   },
   {
@@ -90,7 +92,9 @@ export const PRODUCTS: EcosystemProduct[] = [
     detail: "Manifiesto, gobernanza y ecosistema completo",
     group: "governance",
     Icon: Anchor,
-    accent: "#FF00FF",
+    // The official mark, the same one the terminal shows top-left.
+    logo: "dao",
+    accent: "hsl(var(--primary))",
   },
   {
     id: "docs",

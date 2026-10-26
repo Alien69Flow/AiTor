@@ -49,7 +49,7 @@ export type SocialProvider = (typeof SOCIAL_PROVIDERS)[number];
  * Reddit and WeChat are manual custom providers registered in Supabase as
  * `custom:reddit` and `custom:wechat`.
  */
-const GOTRUE_PROVIDER: Record<SocialProvider, string> = {
+export const GOTRUE_PROVIDER: Record<SocialProvider, string> = {
   google: "google",
   apple: "apple",
   microsoft: "azure",

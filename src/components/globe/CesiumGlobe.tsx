@@ -32,6 +32,13 @@ import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
+import {
+  ZOOM_MAX_ALTITUDE_M,
+  ZOOM_MIN_ALTITUDE_M,
+  groundWidthFromFov,
+  nextZoomAltitude,
+} from "@/lib/globe-scale";
+import type { ViewScale } from "./GlobeScaleHud";
 import type { SatellitePosition } from "@/hooks/useSatellites";
 import type { OutageEvent } from "@/hooks/useInternetOutages";
 import {
@@ -177,6 +184,10 @@ interface CesiumGlobeProps {
   /** Fired when the camera pulls out past the globe, so the view can hand over
    *  to the cosmic zoom. Receives the camera altitude in metres. */
   onZoomFar?: (altitudeMetres: number) => void;
+  /** Escala real de la vista (metros por píxel en el centro de la pantalla). */
+  onViewScale?: (scale: ViewScale | null) => void;
+  /** Botones de zoom de la barra de escala. `null` al desmontar. */
+  onZoomControls?: (controls: { zoomIn: () => void; zoomOut: () => void } | null) => void;
   sightings?: UAPSighting[];
   visibleLayers?: Set<LayerKey>;
   envLayers?: Set<EnvLayerKey>;
@@ -209,7 +220,7 @@ interface CesiumGlobeProps {
 }
 
 export function CesiumGlobe({
-  onHotspotClick, onZoomFar, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
+  onHotspotClick, onZoomFar, onViewScale, onZoomControls, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [], flights = [], ships = [],
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
@@ -242,6 +253,10 @@ export function CesiumGlobe({
   // Keep the callback in a ref so the viewer is never re-created when it changes.
   const onZoomFarRef = useRef(onZoomFar);
   onZoomFarRef.current = onZoomFar;
+  const onViewScaleRef = useRef(onViewScale);
+  onViewScaleRef.current = onViewScale;
+  const onZoomControlsRef = useRef(onZoomControls);
+  onZoomControlsRef.current = onZoomControls;
 
   // Initialize viewer once
   useEffect(() => {
@@ -378,12 +393,99 @@ export function CesiumGlobe({
     };
     viewer.camera.changed.addEventListener(onCameraChanged);
 
+    // Límites de acercamiento reales. Sin suelo, la rueda seguía metiendo la
+    // cámara dentro del elipsoide (pantalla negra sin detalle); sin techo, el
+    // globo se alejaba indefinidamente en vez de pasar al zoom cósmico.
+    const controller = viewer.scene.screenSpaceCameraController;
+    controller.minimumZoomDistance = ZOOM_MIN_ALTITUDE_M;
+    controller.maximumZoomDistance = ZOOM_MAX_ALTITUDE_M;
+    // `camera.changed` sólo dispara cuando la cámara se mueve más de este
+    // porcentaje: con el 0,5 % por defecto la escala se quedaba atrás.
+    viewer.camera.percentageChanged = 0.01;
+
+    // Botones de la barra de escala: un paso = 60 % de la altura, con los mismos
+    // topes que la rueda (250 m … 63 000 km). `zoomIn`/`zoomOut` mueven la cámara
+    // a lo largo de su dirección de vista, así que respetan la inclinación.
+    const applyZoom = (direction: "in" | "out") => {
+      if (viewer.isDestroyed()) return;
+      const height = viewer.camera.positionCartographic?.height;
+      if (!height || !Number.isFinite(height)) return;
+      const target = nextZoomAltitude(height, direction);
+      if (target === null) return;
+      const delta = Math.abs(height - target);
+      if (direction === "in") viewer.camera.zoomIn(delta);
+      else viewer.camera.zoomOut(delta);
+    };
+    onZoomControlsRef.current?.({
+      zoomIn: () => applyZoom("in"),
+      zoomOut: () => applyZoom("out"),
+    });
+
+    // Escala real: se proyectan dos píxeles a la misma altura a ambos lados del
+    // centro de la pantalla y se mide la distancia geodésica sobre el globo.
+    // Así la barra dice kilómetros de verdad, incluso con la cámara inclinada.
+    const measureScale = () => {
+      if (viewer.isDestroyed()) return;
+      const scene = viewer.scene;
+      const canvas = scene.canvas;
+      const width = canvas.clientWidth || canvas.width;
+      const height = canvas.clientHeight || canvas.height;
+      const altitude = viewer.camera.positionCartographic?.height ?? 0;
+      if (!width || !height) return;
+
+      const sample = (x: number) => {
+        const pixel = new Cartesian2(x, height / 2);
+        const ray = viewer.camera.getPickRay(pixel);
+        const hit = ray ? scene.globe.pick(ray, scene) : undefined;
+        return hit ?? viewer.camera.pickEllipsoid(pixel, scene.globe.ellipsoid);
+      };
+      const left = sample(width / 2 - 60);
+      const right = sample(width / 2 + 60);
+
+      let metresPerPixel = Number.NaN;
+      let estimated = true;
+      if (left && right) {
+        const span = Cartesian3.distance(left, right);
+        if (span > 0.1) {
+          metresPerPixel = span / 120;
+          estimated = false;
+        }
+      }
+      if (!Number.isFinite(metresPerPixel)) {
+        const fovY = (viewer.camera.frustum as { fovy?: number }).fovy ?? CesiumMath.toRadians(60);
+        metresPerPixel = groundWidthFromFov(altitude, fovY, width / height) / width;
+      }
+
+      onViewScaleRef.current?.({ altitudeM: altitude, metresPerPixel, viewportWidthPx: width, estimated });
+    };
+
+    let scaleFrame = 0;
+    const scheduleScale = () => {
+      if (scaleFrame) return;
+      scaleFrame = requestAnimationFrame(() => {
+        scaleFrame = 0;
+        measureScale();
+      });
+    };
+    viewer.camera.changed.addEventListener(scheduleScale);
+    viewer.camera.moveEnd.addEventListener(scheduleScale);
+    const resizeObserver =
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => scheduleScale());
+    if (containerRef.current) resizeObserver?.observe(containerRef.current);
+    scheduleScale();
+
     return () => {
       handler.destroy();
+      if (scaleFrame) cancelAnimationFrame(scaleFrame);
+      resizeObserver?.disconnect();
       if (!viewer.isDestroyed()) {
         viewer.camera.changed.removeEventListener(onCameraChanged);
+        viewer.camera.changed.removeEventListener(scheduleScale);
+        viewer.camera.moveEnd.removeEventListener(scheduleScale);
         viewer.destroy();
       }
+      onViewScaleRef.current?.(null);
+      onZoomControlsRef.current?.(null);
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);

@@ -703,7 +703,7 @@ export function MarketsTab() {
         <p className="pb-2 text-[8px] font-mono leading-relaxed text-muted-foreground/40">
           Fuentes consultadas desde el navegador: DexScreener (pools DEX/AMM) · DefiLlama (DEX, agregadores, opciones) ·
           CoinGecko (spot, exchanges, global, activos de ADEX) · Hyperliquid (perps) · tipos del BCE · curva del Tesoro de
-          EE. UU. · metales de gold-api · Kalshi y Limitless via proxy de mismo origen /api/predictions. Cadencia: pools
+          EE. UU. · metales de gold-api · Polymarket, Kalshi y Limitless via proxy de mismo origen /api/predictions. Cadencia: pools
           30s · perps 60s · spot 60s · ADEX 2min · volúmenes 5min · FX y tipos 15min · predicciones 45s.
         </p>
       </div>

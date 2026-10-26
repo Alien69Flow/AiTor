@@ -25,5 +25,10 @@ dist-ssr
 *.sw?
 .env
 
+# Claves de firma (Apple AuthKey_*.p8, certificados, claves SSH de despliegue)
+*.p8
+*.pem
+*.key
+
 # local preview config (host-specific)
 vite.preview.config.ts

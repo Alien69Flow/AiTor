@@ -3,6 +3,7 @@ import { lazyWithRetry } from "@/lib/lazy-retry";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { type UnifiedHotspotData } from "./GlobeScene";
 import type { EnvLayerKey } from "@/lib/globe-layers";
+import type { ViewScale } from "./GlobeScaleHud";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { SurfaceWeatherPoint } from "@/hooks/connectors/useSurfaceWeather";
 import type { SubmarineCable } from "@/hooks/connectors/useSubmarineCables";
@@ -25,6 +26,10 @@ export interface HybridGlobeProps {
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
   /** Camera pulled out past the globe → hand over to the cosmic zoom. */
   onZoomFar?: (altitudeMetres: number) => void;
+  /** Escala real de la vista, para la barra de escala y la pista de zoom. */
+  onViewScale?: (scale: ViewScale | null) => void;
+  /** Botones de acercar/alejar de la barra de escala. */
+  onZoomControls?: (controls: { zoomIn: () => void; zoomOut: () => void } | null) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
   kpIndex?: number;
@@ -57,6 +62,8 @@ export function HybridGlobe({
   layers,
   onHotspotClick,
   onZoomFar,
+  onViewScale,
+  onZoomControls,
   onReady,
   externalMarkers,
   kpIndex = 0,
@@ -101,6 +108,8 @@ export function HybridGlobe({
           envLayers={layers}
           onHotspotClick={onHotspotClick}
           onZoomFar={onZoomFar}
+          onViewScale={onViewScale}
+          onZoomControls={onZoomControls}
           sightings={sightings}
           flyTo={flyTo}
           kpIndex={layers.has("solarActivity") ? kpIndex : 0}

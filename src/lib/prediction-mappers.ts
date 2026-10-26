@@ -266,6 +266,11 @@ export function limitlessMarketsToPredictionEvents(payload: unknown): Prediction
       const volumeTotal = toNum(m.volumeFormatted) || toNum(m.volume);
       const openInterest = toOptionalNum(m.openInterestFormatted);
       const ticker = m.priceOracleMetadata?.ticker;
+      // Limitless sirve mercados binarios de todo tipo (cripto, esports, deportes).
+      // Sólo los de precio llevan oráculo; el resto se etiqueta con su categoría
+      // real en vez de llamar "Crypto" a un partido de LoL.
+      const isUpDown = /up or down/i.test(m.title ?? "");
+      const labels = isUpDown ? ["Up", "Down"] : ["Sí", "No"];
 
       return {
         id: `limitless-${m.id ?? slug}`,
@@ -275,7 +280,9 @@ export function limitlessMarketsToPredictionEvents(payload: unknown): Prediction
         url,
         image: m.imageUrl ?? null,
         tags: (m.categories ?? []).filter(Boolean),
-        category: ticker ? `${m.priceOracleMetadata?.assetType ?? "Crypto"} · ${ticker}` : "Crypto",
+        category: ticker
+          ? `${m.priceOracleMetadata?.assetType ?? "Crypto"} · ${ticker}`
+          : (m.categories?.filter(Boolean)[0] ?? "Otros"),
         endDate: m.expirationTimestamp ? new Date(m.expirationTimestamp).toISOString() : null,
         volume24h: 0,
         volumeTotal,
@@ -287,7 +294,7 @@ export function limitlessMarketsToPredictionEvents(payload: unknown): Prediction
         outcomes: [
           {
             id: `${slug}-up`,
-            label: "Up",
+            label: labels[0],
             price: up,
             changePts: null,
             volume24h: 0,
@@ -303,7 +310,7 @@ export function limitlessMarketsToPredictionEvents(payload: unknown): Prediction
           },
           {
             id: `${slug}-down`,
-            label: "Down",
+            label: labels[1],
             price: clamp01(1 - up),
             changePts: null,
             volume24h: 0,

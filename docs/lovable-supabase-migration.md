@@ -23,13 +23,18 @@ en el destino. No pegues claves en GitHub ni en el chat.
 
 | Artefacto | Qué es | Se puede quitar ahora |
 | --- | --- | --- |
-| `@lovable.dev/cloud-auth-js` + `src/integrations/lovable/index.ts` + uso en `useAuth.ts` | Login OAuth Google/Apple | ✅ **Hecho**: `useAuth` es 100 % Supabase y el directorio `src/integrations/lovable/` se borró (queda retirar la dependencia de `package.json`) |
-| `@lovable.dev/mcp-js` + `src/lib/mcp/*` + `mcpPlugin()` en `vite.config.ts` + `supabase/functions/mcp/` | Servidor MCP y herramientas | Después del login; quita features |
-| `lovable-tagger` en `vite.config.ts` (solo `dev`) | Tags de componentes en desarrollo | Sí, es solo dev, pero va en el orden 4 |
-| `.lovable/` | Config del editor | Orden 4 |
-| `src/integrations/supabase/previewAuthStorage.ts` | Broker de sesión para previews de Lovable; en `aitor.alienflow.space` ya cae a `localStorage` | Orden 4 (toca el almacenamiento de sesión) |
-| `src/lib/ai-models.ts` (`provider: "Lovable AI"`) | Etiqueta del proveedor de modelos | Coordinar con el enrutado de modelos del backend |
-| `supabase/functions/_shared/guard.ts` | Allowlist de `Origin` con `aitor.lovable.app`, `.lovable.app`, `.lovableproject.com` | Tras el paso 3 (si ya no hay previews de Lovable) |
+| `@lovable.dev/cloud-auth-js` + `src/integrations/lovable/index.ts` + uso en `useAuth.ts` | Login OAuth Google/Apple | ✅ **Hecho**: `useAuth` es 100 % Supabase, `src/integrations/lovable/` se borró y la dependencia ya no está en `package.json` ni en el lockfile |
+| `@lovable.dev/mcp-js` + `src/lib/mcp/*` + `mcpPlugin()` en `vite.config.ts` + `supabase/functions/mcp/` | Servidor MCP y herramientas | ✅ **Hecho (2026-10-20)**: dependencia, plugin, fuentes y función retirados |
+| `lovable-tagger` en `vite.config.ts` (solo `dev`) | Tags de componentes en desarrollo | ✅ **Hecho (2026-10-20)** |
+| `.lovable/` | Config del editor y planes | ✅ **Hecho (2026-10-20)**: borrado; los planes pasan a `docs/plans/` |
+| `src/integrations/supabase/previewAuthStorage.ts` | Broker de sesión para previews de Lovable; en `aitor.alienflow.space` ya cae a `localStorage` | ✅ **Hecho (2026-10-20)**: `client.ts` usa el almacenamiento por defecto |
+| `src/lib/ai-models.ts` (`provider: "Lovable AI"`) | Etiqueta del proveedor de modelos | **Se queda**: nombra el gateway real (`ai.gateway.lovable.dev`) que sirve los modelos de Google/OpenAI con `LOVABLE_API_KEY` |
+| `supabase/functions/_shared/guard.ts` | Allowlist de `Origin` con `aitor.lovable.app`, `.lovable.app`, `.lovableproject.com` | ✅ **Hecho (2026-10-20)**: solo dominios propios y local |
+
+La ruta `/.lovable/oauth/consent` se mantiene a propósito: es la pantalla de
+consentimiento OAuth de Supabase (`OAuthConsent`), no depende del SDK retirado y su URL
+puede estar registrada en el panel de Auth. Cambiarla sin actualizar ese registro rompería
+el consentimiento de cualquier cliente OAuth.
 
 ## Ruta segura de migración
 
@@ -73,8 +78,10 @@ SUPABASE_SERVICE_ROLE_KEY=...
 > - `useAuth.ts` usa `supabase.auth.signInWithOAuth` para Google y Apple, con un
 >   *pre-flight* de `/authorize?skip_http_redirect=true` para que un proveedor sin
 >   credenciales muestre un aviso en la app en vez de dejar al usuario en una página JSON.
-> - `VITE_LOVABLE_OAUTH=true` restaura el flujo antiguo de Lovable (solo útil si la app se
->   sirve desde un dominio `*.lovable.app`).
+> - El flujo de Lovable **ya no se puede restaurar desde el código**: la rama del broker se
+>   retiró con `src/integrations/lovable/` y `vercel.json` redirige `/~oauth/initiate` a
+>   `/auth`. Solo existiría sirviendo la app otra vez desde un dominio `*.lovable.app`, que es
+>   donde el broker tiene sus propias credenciales de Google y Apple.
 > - **Paso 2 pendiente, del propietario**: crear un cliente OAuth de Google (redirect
 >   `https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback`) y guardarlo en Supabase →
 >   Authentication → Providers → Google, más `https://aitor.alienflow.space/**` en Site URL /
@@ -171,11 +178,18 @@ Cada paso es reversible hasta el 4.
    `@lovable.dev/cloud-auth-js`.~~ **Hecho en código (2026-10-19)**: el uso y el directorio
    ya no existen; falta quitar `@lovable.dev/cloud-auth-js` de `package.json` en el siguiente
    paso de limpieza.
-4. **Después**: quitar `@lovable.dev/mcp-js` (+ `mcpPlugin()` de `vite.config.ts`,
+4. ~~**Después**: quitar `@lovable.dev/mcp-js` (+ `mcpPlugin()` de `vite.config.ts`,
    `src/lib/mcp/*`, `supabase/functions/mcp/`), `lovable-tagger` de `vite.config.ts` y del
    `devDependencies`, `.lovable/`, `src/integrations/supabase/previewAuthStorage.ts` y las
-   entradas `*.lovable.app` de `_shared/guard.ts`.
-5. Actualizar `src/lib/ai-models.ts` (etiquetas `Lovable AI`) y esta tabla.
+   entradas `*.lovable.app` de `_shared/guard.ts`.~~ **Hecho el 2026-10-20.** El lockfile se
+   regeneró con npm 10.9.4 y `npm ci --dry-run` lo acepta. La función `mcp` **sigue
+   desplegada** (borrar la carpeta no la retira): para apagarla hace falta
+   `npx supabase functions delete mcp --project-ref wkdtvrxavkhbifjtvvdw` con un token.
+   El SDK de MCP tenía un advisory sin parche (`GHSA-6qxp-vccf-f47h`), así que apagarla
+   cierra también ese aviso en el runtime.
+5. Actualizar `src/lib/ai-models.ts` (etiquetas `Lovable AI`) y esta tabla. **Decisión
+   (2026-10-20)**: las etiquetas se quedan, porque el gateway que responde de verdad es el
+   de Lovable; cambiarlas por "OpenAI" haría que la UI mintiera sobre a quién se llama.
 
 Los pasos 1–2 no se han ejecutado en este cambio: requieren un navegador y credenciales de
 OAuth que no están disponibles en esta sesión. Por eso **no se ha borrado nada del login**:
