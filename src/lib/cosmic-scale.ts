@@ -52,6 +52,27 @@ export function formatScale(scale: number): string {
   return `${rounded} ${unit.label}`;
 }
 
+/**
+ * Paso de los botones del zoom cósmico, en décadas de metros (log10). Es el
+ * mismo salto que ya hacían las flechas del teclado, para que botón y teclado
+ * no muevan la cámara a velocidades distintas.
+ */
+export const COSMIC_STEP = 0.35;
+
+export type CosmicDirection = "in" | "out";
+
+/**
+ * Escala siguiente (log10 de metros) acotada al rango del zoom cósmico.
+ * `in` se acerca a la Tierra (menos metros), `out` se aleja. Devuelve `null` en
+ * el tope, que es lo que permite desactivar el botón en vez de fingir el salto.
+ */
+export function nextCosmicScale(current: number, direction: CosmicDirection): number | null {
+  if (!Number.isFinite(current)) return null;
+  const target = direction === "in" ? current - COSMIC_STEP : current + COSMIC_STEP;
+  const clamped = Math.min(SCALE_MAX, Math.max(SCALE_MIN, target));
+  return Math.abs(clamped - current) < 1e-6 ? null : clamped;
+}
+
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
 /** Fade a stage in/out across its window so neighbours blend at the edges. */
