@@ -12,7 +12,10 @@ interface AdsbAircraft {
   gs?: number;
   track?: number;
   r?: string;
+  /** ICAO aircraft type code, e.g. "A20N". */
   t?: string;
+  /** ADS-B emitter category, e.g. "A3"; picks the marker silhouette. */
+  category?: string;
 }
 
 /**
@@ -34,7 +37,12 @@ export function useAdsbTraffic(enabled: boolean, intervalMs = 15_000, maxAircraf
         out.push({
           icao24: a.hex ?? "",
           callsign: (a.flight ?? a.r ?? a.hex ?? "").trim(),
-          origin: a.t ?? null,
+          // This feed carries no route, so there is no origin country here. It
+          // used to put `a.t` — the ICAO *type* code — in `origin`, which
+          // labelled every aircraft with something like "A20N".
+          origin: null,
+          aircraftType: a.t ?? null,
+          aircraftCategory: a.category ?? null,
           destination: null,
           latitude: a.lat as number,
           longitude: a.lon as number,

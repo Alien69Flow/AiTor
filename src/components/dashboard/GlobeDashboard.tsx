@@ -37,14 +37,19 @@ export function GlobeDashboard() {
   const intel = useUnifiedIntel(envLayers);
   const { sightings } = useUAPSightings();
   const { tier, hasAccess } = useTier();
-  const { flights, isMockData: airTrafficMock } = useAirTraffic();
-  const { ships, isMockData: shipsMock } = useMarineTraffic();
+  const airTraffic = useAirTraffic();
+  const marineTraffic = useMarineTraffic();
+  const { flights } = airTraffic;
+  const { ships } = marineTraffic;
   const { outages } = useInternetOutages(true);
   const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
-  // The warning must describe what is actually on the globe: when the intel
-  // layer supplies more aircraft than the proxy, the simulated fallback is not
-  // what the user is looking at.
-  const flightsMock = intel.aviation.length > flights.length ? false : airTrafficMock;
+  // The warning must describe what is actually on the globe: the air layer is
+  // served by ADSB.lol and only the proxy reports `unavailable`, so the chips
+  // only appear when the globe really has nothing to draw. No feed invents rows
+  // any more, so this replaced the old "SIMULADO" badge: an empty layer is
+  // reported as missing coverage, never as simulated traffic.
+  const flightsUnavailable = allFlights.length === 0 && airTraffic.unavailable;
+  const shipsUnavailable = ships.length === 0 && marineTraffic.unavailable;
   const globeNavRef = useRef<((lat: number, lng: number, alt: number) => void) | null>(null);
   // null = globe view; a number = log10(metres) the cosmic zoom opened at.
   const [cosmicScale, setCosmicScale] = useState<number | null>(null);
@@ -206,15 +211,13 @@ export function GlobeDashboard() {
         <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} />
         <div className="flex h-6 items-center justify-between border-t border-border/60 bg-card/90 px-3 text-[8px] uppercase text-muted-foreground md:px-5">
           <div className="flex items-center gap-3"><Wifi className="h-3 w-3 text-primary" /><span className="hidden sm:inline">Aerospace OSINT interface</span><span>{envLayers.size} layers</span>
-            {/* air-traffic / marine-traffic fall back to invented flights and
-                ships when their upstream is throttled. The hooks already report
-                that as `mock`; without this badge the globe showed fabricated
-                traffic as if it were live. */}
-            {(flightsMock || shipsMock) && (
+            {/* Ninguna fuente responde con datos inventados: cuando la capa se
+                queda sin tráfico real, esto lo dice en vez de disimularlo. */}
+            {(flightsUnavailable || shipsUnavailable) && (
               <span className="flex items-center gap-1 border border-amber-400/40 bg-amber-400/10 px-1.5 text-amber-300"
-                title={`${[flightsMock && "aéreo", shipsMock && "marítimo"].filter(Boolean).join(" y ")} simulado: la fuente externa no respondió, estos puntos no son tráfico real`}>
+                title={`${[flightsUnavailable && "tráfico aéreo", shipsUnavailable && "tráfico marítimo"].filter(Boolean).join(" y ")} sin cobertura: la fuente externa no respondió y no se dibujan datos simulados. ${[flightsUnavailable && airTraffic.unavailableReason, shipsUnavailable && marineTraffic.unavailableReason].filter(Boolean).join(" · ")}`}>
                 <TriangleAlert className="h-2.5 w-2.5" aria-hidden="true" />
-                {[flightsMock && "AÉREO", shipsMock && "MARÍTIMO"].filter(Boolean).join("+")} SIMULADO
+                {[flightsUnavailable && "AÉREO", shipsUnavailable && "MARÍTIMO"].filter(Boolean).join("+")} SIN COBERTURA
               </span>
             )}
           </div>

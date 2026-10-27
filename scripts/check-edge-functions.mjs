@@ -19,7 +19,7 @@
  *
  * Usage:
  *   npm run edge:check            # probe every function
- *   npm run edge:check -- --strict  # also fail on warnings (mock/empty data)
+ *   npm run edge:check -- --strict  # also fail on warnings (empty data / no coverage)
  *
  * URL and publishable key come from the environment first (VITE_SUPABASE_URL /
  * VITE_SUPABASE_PUBLISHABLE_KEY, also from .env.local), then from the defaults
@@ -83,15 +83,18 @@ const PROBES = [
     method: "GET",
     query: "lamin=40&lamax=42&lomin=-4&lomax=-2",
     origin: true,
-    shape: (b) => `${b.count ?? 0} vuelos`,
-    mock: (b) => b.mock === true,
+    shape: (b) => `${b.count ?? 0} vuelos${b.source ? ` (${b.source})` : ""}`,
+    // An older deployed build folded invented flights into `mock: true`; the
+    // current one reports an empty layer as `unavailable: true` and never
+    // fabricates aircraft, so both states deserve the same warning here.
+    unavailable: (b) => b.mock === true || b.unavailable === true,
   },
   {
     name: "marine-traffic",
     method: "GET",
     origin: true,
-    shape: (b) => `${b.count ?? 0} barcos`,
-    mock: (b) => b.mock === true,
+    shape: (b) => `${b.count ?? 0} barcos${b.source ? ` (${b.source})` : ""}`,
+    unavailable: (b) => b.mock === true || b.unavailable === true,
   },
   {
     name: "cesium-tiles",
@@ -305,8 +308,8 @@ async function probe(spec) {
     };
   }
 
-  if (spec.mock?.(body ?? {})) {
-    return { state: "warn", status: response.status, detail: `${detail} · SIMULADOS (upstream caído o sin clave)` };
+  if (spec.unavailable?.(body ?? {})) {
+    return { state: "warn", status: response.status, detail: `${detail} · SIN COBERTURA (ningún upstream respondió)` };
   }
   return { state: "ok", status: response.status, detail };
 }
@@ -365,7 +368,7 @@ if (orphaned.length) {
 
 if (warn) {
   console.log(
-    "\n⚠️  Avisos: las funciones marcadas devuelven datos simulados o se saltaron la prueba. " +
+    "\n⚠️  Avisos: las funciones marcadas se quedaron sin cobertura o se saltaron la prueba. " +
       "Revisa las claves de su upstream (OpenSky, VesselFinder) antes de presentar sus datos como reales.",
   );
 }

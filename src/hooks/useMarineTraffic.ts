@@ -7,9 +7,10 @@ export interface Ship {
   type: string;
   latitude: number;
   longitude: number;
+  /** Nudos, tal como los reporta el AIS. */
   speed: number;
   heading: number;
-  destination: string;
+  destination: string | null;
   timestamp: string;
 }
 
@@ -17,7 +18,13 @@ interface MarineTrafficResponse {
   count: number;
   ships: Ship[];
   bbox: { minLat: number; maxLat: number; minLon: number; maxLon: number };
-  mock?: boolean;
+  /** Fuente que respondió: "vesselfinder" o "digitraffic". */
+  source: string | null;
+  /** Cobertura real de esa fuente (Digitraffic solo cubre el Báltico). */
+  coverage: string | null;
+  /** `true` cuando ninguna fuente AIS respondió: no hay barcos inventados. */
+  unavailable?: boolean;
+  reason?: string | null;
   timestamp: string;
 }
 
@@ -26,7 +33,10 @@ export function useMarineTraffic() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [isMockData, setIsMockData] = useState(false);
+  const [source, setSource] = useState<string | null>(null);
+  const [coverage, setCoverage] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
 
   const fetchMarineTraffic = useCallback(async () => {
     try {
@@ -43,7 +53,10 @@ export function useMarineTraffic() {
 
       if (data) {
         setShips(data.ships || []);
-        setIsMockData(data.mock || false);
+        setSource(data.source ?? null);
+        setCoverage(data.coverage ?? null);
+        setUnavailable(data.unavailable ?? false);
+        setUnavailableReason(data.reason ?? null);
         setLastUpdate(new Date(data.timestamp));
       }
     } catch (err) {
@@ -67,7 +80,11 @@ export function useMarineTraffic() {
     isLoading,
     error,
     lastUpdate,
-    isMockData,
+    source,
+    coverage,
+    /** Ninguna fuente AIS real respondió: la capa está vacía, no simulada. */
+    unavailable,
+    unavailableReason,
     refresh: fetchMarineTraffic,
     count: ships.length,
   };
