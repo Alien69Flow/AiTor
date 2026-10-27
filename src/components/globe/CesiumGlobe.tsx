@@ -22,6 +22,7 @@ import {
   UrlTemplateImageryProvider,
   ImageryLayer,
   ProviderViewModel,
+  ArcType,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -42,6 +43,14 @@ import {
 import type { ViewScale } from "./GlobeScaleHud";
 import type { SatellitePosition } from "@/hooks/useSatellites";
 import type { OutageEvent } from "@/hooks/useInternetOutages";
+import type { IssPosition } from "@/hooks/connectors/useIssPosition";
+import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
+import type { PlacedCamera } from "@/lib/live-camera-places";
+import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
+import type { SolarWind } from "@/hooks/connectors/useSolarWind";
+import { HELIOPAUSE_AU, FAST_WIND_KMS } from "@/hooks/connectors/useSolarWind";
+import { beltRings } from "@/lib/van-allen-belts";
+import { subsolarPoint } from "@/lib/solar-position";
 import {
   CONFLICT_ZONES,
   CONFLICT_ICONS,
@@ -130,6 +139,18 @@ function hexToColor(hex: string, alpha = 1): Color {
 const MARKER_GLYPHS: Record<string, string> = {
   quake: "⌁", fire: "▲", flight: "✈", ship: "◆", satellite: "✦",
   conflict: "✕", news: "!", bitcoin: "₿", outage: "⌁", market: "$", uap: "◉",
+  camera: "▶", iss: "◈", belt: "☢", sun: "☉",
+};
+
+/** Radio medio terrestre, para pasar la geometría del dipolo a metros. */
+const EARTH_RADIUS_M = 6_378_137;
+
+/** Color del cinturón exterior según lo que mide GOES. */
+const BELT_LEVEL_COLORS: Record<VanAllenBelts["level"], string> = {
+  quiet: "#38bdf8",
+  elevated: "#facc15",
+  high: "#fb7185",
+  extreme: "#f43f5e",
 };
 
 /**
@@ -241,6 +262,18 @@ interface CesiumGlobeProps {
     pressureHpa: number; windSpeedMs: number; windDirectionDeg: number;
     temperatureC: number; humidityPercent: number;
   }[];
+  /** ISS en su posición real (WhereTheISS.at). `null` mientras no hay medida. */
+  iss?: IssPosition | null;
+  /** Malla TEC de la ionosfera (NOAA SWPC GLOTEC). */
+  ionosphere?: IonosphereMesh | null;
+  /** Electrones >2 MeV medidos por GOES: intensidad del cinturón exterior. */
+  vanAllen?: VanAllenBelts | null;
+  /** Viento solar en L1: lo que infla la heliosfera. */
+  solarWind?: SolarWind | null;
+  /** Cámaras del Alien con sede conocida, para pulsarlas desde el globo. */
+  cameras?: PlacedCamera[];
+  /** Se dispara al pulsar el marcador de una cámara: abre su directo en Alien. */
+  onCameraClick?: (cameraId: string) => void;
 }
 
 export function CesiumGlobe({
@@ -249,6 +282,8 @@ export function CesiumGlobe({
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
   bitcoinNodes = [], gdeltEvents = [], surfaceWeather = [],
+  iss = null, ionosphere = null, cameras = [], onCameraClick,
+  vanAllen = null, solarWind = null,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -268,6 +303,11 @@ export function CesiumGlobe({
   const satEntityIdsRef = useRef<string[]>([]);
   const outageEntityIdsRef = useRef<string[]>([]);
   const connectorEntityIdsRef = useRef<string[]>([]);
+  const issEntityIdsRef = useRef<string[]>([]);
+  const ionoEntityIdsRef = useRef<string[]>([]);
+  const cameraEntityIdsRef = useRef<string[]>([]);
+  const vanAllenEntityIdsRef = useRef<string[]>([]);
+  const heliosphereEntityIdsRef = useRef<string[]>([]);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -281,6 +321,10 @@ export function CesiumGlobe({
   onViewScaleRef.current = onViewScale;
   const onZoomControlsRef = useRef(onZoomControls);
   onZoomControlsRef.current = onZoomControls;
+  // La cámara del Alien se abre desde el propio global handler del visor, que
+  // sólo se crea una vez: la referencia evita reconstruir el visor al cambiarla.
+  const onCameraClickRef = useRef(onCameraClick);
+  onCameraClickRef.current = onCameraClick;
 
   // Initialize viewer once
   useEffect(() => {
@@ -375,6 +419,12 @@ export function CesiumGlobe({
     handler.setInputAction((click: { position: Cartesian2 }) => {
       const picked = viewer.scene.pick(click.position);
       if (defined(picked) && picked.id?.properties) {
+        // Cámara del Alien: el marcador abre su directo en la pestaña UAP.
+        const cameraId = picked.id.properties.cameraId?.getValue();
+        if (typeof cameraId === "string" && cameraId) {
+          onCameraClickRef.current?.(cameraId);
+          return;
+        }
         const idx = picked.id.properties.hotspotIndex?.getValue();
         if (idx !== undefined && HOTSPOT_DATA[idx]) {
           handleHotspotClick(HOTSPOT_DATA[idx]);
@@ -1277,7 +1327,10 @@ export function CesiumGlobe({
     const track = (id: string) => connectorEntityIdsRef.current.push(id);
 
     // --- NOAA Ovation aurora mesh ---
-    if (active.has("solarActivity")) {
+    // La malla se dibuja para `solarActivity` y para `magnetosphere`: es la
+    // huella ionosférica del óvalo auroral, y la segunda capa existe para verla
+    // también con Kp bajo (la corona de `solarActivity` sólo aparece con Kp>3).
+    if (active.has("solarActivity") || active.has("magnetosphere")) {
       auroraCells.forEach((c, i) => {
         const id = `aurora-cell-${i}`;
         const a = Math.min(0.5, c.probability / 140);
@@ -1439,6 +1492,361 @@ export function CesiumGlobe({
       });
     }
   }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, surfaceWeather]);
+
+  // ISS — posición real de WhereTheISS.at, a su altitud, con la huella de
+  // cobertura de la estación (~2 250 km de radio) para que se entienda qué ve.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    issEntityIdsRef.current.forEach((id) => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    issEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    if (!active.has("iss") || !iss) return;
+    if (!Number.isFinite(iss.lat) || !Number.isFinite(iss.lon)) return;
+
+    const id = "iss-station";
+    viewer.entities.add({
+      id,
+      position: Cartesian3.fromDegrees(iss.lon, iss.lat, Math.max(0, iss.altKm) * 1000),
+      ellipse: {
+        semiMajorAxis: 2_250_000,
+        semiMinorAxis: 2_250_000,
+        material: hexToColor("#f472b6", 0.05),
+        outline: true,
+        outlineColor: hexToColor("#f472b6", 0.3),
+        outlineWidth: 1,
+        height: 0,
+      },
+      billboard: {
+        image: markerIcon("iss", "#f472b6"), width: 26, height: 26,
+        verticalOrigin: VerticalOrigin.CENTER,
+        scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.45),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: `ISS · ${iss.altKm.toFixed(0)} km`,
+        font: "10px monospace",
+        fillColor: hexToColor("#fbcfe8", 0.95),
+        outlineColor: Color.BLACK,
+        outlineWidth: 2,
+        style: 2,
+        verticalOrigin: VerticalOrigin.BOTTOM,
+        pixelOffset: new Cartesian2(0, -10),
+        scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.25),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      properties: eventPayload({
+        lat: iss.lat, lon: iss.lon, location: "Estación Espacial Internacional",
+        description:
+          `Altitud ${iss.altKm.toFixed(0)} km · ${iss.speedKmh.toFixed(0)} km/h · ` +
+          `${iss.visibility === "daylight" ? "a la luz del día" : "en eclipse"}`,
+        type: "iss", severity: "low", source: "WhereTheISS.at (TLE NORAD 25544)",
+        category: "intel", date_reported: "LIVE", reliability: "Elementos orbitales oficiales",
+      }),
+    });
+    issEntityIdsRef.current.push(id);
+  }, [iss, envLayers]);
+
+  // Ionosfera — malla TEC de NOAA. El tamaño y el color del punto son el TEC:
+  // azul (bajo) → violeta → magenta (alto), que es donde la señal GNSS llega
+  // con retardo y las comunicaciones HF fallan.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    ionoEntityIdsRef.current.forEach((id) => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    ionoEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    if (!active.has("ionosphere") || !ionosphere || !ionosphere.points.length) return;
+
+    const span = Math.max(1, ionosphere.maxTec - ionosphere.minTec);
+    ionosphere.points.forEach((p, i) => {
+      const t = Math.min(1, Math.max(0, (p.tec - ionosphere.minTec) / span));
+      const id = `iono-${i}`;
+      viewer.entities.add({
+        id,
+        position: Cartesian3.fromDegrees(p.lon, p.lat, 350_000),
+        point: {
+          pixelSize: 4 + t * 7,
+          color: hexToColor(t > 0.66 ? "#f472b6" : t > 0.33 ? "#c084fc" : "#22d3ee", 0.3 + t * 0.45),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: eventPayload({
+          lat: p.lat, lon: p.lon, location: "Ionosfera",
+          description: `TEC ${p.tec.toFixed(1)} TECU`, type: "ionosphere",
+          severity: t > 0.66 ? "high" : "low", source: "NOAA SWPC GLOTEC",
+          category: "intel", date_reported: ionosphere.observationTime, reliability: "Medido",
+        }),
+      });
+      ionoEntityIdsRef.current.push(id);
+    });
+  }, [ionosphere, envLayers]);
+
+  // Cámaras del Alien en su sitio. El marcador lleva `cameraId` en las
+  // propiedades para que el clic del visor abra esa cámara en la pestaña UAP.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    cameraEntityIdsRef.current.forEach((id) => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    cameraEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    if (!active.has("liveCameras")) return;
+
+    cameras.forEach((camera) => {
+      const id = `camera-${camera.id}`;
+      viewer.entities.add({
+        id,
+        position: Cartesian3.fromDegrees(camera.lon, camera.lat, 0),
+        billboard: {
+          image: markerIcon("camera", "#f472b6"), width: 22, height: 22,
+          scaleByDistance: new NearFarScalar(1e6, 1.4, 1e8, 0.3),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: camera.label,
+          font: "9px monospace",
+          fillColor: hexToColor("#fbcfe8", 0.9),
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          pixelOffset: new Cartesian2(0, -10),
+          // Las etiquetas sólo aparecen de cerca: con 259 cámaras, escribirlas
+          // todas a la vez tapaban el globo entero.
+          scaleByDistance: new NearFarScalar(1e6, 0.9, 3e7, 0),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: {
+          cameraId: camera.id,
+          sightingData: JSON.stringify({
+            lat: camera.lat, lon: camera.lon, location: camera.label,
+            description:
+              `${camera.source} · ${camera.categoryLabel}` +
+              (camera.approximate ? " · sede aproximada (la ficha da la región)" : "") +
+              " · pulsar para abrir el directo en la pestaña UAP",
+            type: "camera", severity: "low", source: camera.source,
+            category: "intel", date_reported: "LIVE",
+          }),
+        } as PlainEntityProperties,
+      });
+      cameraEntityIdsRef.current.push(id);
+    });
+  }, [cameras, envLayers]);
+
+  // Cinturones de Van Allen — los dos toroides de partículas atrapadas por el
+  // dipolo. La geometría es la real (sección de cada cinturón en el plano del
+  // ecuador magnético, inclinado 9,4° respecto al eje de rotación) y el color
+  // del exterior es la intensidad que mide GOES, que orbita *dentro* de él: a
+  // 6,6 R⊕ el satélite es parte del cinturón que mide. El interior es de
+  // protones y se dibuja gris, sin intensidad, porque ninguna fuente abierta de
+  // este proyecto lo mide: pintarlo del color de otro cinturón sería inventarlo.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    vanAllenEntityIdsRef.current.forEach((id) => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    vanAllenEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    if (!active.has("vanAllen") || !vanAllen || !vanAllen.measuredAt) return;
+
+    const track = (id: string) => vanAllenEntityIdsRef.current.push(id);
+    const outerColor = BELT_LEVEL_COLORS[vanAllen.level];
+    const toEcef = (x: number, y: number, z: number) =>
+      new Cartesian3(x * EARTH_RADIUS_M, y * EARTH_RADIUS_M, z * EARTH_RADIUS_M);
+
+    for (const ring of beltRings("outer")) {
+      const id = `van-allen-outer-${ring.radiusEarth}`;
+      viewer.entities.add({
+        id,
+        polyline: {
+          positions: ring.points.map((p) => toEcef(p.x, p.y, p.z)),
+          width: 2,
+          // El anillo exterior, el más lejano, se dibuja más tenue: es el que se
+          // pierde antes al alejarse la vista.
+          material: hexToColor(outerColor, ring.radiusEarth >= 8 ? 0.4 : 0.65),
+          arcType: ArcType.NONE,
+        },
+        properties: eventPayload({
+          location: `Cinturón exterior · ${ring.radiusEarth} R⊕`,
+          description:
+            `Electrones >2 MeV: ${vanAllen.electronFlux.toFixed(0)} e⁻·cm⁻²·s⁻¹·sr⁻¹ ` +
+            `(${vanAllen.level === "quiet" ? "tranquilo" : vanAllen.level === "elevated" ? "elevado" : vanAllen.level === "high" ? "alto" : "extremo"})`,
+          type: "vanAllen", severity: vanAllen.level === "high" || vanAllen.level === "extreme" ? "high" : "low",
+          source: `NOAA GOES-${vanAllen.satellite} · ${vanAllen.satellites} satélites`, category: "intel",
+          date_reported: vanAllen.measuredAt, reliability: "Medido (sección en el plano del ecuador magnético)",
+        }),
+      });
+      track(id);
+    }
+
+    for (const ring of beltRings("inner")) {
+      const id = `van-allen-inner-${ring.radiusEarth}`;
+      viewer.entities.add({
+        id,
+        polyline: {
+          positions: ring.points.map((p) => toEcef(p.x, p.y, p.z)),
+          width: 2,
+          material: hexToColor("#64748b", 0.45),
+          arcType: ArcType.NONE,
+        },
+        properties: eventPayload({
+          location: `Cinturón interior · ${ring.radiusEarth} R⊕`,
+          description: "Protones de alta energía. Sin intensidad propia: no hay fuente abierta que lo mida con esta cadencia.",
+          type: "vanAllen", severity: "low", source: "Modelo estándar de radiación (geometría)",
+          category: "intel", date_reported: "LIVE", reliability: "Geometría, no medida",
+        }),
+      });
+      track(id);
+    }
+
+    // Una etiqueta en el borde exterior para poder identificar la capa de un
+    // vistazo, como el hueco que dejan las líneas del cinturón.
+    const labelRing = beltRings("outer").at(-1);
+    const anchor = labelRing?.points[0];
+    if (anchor) {
+      const id = "van-allen-label";
+      viewer.entities.add({
+        id,
+        position: toEcef(anchor.x, anchor.y, anchor.z),
+        billboard: {
+          image: markerIcon("belt", outerColor), width: 22, height: 22,
+          scaleByDistance: new NearFarScalar(1e7, 1.3, 1e9, 0.4),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: `Van Allen · ${vanAllen.level}`,
+          font: "10px monospace",
+          fillColor: hexToColor("#fbcfe8", 0.95),
+          outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: new Cartesian2(0, -10),
+          scaleByDistance: new NearFarScalar(1e7, 1, 1e9, 0.3),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: eventPayload({
+          location: "Cinturones de Van Allen",
+          description:
+            `Cinturón exterior medido por GOES: ${vanAllen.electronFlux.toFixed(0)} e⁻·cm⁻²·s⁻¹·sr⁻¹ (${vanAllen.level}). ` +
+            "Cinturón interior de protones: sólo geometría, sin intensidad propia.",
+          type: "vanAllen", severity: "low", source: "NOAA GOES", category: "intel",
+          date_reported: vanAllen.measuredAt, reliability: "Medido",
+        }),
+      });
+      track(id);
+    }
+  }, [vanAllen, envLayers]);
+
+  // Heliosfera — el viento solar llega por el punto subsolar y sigue de largo
+  // por el lado opuesto: la burbuja vista desde dentro, que es lo único que se
+  // puede medir de ella (L1, a 1,5 millones de km). La frontera (heliopausa, a
+  // ~120 UA, cruzada por las Voyager) va escrita en la ficha porque a escala de
+  // globo no es dibujable: sería una esfera 12 000 veces más lejos que el Sol.
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    heliosphereEntityIdsRef.current.forEach((id) => {
+      const e = viewer.entities.getById(id);
+      if (e) viewer.entities.remove(e);
+    });
+    heliosphereEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    if (!active.has("heliosphere") || !solarWind || !solarWind.measuredAt) return;
+
+    const track = (id: string) => heliosphereEntityIdsRef.current.push(id);
+    const { lat, lon } = subsolarPoint();
+    const fast = solarWind.speedKms >= FAST_WIND_KMS;
+    const color = fast ? "#fdba74" : "#fcd34d";
+    const south = -lat;
+
+    // Dos trazos radiales: el viento entrando por el punto subsolar y saliendo
+    // por el antisolar. Es la dirección real del flujo, no una flecha decorativa.
+    viewer.entities.add({
+      id: "heliosphere-inflow",
+      polyline: {
+        positions: [
+          Cartesian3.fromDegrees(lon, lat, 1_200_000),
+          Cartesian3.fromDegrees(lon, lat, 0),
+        ],
+        width: 2.5,
+        material: hexToColor(color, 0.75),
+      },
+      properties: eventPayload({
+        location: "Viento solar llegando (punto subsolar)",
+        description: `Velocidad ${solarWind.speedKms.toFixed(0)} km/s · Bz ${solarWind.bzGsm} nT (${solarWind.bzGsm < 0 ? "acoplado: entra" : "desacoplado: rebota"})`,
+        type: "heliosphere", severity: fast ? "moderate" : "low",
+        source: "NOAA SWPC · L1 (DSCOVR/ACE)", category: "intel",
+        date_reported: solarWind.measuredAt, reliability: "Medido",
+      }),
+    });
+    track("heliosphere-inflow");
+
+    viewer.entities.add({
+      id: "heliosphere-outflow",
+      polyline: {
+        positions: [
+          Cartesian3.fromDegrees(lon + 180, south, 0),
+          Cartesian3.fromDegrees(lon + 180, south, 1_200_000),
+        ],
+        width: 2,
+        material: hexToColor(color, 0.45),
+      },
+      properties: eventPayload({
+        location: "Viento solar saliendo (lado antisolar)",
+        description: "El flujo continúa y estira la magnetosfera en cola: la misma corriente que infla la heliosfera.",
+        type: "heliosphere", severity: "low", source: "NOAA SWPC · L1",
+        category: "intel", date_reported: solarWind.measuredAt, reliability: "Dirección del flujo (geometría)",
+      }),
+    });
+    track("heliosphere-outflow");
+
+    viewer.entities.add({
+      id: "heliosphere-marker",
+      position: Cartesian3.fromDegrees(lon, lat, 1_400_000),
+      billboard: {
+        image: markerIcon("sun", color), width: 24, height: 24,
+        scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.5),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      label: {
+        text: `Viento solar ${solarWind.speedKms.toFixed(0)} km/s`,
+        font: "10px monospace",
+        fillColor: hexToColor("#fed7aa", 0.95),
+        outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
+        verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: new Cartesian2(0, -12),
+        scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      },
+      properties: eventPayload({
+        location: "Heliosfera · viento solar en L1",
+        description:
+          `Velocidad ${solarWind.speedKms.toFixed(0)} km/s · campo total ${solarWind.bt} nT · Bz ${solarWind.bzGsm} nT · ` +
+          `F10,7 ${solarWind.f107} sfu. Frontera del dominio solar (heliopausa) a ~${HELIOPAUSE_AU} UA: ` +
+          "cruzada por Voyager 1 en 2012 (121,6 UA) y Voyager 2 en 2018 (119 UA), sin sondeo en vivo.",
+        type: "heliosphere", severity: fast ? "moderate" : "low", source: "NOAA SWPC · viento solar en L1",
+        category: "intel", date_reported: solarWind.measuredAt, reliability: "Medido en L1",
+      }),
+    });
+    track("heliosphere-marker");
+  }, [solarWind, envLayers]);
 
   return (
     <div ref={containerRef} className="w-full h-full" style={{ background: "#000000" }} />

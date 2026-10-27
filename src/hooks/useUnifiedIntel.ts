@@ -11,6 +11,10 @@ import { useBitcoinNodes } from "./connectors/useBitcoinNodes";
 import { useGdeltEvents } from "./connectors/useGdeltEvents";
 import { useAdsbTraffic } from "./connectors/useAdsbTraffic";
 import { useCelestrakSatellites } from "./connectors/useCelestrakSatellites";
+import { useIssPosition } from "./connectors/useIssPosition";
+import { useIonosphere } from "./connectors/useIonosphere";
+import { useVanAllenBelts } from "./connectors/useVanAllenBelts";
+import { useSolarWind } from "./connectors/useSolarWind";
 import { toStatus, type LayerStatus } from "@/lib/connectors";
 import type { EnvLayerKey } from "@/lib/globe-layers";
 import type { Earthquake } from "./useEarthquakes";
@@ -31,6 +35,10 @@ export type ConnectorKey =
   | "fires"
   | "aurora"
   | "satellites"
+  | "iss"
+  | "ionosphere"
+  | "vanAllen"
+  | "heliosphere"
   | "cables"
   | "bitcoinNodes"
   | "gdelt"
@@ -62,8 +70,18 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
   const fires = useFirmsFires(on("wildfires"), "ESP");
 
   // --- 3. Space & satellites ---------------------------------------------
-  const aurora = useAurora(on("solarActivity"));
+  // El óvalo auroral es la huella ionosférica de la magnetosfera: la misma
+  // malla de OVATION sirve a las dos capas, así que se pide si cualquiera de
+  // las dos está encendida (antes sólo respondía al Kp de `solarActivity`).
+  const aurora = useAurora(on("solarActivity") || on("magnetosphere"));
   const sats = useCelestrakSatellites(on("satellites"));
+  const iss = useIssPosition(on("iss"));
+  const iono = useIonosphere(on("ionosphere"));
+  // Van Allen y heliosfera comparten un mismo motivo: lo que rodea a la Tierra
+  // se mide desde dentro (GOES, en el cinturón exterior) o desde L1 (el viento
+  // solar que infla la burbuja), no desde una órbita dedicada.
+  const belts = useVanAllenBelts(on("vanAllen"));
+  const solarWind = useSolarWind(on("heliosphere"));
 
   // --- 4. Infrastructure & blockchain ------------------------------------
   const cables = useSubmarineCables(on("underseaCables"));
@@ -101,6 +119,20 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         lastUpdate: null,
         count: sats.positions.length,
       },
+      iss: {
+        loading: iss.loading,
+        error: iss.error,
+        lastUpdate: iss.lastUpdate,
+        count: Number.isFinite(iss.data.lat) ? 1 : 0,
+      },
+      ionosphere: toStatus(iono, iono.data.points.length),
+      vanAllen: {
+        loading: belts.loading,
+        error: belts.error,
+        lastUpdate: belts.lastUpdate,
+        count: belts.data.measuredAt ? 1 : 0,
+      },
+      heliosphere: toStatus(solarWind, solarWind.data.measuredAt ? 1 : 0),
       cables: toStatus(cables, cables.data.length),
       bitcoinNodes: toStatus(btcNodes, btcNodes.data.length),
       gdelt: toStatus(gdelt, gdelt.data.length),
@@ -112,7 +144,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, aurora, sats, cables, btcNodes, gdelt, aviation, osint],
+    [rain, surface, emsc, fires, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -248,6 +280,10 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     fires: fires.data,
     auroraMesh: aurora.data,
     satellites: sats.positions,
+    iss: iss.data,
+    ionosphere: iono.data,
+    vanAllen: belts.data,
+    solarWind: solarWind.data,
     cables: cables.data,
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,

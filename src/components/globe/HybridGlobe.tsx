@@ -16,6 +16,11 @@ import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { useSatellites } from "@/hooks/useSatellites";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
+import type { IssPosition } from "@/hooks/connectors/useIssPosition";
+import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
+import type { PlacedCamera } from "@/lib/live-camera-places";
+import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
+import type { SolarWind } from "@/hooks/connectors/useSolarWind";
 
 const CesiumGlobe = lazyWithRetry(() =>
   import("./CesiumGlobe").then((m) => ({ default: m.CesiumGlobe }))
@@ -46,6 +51,13 @@ export interface HybridGlobeProps {
   cables?: SubmarineCable[];
   bitcoinNodes?: BitcoinNode[];
   gdeltEvents?: GdeltEvent[];
+  iss?: IssPosition | null;
+  ionosphere?: IonosphereMesh | null;
+  vanAllen?: VanAllenBelts | null;
+  solarWind?: SolarWind | null;
+  cameras?: PlacedCamera[];
+  /** Pulsar una cámara del Alien en el globo: abre su directo en esa pestaña. */
+  onCameraClick?: (cameraId: string) => void;
 }
 
 function GlobeFallback() {
@@ -80,6 +92,12 @@ export function HybridGlobe({
   cables = [],
   bitcoinNodes = [],
   gdeltEvents = [],
+  iss = null,
+  ionosphere = null,
+  vanAllen = null,
+  solarWind = null,
+  cameras = [],
+  onCameraClick,
 }: HybridGlobeProps) {
   const isMobile = useIsMobile();
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; alt: number } | null>(null);
@@ -126,6 +144,12 @@ export function HybridGlobe({
           cables={cables}
           bitcoinNodes={bitcoinNodes}
           gdeltEvents={gdeltEvents}
+          iss={layers.has("iss") ? iss : null}
+          ionosphere={layers.has("ionosphere") ? ionosphere : null}
+          vanAllen={layers.has("vanAllen") ? vanAllen : null}
+          solarWind={layers.has("heliosphere") ? solarWind : null}
+          cameras={cameras}
+          onCameraClick={onCameraClick}
         />
       </Suspense>
     </div>

@@ -25,13 +25,43 @@ import {
   SectionTitle,
 } from "./GlassPanels";
 import {
+  EARTH_SHELLS,
   GLOBE_LAYERS,
   LAYER_GROUPS,
   TIER_LABEL,
+  layerDef,
   type EnvLayerKey,
   type Tier,
 } from "@/lib/globe-layers";
 import type { LayerStatusMap } from "@/hooks/useUnifiedIntel";
+
+/**
+ * Capa → conector que la alimenta. Vive aquí, en un solo sitio, porque lo leen
+ * dos listas distintas: el catálogo por grupos y el de esferas de la Tierra. Si
+ * estuviera duplicado, una capa podría enseñar estado en una lista y no en la
+ * otra.
+ */
+const LAYER_STATUS_KEY: Partial<Record<EnvLayerKey, keyof LayerStatusMap>> = {
+  precipitation: "rainRadar",
+  wind: "surfaceWeather",
+  isobars: "surfaceWeather",
+  temperature: "surfaceWeather",
+  humidity: "surfaceWeather",
+  earthquakes: "quakesEmsc",
+  wildfires: "fires",
+  solarActivity: "aurora",
+  magnetosphere: "aurora",
+  satellites: "satellites",
+  iss: "iss",
+  ionosphere: "ionosphere",
+  vanAllen: "vanAllen",
+  heliosphere: "heliosphere",
+  underseaCables: "cables",
+  economicCenters: "bitcoinNodes",
+  airTraffic: "aviation",
+  conflictZones: "gdelt",
+  internetOutages: "gdelt",
+};
 
 export type LayerKey =
   | "finance"
@@ -141,17 +171,7 @@ export function LegendPanel({
               <div className="grid grid-cols-1 gap-2">
                 {defs.map((def) => {
                   const locked = !hasAccess(def.requiredTier);
-                  const statusKey = def.key === "precipitation" ? "rainRadar"
-                    : def.key === "wind" || def.key === "isobars" || def.key === "temperature" || def.key === "humidity" ? "surfaceWeather"
-                    : def.key === "earthquakes" ? "quakesEmsc"
-                    : def.key === "wildfires" ? "fires"
-                    : def.key === "solarActivity" ? "aurora"
-                    : def.key === "satellites" ? "satellites"
-                    : def.key === "underseaCables" ? "cables"
-                    : def.key === "economicCenters" ? "bitcoinNodes"
-                    : def.key === "airTraffic" ? "aviation"
-                    : def.key === "conflictZones" || def.key === "internetOutages" ? "gdelt"
-                    : null;
+                  const statusKey = LAYER_STATUS_KEY[def.key];
                   const status = statusKey ? layerStatus?.[statusKey] : undefined;
                   return (
                     <div key={def.key} className="relative">
@@ -180,6 +200,52 @@ export function LegendPanel({
             </div>
           );
         })}
+
+        {/*
+          Esferas y envolturas de la Tierra — de la troposfera a la heliosfera,
+          en orden. Cada fila dice qué abarca y qué la mide; tocar una enciende
+          su capa. Las que se quedan sin capa no se esconden: aparecen en gris y
+          con su motivo, para que el hueco sea visible en vez de parecer olvido.
+        */}
+        <div>
+          <SectionTitle>Esferas y envolturas</SectionTitle>
+          <div className="space-y-1.5">
+            {EARTH_SHELLS.map((shell) => {
+              const def = shell.layer ? layerDef(shell.layer) : undefined;
+              const status = def ? (LAYER_STATUS_KEY[def.key] ? layerStatus?.[LAYER_STATUS_KEY[def.key]!] : undefined) : undefined;
+              const locked = def ? !hasAccess(def.requiredTier) : true;
+              const on = def ? !locked && envLayers.has(def.key) : false;
+              const title = [shell.source ? `Fuente: ${shell.source}` : "Sin fuente abierta que la mida", shell.note]
+                .filter(Boolean)
+                .join(" · ");
+              return (
+                <button
+                  key={shell.id}
+                  type="button"
+                  disabled={!def || locked}
+                  onClick={() => def && onToggleEnvLayer(def.key)}
+                  title={title}
+                  className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg border border-slate-700/25 bg-slate-800/20 text-left transition-colors hover:border-primary/40 disabled:cursor-default disabled:opacity-55"
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <span
+                      className="w-1.5 h-1.5 rounded-full shrink-0"
+                      style={{ background: on ? (status?.error ? "#ef4444" : def?.color ?? "#64748b") : "#334155" }}
+                    />
+                    <span className="text-[10px] truncate text-white/85">{shell.label}</span>
+                  </span>
+                  <span className="text-[8px] uppercase tracking-wider text-slate-500 shrink-0">
+                    {shell.range}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-1.5 text-[8px] leading-relaxed text-slate-500">
+            {EARTH_SHELLS.filter((shell) => shell.layer).length} de {EARTH_SHELLS.length} tienen medida propia;
+            el resto se declara vacío a propósito.
+          </p>
+        </div>
 
         {/* Live Data Sources */}
         <div>

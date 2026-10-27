@@ -8,7 +8,7 @@ import { ChatDock } from "@/components/chat/ChatDock";
 import { CommandPalette } from "@/components/dashboard/CommandPalette";
 import { OfflineNotice } from "@/components/dashboard/OfflineNotice";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { useWorkspaceTab, type TabId } from "@/hooks/useWorkspaceTab";
+import { useCameraTarget, useWorkspaceTab, type TabId } from "@/hooks/useWorkspaceTab";
 
 // Every workspace except the default chat is loaded on first visit, so the
 // globe (three.js) and the markets connectors stay out of the initial bundle.
@@ -51,7 +51,10 @@ const TAB_LABELS: Record<TabId, string> = {
 
 const Index = () => {
   // Mirrored into ?tab= so refresh, deep links and back/forward keep the module.
-  const [activeTab, setActiveTab] = useWorkspaceTab();
+  const [activeTab, setActiveTab, openCamera] = useWorkspaceTab();
+  // Cámara apuntada desde el globo, si la hay: se pasa al monitor UAP, que la
+  // abre con su categoría en vez de arrancar sin selección.
+  const cameraTarget = useCameraTarget();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
   const TAB_HEADINGS: Record<TabId, string> = {
@@ -66,9 +69,9 @@ const Index = () => {
   const renderTab = () => {
     switch (activeTab) {
       case "agents": return <ChatContainer onOpenTab={setActiveTab} />;
-      case "alien": return <UFOMonitorTab />;
+      case "alien": return <UFOMonitorTab cameraRequest={cameraTarget} />;
       case "cosmos": return <SolarSystemTab />;
-      case "globe": return <GlobeDashboard />;
+      case "globe": return <GlobeDashboard onOpenCamera={openCamera} />;
       case "markets": return <MarketsSection />;
       case "system": return <SystemTab />;
       default: return null;
