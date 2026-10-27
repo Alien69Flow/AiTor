@@ -155,7 +155,15 @@ function SignalCard({
   );
 }
 
-export function UFOMonitorTab() {
+interface UFOMonitorTabProps {
+  /**
+   * Cámara que hay que abrir al entrar, cuando se llega desde el globo
+   * (`?tab=alien&cam=…`). La lee la página; este componente no toca la URL.
+   */
+  cameraRequest?: string | null;
+}
+
+export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
   const [sightings, setSightings] = useState<Sighting[]>([]);
   const [feedNote, setFeedNote] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -187,6 +195,17 @@ export function UFOMonitorTab() {
     [revived],
   );
   const [nuforcMeta, setNuforcMeta] = useState<NuforcMeta | null>(null);
+
+  // Llegada desde el globo: la cámara pulsada se abre con su categoría, que es
+  // la que monta el reproductor. Sólo reacciona al cambio del valor, así que no
+  // pelea con la selección que haga el visitante dentro de la pestaña.
+  useEffect(() => {
+    if (!cameraRequest) return;
+    const target = LIVE_SIGNALS.find((signal) => signal.id === cameraRequest);
+    if (!target) return;
+    setCategory(target.category);
+    setSelectedId(target.id);
+  }, [cameraRequest]);
 
   const selected = useMemo(
     () => LIVE_SIGNALS.find((signal) => signal.id === selectedId) ?? null,

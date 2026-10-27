@@ -32,3 +32,6 @@ dist-ssr
 
 # local preview config (host-specific)
 vite.preview.config.ts
+
+# Estado local del CLI de Supabase (enlace al proyecto, sesión): no se versiona
+supabase/.temp/

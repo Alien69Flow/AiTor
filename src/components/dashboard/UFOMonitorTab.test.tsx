@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { LIVE_CATEGORIES, LIVE_SIGNALS, OFFICIAL_SOURCES } from "@/lib/live-signals";
 import { isSignalLive } from "@/lib/live-status";
@@ -112,6 +112,26 @@ describe("Monitor UAP", () => {
     await userEvent.click(screen.getByRole("button", { name: new RegExp(category.label, "i") }));
 
     expect(await screen.findByTestId("stage")).toBeTruthy();
+  });
+
+  it("abre la cámara concreta y su categoría cuando llega pedida desde el globo", async () => {
+    // El globo sitúa las cámaras y las abre con `?tab=alien&cam=…`: la pestaña
+    // tiene que arrancar en esa cámara, no en la primera de la lista.
+    const target = LIVE_SIGNALS.find((signal) => signal.category === "volcano" && signal.liveAtBuild)!;
+    render(<UFOMonitorTab cameraRequest={target.id} />);
+
+    const stage = await screen.findByTestId("stage");
+    expect(stage.textContent).toBe(target.label);
+
+    const category = LIVE_CATEGORIES.find((entry) => entry.id === target.category)!;
+    const categories = screen.getByRole("group", { name: "Categorías de señal" });
+    const button = within(categories).getByRole("button", { name: new RegExp(category.label, "i") });
+    expect(button.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("ignora una cámara que no existe en vez de quedarse en blanco", async () => {
+    await renderMonitor();
+    expect(screen.queryByTestId("stage")).toBeNull();
   });
 
   it("cuenta las cámaras oficiales, no las confunde con las fuentes", async () => {

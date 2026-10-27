@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { LiveTicker } from "./LiveTicker";
 import { MarketTicker } from "./MarketTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
@@ -11,6 +11,7 @@ import { ChatFeedPanel } from "./ChatFeedPanel";
 import { PricingModal } from "./PricingModal";
 import { GlobeDiagnostics } from "./GlobeDiagnostics";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
+import { cameraCoverage, placedCameras } from "@/lib/live-camera-places";
 import { useUAPSightings } from "@/hooks/useUAPSightings";
 import { useTier } from "@/hooks/useTier";
 import { useAirTraffic } from "@/hooks/useAirTraffic";
@@ -25,7 +26,16 @@ import { Button } from "@/components/ui/button";
 
 type MobilePanel = "legend" | "navigate" | "diagnostics" | "feed" | null;
 
-export function GlobeDashboard() {
+interface GlobeDashboardProps {
+  /**
+   * Abre una cámara del Alien en su pestaña. El globo las sitúa y este callback
+   * es el que cruza de módulo; sin él los marcadores siguen ahí, pero no
+   * llevan a ninguna parte.
+   */
+  onOpenCamera?: (cameraId: string) => void;
+}
+
+export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [feedOpen, setFeedOpen] = useState(true);
@@ -42,6 +52,11 @@ export function GlobeDashboard() {
   const { flights } = airTraffic;
   const { ships } = marineTraffic;
   const { outages } = useInternetOutages(true);
+  // Inventario fijo (la lista de cámaras está curada en el repositorio): se
+  // calcula una vez y se reutiliza, porque cada entrada de aquí acaba siendo
+  // una entidad del globo cuando la capa está encendida.
+  const camerasOnGlobe = useMemo(() => placedCameras(), []);
+  const cameraStats = useMemo(() => cameraCoverage(), []);
   const allFlights = intel.aviation.length > flights.length ? intel.aviation : flights;
   // The warning must describe what is actually on the globe: the air layer is
   // served by ADSB.lol and only the proxy reports `unavailable`, so the chips
@@ -127,7 +142,9 @@ export function GlobeDashboard() {
             sightings={sightings} flights={allFlights} ships={ships} satellites={intel.satellites}
             rainTileUrl={intel.rainTileUrl} surfaceWeather={intel.surfaceWeather} fires={intel.fires}
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
-            gdeltEvents={intel.gdeltEvents} />
+            gdeltEvents={intel.gdeltEvents} iss={intel.iss} ionosphere={intel.ionosphere}
+            vanAllen={intel.vanAllen} solarWind={intel.solarWind}
+            cameras={camerasOnGlobe} onCameraClick={onOpenCamera} />
         </div>
 
         {cosmicScale !== null && <CosmicZoom initialScale={cosmicScale} onExit={exitCosmicZoom} />}
@@ -211,6 +228,17 @@ export function GlobeDashboard() {
         <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} />
         <div className="flex h-6 items-center justify-between border-t border-border/60 bg-card/90 px-3 text-[8px] uppercase text-muted-foreground md:px-5">
           <div className="flex items-center gap-3"><Wifi className="h-3 w-3 text-primary" /><span className="hidden sm:inline">Aerospace OSINT interface</span><span>{envLayers.size} layers</span>
+            {/* Cuántas cámaras del Alien están en el mapa: las de órbita, Marte o
+                «Global» no tienen sede terrena, y decirlo evita que parezca que
+                faltan cámaras de la lista. */}
+            {envLayers.has("liveCameras") && (
+              <span
+                className="hidden sm:inline"
+                title={`${cameraStats.placed} cámaras tienen sede conocida y se dibujan; ${cameraStats.unplaceable} no (órbita, Marte, «Global» o canales multi-sede).`}
+              >
+                cámaras {cameraStats.placed}/{cameraStats.total}
+              </span>
+            )}
             {/* Ninguna fuente responde con datos inventados: cuando la capa se
                 queda sin tráfico real, esto lo dice en vez de disimularlo. */}
             {(flightsUnavailable || shipsUnavailable) && (
