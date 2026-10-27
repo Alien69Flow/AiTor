@@ -29,6 +29,8 @@ interface AirTrafficResponse {
   /** `true` cuando ninguna fuente aérea respondió: no hay vuelos inventados. */
   unavailable?: boolean;
   reason?: string | null;
+  /** Marca de un despliegue antiguo que devolvía vuelos inventados. */
+  mock?: boolean;
   timestamp: string;
 }
 
@@ -55,10 +57,17 @@ export function useAirTraffic() {
       }
 
       if (data) {
-        setFlights(data.flights || []);
-        setSource(data.source ?? null);
-        setUnavailable(data.unavailable ?? false);
-        setUnavailableReason(data.reason ?? null);
+        // La función desplegada todavía puede contestar `mock: true` con vuelos
+        // generados al azar; se descartan en vez de pintarlos como tráfico.
+        const legacyMock = data.mock === true;
+        setFlights(legacyMock ? [] : data.flights || []);
+        setSource(legacyMock ? null : data.source ?? null);
+        setUnavailable(legacyMock || (data.unavailable ?? false));
+        setUnavailableReason(
+          legacyMock
+            ? "La función air-traffic desplegada aún sirve vuelos simulados; falta desplegarla"
+            : data.reason ?? null,
+        );
         setLastUpdate(new Date(data.timestamp));
       }
     } catch (err) {

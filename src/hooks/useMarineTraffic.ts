@@ -25,6 +25,8 @@ interface MarineTrafficResponse {
   /** `true` cuando ninguna fuente AIS respondió: no hay barcos inventados. */
   unavailable?: boolean;
   reason?: string | null;
+  /** Marca de un despliegue antiguo que devolvía barcos inventados. */
+  mock?: boolean;
   timestamp: string;
 }
 
@@ -52,11 +54,19 @@ export function useMarineTraffic() {
       }
 
       if (data) {
-        setShips(data.ships || []);
-        setSource(data.source ?? null);
-        setCoverage(data.coverage ?? null);
-        setUnavailable(data.unavailable ?? false);
-        setUnavailableReason(data.reason ?? null);
+        // Hasta que se despliegue la función nueva, la versión en producción
+        // sigue contestando `mock: true` con 40 barcos generados al azar. Esos
+        // barcos no se dibujan: una capa inventada se lee como AIS real.
+        const legacyMock = data.mock === true;
+        setShips(legacyMock ? [] : data.ships || []);
+        setSource(legacyMock ? null : data.source ?? null);
+        setCoverage(legacyMock ? null : data.coverage ?? null);
+        setUnavailable(legacyMock || (data.unavailable ?? false));
+        setUnavailableReason(
+          legacyMock
+            ? "La función marine-traffic desplegada aún sirve barcos simulados; falta desplegarla"
+            : data.reason ?? null,
+        );
         setLastUpdate(new Date(data.timestamp));
       }
     } catch (err) {
