@@ -218,6 +218,11 @@ ejecute `npm run edge:deploy` con un token:
   avión de OpenSky en el lado equivocado del planeta.
 - `marine-traffic`: se retira el generador de barcos inventados y se añade el AIS
   abierto de Digitraffic como respaldo sin clave.
+
+Mientras el despliegue esté pendiente, el cliente **descarta** las filas que
+llegan con `mock: true`, así que una función antigua ya no puede pintar tráfico
+inventado en el globo: la capa se ve vacía y marcada como sin cobertura. Cuando
+se despliegue, esa marca desaparece sola.
 - `crypto-signals`: una acción desconocida responde `400` con la lista de
   acciones válidas; antes devolvía `{}` con `200`, que se confundía con un feed
   vacío.
