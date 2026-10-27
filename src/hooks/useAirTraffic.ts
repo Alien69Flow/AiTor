@@ -6,19 +6,29 @@ export interface Flight {
   callsign: string;
   origin: string | null;
   destination: string | null;
-  latitude: number;
-  longitude: number;
+  latitude: number | null;
+  longitude: number | null;
+  /** Metros sobre el nivel del mar. */
   altitude: number;
+  /** Metros por segundo. */
   velocity: number;
   heading: number;
+  /** Código ICAO de tipo (p. ej. "A20N") si la fuente lo conoce. */
+  aircraftType: string | null;
+  /** Categoría de emisor ADS-B (A1..A7, B*, C*): elige la silueta. */
+  aircraftCategory: string | null;
   timestamp: string;
 }
 
 interface AirTrafficResponse {
   count: number;
   flights: Flight[];
-  bbox: { lamin: string; lamax: string; lomin: string; lomax: string };
-  mock?: boolean;
+  bbox: { lamin: number; lamax: number; lomin: number; lomax: number };
+  /** Fuente que respondió: "opensky" o "adsb.lol". `null` si ninguna lo hizo. */
+  source: string | null;
+  /** `true` cuando ninguna fuente aérea respondió: no hay vuelos inventados. */
+  unavailable?: boolean;
+  reason?: string | null;
   timestamp: string;
 }
 
@@ -27,7 +37,9 @@ export function useAirTraffic() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
-  const [isMockData, setIsMockData] = useState(false);
+  const [source, setSource] = useState<string | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
 
   const fetchAirTraffic = useCallback(async () => {
     try {
@@ -44,7 +56,9 @@ export function useAirTraffic() {
 
       if (data) {
         setFlights(data.flights || []);
-        setIsMockData(data.mock || false);
+        setSource(data.source ?? null);
+        setUnavailable(data.unavailable ?? false);
+        setUnavailableReason(data.reason ?? null);
         setLastUpdate(new Date(data.timestamp));
       }
     } catch (err) {
@@ -68,7 +82,10 @@ export function useAirTraffic() {
     isLoading,
     error,
     lastUpdate,
-    isMockData,
+    source,
+    /** Ninguna fuente real respondió: la capa está vacía, no simulada. */
+    unavailable,
+    unavailableReason,
     refresh: fetchAirTraffic,
     count: flights.length,
   };

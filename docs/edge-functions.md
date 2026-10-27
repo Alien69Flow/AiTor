@@ -32,9 +32,12 @@ y falla si falta alguna declaración (ver "Deriva de configuración").
 Medido antes de retirar `mcp` y de añadir la sonda `chat?health=1`, que falla hasta
 que se despliegue la versión nueva de `chat`.
 
-Los dos avisos son `air-traffic` y `marine-traffic`: devuelven **datos
-simulados** (`icao24: "mock0000"`, `mmsi: "mock000000000"`). Ver "Datos
-simulados".
+Los dos avisos son `air-traffic` y `marine-traffic`: su upstream no respondía y
+ambas devolvían **datos simulados** (`icao24: "mock0000"`,
+`mmsi: "mock000000000"`). Eso ya no existe — se retiró el generador de tráfico
+inventado —, así que a partir del despliegue el aviso significa "sin cobertura":
+la función declara `unavailable: true` y sirve una capa vacía. Ver "Tráfico aéreo
+y marítimo".
 
 ## Salud del chat: qué proveedores tienen clave
 
@@ -134,8 +137,8 @@ npx supabase secrets set --project-ref wkdtvrxavkhbifjtvvdw \
 | `LOVABLE_API_KEY` | `chat` (proveedor por defecto) | 500 de configuración; `?health=1` lo marca como `missing` |
 | `GROK_API_KEY`, `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY` | `chat` (modelos de cada proveedor) | 500 solo al elegir esos modelos; aparecen desactivados en el selector |
 | `OPENWEATHER_API_KEY` | `openweather`, `weather-grid` | 500 / sin datos |
-| `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET` | `air-traffic` | Cuota anónima de OpenSky → responde con vuelos simulados |
-| `VESSELFINDER_API_KEY` | `marine-traffic` | Responde siempre con barcos simulados |
+| `OPENSKY_CLIENT_ID`, `OPENSKY_CLIENT_SECRET` | `air-traffic` | Con ellos sube la cuota de OpenSky; sin ellos se sigue sirviendo por ADSB.lol, que no necesita clave |
+| `VESSELFINDER_API_KEY` | `marine-traffic` | Sin clave se usa el AIS abierto de Digitraffic (Báltico), que tampoco necesita clave |
 | `NASA_FIRMS_MAP_KEY` (o `FIRMS_MAP_KEY`) | `globe-feeds` (feed `fires`) | Capa de incendios vacía |
 | `CESIUM_ION_TOKEN` (o `VITE_CESIUM_TOKEN`) | `cesium-tiles` | Tiles sin autenticar |
 | `GITHUB_PAT`, `GITHUB_REPO_ALLOWLIST` | `github-proxy` | 401/403 y allowlist vacía |
@@ -171,29 +174,50 @@ El 2026-10-20 faltaban siete declaraciones (`wallet-auth`,
 ocurrir. `mcp` ya no existe: su servidor y su SDK se retiraron con el resto de la
 integración de Lovable (ver `docs/lovable-supabase-migration.md`).
 
-## Datos simulados
+## Tráfico aéreo y marítimo: cobertura real
 
-`air-traffic` y `marine-traffic` generan tráfico inventado cuando su upstream
-falla o no hay clave (`mock: true` en el cuerpo). El cliente ya lo sabía
-(`isMockData` en los hooks) pero no lo mostraba: el globo pintaba vuelos y barcos
-falsos como si fueran reales. Ahora el pie del globo muestra un aviso `AÉREO
-SIMULADO` / `MARÍTIMO SIMULADO` cuando ocurre.
+Ninguna de las dos funciones inventa ya tráfico. Hubo una etapa en la que
+`air-traffic` respondía `generateMockFlights()` y `marine-traffic`
+`generateMockShips()` cuando su upstream fallaba: con la clave de VesselFinder
+sin configurar, el globo pintaba 40 barcos generados al azar en el Mediterráneo, y
+OpenSky, que limita las llamadas anónimas a `/states/all`, hacía que casi todas
+las peticiones aéreas acabaran en 50 vuelos inventados. Eso se ha eliminado de
+las dos funciones: **cada fila viene de un receptor real** y, si ninguna fuente
+responde, la respuesta lo dice con `unavailable: true` y la lista vacía.
 
-Para que desaparezca el aviso hay que dar datos reales al upstream:
+Fuentes, en orden:
 
-- **OpenSky** (vuelos): la consulta por caja de `/states/all` está limitada para
-  llamadas anónimas. `air-traffic` ya soporta OAuth2 cliente-credenciales con
-  `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET`; con esos dos secretos
-  configurados pide token, lo cachea y usa la cuota autenticada.
-- **VesselFinder** (barcos): necesita `VESSELFINDER_API_KEY`.
+- **Aéreo** — OpenSky por caja (`/states/all`), con OAuth2
+  cliente-credenciales si están `OPENSKY_CLIENT_ID` / `OPENSKY_CLIENT_SECRET`;
+  si no responde, **ADSB.lol** (`/v2/point`), red comunitaria sin clave ni
+  bloqueo por país. ADSB.lol se consulta por centro y radio, así que el área
+  devuelta **cubre** la caja pedida sin coincidir exactamente con ella.
+  ADSB.lol aporta además el tipo ICAO y la categoría de emisor ADS-B, que es lo
+  que permite dibujar la silueta correcta de cada aeronave.
+- **Marítimo** — VesselFinder si hay `VESSELFINDER_API_KEY`; si no, el AIS
+  abierto de **Digitraffic** (Agencia de Transporte de Finlandia, CC BY 4.0), que
+  no necesita clave y cubre el Báltico y la costa finlandesa. Esa limitación de
+  cobertura se declara en el campo `coverage` en vez de disimularse.
+
+Cuando ninguna fuente contesta, el pie del globo muestra `AÉREO SIN COBERTURA` /
+`MARÍTIMO SIN COBERTURA` (antes `SIMULADO`, que describía un dato que ya no
+existe). El monitor lo trata igual: `npm run edge:check -- --strict` avisa tanto
+si una función antigua sigue respondiendo `mock: true` como si la nueva responde
+`unavailable: true`.
 
 ## Pendiente de desplegar
 
 Estos cambios están en `main` pero **no** están en producción hasta que se
 ejecute `npm run edge:deploy` con un token:
 
-- `air-traffic`: OAuth2 de OpenSky, y `destination` deja de mapear `state[3]`
-  (un `time_position`, no una ruta) — ahora es `null`.
+- `air-traffic`: OAuth2 de OpenSky, se retira el generador de vuelos
+  inventados, se añade ADSB.lol como respaldo sin clave y `destination` deja de
+  mapear `state[3]` (un `time_position`, no una ruta) — ahora es `null`. Además,
+  `latitude` y `longitude` dejan de estar cruzadas: `/states/all` devuelve la
+  longitud en el índice 5 y la latitud en el 6, y leerlo al revés colocaba cada
+  avión de OpenSky en el lado equivocado del planeta.
+- `marine-traffic`: se retira el generador de barcos inventados y se añade el AIS
+  abierto de Digitraffic como respaldo sin clave.
 - `crypto-signals`: una acción desconocida responde `400` con la lista de
   acciones válidas; antes devolvía `{}` con `200`, que se confundía con un feed
   vacío.

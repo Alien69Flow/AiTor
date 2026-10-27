@@ -31,6 +31,7 @@ import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
+import { aircraftSilhouette } from "@/lib/aircraft-silhouette";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import {
   ZOOM_MAX_ALTITUDE_M,
@@ -167,6 +168,29 @@ function makePulsePair(startTime: number, periodMs: number, amplitude: number, p
 function markerIcon(type: string, color: string): string {
   const glyph = MARKER_GLYPHS[type] || "•";
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40"><path d="M20 2 36 11v18L20 38 4 29V11Z" fill="#05070a" fill-opacity=".9" stroke="${color}" stroke-width="2"/><circle cx="20" cy="20" r="12" fill="${color}" fill-opacity=".16"/><text x="20" y="25" text-anchor="middle" font-family="monospace" font-size="16" font-weight="700" fill="${color}">${glyph}</text></svg>`;
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * Aircraft marker: a top-view silhouette instead of the shared hexagon badge.
+ *
+ * The generic badge drew every point — quakes, ships, aircraft — as a shield
+ * with a glyph inside, so a plane looked like a UI pin from above. These shapes
+ * are drawn nose-up and rotated by the reported heading, which is what makes a
+ * traffic layer readable at a glance.
+ */
+function aircraftMarkerIcon(
+  category: string | null | undefined,
+  color: string,
+): string {
+  const shape = aircraftSilhouette(category);
+  const body = {
+    plane: `<path d="M19 3.5c.7-.7 1.3-.7 2 0l2.1 12.1 11.4 6.2v3L23 22.1l-.8 10.1 4.3 2.7v2L20 35.1l-6.5 1.8v-2l4.3-2.7L17 22.1 5.5 24.8v-3l11.4-6.2L19 3.5Z" fill="${color}" stroke="#071018" stroke-width="1" stroke-linejoin="round"/>`,
+    helicopter: `<ellipse cx="20" cy="19" rx="3.4" ry="6.2" fill="${color}" stroke="#071018" stroke-width="1"/><g fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round"><path d="M7 14h26"/><path d="M20 3v11"/><path d="M20 25.5v9.5"/><path d="M15.5 35h9"/></g>`,
+    balloon: `<circle cx="20" cy="14.5" r="9.5" fill="${color}" fill-opacity=".45" stroke="${color}" stroke-width="2"/><path d="M15.5 23.5 17 29h6l1.5-5.5" fill="none" stroke="${color}" stroke-width="2"/><rect x="16" y="29" width="8" height="5.5" rx="1.4" fill="${color}" stroke="#071018" stroke-width="1"/>`,
+    drone: `<g fill="none" stroke="${color}" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="4.4"/><circle cx="29" cy="11" r="4.4"/><circle cx="11" cy="29" r="4.4"/><circle cx="29" cy="29" r="4.4"/><path d="M15 15 25 25M25 15 15 25"/></g><circle cx="20" cy="20" r="4.6" fill="${color}" stroke="#071018" stroke-width="1"/>`,
+  }[shape];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">${body}</svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
@@ -897,15 +921,15 @@ export function CesiumGlobe({
         id: entityId,
         position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
         billboard: {
-          image: markerIcon("flight", "#69AF00"), width: 22, height: 22,
+          image: aircraftMarkerIcon(flight.aircraftCategory, "#69AF00"), width: 26, height: 26,
           rotation: -CesiumMath.toRadians(flight.heading || 0),
           scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         properties: eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
-          description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
+          description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+          type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
         }),
         label: {
