@@ -84,17 +84,21 @@ const PROBES = [
     query: "lamin=40&lamax=42&lomin=-4&lomax=-2",
     origin: true,
     shape: (b) => `${b.count ?? 0} vuelos${b.source ? ` (${b.source})` : ""}`,
-    // An older deployed build folded invented flights into `mock: true`; the
-    // current one reports an empty layer as `unavailable: true` and never
-    // fabricates aircraft, so both states deserve the same warning here.
-    unavailable: (b) => b.mock === true || b.unavailable === true,
+    // Two different failures, and conflating them hid the worse one: an older
+    // deployed build still answers `mock: true` with invented aircraft, while
+    // the current one answers `unavailable: true` with an empty layer. The
+    // first means production is showing fabricated traffic; the second means
+    // there is simply nothing to show. They get separate labels below.
+    fabricated: (b) => b.mock === true,
+    unavailable: (b) => b.unavailable === true,
   },
   {
     name: "marine-traffic",
     method: "GET",
     origin: true,
     shape: (b) => `${b.count ?? 0} barcos${b.source ? ` (${b.source})` : ""}`,
-    unavailable: (b) => b.mock === true || b.unavailable === true,
+    fabricated: (b) => b.mock === true,
+    unavailable: (b) => b.unavailable === true,
   },
   {
     name: "cesium-tiles",
@@ -308,6 +312,14 @@ async function probe(spec) {
     };
   }
 
+  if (spec.fabricated?.(body ?? {})) {
+    return {
+      state: "warn",
+      status: response.status,
+      detail: `${detail} · DATOS SIMULADOS (producción sirve tráfico inventado)`,
+      fabricated: true,
+    };
+  }
   if (spec.unavailable?.(body ?? {})) {
     return { state: "warn", status: response.status, detail: `${detail} · SIN COBERTURA (ningún upstream respondió)` };
   }
@@ -349,10 +361,14 @@ const ok = count("ok");
 const protectedCount = count("protected");
 const warn = count("warn");
 const fail = count("fail");
+const fabricated = results.filter((r) => r.result.fabricated).length;
 
 const { onDisk, undeclared, orphaned } = configDrift();
 
-console.log(`\nResumen: ${ok} responden · ${protectedCount} protegidas correctamente · ${warn} avisos · ${fail} fallos`);
+console.log(
+  `\nResumen: ${ok} responden · ${protectedCount} protegidas correctamente · ${warn} avisos` +
+    `${fabricated ? ` (${fabricated} con datos simulados)` : ""} · ${fail} fallos`,
+);
 console.log(`Funciones en supabase/functions: ${onDisk.length} · declaradas en config.toml: ${onDisk.length - undeclared.length}`);
 
 if (undeclared.length) {
@@ -368,8 +384,10 @@ if (orphaned.length) {
 
 if (warn) {
   console.log(
-    "\n⚠️  Avisos: las funciones marcadas se quedaron sin cobertura o se saltaron la prueba. " +
-      "Revisa las claves de su upstream (OpenSky, VesselFinder) antes de presentar sus datos como reales.",
+    "\n⚠️  Avisos: las funciones marcadas o se quedaron sin cobertura, o siguen sirviendo datos inventados. " +
+      "«DATOS SIMULADOS» es el aviso grave: la build desplegada es anterior a la que consulta el upstream real " +
+      "y hay que redesplegarla. «SIN COBERTURA» solo significa que el upstream no contestó; revisa su clave " +
+      "(OpenSky, VesselFinder) antes de presentar sus datos como reales.",
   );
 }
 
