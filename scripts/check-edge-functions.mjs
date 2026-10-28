@@ -84,17 +84,21 @@ const PROBES = [
     query: "lamin=40&lamax=42&lomin=-4&lomax=-2",
     origin: true,
     shape: (b) => `${b.count ?? 0} vuelos${b.source ? ` (${b.source})` : ""}`,
-    // An older deployed build folded invented flights into `mock: true`; the
-    // current one reports an empty layer as `unavailable: true` and never
-    // fabricates aircraft, so both states deserve the same warning here.
-    unavailable: (b) => b.mock === true || b.unavailable === true,
+    // Two different failures, and conflating them hid the worse one: an older
+    // deployed build still answers `mock: true` with invented aircraft, while
+    // the current one answers `unavailable: true` with an empty layer. The
+    // first means production is showing fabricated traffic; the second means
+    // there is simply nothing to show. They get separate labels below.
+    fabricated: (b) => b.mock === true,
+    unavailable: (b) => b.unavailable === true,
   },
   {
     name: "marine-traffic",
     method: "GET",
     origin: true,
     shape: (b) => `${b.count ?? 0} barcos${b.source ? ` (${b.source})` : ""}`,
-    unavailable: (b) => b.mock === true || b.unavailable === true,
+    fabricated: (b) => b.mock === true,
+    unavailable: (b) => b.unavailable === true,
   },
   {
     name: "cesium-tiles",
@@ -263,7 +267,9 @@ async function probe(spec) {
   const text = await response.text();
 
   if (response.status === 404) return { state: "fail", status: 404, detail: "no desplegada" };
-  if (response.status === 429) return { state: "warn", status: 429, detail: "rate limit del guard; reintenta en 1 min" };
+  if (response.status === 429) {
+    return { state: "warn", kind: "rate-limit", status: 429, detail: "rate limit del guard; reintenta en 1 min" };
+  }
 
   if (spec.protectedBy && expect.includes(response.status)) {
     if (response.status === 401 || response.status === 403) {
@@ -308,8 +314,22 @@ async function probe(spec) {
     };
   }
 
+  if (spec.fabricated?.(body ?? {})) {
+    return {
+      state: "warn",
+      status: response.status,
+      detail: `${detail} · DATOS SIMULADOS (producción sirve tráfico inventado)`,
+      kind: "fabricated",
+      fabricated: true,
+    };
+  }
   if (spec.unavailable?.(body ?? {})) {
-    return { state: "warn", status: response.status, detail: `${detail} · SIN COBERTURA (ningún upstream respondió)` };
+    return {
+      state: "warn",
+      kind: "unavailable",
+      status: response.status,
+      detail: `${detail} · SIN COBERTURA (ningún upstream respondió)`,
+    };
   }
   return { state: "ok", status: response.status, detail };
 }
@@ -349,10 +369,14 @@ const ok = count("ok");
 const protectedCount = count("protected");
 const warn = count("warn");
 const fail = count("fail");
+const fabricated = results.filter((r) => r.result.fabricated).length;
 
 const { onDisk, undeclared, orphaned } = configDrift();
 
-console.log(`\nResumen: ${ok} responden · ${protectedCount} protegidas correctamente · ${warn} avisos · ${fail} fallos`);
+console.log(
+  `\nResumen: ${ok} responden · ${protectedCount} protegidas correctamente · ${warn} avisos` +
+    `${fabricated ? ` (${fabricated} con datos simulados)` : ""} · ${fail} fallos`,
+);
 console.log(`Funciones en supabase/functions: ${onDisk.length} · declaradas en config.toml: ${onDisk.length - undeclared.length}`);
 
 if (undeclared.length) {
@@ -366,10 +390,26 @@ if (orphaned.length) {
   console.log(`\n⚠️  Declaradas pero sin carpeta: ${orphaned.join(", ")}`);
 }
 
-if (warn) {
+/**
+ * Each warning gets the advice that belongs to it. Printing the traffic guidance
+ * after a 429 used to be the same mistake this script was just fixed for: an
+ * explanation that does not match the state it explains.
+ */
+const warningKinds = new Set(
+  results.filter((r) => r.result.state === "warn").map((r) => r.result.kind),
+);
+
+if (warningKinds.has("rate-limit")) {
   console.log(
-    "\n⚠️  Avisos: las funciones marcadas se quedaron sin cobertura o se saltaron la prueba. " +
-      "Revisa las claves de su upstream (OpenSky, VesselFinder) antes de presentar sus datos como reales.",
+    "\n⚠️  Avisos de rate limit: el guard de esa función rechazó la sonda (HTTP 429). " +
+      "No es un fallo de la función; vuelve a lanzar el verificador en un minuto.",
+  );
+}
+if (warningKinds.has("fabricated") || warningKinds.has("unavailable")) {
+  console.log(
+    "\n⚠️  Avisos de tráfico: «DATOS SIMULADOS» es el aviso grave —la build desplegada es anterior a la que " +
+      "consulta el upstream real y hay que redesplegarla—; «SIN COBERTURA» solo significa que el upstream no " +
+      "contestó, así que revisa su clave (OpenSky, VesselFinder) antes de presentar sus datos como reales.",
   );
 }
 
