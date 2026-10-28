@@ -267,7 +267,9 @@ async function probe(spec) {
   const text = await response.text();
 
   if (response.status === 404) return { state: "fail", status: 404, detail: "no desplegada" };
-  if (response.status === 429) return { state: "warn", status: 429, detail: "rate limit del guard; reintenta en 1 min" };
+  if (response.status === 429) {
+    return { state: "warn", kind: "rate-limit", status: 429, detail: "rate limit del guard; reintenta en 1 min" };
+  }
 
   if (spec.protectedBy && expect.includes(response.status)) {
     if (response.status === 401 || response.status === 403) {
@@ -317,11 +319,17 @@ async function probe(spec) {
       state: "warn",
       status: response.status,
       detail: `${detail} · DATOS SIMULADOS (producción sirve tráfico inventado)`,
+      kind: "fabricated",
       fabricated: true,
     };
   }
   if (spec.unavailable?.(body ?? {})) {
-    return { state: "warn", status: response.status, detail: `${detail} · SIN COBERTURA (ningún upstream respondió)` };
+    return {
+      state: "warn",
+      kind: "unavailable",
+      status: response.status,
+      detail: `${detail} · SIN COBERTURA (ningún upstream respondió)`,
+    };
   }
   return { state: "ok", status: response.status, detail };
 }
@@ -382,12 +390,26 @@ if (orphaned.length) {
   console.log(`\n⚠️  Declaradas pero sin carpeta: ${orphaned.join(", ")}`);
 }
 
-if (warn) {
+/**
+ * Each warning gets the advice that belongs to it. Printing the traffic guidance
+ * after a 429 used to be the same mistake this script was just fixed for: an
+ * explanation that does not match the state it explains.
+ */
+const warningKinds = new Set(
+  results.filter((r) => r.result.state === "warn").map((r) => r.result.kind),
+);
+
+if (warningKinds.has("rate-limit")) {
   console.log(
-    "\n⚠️  Avisos: las funciones marcadas o se quedaron sin cobertura, o siguen sirviendo datos inventados. " +
-      "«DATOS SIMULADOS» es el aviso grave: la build desplegada es anterior a la que consulta el upstream real " +
-      "y hay que redesplegarla. «SIN COBERTURA» solo significa que el upstream no contestó; revisa su clave " +
-      "(OpenSky, VesselFinder) antes de presentar sus datos como reales.",
+    "\n⚠️  Avisos de rate limit: el guard de esa función rechazó la sonda (HTTP 429). " +
+      "No es un fallo de la función; vuelve a lanzar el verificador en un minuto.",
+  );
+}
+if (warningKinds.has("fabricated") || warningKinds.has("unavailable")) {
+  console.log(
+    "\n⚠️  Avisos de tráfico: «DATOS SIMULADOS» es el aviso grave —la build desplegada es anterior a la que " +
+      "consulta el upstream real y hay que redesplegarla—; «SIN COBERTURA» solo significa que el upstream no " +
+      "contestó, así que revisa su clave (OpenSky, VesselFinder) antes de presentar sus datos como reales.",
   );
 }
 
