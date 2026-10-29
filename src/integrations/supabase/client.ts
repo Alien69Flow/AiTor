@@ -38,15 +38,21 @@ export const DATA_SUPABASE_PUBLISHABLE_KEY =
   DATA_KEY_FALLBACK;
 
 /**
- * Proyecto de identidad. Cae a las variables que Vercel ya tiene puestas (el
- * proyecto nuevo), así que no hace falta tocar nada allí; y sólo si tampoco
- * existen usa el de datos, que es el comportamiento de antes en un equipo sin
- * `.env` (el login avisa de que falta el secret, y el resto sigue vivo).
+ * Proyecto de identidad: el propio, el que tiene Google configurado.
+ *
+ * Nunca cae al de datos. Esa caída era el fallo: Vercel tiene la clave
+ * publicable del proyecto nuevo (`sb_publishable_…`, que responde 200 en
+ * `pnyi…` y 401 en `wkdt…`) pero no tiene ningún `VITE_SUPABASE_URL`, así que
+ * el cliente emparejaba **clave nueva con URL vieja** y GoTrue contestaba 401.
+ * Emparejar mal es peor que no emparejar: aquí la URL por defecto es la del
+ * proyecto al que pertenece esa clave.
  */
+const AUTH_URL_FALLBACK = 'https://pnyigikagdxqaogbiift.supabase.co';
+
 export const AUTH_SUPABASE_URL =
   (import.meta.env.VITE_AUTH_SUPABASE_URL as string) ||
   (import.meta.env.VITE_SUPABASE_URL as string) ||
-  DATA_SUPABASE_URL;
+  AUTH_URL_FALLBACK;
 export const AUTH_SUPABASE_PUBLISHABLE_KEY =
   (import.meta.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY as string) ||
   (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
