@@ -57,14 +57,15 @@ const AUTH_URL_FALLBACK = 'https://pnyigikagdxqaogbiift.supabase.co';
 const AUTH_KEY_FALLBACK =
   'sb_publishable_c4VVYw8uPzt7-24KvOre6A_91csa5Xp';
 
+// `VITE_SUPABASE_URL` NO entra en esta cadena. En Vercel apunta al proyecto de
+// datos, y al ser una constante en tiempo de compilación el minificador podía
+// resolver `"" || "wkdt…" || "pnyi…"` como `"wkdt…"` y **borrar el respaldo**:
+// el build quedaba con clave de un proyecto y URL de otro, y GoTrue contestaba
+// 401. Identidad sólo acepta sus propias variables.
 export const AUTH_SUPABASE_URL =
-  (import.meta.env.VITE_AUTH_SUPABASE_URL as string) ||
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  AUTH_URL_FALLBACK;
+  (import.meta.env.VITE_AUTH_SUPABASE_URL as string) || AUTH_URL_FALLBACK;
 export const AUTH_SUPABASE_PUBLISHABLE_KEY =
   (import.meta.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
   AUTH_KEY_FALLBACK;
 
 /**
