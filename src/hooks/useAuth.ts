@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { User, Session, type Provider } from "@supabase/supabase-js";
-import { authClient } from "@/integrations/supabase/client";
+import { AUTH_SUPABASE_URL, authClient } from "@/integrations/supabase/client";
 
 /**
  * Every OAuth provider the login surfaces can offer, all of them through
@@ -138,25 +138,21 @@ export function useAuth() {
       });
       if (error) return { error };
 
-      // Supabase only validates the provider when /authorize is reached, and
-      // without this pre-flight a provider with missing credentials navigates
-      // the user to a raw JSON error page. Probe it first, keep the message and
-      // only then hand the browser over to the identity provider.
-      try {
-        const res = await fetch(data.url);
-        const payload = (await res.json().catch(() => null)) as
-          | { url?: string; msg?: string }
-          | null;
-        if (!res.ok || !payload?.url) {
-          return {
-            error: new Error(payload?.msg || "Supabase no pudo iniciar el OAuth"),
-          };
-        }
-        window.location.assign(payload.url);
-        return { error: null };
-      } catch (e) {
-        return { error: e instanceof Error ? e : new Error(String(e)) };
+      // Se entrega el navegador directamente. Antes se hacía un `fetch` de
+      // `data.url` para leer un JSON con la URL y detectar proveedores mal
+      // configurados, pero GoTrue responde **302** hacia el proveedor: el
+      // navegador sigue esa redirección dentro de la petición y
+      // `accounts.google.com` no manda CORS, así que el fetch fallaba y el
+      // botón quedaba mudo sin llegar a iniciar sesión.
+      //
+      // Los proveedores sin credenciales ya los deshabilita
+      // `auth-provider-status` (botón bloqueado con su motivo), de modo que
+      // aquí solo hay que comprobar que la URL es de nuestro proyecto.
+      if (!data?.url || !data.url.startsWith(AUTH_SUPABASE_URL)) {
+        return { error: new Error("Supabase no devolvió una URL de OAuth válida") };
       }
+      window.location.assign(data.url);
+      return { error: null };
     },
     [],
   );
