@@ -13,7 +13,9 @@ const RELOAD_WINDOW_MS = 30_000;
  * Lo comparten el `lazy` de abajo y el aviso global `vite:preloadError`, para
  * que dos mecanismos no se pisen y recarguen dos veces seguidas.
  */
-export function reloadOnceForStaleChunk(): boolean {
+export function reloadOnceForStaleChunk(
+  reload: () => void = () => window.location.reload(),
+): boolean {
   try {
     const last = Number(sessionStorage.getItem(RELOAD_KEY) ?? 0);
     if (Date.now() - last < RELOAD_WINDOW_MS) return false;
@@ -22,7 +24,7 @@ export function reloadOnceForStaleChunk(): boolean {
     // Sin `sessionStorage` (modo privado, storage bloqueado): se intenta igual,
     // aunque no se pueda recordar el intento.
   }
-  window.location.reload();
+  reload();
   return true;
 }
 
