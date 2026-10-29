@@ -74,18 +74,33 @@ function envValue(name) {
   return line?.split("=").slice(1).join("=").trim().replace(/^["']|["']$/g, "");
 }
 
+/**
+ * Proyecto cuyos proveedores se miden: el de **identidad**.
+ *
+ * Antes se leía el primer `SUPABASE_URL` del cliente, que tras separar datos e
+ * identidad es el heredado — donde Google está encendido sin secret y por eso
+ * el guardián fallaba siempre. Medir el proyecto equivocado es peor que no
+ * medir: daba un rojo permanente que ya nadie miraba.
+ *
+ * Se aceptan los dos formatos de clave: JWT clásico y `sb_publishable_…`.
+ */
 function projectConfig() {
   const client = readFileSync(resolve(root, "src/integrations/supabase/client.ts"), "utf8");
   const url =
+    envValue("VITE_AUTH_SUPABASE_URL") ||
+    client.match(/AUTH_URL_FALLBACK\s*=\s*'(https:\/\/[^']+)'/)?.[1] ||
     envValue("VITE_SUPABASE_URL") ||
     client.match(/SUPABASE_URL\s*=\s*[\s\S]*?'(https:\/\/[^']+)'/)?.[1];
   const key =
+    envValue("VITE_AUTH_SUPABASE_PUBLISHABLE_KEY") ||
     envValue("VITE_SUPABASE_PUBLISHABLE_KEY") ||
     envValue("VITE_SUPABASE_ANON_KEY") ||
-    client.match(/SUPABASE_PUBLISHABLE_KEY\s*=\s*[\s\S]*?'(eyJ[^']+)'/)?.[1];
+    client.match(/AUTH_KEY_FALLBACK\s*=\s*[\s\S]*?'((?:eyJ|sb_publishable_)[^']+)'/)?.[1] ||
+    client.match(/(?:PUBLISHABLE_KEY|AUTH_KEY)[\s\S]*?'((?:eyJ|sb_publishable_)[^']+)'/)?.[1] ||
+    client.match(/'(eyJ[^']+)'/)?.[1];
 
   if (!url || !key) {
-    console.error("No encuentro la URL y la clave publishable del proyecto.");
+    console.error("No encuentro la URL y la clave publishable del proyecto de identidad.");
     process.exit(2);
   }
   return { url: url.replace(/\/$/, ""), key };
@@ -97,6 +112,14 @@ const redirect = "https://aitor.alienflow.space";
 
 async function enabledProviders() {
   const res = await fetch(`${url}/auth/v1/settings`, { headers });
+  if (res.status === 401) {
+    // Clave de un proyecto contra la URL de otro: es el error que dejó el botón
+    // de Google en «faltan credenciales» aunque el panel estuviera bien.
+    throw new Error(
+      `La clave publicable no pertenece a ${url} (HTTP 401). ` +
+        "Define VITE_AUTH_SUPABASE_PUBLISHABLE_KEY con la clave de ese proyecto.",
+    );
+  }
   if (!res.ok) throw new Error(`/auth/v1/settings respondió HTTP ${res.status}`);
   const settings = await res.json();
   return { external: settings.external ?? {}, settings };
@@ -153,7 +176,14 @@ const ICON = {
   error: "❌ error",
 };
 
-const { external } = await measureSettings();
+let settings;
+try {
+  settings = await measureSettings();
+} catch (error) {
+  console.error(`\n✖ ${error.message}\n`);
+  process.exit(2);
+}
+const { external } = settings;
 const toggledOn = METHODS.filter((m) => external[m.id]);
 const rows = [];
 

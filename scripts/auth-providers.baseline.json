@@ -1,11 +1,6 @@
 {
   "note": "Proveedores encendidos sin credenciales, aceptados temporalmente por el propietario. El gate de CI falla cuando una entrada caduca o cuando aparece un proveedor nuevo en ese estado. Al guardar el Client ID + Secret en Supabase, borra la entrada.",
   "providers": {
-    "google": {
-      "since": "2026-10-19",
-      "expires": "2026-11-19",
-      "reason": "el broker de Lovable se retiró en f45353c y el Client ID + Secret propio nunca se guardó"
-    },
     "apple": {
       "since": "2026-10-19",
       "expires": "2026-11-19",

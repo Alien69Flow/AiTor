@@ -38,6 +38,25 @@ Tres reglas que no se pueden romper:
 Completar la migración = rellenar `VITE_DATA_SUPABASE_*` con el proyecto propio, después de
 `supabase db push` y del despliegue de las funciones. Ningún cambio de código.
 
+### El guardián de proveedores también cambia de proyecto
+
+`npm run auth:providers:gate` medía el primer `SUPABASE_URL` del cliente, que ahora es el
+heredado: decía «encendido sin credenciales» de un Google que sí funciona. Ahora prioriza
+las variables `VITE_AUTH_SUPABASE_*` y, si no existen, lee el par
+`AUTH_URL_FALLBACK` + `AUTH_KEY_FALLBACK` del cliente (ambos públicos, por eso pueden
+vivir en el código). Así el job de CI mide el proyecto de identidad sin configurar nada.
+
+### Síntoma que hay que saber leer
+
+Si el bundle publicado contiene la clave nueva pero **no** la URL del proyecto nuevo, el
+cliente empareja clave de un proyecto con URL de otro y GoTrue contesta 401: el botón de
+Google dice «faltan credenciales» aunque el panel esté bien. Comprobar con:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://pnyigikagdxqaogbiift.supabase.co/auth/v1/settings \
+  -H "apikey: <clave publicable>"   # 200 en el proyecto correcto, 401 en el otro
+```
+
 ## Situación actual (medida 2026-10-16)
 
 - Proyecto Supabase: `wkdtvrxavkhbifjtvvdw` (ya es del propietario). Las funciones Edge están

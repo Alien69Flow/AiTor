@@ -48,6 +48,14 @@ export const DATA_SUPABASE_PUBLISHABLE_KEY =
  * proyecto al que pertenece esa clave.
  */
 const AUTH_URL_FALLBACK = 'https://pnyigikagdxqaogbiift.supabase.co';
+/**
+ * Clave publicable del proyecto de identidad. Pública por diseño, como la del
+ * proyecto de datos que ya vivía aquí: viaja al navegador en cada visita, así
+ * que no es un secreto y no puede filtrarse. Va emparejada con su URL para que
+ * ningún build pueda cruzar clave y proyecto; rotarla es cambiar esta línea.
+ */
+const AUTH_KEY_FALLBACK =
+  'sb_publishable_c4VVYw8uPzt7-24KvOre6A_91csa5Xp';
 
 export const AUTH_SUPABASE_URL =
   (import.meta.env.VITE_AUTH_SUPABASE_URL as string) ||
@@ -57,7 +65,7 @@ export const AUTH_SUPABASE_PUBLISHABLE_KEY =
   (import.meta.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY as string) ||
   (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
   (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  DATA_SUPABASE_PUBLISHABLE_KEY;
+  AUTH_KEY_FALLBACK;
 
 /**
  * Nombres que significan «dónde viven las Edge Functions». Se mantienen porque
