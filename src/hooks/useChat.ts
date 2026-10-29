@@ -218,7 +218,20 @@ export function useChat() {
                 await sleep(1500 * (attempt + 1));
                 continue;
               }
-              toast.error("Error al conectar con el oráculo");
+              // Un «error al conectar» a secas no dice si fue el proyecto
+              // pausado, una clave ausente o un fallo del proveedor, y no deja
+              // nada que hacer. El cuerpo de la función sí lo dice: se enseña.
+              const body = await resp.text().catch(() => "");
+              let reason: string | undefined;
+              try {
+                const parsed = JSON.parse(body) as { error?: unknown };
+                if (typeof parsed?.error === "string") reason = parsed.error;
+              } catch {
+                // Respuesta no JSON (HTML de proxy, texto plano): se usa tal cual.
+              }
+              toast.error(`Error al conectar con el oráculo (${resp.status})`, {
+                description: (reason || body).slice(0, 200) || "El backend no devolvió detalle.",
+              });
               return null;
             }
             dismissWaiting();
