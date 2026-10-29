@@ -3,13 +3,10 @@
  * Generación de señales de trading automatizadas
  */
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { createGeminiModel } from "./llm";
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-flash",
-  temperature: 0.4,
-});
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-flash", temperature: 0.4 });
 
 export type SignalType = 'entry' | 'exit' | 'alert' | 'update';
 export type SignalStrength = 'strong' | 'moderate' | 'weak';
@@ -181,7 +178,7 @@ export class TradingSignals {
    */
   static async generateSignals(prices: unknown[], technicalData: unknown[]): Promise<TradingSignal[]> {
     try {
-      const chain = signalGenerationPrompt.pipe(llm);
+      const chain = signalGenerationPrompt.pipe(getLlm());
       const response = await chain.invoke({
         priceData: JSON.stringify(prices.slice(0, 10)),
         technicalData: JSON.stringify(technicalData.slice(0, 10)),
@@ -196,7 +193,7 @@ export class TradingSignals {
           ...s,
           id: `sig_${s.symbol}_${Date.now()}`,
           timestamp: new Date(),
-          expiresAt: new Date(Date.now() + this.getExpiryTime(s.timeframe)),
+          expiresAt: new Date(Date.now() + this.getExpiryTime(s.timeframe ?? '1d')),
           status: 'active' as const,
         }));
 

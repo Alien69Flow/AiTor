@@ -1,8 +1,13 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    // `bundler` en vez de `NodeNext`: el código usa imports sin extensión
+    // (`./agents/supervisor`) y con NodeNext cada uno era un error. Aquí el
+    // emisor sigue siendo ESM (`type: module`), así que el runtime resuelve
+    // igual que antes; lo que desaparece es una regla que el proyecto nunca
+    // cumplió y que impedía compilar.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
     "outDir": "./dist",
     // El servidor MCP vive en `src/lib/mcp` porque lo comparten el navegador y
     // este proceso: la raíz sube un nivel para poder compilarlo, y por eso el

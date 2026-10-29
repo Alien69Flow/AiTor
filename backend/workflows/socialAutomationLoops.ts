@@ -200,7 +200,8 @@ export class SocialAutomationLoops {
    * Obtiene el estado de todos los loops
    */
   static getStatus(): {
-    loops: Record<FrequencyType, AutomationConfig & { isRunning: boolean }>;
+    // Solo existen los loops configurados: el resto no tiene entrada.
+    loops: Partial<Record<FrequencyType, AutomationConfig & { isRunning: boolean }>>;
     stats: ReturnType<typeof ProposalQueue.getStats>;
   } {
     const loops: Partial<Record<FrequencyType, AutomationConfig & { isRunning: boolean }>> = {};

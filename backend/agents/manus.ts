@@ -1,10 +1,8 @@
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { createGeminiModel } from "./llm";
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-pro",
-  temperature: 0.4, // Un poco más creativo que el Supervisor para resolver problemas
-});
+// Temperatura 0.4: un poco más creativo que el Supervisor para resolver problemas.
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.4 });
 
 const manusPrompt = PromptTemplate.fromTemplate(`
 Eres MANUS, el agente ejecutor técnico del Swarm AI-TOR.
@@ -25,7 +23,7 @@ export class ManusAgent {
     console.log(`[Manus] Iniciando protocolo de ejecución para: "${task}"`);
     
     try {
-      const chain = manusPrompt.pipe(llm);
+      const chain = manusPrompt.pipe(getLlm());
       const response = await chain.invoke({ task, context });
       
       return response.content.toString();

@@ -5,13 +5,10 @@ import { ManusAgent } from "./manus";
 import { SocialPlatform } from "./socialMediaManager";
 import { PriceAlert } from "./tradingSignals";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { createGeminiModel } from "./llm";
 
-// Inicializamos un modelo general para las respuestas ordinarias
-const llmGeneral = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-flash", 
-  temperature: 0.7,
-});
+// Modelo general para las respuestas ordinarias; se construye al primer uso.
+const getGeneralLlm = createGeminiModel({ modelName: "gemini-2.5-flash", temperature: 0.7 });
 
 export class SwarmOrchestrator {
   /**
@@ -50,7 +47,7 @@ export class SwarmOrchestrator {
         const context = await KnowledgeBase.retrieveContext(route);
         
         console.log(`[Orquestador] Generando respuesta con RAG e inyección de contexto.`);
-        const response = await llmGeneral.invoke([
+        const response = await getGeneralLlm().invoke([
           { role: "system", content: `Eres AI-TOR, la inteligencia central de AlienFlowSpace DAO. Responde al usuario utilizando estrictamente este contexto fundacional:\n${context}` },
           { role: "system", content: `Historial reciente:\n${history}` },
           { role: "user", content: userInput }
@@ -101,7 +98,7 @@ export class SwarmOrchestrator {
       default: {
         // Chat normal, soporte o saludos
         console.log(`[Orquestador] Procesando como conversación general.`);
-        const response = await llmGeneral.invoke([
+        const response = await getGeneralLlm().invoke([
           { role: "system", content: "Eres AI-TOR, un aliado inteligente, directo y avanzado. Estás ayudando al usuario a gestionar su ecosistema." },
           { role: "system", content: `Historial reciente:\n${history}` },
           { role: "user", content: userInput }
@@ -128,13 +125,13 @@ export class SwarmOrchestrator {
    * Maneja requests de redes sociales
    */
   private static async handleSocialMediaRequest(userInput: string, history: string): Promise<string> {
-    const { SocialMediaManager, FrequencyType } = await import('./socialMediaManager');
+    const { SocialMediaManager } = await import('./socialMediaManager');
     const { ProposalQueue } = await import('../workflows/socialProposalQueue');
 
     const input = userInput.toLowerCase();
 
     // Detectar tipo de frecuencia
-    let frequency: FrequencyType = 'daily';
+    let frequency: import('./socialMediaManager').FrequencyType = 'daily';
     if (input.includes('semanal')) frequency = 'weekly';
     else if (input.includes('mensual')) frequency = 'monthly';
     else if (input.includes('trimestral')) frequency = 'quarterly';

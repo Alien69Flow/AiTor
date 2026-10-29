@@ -3,17 +3,14 @@
  * Agente especializado en auditoría de seguridad del repositorio
  */
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { createGeminiModel } from "./llm";
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-pro",
-  temperature: 0.3,
-});
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.3 });
 
 export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
@@ -268,7 +265,7 @@ export class SecurityAgent {
    */
   private static async generateReport(scanResults: string): Promise<SecurityReport> {
     try {
-      const chain = securityPrompt.pipe(llm);
+      const chain = securityPrompt.pipe(getLlm());
       const response = await chain.invoke({ scanResults });
       
       const content = response.content.toString();

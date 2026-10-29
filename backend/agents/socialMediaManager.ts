@@ -4,14 +4,12 @@
  * Genera propuestas de contenido, las presenta para aprobación y ejecuta tras confirmación
  */
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { ProposalQueue } from "../workflows/socialProposalQueue";
+import { createGeminiModel } from "./llm";
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-pro",
-  temperature: 0.7, // Creativo para generar contenido
-});
+// Temperatura 0.7: creativo para generar contenido.
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.7 });
 
 export type SocialPlatform = 
   | 'twitter' 
@@ -28,6 +26,33 @@ export type SocialPlatform =
 export type ContentType = 'post' | 'thread' | 'article' | 'comment' | 'announcement';
 export type FrequencyType = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'yearly';
 
+/** JSON que el modelo devuelve para un post suelto (todos los campos son opcionales porque el LLM puede omitirlos). */
+interface ContentDraft {
+  content?: string;
+  hashtags?: string[];
+}
+
+/** Un día del calendario semanal. */
+interface WeeklyDraft {
+  platform?: string;
+  day?: string;
+  bestTime?: string;
+  content?: string;
+  hashtags?: string[];
+  theme?: string;
+}
+
+/** Plan mensual: una lista de publicaciones ya fechadas. */
+interface MonthlyPlan {
+  posts?: Array<{
+    platform?: string;
+    content?: string;
+    hashtags?: string[];
+    scheduledDate?: string;
+    theme?: string;
+  }>;
+}
+
 export interface SocialContent {
   id: string;
   platform: SocialPlatform;
@@ -40,7 +65,7 @@ export interface SocialContent {
   metadata: {
     generatedAt: Date;
     theme: string;
-    tone: 'technical' | 'casual' | 'professional' | 'inspirational';
+    tone: 'technical' | 'casual' | 'professional' | 'inspirational' | 'mixed';
     targetAudience: string[];
   };
 }
@@ -229,7 +254,7 @@ export class SocialMediaManager {
           const platforms = options.platform ? [options.platform] : ['twitter', 'linkedin', 'telegram'];
           
           for (const platform of platforms) {
-            const chain = promptTemplates.daily.pipe(llm);
+            const chain = promptTemplates.daily.pipe(getLlm());
             const response = await chain.invoke({
               theme,
               tone,
@@ -243,7 +268,7 @@ export class SocialMediaManager {
                 id: `daily_${platform}_${Date.now()}`,
                 platform: platform as SocialPlatform,
                 contentType: 'post',
-                content: parsed.content,
+                content: parsed.content ?? '',
                 hashtags: parsed.hashtags,
                 scheduledTime: this.getOptimalPostTime(platform as SocialPlatform),
                 frequency: 'daily',
@@ -264,7 +289,7 @@ export class SocialMediaManager {
           const weekEnd = new Date(weekStart);
           weekEnd.setDate(weekEnd.getDate() + 6);
           
-          const chain = promptTemplates.weekly.pipe(llm);
+          const chain = promptTemplates.weekly.pipe(getLlm());
           const response = await chain.invoke({
             platforms: ['Twitter', 'LinkedIn', 'Instagram', 'Telegram', 'Discord'],
             weekStart: weekStart.toISOString().split('T')[0],
@@ -276,13 +301,13 @@ export class SocialMediaManager {
             id: `weekly_${i}_${Date.now()}`,
             platform: post.platform as SocialPlatform,
             contentType: 'post',
-            content: post.content,
+            content: post.content ?? '',
             hashtags: post.hashtags,
-            scheduledTime: new Date(`${post.day} ${post.bestTime}`),
+            scheduledTime: new Date(`${post.day ?? now.toISOString().split('T')[0]} ${post.bestTime ?? '09:00'}`),
             frequency: 'weekly',
             metadata: {
               generatedAt: now,
-              theme: post.theme,
+              theme: post.theme ?? '',
               tone: 'mixed' as const,
               targetAudience: ['crypto-enthusiasts', 'dao-members'],
             },
@@ -291,7 +316,7 @@ export class SocialMediaManager {
         }
 
         case 'monthly': {
-          const chain = promptTemplates.monthly.pipe(llm);
+          const chain = promptTemplates.monthly.pipe(getLlm());
           const response = await chain.invoke({
             month: now.toLocaleString('default', { month: 'long' }),
             year: now.getFullYear(),
@@ -302,17 +327,17 @@ export class SocialMediaManager {
           
           // Generar posts mensuales basados en la respuesta
           const monthlyPlan = this.parseMonthlyResponse(response.content.toString());
-          proposals = monthlyPlan.posts.map((post, i) => ({
+          proposals = (monthlyPlan.posts ?? []).map((post, i) => ({
             id: `monthly_${i}_${Date.now()}`,
             platform: post.platform as SocialPlatform,
             contentType: 'article',
-            content: post.content,
+            content: post.content ?? '',
             hashtags: post.hashtags,
-            scheduledTime: new Date(post.scheduledDate),
+            scheduledTime: new Date(post.scheduledDate ?? Date.now()),
             frequency: 'monthly',
             metadata: {
               generatedAt: now,
-              theme: post.theme,
+              theme: post.theme ?? '',
               tone: 'professional' as const,
               targetAudience: ['investors', 'partners', 'community'],
             },
@@ -322,7 +347,7 @@ export class SocialMediaManager {
 
         case 'quarterly': {
           const quarter = Math.ceil((now.getMonth() + 1) / 3);
-          const chain = promptTemplates.quarterly.pipe(llm);
+          const chain = promptTemplates.quarterly.pipe(getLlm());
           const response = await chain.invoke({
             quarter: `Q${quarter}`,
             year: now.getFullYear(),
@@ -349,7 +374,7 @@ export class SocialMediaManager {
         }
 
         case 'yearly': {
-          const chain = promptTemplates.yearly.pipe(llm);
+          const chain = promptTemplates.yearly.pipe(getLlm());
           const response = await chain.invoke({
             year: now.getFullYear(),
             vision: 'Making decentralized finance accessible to all while promoting energy sustainability',
@@ -461,11 +486,11 @@ export class SocialMediaManager {
     return new Date(d.setDate(diff));
   }
 
-  private static parseContentResponse(response: string): Record<string, unknown> | null {
+  private static parseContentResponse(response: string): ContentDraft | null {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        return JSON.parse(jsonMatch[0]) as ContentDraft;
       }
     } catch (e) {
       console.error("[SocialManager] Error parsing response:", e);
@@ -473,12 +498,12 @@ export class SocialMediaManager {
     return null;
   }
 
-  private static parseWeeklyResponse(response: string): unknown[] {
+  private static parseWeeklyResponse(response: string): WeeklyDraft[] {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        return parsed.posts || [];
+        const parsed = JSON.parse(jsonMatch[0]) as { posts?: WeeklyDraft[] };
+        return parsed.posts ?? [];
       }
     } catch (e) {
       console.error("[SocialManager] Error parsing weekly response:", e);
@@ -486,11 +511,11 @@ export class SocialMediaManager {
     return [];
   }
 
-  private static parseMonthlyResponse(response: string): Record<string, unknown> | null {
+  private static parseMonthlyResponse(response: string): MonthlyPlan {
     try {
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        return JSON.parse(jsonMatch[0]) as MonthlyPlan;
       }
     } catch (e) {
       console.error("[SocialManager] Error parsing monthly response:", e);
