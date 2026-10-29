@@ -3,16 +3,18 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch server.ts",
     "build": "tsc",
-    "start": "node dist/server.js"
+    "start": "node dist/backend/server.js",
+    "mcp": "tsx server.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "langchain": "^0.3.0"
+    "langchain": "^0.3.0",
+    "satellite.js": "^5.0.0"
   },
   "devDependencies": {
     "@types/cors": "^2.8.17",

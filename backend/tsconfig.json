@@ -4,12 +4,15 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "outDir": "./dist",
-    "rootDir": "./",
+    // El servidor MCP vive en `src/lib/mcp` porque lo comparten el navegador y
+    // este proceso: la raíz sube un nivel para poder compilarlo, y por eso el
+    // arranque apunta a `dist/backend/server.js`.
+    "rootDir": "../",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["**/*.ts"],
+  "include": ["**/*.ts", "../src/lib/mcp/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }

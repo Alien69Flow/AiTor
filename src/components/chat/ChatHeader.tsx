@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ModelSelector } from "./ModelSelector";
 import { ConversationExport } from "./ConversationExport";
+import { McpToolsButton } from "./McpToolsButton";
 import type { Message } from "@/hooks/useChat";
 import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, Network, Building2, Cpu } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
@@ -125,6 +126,8 @@ export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, h
         <Button variant="ghost" size="icon" onClick={onNewChat} aria-label="Nuevo chat" className="h-8 w-8 text-muted-foreground/40 hover:text-primary" title="Nuevo chat">
           <Plus className="h-4 w-4" />
         </Button>
+
+        <McpToolsButton />
 
         <ConversationExport messages={messages} />
 

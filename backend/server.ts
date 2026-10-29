@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { SwarmOrchestrator } from './agents/orchestrator'; // <- Importamos tu Orquestador Central
+import { createMcpRouter } from './mcp';
 
 // Hack cuántico para variables de entorno (invisible para escáneres estáticos)
 const getEnv = (key: string) => {
@@ -22,6 +23,17 @@ const app = express();
 
 app.use(cors());
 app.use(express.json());
+
+// Servidor MCP: `POST /mcp` habla JSON-RPC (tools/list, tools/call) y, con
+// `{ prompt }`, ejecuta el bucle de Gemini con las herramientas. La identidad
+// se verifica con el JWT del llamante y el plan se lee de `profiles.tier`.
+app.use(
+  createMcpRouter({
+    supabaseUrl: config.supabaseUrl,
+    supabaseAnonKey: config.supabaseAnonKey,
+    geminiKey: config.geminiKey,
+  }),
+);
 
 // Endpoint de salud del motor de la IA
 app.get('/health', (req, res) => {

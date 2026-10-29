@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createAiTorMcpServer } from "./index";
-import { McpError } from "./registry";
-import { createRateLimiter, pickModel, toGeminiSchema, toGeminiTools } from "./gemini";
+import { McpError, createMcpServer, toolResult } from "./registry";
+import { createRateLimiter, pickModel, runToolLoop, toGeminiSchema, toGeminiTools } from "./gemini";
 import { createMcpHttpHandler } from "./http";
 import { resolveColumns, resolveFilters } from "./tools/database";
 import { parseTleText } from "./tools/satellites";
@@ -172,6 +172,115 @@ describe("handler HTTP", () => {
       }),
     );
     expect(prompt.status).toBe(501);
+  });
+});
+
+describe("bucle de herramientas con el modelo", () => {
+  it("devuelve al modelo el resultado de la herramienta antes de responder", async () => {
+    const calls: string[] = [];
+    const server = createMcpServer({
+      name: "test",
+      version: "0",
+      tools: [
+        {
+          definition: {
+            name: "demo.contar",
+            title: "Contar",
+            description: "Devuelve un número fijo.",
+            inputSchema: { type: "object", properties: {} },
+          },
+          run: async () => {
+            calls.push("tool");
+            return toolResult({ total: 7 });
+          },
+        },
+      ],
+    });
+
+    const seen: unknown[] = [];
+    let round = 0;
+    const client = {
+      model: async () => "fake-flash",
+      listModels: async () => ["fake-flash"],
+      generateContent: async (body: Record<string, unknown>) => {
+        seen.push(body);
+        round += 1;
+        if (round === 1) {
+          return {
+            model: "fake-flash",
+            content: {
+              role: "model" as const,
+              parts: [{ functionCall: { name: "demo.contar", args: {} } }],
+            },
+          };
+        }
+        return {
+          model: "fake-flash",
+          content: { role: "model" as const, parts: [{ text: "El total es 7." }] },
+        };
+      },
+    };
+
+    const result = await runToolLoop({
+      client,
+      server,
+      context: { tier: "free", fetch: context.fetch },
+      prompt: "cuenta",
+    });
+
+    expect(calls).toEqual(["tool"]);
+    expect(result.text).toContain("7");
+    expect(result.toolCalls).toEqual([{ name: "demo.contar", args: {}, isError: false }]);
+
+    // La segunda ronda lleva el resultado de la herramienta como functionResponse.
+    const second = seen[1] as { contents: Array<{ parts: Array<{ functionResponse?: { name: string } }> }> };
+    const names = second.contents.flatMap((c) => c.parts).map((p) => p.functionResponse?.name);
+    expect(names).toContain("demo.contar");
+  });
+
+  it("no deja que el modelo encadene herramientas sin límite", async () => {
+    const server = createMcpServer({
+      name: "test",
+      version: "0",
+      tools: [
+        {
+          definition: {
+            name: "demo.loop",
+            title: "Bucle",
+            description: "Siempre pide otra vuelta.",
+            inputSchema: { type: "object", properties: {} },
+          },
+          run: async () => toolResult({ ok: true }),
+        },
+      ],
+    });
+
+    let rounds = 0;
+    const client = {
+      model: async () => "fake-flash",
+      listModels: async () => ["fake-flash"],
+      generateContent: async () => {
+        rounds += 1;
+        return {
+          model: "fake-flash",
+          content: {
+            role: "model" as const,
+            parts: [{ functionCall: { name: "demo.loop", args: {} } }],
+          },
+        };
+      },
+    };
+
+    const result = await runToolLoop({
+      client,
+      server,
+      context: { tier: "free", fetch: context.fetch },
+      prompt: "bucle",
+      maxRounds: 2,
+    });
+
+    expect(rounds).toBe(2);
+    expect(result.text).toMatch(/rondas/i);
   });
 });
 

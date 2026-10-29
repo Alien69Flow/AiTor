@@ -118,6 +118,42 @@ const handler = createMcpHttpHandler({
 así que es el sitio natural: el handler es un `(Request) => Response` y se puede
 adaptar a Express leyendo el cuerpo y devolviendo `res.status(...).send(...)`.
 
+## Montado en el backend Node
+
+`backend/mcp.ts` es el punto de montaje real, montado en `backend/server.ts`:
+
+| Ruta | Qué hace |
+| --- | --- |
+| `POST /mcp` | JSON-RPC (`initialize`, `ping`, `tools/list`, `tools/call`) |
+| `POST /mcp` con `{ prompt }` | Bucle de Gemini con las herramientas del plan |
+| `GET /mcp/tools` | Herramientas visibles para quien llama, con su plan |
+
+Lo que aplica el router y no se puede delegar al cliente:
+
+- El plan se lee de `profiles.tier` con el JWT del llamante; el cuerpo nunca lo trae.
+- `db.select` consulta con **ese** JWT, así que el RLS decide las filas.
+- Cada usuario tiene su propio cubo de cuota del free tier.
+- `GEMINI_API_KEY` no sale del proceso.
+
+```bash
+cd backend && npm install --legacy-peer-deps   # el paquete tiene su propio lock
+GEMINI_API_KEY=... SUPABASE_URL=... SUPABASE_ANON_KEY=... npm run dev
+curl -s localhost:4000/mcp/tools -H "Authorization: Bearer $JWT"
+```
+
+`npm run install` normal falla por un conflicto de peers **preexistente**
+(`langchain@0.3` con el SDK de Google); `--legacy-peer-deps` lo resuelve sin tocar
+el `package.json`. El paquete tampoco compilaba antes de este cambio: sus agentes
+importan `@langchain/google-genai`, que no está declarado, y usan imports sin
+extensión bajo `NodeNext`. `backend/mcp.ts` sí compila aislado y tiene una prueba
+de humo (`npx tsx mcp.smoke.ts`) que comprueba los 401 sin salir a la red.
+
+## Botón en el chat
+
+`src/components/chat/McpToolsButton.tsx` lista las herramientas del plan real y
+ejecuta una con valores por defecto. El filtrado lo hace el servidor; el botón
+sólo pinta lo que recibe.
+
 ## Lo que queda fuera a propósito
 
 - Escrituras: ninguna herramienta escribe. `db.select` es lectura, con lista
