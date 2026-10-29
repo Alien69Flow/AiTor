@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from "react";
+import { Suspense, useState } from "react";
 import { Helmet } from "react-helmet-async";
 import { TopNavBar } from "@/components/dashboard/TopNavBar";
 import { BottomNav } from "@/components/dashboard/BottomNav";
@@ -9,22 +9,29 @@ import { CommandPalette } from "@/components/dashboard/CommandPalette";
 import { OfflineNotice } from "@/components/dashboard/OfflineNotice";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useCameraTarget, useWorkspaceTab, type TabId } from "@/hooks/useWorkspaceTab";
+import { lazyWithRetry } from "@/lib/lazy-retry";
 
 // Every workspace except the default chat is loaded on first visit, so the
 // globe (three.js) and the markets connectors stay out of the initial bundle.
-const UFOMonitorTab = lazy(() =>
+//
+// Todos con `lazyWithRetry`: tras un despliegue, una pestaña abierta conserva el
+// HTML viejo y pide un chunk con hash que ya no existe; Vercel responde el
+// `index.html` (200, HTML) y el import muere con «Failed to fetch dynamically
+// imported module», dejando el módulo inutilizable hasta recargar a mano. El
+// reintento recarga una vez para coger el manifiesto nuevo.
+const UFOMonitorTab = lazyWithRetry(() =>
   import("@/components/dashboard/UFOMonitorTab").then((m) => ({ default: m.UFOMonitorTab })),
 );
-const SolarSystemTab = lazy(() =>
+const SolarSystemTab = lazyWithRetry(() =>
   import("@/components/dashboard/SolarSystemTab").then((m) => ({ default: m.SolarSystemTab })),
 );
-const GlobeDashboard = lazy(() =>
+const GlobeDashboard = lazyWithRetry(() =>
   import("@/components/dashboard/GlobeDashboard").then((m) => ({ default: m.GlobeDashboard })),
 );
-const MarketsSection = lazy(() =>
+const MarketsSection = lazyWithRetry(() =>
   import("@/components/dashboard/MarketsSection").then((m) => ({ default: m.MarketsSection })),
 );
-const SystemTab = lazy(() =>
+const SystemTab = lazyWithRetry(() =>
   import("@/components/dashboard/SystemTab").then((m) => ({ default: m.SystemTab })),
 );
 
