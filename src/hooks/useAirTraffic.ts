@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withTimeout } from "@/lib/with-timeout";
+
+/** Plazo de la función de tráfico aéreo: si no contesta, se conserva lo último. */
+const REQUEST_TIMEOUT_MS = 25_000;
 
 export interface Flight {
   icao24: string;
@@ -42,15 +46,19 @@ export function useAirTraffic() {
   const [source, setSource] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
+  /** La última lectura no es fresca: la capa sigue mostrando vuelos anteriores. */
+  const [stale, setStale] = useState(false);
 
   const fetchAirTraffic = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const { data, error: fnError } = await supabase.functions.invoke<AirTrafficResponse>("air-traffic", {
-        body: {},
-      });
+      const { data, error: fnError } = await withTimeout(
+        supabase.functions.invoke<AirTrafficResponse>("air-traffic", { body: {} }),
+        REQUEST_TIMEOUT_MS,
+        "air-traffic",
+      );
 
       if (fnError) {
         throw new Error(fnError.message);
@@ -69,9 +77,13 @@ export function useAirTraffic() {
             : data.reason ?? null,
         );
         setLastUpdate(new Date(data.timestamp));
+        setStale(false);
       }
     } catch (err) {
       console.error("Air traffic fetch error:", err);
+      // No se vacía la capa: se marca como no fresca y se conservan los vuelos
+      // anteriores, que siguen siendo más útiles que un globo sin tráfico.
+      setStale(true);
       setError(err instanceof Error ? err.message : "Failed to fetch air traffic");
     } finally {
       setIsLoading(false);
@@ -95,6 +107,8 @@ export function useAirTraffic() {
     /** Ninguna fuente real respondió: la capa está vacía, no simulada. */
     unavailable,
     unavailableReason,
+    /** La última lectura falló o llegó tarde; `flights` son las de antes. */
+    stale,
     refresh: fetchAirTraffic,
     count: flights.length,
   };

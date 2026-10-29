@@ -1,5 +1,9 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { withTimeout } from "@/lib/with-timeout";
+
+/** Plazo de la función de tráfico marítimo: si no contesta, se conserva lo último. */
+const REQUEST_TIMEOUT_MS = 25_000;
 
 export interface Ship {
   mmsi: string;
@@ -39,15 +43,19 @@ export function useMarineTraffic() {
   const [coverage, setCoverage] = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [unavailableReason, setUnavailableReason] = useState<string | null>(null);
+  /** La última lectura no es fresca: la capa sigue mostrando barcos anteriores. */
+  const [stale, setStale] = useState(false);
 
   const fetchMarineTraffic = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
 
-      const { data, error: fnError } = await supabase.functions.invoke<MarineTrafficResponse>("marine-traffic", {
-        body: {},
-      });
+      const { data, error: fnError } = await withTimeout(
+        supabase.functions.invoke<MarineTrafficResponse>("marine-traffic", { body: {} }),
+        REQUEST_TIMEOUT_MS,
+        "marine-traffic",
+      );
 
       if (fnError) {
         throw new Error(fnError.message);
@@ -68,9 +76,13 @@ export function useMarineTraffic() {
             : data.reason ?? null,
         );
         setLastUpdate(new Date(data.timestamp));
+        setStale(false);
       }
     } catch (err) {
       console.error("Marine traffic fetch error:", err);
+      // No se vacía la capa: se marca como no fresca y se conservan los barcos
+      // anteriores, que siguen siendo más útiles que un globo sin AIS.
+      setStale(true);
       setError(err instanceof Error ? err.message : "Failed to fetch marine traffic");
     } finally {
       setIsLoading(false);
@@ -95,6 +107,8 @@ export function useMarineTraffic() {
     /** Ninguna fuente AIS real respondió: la capa está vacía, no simulada. */
     unavailable,
     unavailableReason,
+    /** La última lectura falló o llegó tarde; `ships` son las de antes. */
+    stale,
     refresh: fetchMarineTraffic,
     count: ships.length,
   };

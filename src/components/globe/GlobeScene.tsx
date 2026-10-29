@@ -55,6 +55,11 @@ export interface UnifiedHotspotData {
   source?: string;
   timestamp?: string;
   reliability?: string;
+  /**
+   * Presente sólo en los marcadores de cámara del Alien: permite que la ficha
+   * ofrezca abrir el directo sin que el clic en el globo salte de módulo.
+   */
+  cameraId?: string;
 }
 
 export type HotspotData = UnifiedHotspotData;

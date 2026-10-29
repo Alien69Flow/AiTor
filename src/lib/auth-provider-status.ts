@@ -20,7 +20,10 @@
  * connection must not hide a working method.
  */
 import { useEffect, useState } from "react";
-import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/client";
+// El sondeo pregunta al proyecto de **identidad**, que es el que inicia la
+// sesión: el de datos no tiene Google y contestaría «missing OAuth secret»
+// para un botón que sí funciona.
+import { AUTH_SUPABASE_PUBLISHABLE_KEY, AUTH_SUPABASE_URL } from "@/integrations/supabase/client";
 import { GOTRUE_PROVIDER, type SocialProvider } from "@/hooks/useAuth";
 
 export type ProviderState = "ready" | "missing-secret" | "disabled" | "unknown";
@@ -33,8 +36,8 @@ const PROBE_TIMEOUT_MS = 6000;
 /** Providers switched on in the project, or null when settings cannot be read. */
 async function enabledProviderIds(): Promise<Set<string> | null> {
   try {
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/settings`, {
-      headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
+    const response = await fetch(`${AUTH_SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: AUTH_SUPABASE_PUBLISHABLE_KEY },
       signal: AbortSignal.timeout(SETTINGS_TIMEOUT_MS),
     });
     if (!response.ok) return null;
@@ -53,8 +56,8 @@ async function enabledProviderIds(): Promise<Set<string> | null> {
 async function probeProvider(providerId: string, redirectTo: string): Promise<ProviderState> {
   try {
     const query = new URLSearchParams({ provider: providerId, redirect_to: redirectTo });
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/authorize?${query}`, {
-      headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
+    const response = await fetch(`${AUTH_SUPABASE_URL}/auth/v1/authorize?${query}`, {
+      headers: { apikey: AUTH_SUPABASE_PUBLISHABLE_KEY },
       redirect: "manual",
       signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
     });

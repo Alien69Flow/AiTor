@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { SpaceBackground } from "@/components/SpaceBackground";
 import { Loader2, ShieldCheck } from "lucide-react";
@@ -20,9 +20,7 @@ type OAuthApi = {
   getAuthorizationDetails: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
   approveAuthorization: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
   denyAuthorization: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
-};
-
-const oauth = () => (supabase.auth as unknown as { oauth: OAuthApi }).oauth;
+};  const oauth = () => (authClient.auth as unknown as { oauth: OAuthApi }).oauth;
 
 export default function OAuthConsent() {
   const [params] = useSearchParams();
@@ -39,7 +37,7 @@ export default function OAuthConsent() {
         setError("Falta el parámetro authorization_id.");
         return;
       }
-      const { data: sess } = await supabase.auth.getSession();
+      const { data: sess } = await authClient.auth.getSession();
       if (!sess.session) {
         const next = window.location.pathname + window.location.search;
         window.location.href = "/auth?next=" + encodeURIComponent(next);

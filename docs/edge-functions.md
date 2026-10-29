@@ -104,7 +104,7 @@ npx supabase login                       # interactivo, abre el navegador
 export SUPABASE_ACCESS_TOKEN=...         # o el token en CI
 
 # 3. Enlazar el proyecto
-npx supabase link --project-ref wkdtvrxavkhbifjtvvdw
+npx supabase link --project-ref pnyigikagdxqaogbiift
 
 # 4. Desplegar
 npm run edge:deploy                      # = supabase functions deploy --project-ref ...
@@ -117,15 +117,49 @@ npm run edge:check
 `verify_jwt` de `supabase/config.toml`. Para iterar sobre una sola:
 
 ```bash
-npx supabase functions deploy chat --project-ref wkdtvrxavkhbifjtvvdw
+npx supabase functions deploy chat --project-ref pnyigikagdxqaogbiift
 ```
+
+### Cambiar de proyecto
+
+El ref canónico es `project_id` de `supabase/config.toml`: `npm run edge:deploy` y
+`npm run functions:retire` lo leen de ahí, así que no hay que repetirlo en otro
+sitio.
+
+Desplegar no basta para migrar. El frontend habla con el proyecto que le indican
+`VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` (Vercel → Settings →
+Environment Variables); mientras esos dos apunten al proyecto viejo, las funciones
+nuevas quedan sin usar. El orden que no rompe nada:
+
+1. `npx supabase login`, `npx supabase db push` (esquema) y `npm run edge:deploy`
+   sobre el proyecto nuevo.
+2. `npx supabase secrets set --project-ref <nuevo> …` con la tabla de abajo.
+3. En Vercel, cambiar URL y clave publicable **a la vez** (son de proyectos
+   distintos y no son intercambiables), y reconfigurar Google/Apple en
+   Authentication → Providers del proyecto nuevo: el callback pasa a
+   `https://<nuevo>.supabase.co/auth/v1/callback` y hay que añadirlo en la consola
+   de Google ([oauth-google.md](oauth-google.md)).
+
+El paso 3 va **el último** y con las funciones del paso 1 ya arriba: si el
+frontend cambia antes, cada `supabase.functions.invoke` responde 404 y el chat, el
+globo y las cripto se quedan sin backend aunque el login funcione.
+
+Del esquema solo hacen falta cuatro tablas, todas creadas por
+`supabase/migrations/`: `uap_sightings`, `user_roles`, `crypto_payments` y
+`user_credits`. El frontend no consulta ninguna tabla —solo auth y Edge
+Functions—, así que el login funciona en un proyecto vacío; lo que falla sin
+esquema son `ufo-feed`, `github-proxy`, `verify-crypto-payment` y
+`verify-dao-holdings`.
+
+Los usuarios y los secretos no viajan solos: sin copiar los datos, el login abrirá
+sesión en un proyecto sin las cuentas del anterior.
 
 ### Secretos
 
 Los valores no viven en el repositorio. Se cargan en el proyecto una vez:
 
 ```bash
-npx supabase secrets set --project-ref wkdtvrxavkhbifjtvvdw \
+npx supabase secrets set --project-ref pnyigikagdxqaogbiift \
   FIRECRAWL_API_KEY=... OPENWEATHER_API_KEY=... OPENSKY_CLIENT_ID=... OPENSKY_CLIENT_SECRET=...
 ```
 
@@ -234,7 +268,7 @@ se despliegue, esa marca desaparece sola.
   Lovable, pero **la función sigue desplegada** y ya no aparece en `edge:check`.
   El inventario de funciones de más y el apagado seguro (tumba 410 → borrado)
   están en `docs/function-decommission-runbook.md`; a mano:
-  `npx supabase functions delete mcp --project-ref wkdtvrxavkhbifjtvvdw`
+  `npx supabase functions delete mcp --project-ref pnyigikagdxqaogbiift`
   (requiere `SUPABASE_ACCESS_TOKEN` o un `supabase login`).
 - `_shared/guard.ts`: allowlist sin hosts de Lovable. Afecta a las nueve funciones
   que usan `guardPublic`, así que **solo aplica al redesplegarlas**; hasta entonces

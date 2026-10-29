@@ -62,10 +62,7 @@ import {
   UNDERSEA_CABLES,
   PIPELINES,
 } from "@/lib/geo-datasets";
-
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
+import { SUPABASE_URL } from "@/integrations/supabase/client";
 
 /** OWM tiles are proxied server-side so the API key never reaches the bundle. */
 const OWM_TILE_URL = (layerId: string) =>
@@ -270,10 +267,12 @@ interface CesiumGlobeProps {
   vanAllen?: VanAllenBelts | null;
   /** Viento solar en L1: lo que infla la heliosfera. */
   solarWind?: SolarWind | null;
-  /** Cámaras del Alien con sede conocida, para pulsarlas desde el globo. */
+  /**
+   * Cámaras del Alien con sede conocida. Al pulsarlas abren su ficha como
+   * cualquier otro marcador; el directo se pide desde dentro de la ficha, así
+   * que el visor no necesita saber nada de navegar a otro módulo.
+   */
   cameras?: PlacedCamera[];
-  /** Se dispara al pulsar el marcador de una cámara: abre su directo en Alien. */
-  onCameraClick?: (cameraId: string) => void;
 }
 
 export function CesiumGlobe({
@@ -282,7 +281,7 @@ export function CesiumGlobe({
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
   bitcoinNodes = [], gdeltEvents = [], surfaceWeather = [],
-  iss = null, ionosphere = null, cameras = [], onCameraClick,
+  iss = null, ionosphere = null, cameras = [],
   vanAllen = null, solarWind = null,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -321,10 +320,6 @@ export function CesiumGlobe({
   onViewScaleRef.current = onViewScale;
   const onZoomControlsRef = useRef(onZoomControls);
   onZoomControlsRef.current = onZoomControls;
-  // La cámara del Alien se abre desde el propio global handler del visor, que
-  // sólo se crea una vez: la referencia evita reconstruir el visor al cambiarla.
-  const onCameraClickRef = useRef(onCameraClick);
-  onCameraClickRef.current = onCameraClick;
 
   // Initialize viewer once
   useEffect(() => {
@@ -419,12 +414,11 @@ export function CesiumGlobe({
     handler.setInputAction((click: { position: Cartesian2 }) => {
       const picked = viewer.scene.pick(click.position);
       if (defined(picked) && picked.id?.properties) {
-        // Cámara del Alien: el marcador abre su directo en la pestaña UAP.
+        // Una cámara del Alien NO cambia de módulo al pulsarla: abre su ficha
+        // como cualquier otro marcador y el directo se pide desde dentro, para
+        // que el clic nunca saque al operador del globo antes de leer nada.
+        // `cameraId` viaja en el hotspot para que la ficha sepa qué abrir.
         const cameraId = picked.id.properties.cameraId?.getValue();
-        if (typeof cameraId === "string" && cameraId) {
-          onCameraClickRef.current?.(cameraId);
-          return;
-        }
         const idx = picked.id.properties.hotspotIndex?.getValue();
         if (idx !== undefined && HOTSPOT_DATA[idx]) {
           handleHotspotClick(HOTSPOT_DATA[idx]);
@@ -437,7 +431,8 @@ export function CesiumGlobe({
             handleHotspotClick({
               lat: parsed.lat, lon: parsed.lon,
               intensity: parsed.severity === "critical" ? 1 : 0.5,
-              color: TACTICAL_COLORS[parsed.category] || "#00FF41",
+              // Las cámaras conservan el rosa de su marcador en la ficha.
+              color: parsed.type === "camera" ? "#f472b6" : TACTICAL_COLORS[parsed.category] || "#00FF41",
               name: parsed.location, country: parsed.category?.toUpperCase() || "UAP",
               marketVolume: parsed.source || "Unknown", trend: parsed.date_reported || "",
               topTokens: [parsed.type || "unknown"], type: parsed.category || "uap",
@@ -445,6 +440,7 @@ export function CesiumGlobe({
               source: parsed.source || "Unknown",
               timestamp: parsed.date_reported || "LIVE",
               reliability: parsed.reliability || undefined,
+              ...(typeof cameraId === "string" && cameraId ? { cameraId } : {}),
             });
           } catch { /* ignore */ }
           return;
@@ -1637,7 +1633,7 @@ export function CesiumGlobe({
             description:
               `${camera.source} · ${camera.categoryLabel}` +
               (camera.approximate ? " · sede aproximada (la ficha da la región)" : "") +
-              " · pulsar para abrir el directo en la pestaña UAP",
+              " · pulsar para ver su ficha",
             type: "camera", severity: "low", source: camera.source,
             category: "intel", date_reported: "LIVE",
           }),

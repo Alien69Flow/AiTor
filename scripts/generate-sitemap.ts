@@ -14,6 +14,10 @@ interface SitemapEntry {
 const entries: SitemapEntry[] = [
   { path: "/", changefreq: "daily", priority: "1.0" },
   { path: "/auth", changefreq: "monthly", priority: "0.4" },
+  // Google revisa estas dos al publicar la app OAuth: si no están en el
+  // sitemap, solo se descubren por enlace.
+  { path: "/privacy", changefreq: "yearly", priority: "0.3" },
+  { path: "/terms", changefreq: "yearly", priority: "0.3" },
 ]
 
 function generateSitemap(list: SitemapEntry[]) {

@@ -4,6 +4,40 @@ No existe un mecanismo seguro para extraer el valor de un secreto ya guardado en
 Cloud o Supabase. Los valores deben rotarse en el proveedor original y configurarse de nuevo
 en el destino. No pegues claves en GitHub ni en el chat.
 
+## Modo en curso: dos proyectos a la vez (medido 2026-10-29)
+
+El proyecto heredado no se puede reconfigurar (no hay acceso al panel) y su proveedor de
+Google está roto **en origen**, no en el redirect:
+
+```bash
+curl -s "https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/authorize?provider=google"
+# 400 {"code":400,"error_code":"validation_failed","msg":"Unsupported provider: missing OAuth secret"}
+
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://pnyigikagdxqaogbiift.supabase.co/auth/v1/authorize?provider=google"
+# 302
+```
+
+Por eso el frontend usa **dos clientes** en `src/integrations/supabase/client.ts`:
+
+| Cliente | Proyecto | Para qué |
+| --- | --- | --- |
+| `authClient` | identidad (`VITE_AUTH_SUPABASE_*`) | login, sesión, filas del usuario (`user_credits`) |
+| `supabase` | datos (`VITE_DATA_SUPABASE_*`) | Edge Functions y filas públicas, **sin sesión** |
+
+Tres reglas que no se pueden romper:
+
+1. El token de sesión **nunca** viaja al proyecto de datos: lo firma el de identidad y su
+   gateway contesta 401. `functions.invoke` del cliente de datos va sólo con la clave anónima.
+2. Las funciones que necesitan saber quién eres (`verify-crypto-payment`, `verify-dao-holdings`,
+   `github-proxy`) se invocan con `authClient.functions.invoke` y se despliegan en el proyecto
+   de identidad, porque sólo él puede validar ese JWT.
+3. Las variables que Vercel ya tiene (`VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`)
+   cuentan como identidad. No hace falta tocar Vercel para que el login de Google funcione.
+
+Completar la migración = rellenar `VITE_DATA_SUPABASE_*` con el proyecto propio, después de
+`supabase db push` y del despliegue de las funciones. Ningún cambio de código.
+
 ## Situación actual (medida 2026-10-16)
 
 - Proyecto Supabase: `wkdtvrxavkhbifjtvvdw` (ya es del propietario). Las funciones Edge están

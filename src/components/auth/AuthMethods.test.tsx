@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { AuthMethods } from "./AuthMethods";
 
@@ -35,8 +35,10 @@ vi.mock("@/lib/auth-provider-status", () => ({
     state === "missing-secret" ? "sin configurar" : state === "disabled" ? "no activado" : null,
 }));
 
+// The login surface talks to the identity client, not to the data one: the
+// session is issued by the project that has the providers configured.
 vi.mock("@/integrations/supabase/client", () => ({
-  supabase: {
+  authClient: {
     auth: {
       onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })),
       getSession: vi.fn(async () => ({ data: { session: null } })),
@@ -78,7 +80,7 @@ vi.mock("sonner", () => ({
 }));
 
 /** Untyped handle over the mocked client, so expectations stay readable. */
-const auth = supabase.auth as unknown as Record<string, ReturnType<typeof vi.fn>>;
+const auth = authClient.auth as unknown as Record<string, ReturnType<typeof vi.fn>>;
 const toastError = vi.mocked(toast.error);
 const toastSuccess = vi.mocked(toast.success);
 

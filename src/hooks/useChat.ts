@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
-import { supabase } from "@/integrations/supabase/client";
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from "@/integrations/supabase/client";
 import { parseUsage, type TokenUsage } from "@/lib/neural-core-model";
 import { routeSkills } from "@/lib/ai-skills";
 import { AI_MODELS } from "@/lib/ai-models";
@@ -34,22 +34,14 @@ export interface Conversation {
 }
 
 const STORAGE_KEY = "aitor_chat_memory";
-// Use the project the auto-generated client points to — single source of truth.
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-// Public anon JWT for the Lovable Cloud project. Safe to embed (publishable).
-const FALLBACK_ANON =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8";
-const SUPABASE_KEY =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  FALLBACK_ANON;
 
+// URL and key come from the shared client so a project migration is one change
+// in one file, not five: this hook, the globe and the diagnostics panel used to
+// each carry their own copy of the project URL and anon JWT.
 if (import.meta.env.DEV) {
   console.log("[useChat] env loaded:", {
     url: SUPABASE_URL,
-    keyPrefix: SUPABASE_KEY.slice(0, 8),
+    keyPrefix: SUPABASE_PUBLISHABLE_KEY.slice(0, 8),
   });
 }
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
@@ -184,21 +176,18 @@ export function useChat() {
             // The gateway expects a JWT in Authorization. The publishable key
             // (`sb_publishable_*`) is not a JWT, so only use a real session token
             // or the anon JWT. Keep the publishable key in `apikey`.
-            // Chat edge function is public (verify_jwt=false). Always pass a
-            // bearer (session if logged in, otherwise anon JWT) so the
-            // gateway accepts the request.
-            const { data: sessionData } = await supabase.auth.getSession();
-            const bearer =
-              sessionData?.session?.access_token ||
-              SUPABASE_KEY ||
-              FALLBACK_ANON;
+            // The chat function is public (verify_jwt=false) and does not need
+            // to know who is asking, so the session token is deliberately NOT
+            // sent: it is signed by the identity project and this call goes to
+            // the data project, where its gateway would reject it.
+            const bearer = SUPABASE_PUBLISHABLE_KEY;
 
             const resp = await fetch(CHAT_URL, {
               method: "POST",
               headers: {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${bearer}`,
-                apikey: SUPABASE_KEY,
+                apikey: SUPABASE_PUBLISHABLE_KEY,
               },
               signal: controller.signal,
               body: JSON.stringify({

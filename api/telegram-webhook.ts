@@ -16,8 +16,13 @@ const MANUS_API_KEY = process.env.MANUS_API_KEY!;
 // Support optional webhook secret; if not set the endpoint accepts unsigned requests
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
 
-// Supabase de AiTor (función de chat existente)
-const SUPABASE_URL = 'https://wkdtvrxavkhbifjtvvdw.supabase.co';
+// Supabase de AiTor (función de chat existente). SUPABASE_URL manda cuando
+// existe, para poder mover las funciones de proyecto desde Vercel sin tocar
+// código; si no, se usa el proyecto en el que viven hoy.
+const SUPABASE_URL =
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  'https://wkdtvrxavkhbifjtvvdw.supabase.co';
 const SUPABASE_ANON_KEY =
   (process.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
   (process.env.VITE_SUPABASE_ANON_KEY as string) ||
@@ -30,6 +35,7 @@ const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 // La web abre la Mini App con `?startapp=web` y el terminal vuelve a la web con
 // `?source=telegram`; estos botones inline son la salida hacia la web desde el bot.
 type TelegramInlineButton = { text: string; url: string };
+type TelegramUpdate = { message?: { chat?: { id: number }; text?: string } };
 type TelegramReplyMarkup = { inline_keyboard: TelegramInlineButton[][] };
 
 const BRIDGE_KEYBOARD: TelegramReplyMarkup = {
@@ -45,6 +51,24 @@ const BRIDGE_KEYBOARD: TelegramReplyMarkup = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+function postTelegramMessage(
+  chatId: number,
+  text: string,
+  replyMarkup?: TelegramReplyMarkup,
+  parseMode?: "Markdown",
+) {
+  return fetch(`${TELEGRAM_API}/sendMessage`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      chat_id: chatId,
+      text,
+      ...(parseMode ? { parse_mode: parseMode } : {}),
+      ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+    }),
+  });
+}
+
 async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: TelegramReplyMarkup) {
   // Telegram has a 4096-character limit per message: split the original text
   // into 4000-char chunks so long AiTor answers arrive whole, not truncated.
@@ -52,16 +76,28 @@ async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: T
   const maxLen = 4000;
   const parts = text.match(new RegExp(`.{1,${maxLen}}`, "gs")) || [text];
   for (const [index, part] of parts.entries()) {
-    await fetch(`${TELEGRAM_API}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: part,
-        parse_mode: "Markdown",
-        ...(replyMarkup && index === 0 ? { reply_markup: replyMarkup } : {}),
-      }),
-    });
+    const markup = replyMarkup && index === 0 ? replyMarkup : undefined;
+    // The answer used to be fire-and-forget: when Telegram rejected the text
+    // (legacy Markdown chokes on unbalanced _ * ` [ in model output, 400
+    // "can't parse entities"), the user got nothing and the logs stayed clean.
+    let response = await postTelegramMessage(chatId, part, markup, "Markdown");
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      console.error("[telegram] sendMessage rechazado", response.status, detail.slice(0, 300));
+      if (response.status === 400) {
+        // Resend the same chunk as plain text: losing formatting is better than
+        // losing the answer.
+        response = await postTelegramMessage(chatId, part, markup);
+        if (!response.ok) {
+          const retryDetail = await response.text().catch(() => "");
+          console.error(
+            "[telegram] el reintento sin parse_mode también falló",
+            response.status,
+            retryDetail.slice(0, 300),
+          );
+        }
+      }
+    }
   }
 }
 
@@ -204,9 +240,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).send("Bot token not configured");
   }
 
-  const { message } = req.body || {};
+  // Vercel parses JSON bodies, but a request with a non-JSON content type
+  // arrives as a raw string. Unwrapping it here keeps "message is undefined"
+  // from being answered with a silent 200 OK that Telegram won't retry.
+  let body = req.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      console.error("[telegram] cuerpo no parseable como JSON");
+      return res.status(400).send("Bad Request");
+    }
+  }
 
-  if (!message || !message.chat || !message.text) {
+  const message = (body as TelegramUpdate | undefined)?.message;
+  if (!message?.chat?.id || typeof message.text !== "string") {
+    // Edits, joins, stickers…: acknowledge so Telegram stops retrying.
     return res.status(200).send("OK");
   }
 
@@ -250,6 +299,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         await sendTelegramMessage(
           chatId,
           'Necesito un texto para procesar. Ejemplo:\n/manus analiza las tendencias crypto de esta semana'
+        );
+        return res.status(200).send("OK");
+      }
+
+      if (!MANUS_API_KEY) {
+        console.error("[telegram] /manus sin MANUS_API_KEY configurada");
+        await sendTelegramMessage(
+          chatId,
+          "🛠 *Manus AI no está configurado*\n\nFalta `MANUS_API_KEY` en las variables de Vercel. Puedo responder aquí mientras tanto: escríbeme sin comando.",
         );
         return res.status(200).send("OK");
       }

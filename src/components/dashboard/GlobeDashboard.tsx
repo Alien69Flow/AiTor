@@ -39,7 +39,10 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
   const [feedOpen, setFeedOpen] = useState(true);
-  const [controlsOpen, setControlsOpen] = useState(false);
+  // Abierta por defecto: dentro viven la leyenda, las esferas de la Tierra y el
+  // diagnóstico. Cerrada, el globo parecía no tener capas atmosféricas porque
+  // no había forma de descubrirlas sin pulsar un icono sin etiqueta.
+  const [controlsOpen, setControlsOpen] = useState(true);
   const [paywallReason, setPaywallReason] = useState<string | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"]));
   const [envLayers, setEnvLayers] = useState<Set<EnvLayerKey>>(new Set(DEFAULT_ACTIVE_LAYERS));
@@ -144,7 +147,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
             gdeltEvents={intel.gdeltEvents} iss={intel.iss} ionosphere={intel.ionosphere}
             vanAllen={intel.vanAllen} solarWind={intel.solarWind}
-            cameras={camerasOnGlobe} onCameraClick={onOpenCamera} />
+            cameras={camerasOnGlobe} />
         </div>
 
         {cosmicScale !== null && <CosmicZoom initialScale={cosmicScale} onExit={exitCosmicZoom} />}
@@ -161,6 +164,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
         )}
 
         <GlobeOverlay selectedHotspot={selectedHotspot} onClose={() => setSelectedHotspot(null)}
+          onOpenCamera={onOpenCamera}
           spaceWeather={intel.spaceWeather} earthquakeCount={intel.earthquakes.length}
           nasaEventCount={intel.nasaEvents.length} conflictCount={CONFLICT_ZONES.length}
           wildfireCount={intel.fires.length} outageCount={outages.length}

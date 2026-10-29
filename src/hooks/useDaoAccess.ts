@@ -1,7 +1,7 @@
 import { useCallback, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 
 export interface HoldingsResult {
   tier: "oracle" | "quantum" | null;
@@ -26,7 +26,7 @@ export function useDaoAccess() {
       open();
       return;
     }
-    const { data: sessionData } = await supabase.auth.getSession();
+    const { data: sessionData } = await authClient.auth.getSession();
     if (!sessionData.session) {
       setError("Inicia sesión (social o wallet) para vincular el acceso a tu cuenta.");
       return;
@@ -36,7 +36,9 @@ export function useDaoAccess() {
       const nonce = crypto.randomUUID();
       const message = `Verificar holdings AlienFlowSpace DAO\nWallet: ${address}\nNonce: ${nonce}`;
       const signature = await signMessageAsync({ message, account: address as `0x${string}` });
-      const { data, error: fnError } = await supabase.functions.invoke("verify-dao-holdings", {
+      // Necesita saber quién eres, así que va al proyecto de identidad: el
+      // gateway del proyecto de datos no puede validar este token.
+      const { data, error: fnError } = await authClient.functions.invoke("verify-dao-holdings", {
         body: { address, message, signature },
       });
       if (fnError) throw new Error(fnError.message);

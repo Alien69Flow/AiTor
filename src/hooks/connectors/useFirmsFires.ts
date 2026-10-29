@@ -1,4 +1,5 @@
 import { safeFetchJson, usePolledConnector } from "@/lib/connectors";
+import { SUPABASE_URL } from "@/integrations/supabase/client";
 
 export interface FireDetection {
   id: string;
@@ -9,10 +10,6 @@ export interface FireDetection {
   acquired: string;
   satellite: string;
 }
-
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
 
 /**
  * NASA FIRMS (VIIRS) active fire detections, proxied server-side so the

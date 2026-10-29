@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database } from "lucide-react";
+import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
@@ -29,6 +29,11 @@ interface GlobeOverlayProps {
   wildfireCount?: number;
   outageCount?: number;
   criticalIntelCount?: number;
+  /**
+   * Sólo lo usan las fichas de cámara: el clic en el globo abre la ficha, y
+   * saltar al directo es una decisión explícita de quien la está leyendo.
+   */
+  onOpenCamera?: (cameraId: string) => void;
 }
 
 export function GlobeOverlay({
@@ -41,6 +46,7 @@ export function GlobeOverlay({
   wildfireCount = 0,
   outageCount = 0,
   criticalIntelCount = 0,
+  onOpenCamera,
 }: GlobeOverlayProps) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
@@ -149,7 +155,9 @@ export function GlobeOverlay({
       </div>
 
       {/* Detail Popup */}
-      {selectedHotspot && <CountryPopup hotspot={selectedHotspot} onClose={onClose} />}
+      {selectedHotspot && (
+        <CountryPopup hotspot={selectedHotspot} onClose={onClose} onOpenCamera={onOpenCamera} />
+      )}
     </>
   );
 }
@@ -157,9 +165,11 @@ export function GlobeOverlay({
 function CountryPopup({
   hotspot,
   onClose,
+  onOpenCamera,
 }: {
   hotspot: HotspotData;
   onClose?: () => void;
+  onOpenCamera?: (cameraId: string) => void;
 }) {
   const [uapCount, setUapCount] = useState(0);
 
@@ -259,6 +269,18 @@ function CountryPopup({
               </div>
             </div>
           </div>
+
+          {/* Cámaras: el directo es un botón, no el efecto del clic. */}
+          {hotspot.cameraId && onOpenCamera && (
+            <div className="px-4 pb-3">
+              <Button
+                onClick={() => onOpenCamera(hotspot.cameraId as string)}
+                className="h-8 w-full rounded-sm text-[10px] uppercase tracking-wider"
+              >
+                <Video className="w-3.5 h-3.5" /> Abrir directo de la cámara
+              </Button>
+            </div>
+          )}
 
           {/* Footer */}
           <div className="px-4 py-3 flex items-center justify-between border-t border-slate-700/25">

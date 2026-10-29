@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { parseUnits } from "viem";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 import { classifyError, track } from "@/lib/analytics";
 import {
   BILLING_CYCLES,
@@ -29,7 +29,7 @@ export function useCryptoCheckout() {
     async (cycle: BillingCycle, chain: PayChain, token: PayToken) => {
       setTxHash(null);
       track("checkout_started", { cycle, chain, token });
-      const { data: sessionData } = await supabase.auth.getSession();
+      const { data: sessionData } = await authClient.auth.getSession();
       if (!sessionData.session) {
         setStage("error");
         setMessage("Conecta tu wallet o inicia sesión para asociar el pago a tu cuenta.");
@@ -70,7 +70,9 @@ export function useCryptoCheckout() {
 
         setStage("verifying");
         setMessage("Verificando la transacción en la red…");
-        const { data, error } = await supabase.functions.invoke("verify-crypto-payment", {
+        // Acredita el pago al usuario de la sesión: sólo el proyecto de
+        // identidad puede validar ese JWT y escribir sus créditos.
+        const { data, error } = await authClient.functions.invoke("verify-crypto-payment", {
           body: { txHash: hash, chain, token, cycle, plan: "synapse", wallet: address },
         });
         if (error) throw new Error(error.message);

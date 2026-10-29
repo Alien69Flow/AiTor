@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { User, Session, type Provider } from "@supabase/supabase-js";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 
 /**
  * Every OAuth provider the login surfaces can offer, all of them through
@@ -77,7 +77,7 @@ export function useAuth() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    const { data: { subscription } } = authClient.auth.onAuthStateChange(
       (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
@@ -85,7 +85,7 @@ export function useAuth() {
       }
     );
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    authClient.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -95,7 +95,7 @@ export function useAuth() {
   }, []);
 
   const signIn = useCallback(async (email: string, password: string, captchaToken?: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
+    const { error } = await authClient.auth.signInWithPassword({
       email,
       password,
       options: captchaToken ? { captchaToken } : undefined,
@@ -105,7 +105,7 @@ export function useAuth() {
 
   const signUp = useCallback(
     async (email: string, password: string, redirectTo?: string, captchaToken?: string) => {
-      const { error } = await supabase.auth.signUp({
+      const { error } = await authClient.auth.signUp({
         email,
         password,
         options: {
@@ -130,7 +130,7 @@ export function useAuth() {
   const nativeOAuth = useCallback(
     async (provider: string, redirectTo?: string) => {
       const target = redirectTo || window.location.origin;
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { data, error } = await authClient.auth.signInWithOAuth({
         // auth-js 2.87 still types the older provider ids, but GoTrue also
         // accepts `x` and `custom:*`, which this client just forwards.
         provider: provider as Provider,
@@ -188,7 +188,7 @@ export function useAuth() {
    */
   const sendEmailOtp = useCallback(
     async (email: string, redirectTo?: string, captchaToken?: string) => {
-      const { error } = await supabase.auth.signInWithOtp({
+      const { error } = await authClient.auth.signInWithOtp({
         email,
         options: {
           emailRedirectTo: redirectTo || window.location.origin,
@@ -202,7 +202,7 @@ export function useAuth() {
   );
 
   const verifyEmailCode = useCallback(async (email: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({ email, token, type: "email" });
+    const { error } = await authClient.auth.verifyOtp({ email, token, type: "email" });
     return { error };
   }, []);
 
@@ -212,7 +212,7 @@ export function useAuth() {
    * call answers with an explicit error that the UI shows as it comes.
    */
   const sendPhoneCode = useCallback(async (phone: string, captchaToken?: string) => {
-    const { error } = await supabase.auth.signInWithOtp({
+    const { error } = await authClient.auth.signInWithOtp({
       phone,
       options: captchaToken ? { captchaToken } : undefined,
     });
@@ -220,7 +220,7 @@ export function useAuth() {
   }, []);
 
   const verifyPhoneCode = useCallback(async (phone: string, token: string) => {
-    const { error } = await supabase.auth.verifyOtp({ phone, token, type: "sms" });
+    const { error } = await authClient.auth.verifyOtp({ phone, token, type: "sms" });
     return { error };
   }, []);
 
@@ -239,19 +239,19 @@ export function useAuth() {
     async (credentials?: {
       options?: { mediation?: CredentialMediationRequirement; captchaToken?: string };
     }) => {
-      const { error } = await supabase.auth.signInWithPasskey(credentials);
+      const { error } = await authClient.auth.signInWithPasskey(credentials);
       return { error };
     },
     [],
   );
 
   const registerPasskey = useCallback(async () => {
-    const { error } = await supabase.auth.registerPasskey();
+    const { error } = await authClient.auth.registerPasskey();
     return { error };
   }, []);
 
   const signOut = useCallback(async () => {
-    const { error } = await supabase.auth.signOut();
+    const { error } = await authClient.auth.signOut();
     return { error };
   }, []);
 

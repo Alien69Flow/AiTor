@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
 import { TIER_RANK, type Tier } from "@/lib/globe-layers";
 
 const DB_TO_TIER: Record<string, Tier> = {
@@ -20,13 +20,15 @@ export function useTier() {
     let cancelled = false;
 
     const load = async () => {
-      const { data: userData } = await supabase.auth.getUser();
+      // Créditos y sesión viven juntos: se leen del proyecto de identidad, que
+      // es el único que puede validar este JWT (RLS: sólo tu propia fila).
+      const { data: userData } = await authClient.auth.getUser();
       const user = userData?.user;
       if (!user) {
         if (!cancelled) setState({ tier: "signal", loading: false, authed: false });
         return;
       }
-      const { data } = await supabase
+      const { data } = await authClient
         .from("user_credits")
         .select("paid_tier")
         .eq("user_id", user.id)
@@ -37,7 +39,7 @@ export function useTier() {
     };
 
     load();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => { load(); });
+    const { data: sub } = authClient.auth.onAuthStateChange(() => { load(); });
     return () => { cancelled = true; sub.subscription.unsubscribe(); };
   }, []);
 

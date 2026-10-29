@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import BBOXES from "@/integrations/worldmonitor/shared/country-bboxes.json";
+import {
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY as KEY,
+} from "@/integrations/supabase/client";
 
 export interface OutageEvent {
   code: string;
@@ -9,14 +13,6 @@ export interface OutageEvent {
   lat: number;
   lon: number;
 }
-
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-const KEY =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  "";
 
 /** Raw row of the `globe-feeds?feed=outages` edge function. */
 interface RawOutage {

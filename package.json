@@ -56,7 +56,7 @@
     "preview": "vite preview",
     "edge:check": "node scripts/check-edge-functions.mjs",
     "functions:retire": "node scripts/retire-functions.mjs",
-    "edge:deploy": "supabase functions deploy --project-ref wkdtvrxavkhbifjtvvdw"
+    "edge:deploy": "supabase functions deploy --project-ref pnyigikagdxqaogbiift"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

@@ -56,8 +56,6 @@ export interface HybridGlobeProps {
   vanAllen?: VanAllenBelts | null;
   solarWind?: SolarWind | null;
   cameras?: PlacedCamera[];
-  /** Pulsar una cámara del Alien en el globo: abre su directo en esa pestaña. */
-  onCameraClick?: (cameraId: string) => void;
 }
 
 function GlobeFallback() {
@@ -97,7 +95,6 @@ export function HybridGlobe({
   vanAllen = null,
   solarWind = null,
   cameras = [],
-  onCameraClick,
 }: HybridGlobeProps) {
   const isMobile = useIsMobile();
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; alt: number } | null>(null);
@@ -149,7 +146,6 @@ export function HybridGlobe({
           vanAllen={layers.has("vanAllen") ? vanAllen : null}
           solarWind={layers.has("heliosphere") ? solarWind : null}
           cameras={cameras}
-          onCameraClick={onCameraClick}
         />
       </Suspense>
     </div>
