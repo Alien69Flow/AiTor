@@ -14,7 +14,7 @@ import {
   PolylineGlowMaterialProperty,
   Cartesian2,
   ArcGisMapServerImageryProvider,
-  IonImageryProvider,
+  GeographicTilingScheme,
   EllipsoidTerrainProvider,
   CallbackProperty,
   SkyBox,
@@ -392,8 +392,17 @@ export function CesiumGlobe({
         viewer.imageryLayers.lowerToBottom(baseLayer);
 
         // 3. Night lights SECOND (above base, below weather overlays).
+        //
+        // Antes se pedía el asset 3812 de Cesium Ion, pero el token está en
+        // blanco (`Ion.defaultAccessToken = ""`), así que Ion contestaba 401 y
+        // el globo se quedaba sin luces nocturnas. NASA GIBS sirve la misma
+        // capa (VIIRS City Lights) con CORS abierto y sin credencial.
         try {
-          const nlProvider = await IonImageryProvider.fromAssetId(3812);
+          const nlProvider = new UrlTemplateImageryProvider({
+            url: "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_CityLights_2012/default/500m/{z}/{y}/{x}.jpeg",
+            tilingScheme: new GeographicTilingScheme(),
+            maximumLevel: 8,
+          });
           if (viewer.isDestroyed()) return;
           const nl = viewer.imageryLayers.addImageryProvider(nlProvider);
           nl.dayAlpha = 0.0;
