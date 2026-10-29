@@ -1,35 +1,35 @@
 /**
  * `POST /api/mcp` — servidor MCP de AI-TOR en Vercel.
  *
- * Acepta los dos cuerpos que ya describe `src/lib/mcp/http.ts`:
+ * Acepta dos cuerpos:
  *
- *   { "jsonrpc": "2.0", "method": "tools/list" }  → protocolo MCP
+ *   { "jsonrpc": "2.0", "method": "tools/list" }  ó  { "method": "tools/call", "params": {…} }
  *   { "prompt": "¿dónde está la ISS ahora?" }     → agente con herramientas
  *
+ * El cliente del chat llamaba a esta ruta desde el principio y no existía: solo
+ * había montaje en el backend Node, que no está desplegado, así que en
+ * producción el botón de herramientas MCP daba 404.
+ *
+ * **Este archivo no importa nada del proyecto a propósito.** La primera versión
+ * montaba `src/lib/mcp/…` y el runtime de Vercel devolvió
+ * `FUNCTION_INVOCATION_FAILED`, el mismo fallo que documenta
+ * `api/predictions.ts`. El código de `src/lib/mcp` sigue siendo la referencia
+ * para el navegador y para el backend Node; aquí va la copia ejecutable con las
+ * mismas tres herramientas y los mismos topes.
+ *
  * Reglas que no se negocian:
- *
- *  - La identidad sale del `Bearer`, verificado contra el proyecto de
- *    **identidad** (el que firma la sesión del navegador). El plan se lee de
- *    `profiles.tier` con ese mismo token: nunca se acepta un `tier` del cuerpo.
- *  - `db.select` va con el token del llamante, no con la service role, así que
- *    el RLS decide qué filas ve el modelo.
+ *  - La identidad sale del `Bearer`, verificado contra el proyecto que firma la
+ *    sesión. El plan se lee de `profiles.tier` con ese token; nunca del cuerpo.
+ *  - `db.select` consulta con el token del llamante, así que el RLS decide qué
+ *    filas ve el modelo.
  *  - `GEMINI_API_KEY` vive solo aquí; el navegador recibe texto, nunca la clave.
- *
- * Hasta ahora el cliente del chat apuntaba a `/api/mcp` y esa ruta no existía:
- * el botón de herramientas MCP funcionaba en local contra el backend Node, pero
- * en producción respondía 404. Este archivo es el punto de montaje que faltaba.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createAiTorMcpServer } from "../src/lib/mcp/index";
-import { createMcpHttpHandler, type McpCaller } from "../src/lib/mcp/http";
-import { createGeminiClient, createRateLimiter, runToolLoop } from "../src/lib/mcp/gemini";
-import type { McpDatabase } from "../src/lib/mcp/registry";
-import type { McpTier } from "../src/lib/mcp/types";
+import * as satellite from "satellite.js";
 
-/** El bucle de herramientas puede encadenar varias rondas; 10 s no bastan. */
 export const maxDuration = 60;
 
-// Proyecto de identidad: es el que firma la sesión y el que tiene `profiles`.
+// Proyecto de identidad: firma la sesión y tiene `profiles`.
 const AUTH_URL =
   process.env.AUTH_SUPABASE_URL ||
   process.env.VITE_AUTH_SUPABASE_URL ||
@@ -41,20 +41,105 @@ const AUTH_KEY =
   "sb_publishable_c4VVYw8uPzt7-24KvOre6A_91csa5Xp";
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
-const TIERS = new Set<string>(["free", "pro", "dao"]);
+type Tier = "free" | "pro" | "dao";
+const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, dao: 2 };
 
-/** Un cubo de cuota por usuario; el mapa se vacía si crece demasiado. */
-const limiters = new Map<string, ReturnType<typeof createRateLimiter>>();
+interface ToolDefinition {
+  name: string;
+  title: string;
+  description: string;
+  minTier: Tier;
+  inputSchema: Record<string, unknown>;
+}
 
-function limiterFor(userId: string) {
-  let limiter = limiters.get(userId);
-  if (!limiter) {
-    limiter = createRateLimiter();
-    limiters.set(userId, limiter);
-    if (limiters.size > 5_000) limiters.clear();
-  }
-  return limiter;
+interface ToolResult {
+  content: { type: "text"; text: string }[];
+  isError?: boolean;
+  structuredContent?: Record<string, unknown>;
+}
+
+const TOOLS: ToolDefinition[] = [
+  {
+    name: "telemetry.satellites",
+    title: "Posiciones de satélites",
+    description:
+      "Posición actual (latitud, longitud, altitud) de los satélites del catálogo CelesTrak. " +
+      'Con `match` se filtra por nombre, p. ej. "ISS" o "STARLINK".',
+    minTier: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        group: { type: "string", enum: ["stations", "active"], default: "stations" },
+        match: { type: "string", description: "Filtro por nombre." },
+        limit: { type: "integer", default: 10, minimum: 1, maximum: 50 },
+      },
+    },
+  },
+  {
+    name: "osint.events",
+    title: "Eventos OSINT",
+    description:
+      "Titulares geolocalizados de GDELT con fuente, enlace y tono (-100 a +100). " +
+      "Es la misma señal que pinta el globo.",
+    minTier: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Consulta GDELT." },
+        timespan: { type: "string", enum: ["1h", "6h", "24h", "7d"], default: "24h" },
+        limit: { type: "integer", default: 15, minimum: 1, maximum: 50 },
+      },
+    },
+  },
+  {
+    name: "db.select",
+    title: "Leer mis datos",
+    description:
+      "Lee tu perfil y tus créditos. Sólo devuelve filas que tu sesión puede ver según RLS.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        table: { type: "string", enum: ["profiles", "user_credits"] },
+        columns: { type: "string" },
+        filters: { type: "object" },
+        limit: { type: "integer", default: 10, minimum: 1, maximum: 50 },
+      },
+      required: ["table"],
+    },
+  },
+];
+
+const READABLE_TABLES: Record<string, string[]> = {
+  profiles: ["id", "display_name", "tier", "created_at", "updated_at"],
+  user_credits: ["user_id", "paid_tier", "used", "updated_at"],
+};
+
+const GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc";
+const TLE_URL = {
+  stations: "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle",
+  active: "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle",
+} as const;
+
+interface Caller {
+  userId: string;
+  token: string;
+  tier: Tier;
+}
+
+function json(body: unknown, status = 200) {
+  return {
+    status,
+    headers: {
+      "content-type": "application/json",
+      "access-control-allow-origin": "*",
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "POST, OPTIONS",
+    },
+    body: JSON.stringify(body),
+  };
 }
 
 async function verifiedUserId(token: string): Promise<string | null> {
@@ -71,99 +156,494 @@ async function verifiedUserId(token: string): Promise<string | null> {
   }
 }
 
-/** Filas del propio usuario: el token del llamante es la única credencial. */
-function databaseFor(token: string): McpDatabase {
-  return {
-    async select(table, columns, limit, filters) {
-      const url = new URL(`${AUTH_URL}/rest/v1/${table}`);
-      url.searchParams.set("select", columns);
-      url.searchParams.set("limit", String(limit));
-      for (const [column, value] of Object.entries(filters)) {
-        url.searchParams.set(column, `eq.${value}`);
-      }
-      const response = await fetch(url, {
-        headers: { apikey: AUTH_KEY, Authorization: `Bearer ${token}` },
-        signal: AbortSignal.timeout(10_000),
-      });
-      if (!response.ok) throw new Error(`Supabase respondió ${response.status} en ${table}`);
-      const rows = (await response.json()) as Record<string, unknown>[];
-      return Array.isArray(rows) ? rows : [];
-    },
-  };
+/** Filas del propio usuario. El token del llamante es la única credencial. */
+async function selectRows(
+  token: string,
+  table: string,
+  columns: string,
+  limit: number,
+  filters: Record<string, string>,
+): Promise<Record<string, unknown>[]> {
+  const url = new URL(`${AUTH_URL}/rest/v1/${table}`);
+  url.searchParams.set("select", columns);
+  url.searchParams.set("limit", String(limit));
+  for (const [column, value] of Object.entries(filters)) {
+    url.searchParams.set(column, `eq.${value}`);
+  }
+  const response = await fetch(url, {
+    headers: { apikey: AUTH_KEY, Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`Supabase respondió ${response.status} en ${table}`);
+  const rows = (await response.json()) as Record<string, unknown>[];
+  return Array.isArray(rows) ? rows : [];
 }
 
-async function tierOf(userId: string, db: McpDatabase): Promise<McpTier> {
+async function resolveCaller(authorization: string | undefined): Promise<Caller | null> {
+  if (!authorization?.startsWith("Bearer ")) return null;
+  const token = authorization.slice("Bearer ".length).trim();
+  if (!token) return null;
+  const userId = await verifiedUserId(token);
+  if (!userId) return null;
+
+  let tier: Tier = "free";
   try {
-    const rows = await db.select("profiles", "tier", 1, { id: userId });
-    const tier = rows[0]?.tier;
-    return typeof tier === "string" && TIERS.has(tier) ? (tier as McpTier) : "free";
+    const rows = await selectRows(token, "profiles", "tier", 1, { id: userId });
+    const value = rows[0]?.tier;
+    if (value === "pro" || value === "dao") tier = value;
   } catch {
     // Sin tabla o sin permiso de lectura el plan es el gratuito: un fallo de
     // lectura nunca asciende a nadie.
-    return "free";
   }
+  return { userId, token, tier };
 }
 
-const handle = createMcpHttpHandler({
-  server: createAiTorMcpServer(),
-  resolveCaller: async (request) => {
-    const header = request.headers.get("authorization");
-    if (!header?.startsWith("Bearer ")) return null;
-    const token = header.slice("Bearer ".length).trim();
-    if (!token) return null;
+function asInt(value: unknown, fallback: number, min: number, max: number): number {
+  const parsed = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, Math.trunc(parsed)));
+}
 
-    const userId = await verifiedUserId(token);
-    if (!userId) return null;
+function ok(payload: Record<string, unknown>): ToolResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify(payload) }],
+    structuredContent: payload,
+  };
+}
 
-    const db = databaseFor(token);
-    return { userId, tier: await tierOf(userId, db), db } satisfies McpCaller;
-  },
-  agent: async (prompt, caller: McpCaller) => {
-    if (!GEMINI_KEY) {
-      throw new Error("GEMINI_API_KEY no está configurada en el despliegue");
-    }
-    const server = createAiTorMcpServer({ db: caller.db });
-    const result = await runToolLoop({
-      client: createGeminiClient({ apiKey: GEMINI_KEY }),
-      server,
-      context: { tier: caller.tier, db: caller.db, fetch },
-      prompt,
-      // La cuota es por identidad verificada, no por plan ni por pregunta.
-      limiter: limiterFor(caller.userId ?? "sin-identidad"),
-      systemInstruction:
-        "Eres el operador de AI-TOR. Usa las herramientas cuando necesites telemetría " +
-        "orbital o eventos OSINT, y cita siempre la fuente y la hora del dato. Si una " +
-        "herramienta falla, explícalo en vez de estimar cifras.",
-    });
-    return { answer: result.text, toolCalls: result.toolCalls };
-  },
-});
-
-function toHeaders(headers: VercelRequest["headers"]): Headers {
-  const out = new Headers();
-  for (const [key, value] of Object.entries(headers)) {
-    if (typeof value === "string") out.set(key, value);
-    else if (Array.isArray(value)) out.set(key, value.join(", "));
+function parseTleText(text: string): { name: string; line1: string; line2: string }[] {
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const out: { name: string; line1: string; line2: string }[] = [];
+  for (let i = 0; i + 2 < lines.length; i += 3) {
+    if (!lines[i + 1].startsWith("1 ") || !lines[i + 2].startsWith("2 ")) continue;
+    out.push({ name: lines[i], line1: lines[i + 1], line2: lines[i + 2] });
   }
   return out;
 }
 
-export default async function mcp(req: VercelRequest, res: VercelResponse) {
-  const host = req.headers.host ?? "localhost";
-  const url = `https://${host}${req.url ?? "/api/mcp"}`;
+type ParsedTle = { name: string; line1: string; line2: string };
 
-  const request = new Request(url, {
-    method: req.method ?? "POST",
-    headers: toHeaders(req.headers),
-    body:
-      req.method === "GET" || req.method === "HEAD"
-        ? undefined
-        : JSON.stringify(req.body ?? {}),
+function positionOf(tle: ParsedTle, date: Date): { lat: number; lon: number; altKm: number } | null {
+  try {
+    const satrec = satellite.twoline2satrec(tle.line1, tle.line2);
+    if (!satrec || (satrec as { error?: number }).error) return null;
+    const pv = satellite.propagate(satrec, date);
+    if (!pv || typeof pv.position === "boolean" || !pv.position) return null;
+    const geo = satellite.eciToGeodetic(
+      pv.position as satellite.EciVec3<number>,
+      satellite.gstime(date),
+    );
+    const lat = satellite.degreesLat(geo.latitude);
+    const lon = satellite.degreesLong(geo.longitude);
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+    return { lat, lon, altKm: geo.height };
+  } catch {
+    return null;
+  }
+}
+
+async function runSatellites(args: Record<string, unknown>): Promise<ToolResult> {
+  const group = args.group === "active" ? "active" : "stations";
+  const match = typeof args.match === "string" ? args.match.trim().toUpperCase() : "";
+  const limit = asInt(args.limit, 10, 1, 50);
+
+  const response = await fetch(TLE_URL[group], { signal: AbortSignal.timeout(12_000) });
+  if (!response.ok) throw new Error(`CelesTrak respondió ${response.status}`);
+
+  const catalogue = parseTleText(await response.text());
+  if (catalogue.length === 0) throw new Error("CelesTrak devolvió un catálogo vacío");
+
+  const now = new Date();
+  const selected = (match ? catalogue.filter((tle) => tle.name.toUpperCase().includes(match)) : catalogue)
+    .slice(0, limit);
+
+  const satellites = selected
+    .map((tle) => {
+      const position = positionOf(tle, now);
+      if (!position) return null;
+      return {
+        name: tle.name,
+        lat: Number(position.lat.toFixed(4)),
+        lon: Number(position.lon.toFixed(4)),
+        altKm: Number(position.altKm.toFixed(1)),
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+  return ok({
+    source: "celestrak.org",
+    group,
+    at: now.toISOString(),
+    catalogSize: catalogue.length,
+    satellites,
   });
+}
 
-  const response = await handle(request);
+async function runOsint(args: Record<string, unknown>): Promise<ToolResult> {
+  const query =
+    typeof args.query === "string" && args.query.trim()
+      ? args.query.trim()
+      : "(conflict OR strike OR missile OR sanctions OR election OR market OR inflation OR crypto OR UAP OR satellite)";
+  const timespan = ["1h", "6h", "24h", "7d"].includes(String(args.timespan))
+    ? String(args.timespan)
+    : "24h";
+  const limit = asInt(args.limit, 15, 1, 50);
 
-  res.status(response.status);
-  response.headers.forEach((value, key) => res.setHeader(key, value));
-  res.send(await response.text());
+  const url =
+    `${GDELT_DOC}?query=${encodeURIComponent(query)}` +
+    `&mode=artlist&format=json&sort=hybridrel&timespan=${timespan}&maxrecords=${limit * 2}`;
+
+  const response = await fetch(url, { signal: AbortSignal.timeout(14_000) });
+  if (response.status === 429) {
+    throw new Error("GDELT está limitando peticiones (429); reintenta en unos segundos");
+  }
+  if (!response.ok) throw new Error(`GDELT respondió ${response.status}`);
+
+  const payload = (await response.json()) as {
+    articles?: { title?: string; url?: string; domain?: string; seendate?: string; tone?: string | number }[];
+  };
+
+  const articles = (payload.articles ?? [])
+    .filter((article) => (article.title ?? "").trim().length > 8)
+    .slice(0, limit)
+    .map((article) => {
+      const stamp = article.seendate ?? "";
+      const date =
+        stamp.length >= 13
+          ? new Date(
+              `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}T` +
+                `${stamp.slice(9, 11)}:${stamp.slice(11, 13)}:00Z`,
+            )
+          : new Date(0);
+      const rawTone =
+        typeof article.tone === "string" ? Number(article.tone.split(",")[0]) : Number(article.tone);
+      return {
+        title: (article.title ?? "").trim(),
+        source: article.domain ?? "GDELT",
+        url: article.url ?? "https://www.gdeltproject.org",
+        timestamp: Number.isNaN(date.getTime()) ? new Date(0).toISOString() : date.toISOString(),
+        tone: Number.isFinite(rawTone) ? rawTone : null,
+      };
+    });
+
+  return ok({ source: "gdeltproject.org", timespan, count: articles.length, articles });
+}
+
+async function runDbSelect(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
+  const table = String(args.table ?? "");
+  const allowed = READABLE_TABLES[table];
+  if (!allowed) throw new Error(`Tabla no permitida: ${table}`);
+
+  const requestedColumns =
+    typeof args.columns === "string" && args.columns.trim()
+      ? args.columns.split(",").map((column) => column.trim()).filter(Boolean)
+      : [...allowed];
+  const unknown = requestedColumns.filter((column) => !allowed.includes(column));
+  if (unknown.length > 0) {
+    throw new Error(`Columnas no permitidas en ${table}: ${unknown.join(", ")}`);
+  }
+
+  const filters: Record<string, string> = {};
+  const raw = args.filters;
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (!allowed.includes(key)) throw new Error(`No se puede filtrar ${table} por ${key}`);
+      if (value === null || value === undefined) continue;
+      filters[key] = String(value);
+    }
+  }
+
+  const limit = asInt(args.limit, 10, 1, 50);
+  const rows = await selectRows(caller.token, table, requestedColumns.join(","), limit, filters);
+  return ok({ table, columns: requestedColumns, count: rows.length, rows });
+}
+
+async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  caller: Caller,
+): Promise<ToolResult> {
+  const tool = TOOLS.find((candidate) => candidate.name === name);
+  if (!tool) throw new Error(`Herramienta desconocida: ${name}`);
+  if (TIER_RANK[caller.tier] < TIER_RANK[tool.minTier]) {
+    throw new Error(`La herramienta ${name} requiere plan ${tool.minTier}`);
+  }
+
+  try {
+    if (name === "telemetry.satellites") return await runSatellites(args);
+    if (name === "osint.events") return await runOsint(args);
+    return await runDbSelect(args, caller);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Error de la herramienta";
+    // Igual que el registro local: el fallo se devuelve como contenido para que
+    // el modelo lo explique, no como excepción de protocolo.
+    return { content: [{ type: "text", text: JSON.stringify({ error: message }) }], isError: true };
+  }
+}
+
+/* ------------------------------ protocolo ------------------------------ */
+
+function handleJsonRpc(
+  body: { id?: string | number | null; method?: string; params?: Record<string, unknown> },
+  caller: Caller,
+) {
+  const id = body.id ?? null;
+  const visible = TOOLS.filter((tool) => TIER_RANK[tool.minTier] <= TIER_RANK[caller.tier]);
+
+  switch (body.method) {
+    case "initialize":
+      return json({
+        jsonrpc: "2.0",
+        id,
+        result: {
+          protocolVersion: "2024-11-05",
+          serverInfo: { name: "aitor-mcp", version: "1.0.0" },
+          capabilities: { tools: {} },
+        },
+      });
+    case "ping":
+      return json({ jsonrpc: "2.0", id, result: {} });
+    case "tools/list":
+      return json({ jsonrpc: "2.0", id, result: { tools: visible } });
+    case "tools/call": {
+      const name = String(body.params?.name ?? "");
+      const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
+      return callTool(name, args, caller).then((result) =>
+        json({ jsonrpc: "2.0", id, result }),
+      );
+    }
+    default:
+      return Promise.resolve(
+        json({ jsonrpc: "2.0", id, error: { code: -32601, message: `Método no soportado: ${body.method}` } }),
+      );
+  }
+}
+
+/* -------------------------------- gemini -------------------------------- */
+
+const NOT_A_CHAT_MODEL = /embedding|imagen|image|tts|veo|robotics|vision|learnlm/i;
+
+function pickModel(names: string[]): string | null {
+  const usable = names
+    .map((name) => name.replace(/^models\//, ""))
+    .filter((name) => !NOT_A_CHAT_MODEL.test(name));
+  if (usable.length === 0) return null;
+  const score = (name: string) => {
+    let value = 0;
+    if (/flash/i.test(name)) value += 4;
+    if (/lite/i.test(name)) value += 1;
+    if (/preview|exp/i.test(name)) value -= 2;
+    const version = /gemini-(\d+)(?:\.(\d+))?/i.exec(name);
+    if (version) value += Number(version[1]) * 2 + Number(version[2] ?? 0) / 10;
+    return value;
+  };
+  return usable.sort((a, b) => score(b) - score(a))[0] ?? null;
+}
+
+const schemaTypes: Record<string, string> = {
+  string: "STRING",
+  number: "NUMBER",
+  integer: "INTEGER",
+  boolean: "BOOLEAN",
+  array: "ARRAY",
+  object: "OBJECT",
+};
+
+function toGeminiSchema(property: Record<string, unknown>): Record<string, unknown> {
+  const schema: Record<string, unknown> = { type: schemaTypes[String(property.type)] ?? "STRING" };
+  if (property.description) schema.description = property.description;
+  if (property.enum) schema.enum = property.enum;
+  return schema;
+}
+
+function geminiTools(tools: ToolDefinition[]) {
+  return [
+    {
+      functionDeclarations: tools.map((tool) => {
+        const properties = (tool.inputSchema.properties ?? {}) as Record<string, Record<string, unknown>>;
+        const parameters: Record<string, unknown> = {
+          type: "OBJECT",
+          properties: Object.fromEntries(
+            Object.entries(properties).map(([key, value]) => [key, toGeminiSchema(value)]),
+          ),
+        };
+        if (Array.isArray(tool.inputSchema.required) && tool.inputSchema.required.length) {
+          parameters.required = tool.inputSchema.required;
+        }
+        return { name: tool.name, description: tool.description, parameters };
+      }),
+    },
+  ];
+}
+
+/** Un modelo Flash utilizable; se descubre para no fijar uno que caduque. */
+async function resolveModel(): Promise<string> {
+  const response = await fetch(`${GEMINI_BASE}/models`, {
+    headers: { "x-goog-api-key": GEMINI_KEY },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new Error(`Gemini /models respondió ${response.status}`);
+  const payload = (await response.json()) as {
+    models?: { name: string; supportedGenerationMethods?: string[] }[];
+  };
+  const names = (payload.models ?? [])
+    .filter((model) => (model.supportedGenerationMethods ?? []).includes("generateContent"))
+    .map((model) => model.name);
+  const chosen = pickModel(names);
+  if (!chosen) throw new Error("La cuenta no expone ningún modelo de chat");
+  return chosen;
+}
+
+interface GeminiPart {
+  text?: string;
+  functionCall?: { name?: string; args?: Record<string, unknown> };
+  functionResponse?: { name: string; response: Record<string, unknown> };
+}
+
+async function generate(model: string, body: Record<string, unknown>) {
+  const response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_KEY },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Gemini ${response.status}: ${detail.slice(0, 200)}`);
+  }
+  const payload = (await response.json()) as {
+    candidates?: { content?: { role?: string; parts?: GeminiPart[] } }[];
+  };
+  const content = payload.candidates?.[0]?.content;
+  if (!content?.parts?.length) throw new Error("Gemini devolvió una respuesta sin partes");
+  return content.parts;
+}
+
+const MAX_ROUNDS = 3;
+
+async function runAgent(prompt: string, caller: Caller) {
+  const model = await resolveModel();
+  const visible = TOOLS.filter((tool) => TIER_RANK[tool.minTier] <= TIER_RANK[caller.tier]);
+  const contents: { role: string; parts: GeminiPart[] }[] = [{ role: "user", parts: [{ text: prompt }] }];
+  const toolCalls: { name: string; args: Record<string, unknown>; isError: boolean }[] = [];
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const body: Record<string, unknown> = {
+      contents,
+      tools: geminiTools(visible),
+      systemInstruction: {
+        parts: [
+          {
+            text:
+              "Eres el operador de AI-TOR. Usa las herramientas cuando necesites telemetría " +
+              "orbital o eventos OSINT, y cita siempre la fuente y la hora del dato. Si una " +
+              "herramienta falla, explícalo en vez de estimar cifras.",
+          },
+        ],
+      },
+    };
+
+    const parts = await generate(model, body);
+    const calls = parts.filter((part) => part.functionCall?.name);
+
+    if (calls.length === 0) {
+      return {
+        answer: parts.map((part) => part.text ?? "").join("").trim(),
+        toolCalls,
+        model,
+      };
+    }
+
+    contents.push({ role: "model", parts });
+    const responses: GeminiPart[] = [];
+
+    for (const part of calls) {
+      const name = part.functionCall?.name as string;
+      const args = part.functionCall?.args ?? {};
+      const result = await callTool(name, args, caller);
+      toolCalls.push({ name, args, isError: result.isError === true });
+      responses.push({
+        functionResponse: {
+          name,
+          response: result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+        },
+      });
+    }
+
+    contents.push({ role: "user", parts: responses });
+  }
+
+  return { answer: "Se agotaron las rondas de herramientas sin respuesta final.", toolCalls, model };
+}
+
+/* ------------------------- cuota por usuario ------------------------- */
+
+const BUCKETS = new Map<string, number[]>();
+
+function withinQuota(userId: string): boolean {
+  const now = Date.now();
+  const hits = (BUCKETS.get(userId) ?? []).filter((at) => now - at < 60_000);
+  if (hits.length >= 10) {
+    BUCKETS.set(userId, hits);
+    return false;
+  }
+  hits.push(now);
+  BUCKETS.set(userId, hits);
+  if (BUCKETS.size > 5_000) BUCKETS.clear();
+  return true;
+}
+
+/* ------------------------------- handler ------------------------------- */
+
+export default async function mcp(req: VercelRequest, res: VercelResponse) {
+  const send = (result: { status: number; headers: Record<string, string>; body: string }) => {
+    res.status(result.status);
+    for (const [key, value] of Object.entries(result.headers)) res.setHeader(key, value);
+    res.send(result.body);
+  };
+
+  if (req.method === "OPTIONS") {
+    res.status(204);
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-headers", "authorization, content-type");
+    res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+    return res.end();
+  }
+  if (req.method !== "POST") return send(json({ error: "Usa POST" }, 405));
+
+  const caller = await resolveCaller(req.headers.authorization);
+  if (!caller) return send(json({ error: "No autorizado" }, 401));
+
+  const body = (typeof req.body === "string" ? safeParse(req.body) : req.body) as
+    | { id?: string | number | null; method?: string; params?: Record<string, unknown>; prompt?: unknown }
+    | null;
+
+  if (!body || typeof body !== "object") return send(json({ error: "El cuerpo debe ser JSON" }, 400));
+
+  if (typeof body.prompt === "string" && body.prompt.trim()) {
+    if (!GEMINI_KEY) {
+      return send(json({ error: "GEMINI_API_KEY no está configurada en el despliegue" }, 501));
+    }
+    if (!withinQuota(caller.userId)) {
+      return send(json({ error: "Demasiadas peticiones por minuto; reintenta en unos segundos" }, 429));
+    }
+    try {
+      return send(json(await runAgent(body.prompt.trim().slice(0, 4000), caller)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Error del agente";
+      return send(json({ error: message }, /Límite|quota|429/i.test(message) ? 429 : 502));
+    }
+  }
+
+  if (body.method) return send(await handleJsonRpc(body, caller));
+
+  return send(json({ error: "Se esperaba una petición JSON-RPC o { prompt }" }, 400));
+}
+
+function safeParse(raw: string): unknown {
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
