@@ -15,9 +15,13 @@ la **API REST** directamente, por el mismo motivo.
 
 > Un detalle que ya costó un incidente: `api/predictions.ts` documenta que el
 > runtime de Vercel no resolvió un import hermano (`./_venues`) y devolvía 500.
-> Por eso **no** se ha creado `api/mcp.ts` importando `src/`: el handler es
-> agnóstico (`src/lib/mcp/http.ts`) y se monta donde resuelva imports (backend
-> Node, o una copia autocontenida si algún día va a Vercel).
+> Por eso el handler es agnóstico (`src/lib/mcp/http.ts`) y se monta donde
+> resuelvan los imports. Hoy hay **dos** montajes del mismo handler:
+> `backend/mcp.ts` (Express) y `api/mcp.ts` (función de Vercel), porque el
+> cliente del chat llamaba a `/api/mcp` desde el principio y esa ruta no existía:
+> en producción el botón de herramientas daba 404. Si el runtime de Vercel vuelve
+> a fallar al resolver los imports de `src/lib/mcp/…`, el montaje de referencia
+> sigue siendo el backend Node.
 
 ## Piezas
 

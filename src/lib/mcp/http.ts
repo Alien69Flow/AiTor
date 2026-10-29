@@ -22,6 +22,8 @@ import type { JsonRpcRequest, McpTier } from "./types";
 export interface McpCaller {
   tier: McpTier;
   db?: McpDatabase;
+  /** Identidad verificada, cuando el montaje la conoce: la cuota es por usuario. */
+  userId?: string;
 }
 
 export interface McpAgentResult {
