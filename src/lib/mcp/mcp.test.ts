@@ -307,3 +307,54 @@ describe("catálogo TLE", () => {
     expect(parsed[0].name).toBe("ISS (ZARYA)");
   });
 });
+
+/**
+ * El `fetch` del navegador exige `window` como `this`: pasarlo dentro del
+ * contexto y llamarlo como método (`context.fetch(...)`) responde «Illegal
+ * invocation» en Chrome. Pasó en producción con `weather.outlook`, así que el
+ * registro lo ata antes de entregar el contexto a cualquier herramienta.
+ */
+describe("fetch recibido de la página", () => {
+  it("una herramienta puede llamarlo sin perder el `this` global", async () => {
+    const seen: string[] = [];
+    // Fiel al navegador: sólo funciona con el objeto global como `this`.
+    const browserLikeFetch = function (
+      this: unknown,
+      input: unknown,
+    ): Promise<Response> {
+      if (this !== globalThis) {
+        throw new TypeError("Failed to execute 'fetch' on 'Window': Illegal invocation");
+      }
+      seen.push(String(input));
+      return Promise.resolve(new Response("{}", { status: 200 }));
+    };
+
+    const server = createMcpServer({
+      name: "test",
+      version: "0",
+      tools: [
+        {
+          definition: {
+            name: "probe.fetch",
+            title: "Probe",
+            description: "Llama a fetch como lo haría una herramienta real.",
+            minTier: "free",
+            inputSchema: { type: "object", properties: {} },
+          },
+          run: async (_args, responseContext) => {
+            const response = await responseContext.fetch("https://example.test/x");
+            return toolResult({ status: response.status });
+          },
+        },
+      ],
+    });
+
+    const result = await server.callTool("probe.fetch", {}, {
+      tier: "free",
+      fetch: browserLikeFetch as unknown as typeof fetch,
+    });
+
+    expect(result.isError).toBeUndefined();
+    expect(seen).toEqual(["https://example.test/x"]);
+  });
+});

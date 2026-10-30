@@ -129,7 +129,16 @@ export function createMcpServer(options: {
     }
 
     try {
-      return await tool.run(args, context);
+      // `context.fetch` puede ser el `fetch` del navegador: llamarlo como
+      // método de este objeto lanza «Illegal invocation» en Chrome, porque la
+      // función exige `window` como `this`. Se ata aquí, en la puerta, y no en
+      // cada herramienta: una sola olvidada rompía su capa en producción con
+      // un error que sólo se ve al ejecutarla de verdad.
+      const bound: McpToolContext = {
+        ...context,
+        fetch: context.fetch.bind(globalThis) as typeof fetch,
+      };
+      return await tool.run(args, bound);
     } catch (error) {
       // Un fallo de la fuente no es un fallo del protocolo: se devuelve como
       // resultado marcado para que el modelo pueda explicarlo y seguir.
