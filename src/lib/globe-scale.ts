@@ -93,15 +93,122 @@ export function groundWidthFromFov(altitudeM: number, fovYRad: number, aspect: n
   return 2 * altitudeM * Math.tan(fovX / 2);
 }
 
-/** Qué se está mirando a esta altura: la etiqueta que acompaña a la escala. */
-export function describeView(altitudeM: number): string {
+/* ------------------------------------------------------------------------- *
+ * Geometría real del planeta
+ *
+ * Hasta ahora la altura se traducía a etiquetas con umbrales elegidos a ojo
+ * («15 000 km = disco terrestre»), y el ancho de vista se calculaba como si el
+ * suelo fuera un plano infinito: a 20 000 km eso daba 23 760 km cuando la
+ * superficie que se ve desde esa altura, medida por el horizonte, son 16 912.
+ * La diferencia no es un detalle de formato: es un 40 % de error en el número
+ * que el usuario usa para comparar dos vistas.
+ *
+ * Con una esfera de radio R y la cámara a la altura h:
+ *  - el disco que ocupa la Tierra en pantalla tiene radio angular asin(R/(R+h));
+ *  - la superficie visible llega hasta el horizonte, a un arco acos(R/(R+h))
+ *    de distancia angular desde el nadir, el doble de lado a lado.
+ * ------------------------------------------------------------------------- */
+
+export const EARTH_RADIUS_M = 6_371_000;
+/** Un grado de arco sobre la esfera, en metros (111,19 km). */
+export const METRES_PER_DEGREE = (Math.PI * EARTH_RADIUS_M) / 180;
+
+/** Radio angular del disco terrestre visto desde la cámara, en grados. */
+export function earthDiscRadiusDeg(altitudeM: number): number {
+  if (!Number.isFinite(altitudeM)) return 0;
+  const ratio = EARTH_RADIUS_M / (EARTH_RADIUS_M + Math.max(0, altitudeM));
+  return (Math.asin(Math.min(1, ratio)) * 180) / Math.PI;
+}
+
+/** Arco de superficie visible de lado a lado hasta el horizonte, en grados. */
+export function horizonArcDeg(altitudeM: number): number {
+  if (!Number.isFinite(altitudeM) || altitudeM <= 0) return 0;
+  const ratio = EARTH_RADIUS_M / (EARTH_RADIUS_M + altitudeM);
+  return (2 * Math.acos(Math.min(1, ratio)) * 180) / Math.PI;
+}
+
+/** Ese mismo arco en metros de superficie. */
+export function horizonArcMetres(altitudeM: number): number {
+  return horizonArcDeg(altitudeM) * METRES_PER_DEGREE;
+}
+
+/** Ángulo con la precisión que tiene sentido leer en una barra de escala. */
+export function formatArc(degrees: number): string {
+  if (!Number.isFinite(degrees) || degrees < 0) return "—";
+  if (degrees === 0) return "0°";
+  if (degrees < 1) return `${number(degrees * 100)}′`;
+  if (degrees < 10) return `${number(degrees, 1)}°`;
+  return `${number(degrees)}°`;
+}
+
+export interface ViewSpan {
+  /** Metros de superficie que abarca la pantalla de lado a lado. */
+  metres: number;
+  /** Lo mismo en ángulo sobre la esfera. */
+  degrees: number;
+  /** `true` cuando el límite es el horizonte y no el campo de visión. */
+  clippedByHorizon: boolean;
+}
+
+/**
+ * Qué superficie abarca la vista de lado a lado.
+ *
+ * Es el mínimo entre lo que cubre el campo de visión sobre un suelo plano y el
+ * arco que llega al horizonte: pasada cierta altura, alejar la cámara ya no
+ * enseña más Tierra, sólo más cielo, y el número tiene que decirlo. Se usa la
+ * medición real de píxeles cuando existe y la fórmula del campo de visión
+ * cuando no.
+ */
+export function viewSpan(input: {
+  altitudeM: number;
+  metresPerPixel?: number;
+  viewportWidthPx?: number;
+  fovYRad?: number;
+  aspect?: number;
+}): ViewSpan {
+  const { altitudeM, metresPerPixel, viewportWidthPx } = input;
+  const fovYRad = Number.isFinite(input.fovYRad) && (input.fovYRad as number) > 0 ? (input.fovYRad as number) : Math.PI / 3;
+  const aspect = Number.isFinite(input.aspect) && (input.aspect as number) > 0 ? (input.aspect as number) : 16 / 9;
+
+  const horizon = horizonArcMetres(altitudeM);
+  const measured =
+    Number.isFinite(metresPerPixel) && Number.isFinite(viewportWidthPx) && (metresPerPixel as number) > 0
+      ? (metresPerPixel as number) * (viewportWidthPx as number)
+      : 0;
+  const flat = measured > 0 ? measured : groundWidthFromFov(altitudeM, fovYRad, aspect);
+
+  const metres = horizon > 0 ? Math.min(flat || horizon, horizon) : flat;
+  return {
+    metres,
+    degrees: metres / METRES_PER_DEGREE,
+    clippedByHorizon: horizon > 0 && (flat === 0 || flat > horizon),
+  };
+}
+
+/**
+ * Qué se está mirando a esta altura: la etiqueta que acompaña a la escala.
+ *
+ * «Globo entero» no es una altura fija: depende del campo de visión de la
+ * cámara. El disco terrestre cabe en pantalla cuando su diámetro angular
+ * (2·asin(R/(R+h))) no pasa del menor de los dos campos de visión; por eso se
+ * calcula en vez de tabularse.
+ */
+export function describeView(altitudeM: number, view: { fovYRad?: number; aspect?: number } = {}): string {
   if (!Number.isFinite(altitudeM)) return "Sin datos";
-  if (altitudeM < 2_000) return "Distrito";
-  if (altitudeM < 25_000) return "Ciudad";
-  if (altitudeM < 250_000) return "Región";
-  if (altitudeM < 3_000_000) return "Continente";
-  if (altitudeM < 15_000_000) return "Hemisferio";
-  return "Disco terrestre";
+
+  const fovYRad = Number.isFinite(view.fovYRad) && (view.fovYRad as number) > 0 ? (view.fovYRad as number) : Math.PI / 3;
+  const aspect = Number.isFinite(view.aspect) && (view.aspect as number) > 0 ? (view.aspect as number) : 16 / 9;
+  const fovXRad = 2 * Math.atan(Math.tan(fovYRad / 2) * aspect);
+  const tightestRad = Math.min(fovYRad, fovXRad);
+  const discDeg = 2 * earthDiscRadiusDeg(altitudeM);
+  if ((discDeg * Math.PI) / 180 <= tightestRad) return "Globo entero";
+
+  const spanKm = viewSpan({ altitudeM, fovYRad, aspect }).metres / 1_000;
+  if (spanKm < 5) return "Distrito";
+  if (spanKm < 60) return "Ciudad";
+  if (spanKm < 600) return "Región";
+  if (spanKm < 4_000) return "Continente";
+  return "Hemisferio";
 }
 
 /** Cada pulsación de los botones deja la cámara al 60 % de la altura (o la

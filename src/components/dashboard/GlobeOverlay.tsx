@@ -26,6 +26,8 @@ interface GlobeOverlayProps {
   earthquakeCount?: number;
   nasaEventCount?: number;
   conflictCount?: number;
+  /** Sucesos de violencia de las últimas 48 h; el resto de `conflictCount` son zonas curadas. */
+  liveConflictCount?: number;
   wildfireCount?: number;
   outageCount?: number;
   criticalIntelCount?: number;
@@ -43,6 +45,7 @@ export function GlobeOverlay({
   earthquakeCount = 0,
   nasaEventCount = 0,
   conflictCount = 0,
+  liveConflictCount = 0,
   wildfireCount = 0,
   outageCount = 0,
   criticalIntelCount = 0,
@@ -54,7 +57,13 @@ export function GlobeOverlay({
   const { tensionLevel, factors } = useMemo(() => {
     const kp = spaceWeather?.kpIndex ?? 0;
     const rows = [
-      { key: "Conflict events", value: conflictCount, points: Math.min(conflictCount * 1.6, 32), Icon: Crosshair, color: "#f87171" },
+      {
+        key: liveConflictCount > 0 ? `Conflict events (${liveConflictCount} en 48 h)` : "Conflict events",
+        value: conflictCount,
+        points: Math.min(conflictCount * 1.6, 32),
+        Icon: Crosshair,
+        color: "#f87171",
+      },
       { key: "Critical intel", value: criticalIntelCount, points: Math.min(criticalIntelCount * 3, 18), Icon: Radio, color: "#fbbf24" },
       { key: "Seismic (M2.5+)", value: earthquakeCount, points: Math.min(earthquakeCount * 0.12, 14), Icon: Activity, color: "#fb923c" },
       { key: "Wildfires / hazards", value: wildfireCount || nasaEventCount, points: Math.min((wildfireCount || nasaEventCount) * 0.4, 12), Icon: Flame, color: "#f97316" },
@@ -63,7 +72,7 @@ export function GlobeOverlay({
     ];
     const total = rows.reduce((sum, r) => sum + r.points, 0);
     return { tensionLevel: Math.max(5, Math.min(100, Math.round(total))), factors: rows };
-  }, [spaceWeather, conflictCount, criticalIntelCount, earthquakeCount, wildfireCount, nasaEventCount, outageCount]);
+  }, [spaceWeather, conflictCount, liveConflictCount, criticalIntelCount, earthquakeCount, wildfireCount, nasaEventCount, outageCount]);
 
   const tensionColor =
     tensionLevel > 70 ? "#f87171" : tensionLevel > 40 ? "#fbbf24" : "#34d399";

@@ -168,7 +168,8 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             sightings={sightings} flights={allFlights} ships={ships} satellites={intel.satellites}
             rainTileUrl={intel.rainTileUrl} surfaceWeather={intel.surfaceWeather} fires={intel.fires}
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
-            gdeltEvents={intel.gdeltEvents} iss={intel.iss} ionosphere={intel.ionosphere}
+            gdeltEvents={intel.gdeltEvents} conflictEvents={intel.conflictEvents}
+            iss={intel.iss} ionosphere={intel.ionosphere}
             vanAllen={intel.vanAllen} solarWind={intel.solarWind}
             cameras={camerasOnGlobe} environment={intel.environment} />
         </div>
@@ -189,7 +190,9 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
         <GlobeOverlay selectedHotspot={selectedHotspot} onClose={() => setSelectedHotspot(null)}
           onOpenCamera={onOpenCamera}
           spaceWeather={intel.spaceWeather} earthquakeCount={intel.earthquakes.length}
-          nasaEventCount={intel.nasaEvents.length} conflictCount={CONFLICT_ZONES.length}
+          nasaEventCount={intel.nasaEvents.length}
+          conflictCount={CONFLICT_ZONES.length + intel.conflictEvents.length}
+          liveConflictCount={intel.conflictEvents.length}
           wildfireCount={intel.fires.length} outageCount={outages.length}
           criticalIntelCount={intel.osint.filter((event) => event.severity === "CRITICAL").length} />
 

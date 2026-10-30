@@ -4,9 +4,12 @@ import {
   ZOOM_MIN_ALTITUDE_M,
   describeView,
   formatAltitude,
+  formatArc,
   formatDistance,
+  horizonArcMetres,
   nextZoomAltitude,
   scaleBar,
+  viewSpan,
   zoomProgress,
   zoomRangeLabel,
 } from "@/lib/globe-scale";
@@ -16,6 +19,9 @@ export interface ViewScale {
   altitudeM: number;
   metresPerPixel: number;
   viewportWidthPx: number;
+  /** Campo de visión vertical de la cámara, para acotar la vista al horizonte. */
+  fovYRad?: number;
+  aspectRatio?: number;
   /** `true` cuando no se pudo proyectar sobre el globo y se usó el campo de visión. */
   estimated: boolean;
 }
@@ -41,7 +47,16 @@ const BAR_MAX_PX = 132;
  */
 export function GlobeScaleHud({ scale, className = "", onZoomIn, onZoomOut }: GlobeScaleHudProps) {
   const bar = scaleBar(scale.metresPerPixel, BAR_MAX_PX);
-  const viewWidth = scale.metresPerPixel * scale.viewportWidthPx;
+  // La superficie visible no crece sin fin con la altura: llega hasta el
+  // horizonte. `viewSpan` usa la medición real de píxeles y la recorta con la
+  // geometría del planeta, así que el número no miente al alejar la cámara.
+  const span = viewSpan({
+    altitudeM: scale.altitudeM,
+    metresPerPixel: scale.metresPerPixel,
+    viewportWidthPx: scale.viewportWidthPx,
+    fovYRad: scale.fovYRad,
+    aspect: scale.aspectRatio,
+  });
   const progress = Math.round(zoomProgress(scale.altitudeM) * 100);
   // En los topes no hay paso posible: mejor un botón apagado que uno que no
   // hace nada y deja al usuario dudando de si el globo está roto.
@@ -80,7 +95,7 @@ export function GlobeScaleHud({ scale, className = "", onZoomIn, onZoomOut }: Gl
           </div>
           <span className="ml-auto flex items-center gap-1 text-[8px] uppercase tracking-wider text-cyan-300/70">
             <MoveHorizontal className="h-2.5 w-2.5" aria-hidden="true" />
-            {describeView(scale.altitudeM)}
+            {describeView(scale.altitudeM, { fovYRad: scale.fovYRad, aspect: scale.aspectRatio })}
           </span>
 
           {showControls && (
@@ -114,9 +129,19 @@ export function GlobeScaleHud({ scale, className = "", onZoomIn, onZoomOut }: Gl
             <dt className="text-muted-foreground/60">Altura</dt>
             <dd className="text-foreground/80">{formatAltitude(scale.altitudeM)}</dd>
           </div>
-          <div className="flex justify-between gap-1">
-            <dt className="text-muted-foreground/60">Ancho de vista</dt>
-            <dd className="text-foreground/80">{formatDistance(viewWidth)}</dd>
+          <div
+            className="flex justify-between gap-1"
+            title={
+              span.clippedByHorizon
+                ? `Toda la superficie que deja ver el horizonte a esta altura: ${formatDistance(horizonArcMetres(scale.altitudeM))}. Alejarse más no enseña más Tierra.`
+                : `Arco de superficie que abarca la pantalla: ${formatArc(span.degrees)}.`
+            }
+          >
+            <dt className="text-muted-foreground/60">Vista</dt>
+            <dd className="text-foreground/80" data-testid="globe-span-value">
+              {formatDistance(span.metres)}
+              <span className="ml-1 text-muted-foreground/50">{formatArc(span.degrees)}</span>
+            </dd>
           </div>
         </dl>
 

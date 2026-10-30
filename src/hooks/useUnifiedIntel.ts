@@ -9,6 +9,7 @@ import { useAurora } from "./connectors/useAurora";
 import { useSubmarineCables } from "./connectors/useSubmarineCables";
 import { useBitcoinNodes } from "./connectors/useBitcoinNodes";
 import { useGdeltEvents } from "./connectors/useGdeltEvents";
+import { useConflictEvents } from "./connectors/useConflictEvents";
 import { useAdsbTraffic } from "./connectors/useAdsbTraffic";
 import { useCelestrakSatellites } from "./connectors/useCelestrakSatellites";
 import { useIssPosition } from "./connectors/useIssPosition";
@@ -43,6 +44,7 @@ export type ConnectorKey =
   | "cables"
   | "bitcoinNodes"
   | "gdelt"
+  | "conflicts"
   | "aviation"
   | "drying"
   | "pollen"
@@ -127,6 +129,9 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
 
   // --- 5. OSINT & aviation -----------------------------------------------
   const gdelt = useGdeltEvents(on("conflictZones") || on("internetOutages"));
+  // Sucesos de violencia de las últimas 48 h, aparte del feed OSINT general:
+  // lo que la capa «Conflict Zones» pinta encima de las zonas curadas.
+  const conflicts = useConflictEvents(on("conflictZones"));
   const aviation = useAdsbTraffic(on("airTraffic"), 15_000);
 
   /** USGS (global) merged with EMSC (Europe / Iberia), de-duplicated by proximity. */
@@ -179,6 +184,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       cables: toStatus(cables, cables.data.length),
       bitcoinNodes: toStatus(btcNodes, btcNodes.data.length),
       gdelt: toStatus(gdelt, gdelt.data.length),
+      conflicts: toStatus(conflicts, conflicts.data.length),
       aviation: toStatus(aviation, aviation.data.length),
       drying: toStatus(environment, environment.data.drying.length),
       pollen: toStatus(environment, environment.data.pollen.length),
@@ -191,7 +197,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, environment, osint],
+    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, conflicts, aviation, environment, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -334,6 +340,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     cables: cables.data,
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,
+    conflictEvents: conflicts.data,
     aviation: aviation.data,
     environment: environment.data,
     // OSINT

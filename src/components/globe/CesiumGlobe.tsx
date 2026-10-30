@@ -34,6 +34,7 @@ import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
 import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
 import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
+import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import {
   ZOOM_MAX_ALTITUDE_M,
@@ -233,6 +234,8 @@ interface CesiumGlobeProps {
   bitcoinNodes?: { id: string; lat: number; lon: number; city: string; country: string }[];
   /** GDELT geolocated news events. */
   gdeltEvents?: { id: string; title: string; lat: number; lon: number; domain: string; url: string }[];
+  /** Sucesos de violencia geolocalizados de las últimas 48 h (GDELT). */
+  conflictEvents?: ConflictEvent[];
   /** Open-Meteo surface wind / pressure vectors. */
   surfaceWeather?: {
     id: string; name: string; lat: number; lon: number;
@@ -262,7 +265,7 @@ export function CesiumGlobe({
   earthquakes = [], nasaEvents = [], flights = [], ships = [],
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
-  bitcoinNodes = [], gdeltEvents = [], surfaceWeather = [],
+  bitcoinNodes = [], gdeltEvents = [], conflictEvents = [], surfaceWeather = [],
   iss = null, ionosphere = null, cameras = [],
   vanAllen = null, solarWind = null, environment = null,
 }: CesiumGlobeProps) {
@@ -517,6 +520,12 @@ export function CesiumGlobe({
       const left = sample(width / 2 - 60);
       const right = sample(width / 2 + 60);
 
+      // El campo de visión viaja con la escala: la etiqueta de la vista («globo
+      // entero», «hemisferio») y el tope del horizonte dependen de él, no de la
+      // altura sola.
+      const fovY = (viewer.camera.frustum as { fovy?: number }).fovy ?? CesiumMath.toRadians(60);
+      const aspect = width / height;
+
       let metresPerPixel = Number.NaN;
       let estimated = true;
       if (left && right) {
@@ -527,11 +536,17 @@ export function CesiumGlobe({
         }
       }
       if (!Number.isFinite(metresPerPixel)) {
-        const fovY = (viewer.camera.frustum as { fovy?: number }).fovy ?? CesiumMath.toRadians(60);
-        metresPerPixel = groundWidthFromFov(altitude, fovY, width / height) / width;
+        metresPerPixel = groundWidthFromFov(altitude, fovY, aspect) / width;
       }
 
-      onViewScaleRef.current?.({ altitudeM: altitude, metresPerPixel, viewportWidthPx: width, estimated });
+      onViewScaleRef.current?.({
+        altitudeM: altitude,
+        metresPerPixel,
+        viewportWidthPx: width,
+        fovYRad: fovY,
+        aspectRatio: aspect,
+        estimated,
+      });
     };
 
     let scaleFrame = 0;
@@ -1585,6 +1600,57 @@ export function CesiumGlobe({
       });
     }
 
+    // --- Conflictos en vivo (GDELT, últimas 48 h) ---
+    // Las zonas curadas dicen dónde hay conflicto abierto; esto dice qué ha
+    // pasado ahí hoy. Sólo se rotulan los sucesos con muertos: son los pocos
+    // que se leen a escala global y los que no se pueden perder entre puntos.
+    if (active.has("conflictZones")) {
+      conflictEvents.slice(0, 120).forEach((event) => {
+        const id = `conflict-live-${event.id}`;
+        const color = event.severity === "HIGH" ? "#dc2626" : event.severity === "MEDIUM" ? "#f97316" : "#eab308";
+        viewer.entities.add({
+          id,
+          position: Cartesian3.fromDegrees(event.lon, event.lat, 0),
+          billboard: {
+            image: markerIcon("conflict", color), width: 20, height: 20,
+            scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.4),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          ...(event.severity === "HIGH"
+            ? {
+                label: {
+                  text: `⚔ ${CONFLICT_KIND_LABEL[event.kind]} · ${event.location}`.slice(0, 48),
+                  font: "9px monospace",
+                  fillColor: hexToColor("#fecaca", 0.95),
+                  outlineColor: Color.BLACK,
+                  outlineWidth: 2,
+                  style: 2,
+                  verticalOrigin: VerticalOrigin.BOTTOM,
+                  pixelOffset: new Cartesian2(0, -10),
+                  scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.18),
+                  disableDepthTestDistance: Number.POSITIVE_INFINITY,
+                },
+              }
+            : {}),
+          properties: {
+            sightingData: JSON.stringify({
+              lat: event.lat,
+              lon: event.lon,
+              location: `${CONFLICT_KIND_LABEL[event.kind]} · ${event.location}`,
+              description: `${event.title} · ${event.url}`,
+              type: "conflict",
+              severity: event.severity === "HIGH" ? "critical" : event.severity === "MEDIUM" ? "high" : "medium",
+              source: `GDELT · ${event.domain}`,
+              category: "geopolitical",
+              date_reported: event.date || "48h",
+              reliability: "Titular geolocalizado por GDELT, no un parte oficial",
+            }),
+          } satisfies PlainEntityProperties,
+        });
+        track(id);
+      });
+    }
+
     // --- Open-Meteo surface wind / pressure ---
     if (active.has("wind") || active.has("isobars") || active.has("temperature") || active.has("humidity")) {
       surfaceWeather.forEach((p) => {
@@ -1634,7 +1700,7 @@ export function CesiumGlobe({
         track(labelId);
       });
     }
-  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, surfaceWeather]);
+  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, conflictEvents, surfaceWeather]);
 
   /**
    * Rejilla ambiental: secado de la ropa, polen, estado del mar y nieve.

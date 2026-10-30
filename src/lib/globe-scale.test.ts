@@ -1,12 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
+  EARTH_RADIUS_M,
   ZOOM_MAX_ALTITUDE_M,
   ZOOM_MIN_ALTITUDE_M,
   describeView,
+  earthDiscRadiusDeg,
   formatAltitude,
+  formatArc,
   formatDistance,
   groundWidthFromFov,
+  horizonArcDeg,
+  horizonArcMetres,
   scaleBar,
+  viewSpan,
   zoomProgress,
 } from "./globe-scale";
 
@@ -63,13 +69,52 @@ describe("escala del globo", () => {
     expect(groundWidthFromFov(0, Math.PI / 3, 1)).toBe(0);
   });
 
-  it("nombra lo que se ve según la altura", () => {
+  it("el horizonte limita la superficie visible, no la altura", () => {
+    // A 20 000 km el suelo plano daría 23 760 km de ancho; el planeta sólo deja
+    // ver 152° de arco, que son 16 906 km. Antes la barra mentía un 40 %.
+    const span = viewSpan({ altitudeM: 20_000_000, metresPerPixel: 16_500, viewportWidthPx: 1440 });
+    expect(span.metres).toBeCloseTo(horizonArcMetres(20_000_000), 0);
+    expect(span.metres).toBeLessThan(20_000_000);
+    expect(span.clippedByHorizon).toBe(true);
+    expect(Math.round(span.degrees)).toBe(152);
+
+    // De cerca manda el campo de visión: el horizonte está a 202 km pero la
+    // pantalla cubre mucho menos.
+    const near = viewSpan({ altitudeM: 800 });
+    expect(near.metres).toBeLessThan(5_000);
+    expect(near.clippedByHorizon).toBe(false);
+  });
+
+  it("mide el disco y el horizonte con la geometría de la esfera", () => {
+    expect(horizonArcDeg(0)).toBe(0);
+    // A una altura igual al radio, el horizonte está a 60° del nadir.
+    expect(horizonArcDeg(EARTH_RADIUS_M)).toBeCloseTo(120, 5);
+    // Y desde ahí el disco terrestre ocupa justo el campo de visión de 60°.
+    expect(2 * earthDiscRadiusDeg(EARTH_RADIUS_M)).toBeCloseTo(60, 5);
+    // Nunca puede pasar del hemisferio completo.
+    expect(horizonArcDeg(400_000_000)).toBeLessThan(180);
+  });
+
+  it("nombra lo que se ve con la geometría, no con umbrales a ojo", () => {
     expect(describeView(800)).toBe("Distrito");
     expect(describeView(12_000)).toBe("Ciudad");
     expect(describeView(120_000)).toBe("Región");
     expect(describeView(1_500_000)).toBe("Continente");
-    expect(describeView(8_000_000)).toBe("Hemisferio");
-    expect(describeView(40_000_000)).toBe("Disco terrestre");
+    expect(describeView(5_000_000)).toBe("Hemisferio");
+    // El globo entero cabe en pantalla cuando su diámetro angular no pasa del
+    // campo de visión: a 8 000 km son 52,6° y a 20 000 km 28°.
+    expect(describeView(8_000_000)).toBe("Globo entero");
+    expect(describeView(20_000_000)).toBe("Globo entero");
+    // Con un campo de visión muy estrecho, el mismo globo ya no cabe.
+    expect(describeView(20_000_000, { fovYRad: 0.2, aspect: 1 })).toBe("Hemisferio");
+  });
+
+  it("escribe los ángulos sin decimales falsos", () => {
+    expect(formatArc(0)).toBe("0°");
+    expect(formatArc(0.4)).toBe("40′");
+    expect(formatArc(2.2)).toBe("2,2°");
+    expect(formatArc(152.05)).toBe("152°");
+    expect(formatArc(Number.NaN)).toBe("—");
   });
 
   it("el progreso de zoom va de 0 (lejos) a 1 (pegado al suelo)", () => {

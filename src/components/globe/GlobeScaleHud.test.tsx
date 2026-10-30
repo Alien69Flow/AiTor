@@ -9,7 +9,7 @@ import { nextZoomAltitude, zoomRangeLabel } from "@/lib/globe-scale";
  * inventada.
  */
 describe("GlobeScaleHud", () => {
-  it("muestra la distancia de la barra, la altura y el ancho de la vista", () => {
+  it("muestra la distancia de la barra, la altura y la superficie que abarca la vista", () => {
     render(
       <GlobeScaleHud
         scale={{ altitudeM: 20_000_000, metresPerPixel: 16_500, viewportWidthPx: 1440, estimated: false }}
@@ -18,7 +18,11 @@ describe("GlobeScaleHud", () => {
 
     expect(screen.getByTestId("globe-scale-label").textContent).toBe("2000 km");
     expect(screen.getByText("20.000 km")).toBeTruthy();
-    expect(screen.getByText("23.760 km")).toBeTruthy();
+    // A 20 000 km se ve casi todo el planeta: 152° de arco, 16 906 km. La versión
+    // anterior multiplicaba píxeles por escala (23 760 km) y se pasaba un 40 %.
+    const span = screen.getByTestId("globe-span-value").textContent ?? "";
+    expect(span).toContain("16.906 km");
+    expect(span).toContain("152°");
     expect(screen.getByText(/rueda o pellizco para acercar/i)).toBeTruthy();
   });
 

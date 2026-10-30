@@ -9,6 +9,7 @@ import type { SurfaceWeatherPoint } from "@/hooks/connectors/useSurfaceWeather";
 import type { SubmarineCable } from "@/hooks/connectors/useSubmarineCables";
 import type { BitcoinNode } from "@/hooks/connectors/useBitcoinNodes";
 import type { GdeltEvent } from "@/hooks/connectors/useGdeltEvents";
+import type { ConflictEvent } from "@/lib/conflict-events";
 import type { FireDetection } from "@/hooks/connectors/useFirmsFires";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { UAPSighting } from "@/hooks/useUAPSightings";
@@ -52,6 +53,8 @@ export interface HybridGlobeProps {
   cables?: SubmarineCable[];
   bitcoinNodes?: BitcoinNode[];
   gdeltEvents?: GdeltEvent[];
+  /** Sucesos de violencia de las últimas 48 h (GDELT). */
+  conflictEvents?: ConflictEvent[];
   iss?: IssPosition | null;
   ionosphere?: IonosphereMesh | null;
   vanAllen?: VanAllenBelts | null;
@@ -92,6 +95,7 @@ export function HybridGlobe({
   cables = [],
   bitcoinNodes = [],
   gdeltEvents = [],
+  conflictEvents = [],
   iss = null,
   ionosphere = null,
   vanAllen = null,
@@ -144,6 +148,7 @@ export function HybridGlobe({
           cables={cables}
           bitcoinNodes={bitcoinNodes}
           gdeltEvents={gdeltEvents}
+          conflictEvents={layers.has("conflictZones") ? conflictEvents : []}
           iss={layers.has("iss") ? iss : null}
           ionosphere={layers.has("ionosphere") ? ionosphere : null}
           vanAllen={layers.has("vanAllen") ? vanAllen : null}
