@@ -6,7 +6,11 @@ import {
   Radio, RefreshCw, ShieldCheck, SlidersHorizontal, Users,
 } from "lucide-react";
 import { fetchAllUapSightingsRows, isUapSightingsTableMissing } from "@/lib/uap-sightings";
-import { fetchNuforcRecords, fetchNuforcMeta, NUFORC_SOURCE, type NuforcMeta } from "@/lib/nuforc-records";
+import { fetchNuforcRecords, fetchNuforcMeta, type NuforcMeta } from "@/lib/nuforc-records";
+import {
+  fetchWarGovRecords, fetchWarGovMeta, type AnomalyRecord, type WarGovMeta,
+} from "@/lib/war-gov-uap";
+import { mergeAnomalyRecords, type AnomalyRegistry } from "@/lib/anomaly-registry";
 import {
   LIVE_CATEGORIES, LIVE_SIGNALS, LIVE_VERIFIED_ON,
   signalThumb, signalsByCategory, type LiveCategoryId, type LiveSignal,
@@ -17,18 +21,12 @@ import { LIVE_STATUS_CHECKED_ON, signalLiveState } from "@/lib/live-status";
 import { markRevived, readRevived, writeRevived } from "@/lib/live-revived";
 import { toast } from "sonner";
 
-type Sighting = {
-  id: string;
-  location: string;
-  date_reported: string | null;
-  type: string | null;
-  severity: string | null;
-  description: string | null;
-  source: string | null;
-  source_url: string | null;
-  lat: number | null;
-  lon: number | null;
-};
+/**
+ * One row of the anomaly registry. The three feeds (the UAP table, the official
+ * war.gov/ufo releases and the NUFORC mirror) all arrive in this shape, so the
+ * cards below never branch on provenance beyond what the record itself says.
+ */
+type Sighting = AnomalyRecord;
 
 /**
  * Clearly-labelled sample records. They are only shown when the UAP table is
@@ -51,6 +49,7 @@ const REGISTRY_PAGE = 18;
 
 const SEVERITY_FILTERS = [
   { id: "all", label: "Todas" },
+  { id: "official", label: "Oficiales" },
   { id: "confirmed", label: "Confirmadas" },
   { id: "investigating", label: "En estudio" },
   { id: "signal", label: "Señales" },
@@ -58,6 +57,10 @@ const SEVERITY_FILTERS = [
 
 function SeverityBadge({ severity }: { severity: string }) {
   switch (severity) {
+    case "official":
+      // Un documento publicado por una agencia no es un avistamiento
+      // confirmado: la etiqueta dice qué es el registro, no qué contiene.
+      return <Badge className="border-cyan-400/30 bg-cyan-500/15 text-[9px] text-cyan-200">Documento oficial</Badge>;
     case "confirmed":
       return <Badge className="border-destructive/30 bg-destructive/20 text-[9px] text-destructive">UAP confirmado</Badge>;
     case "investigating":
@@ -195,6 +198,11 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
     [revived],
   );
   const [nuforcMeta, setNuforcMeta] = useState<NuforcMeta | null>(null);
+  const [warGovMeta, setWarGovMeta] = useState<WarGovMeta | null>(null);
+  /** Per-source totals of what is painted, so no feed can claim another's records. */
+  const [counts, setCounts] = useState<AnomalyRegistry["counts"] | null>(null);
+  /** Newest report the UAP table itself returned, so its last sync is visible. */
+  const [tableNewest, setTableNewest] = useState<string | null>(null);
 
   // Llegada desde el globo: la cámara pulsada se abre con su categoría, que es
   // la que monta el reproductor. Sólo reacciona al cambio del valor, así que no
@@ -214,18 +222,9 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
   const categorySignals = useMemo(() => (category ? signalsByCategory(category) : []), [category]);
   const liveCount = LIVE_SIGNALS.filter((signal) => liveState(signal) === "live" && !failures[signal.id]).length;
   const officialCams = LIVE_SIGNALS.filter((signal) => signal.official).length;
-  const nuforcCount = useMemo(
-    () => sightings.filter((record) => record.source === NUFORC_SOURCE.label).length,
-    [sightings]
-  );
-  /** Newest report the UAP table itself returned, so its last sync is visible. */
-  const tableNewest = useMemo(() => {
-    const dates = sightings
-      .filter((record) => record.source !== NUFORC_SOURCE.label && record.date_reported)
-      .map((record) => record.date_reported as string)
-      .sort();
-    return dates.at(-1) ?? null;
-  }, [sightings]);
+  const nuforcCount = counts?.nuforc ?? 0;
+  const warGovCount = counts?.warGov ?? 0;
+  const tableCount = counts?.table ?? 0;
 
   const visibleSightings = useMemo(
     () => (severity === "all" ? sightings : sightings.filter((s) => (s.severity || "signal") === severity)),
@@ -233,16 +232,20 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
   );
 
   const fetchSightings = useCallback(async () => {
-    // The database table and the open NUFORC mirror are independent feeds:
-    // one of them dying must not empty the registry on its own.
-    const [table, external, externalMeta] = await Promise.all([
+    // Three independent feeds: the database table, the official war.gov/ufo
+    // releases and the open NUFORC mirror. One of them dying must not empty the
+    // registry on its own.
+    const [table, external, externalMeta, official, officialMeta] = await Promise.all([
       fetchAllUapSightingsRows()
         .then((rows) => ({ rows: rows as Sighting[], unreachable: false }))
         .catch(() => ({ rows: [] as Sighting[], unreachable: true })),
       fetchNuforcRecords(180),
       fetchNuforcMeta(),
+      fetchWarGovRecords(),
+      fetchWarGovMeta(),
     ]);
     setNuforcMeta(externalMeta);
+    setWarGovMeta(officialMeta);
 
     // The table currently stores repeated placeholder rows ("Global", no
     // description), so fold identical records together before deciding
@@ -258,20 +261,23 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
       (row) => (row.description ?? "").trim().length > 0 || (row.location ?? "").trim().toLowerCase() !== "global"
     );
 
-    const byDateDesc = (a: Sighting, b: Sighting) => {
-      const toTime = (value: string | null) => {
-        const time = Date.parse(value ?? "");
-        return Number.isNaN(time) ? 0 : time;
-      };
-      return toTime(b.date_reported) - toTime(a.date_reported);
-    };
+    setTableNewest(
+      informative
+        .map((row) => row.date_reported)
+        .filter((date): date is string => Boolean(date))
+        .sort()
+        .at(-1) ?? null,
+    );
 
-    if (informative.length > 0 || external.length > 0) {
-      setSightings([...informative, ...external].sort(byDateDesc).slice(0, 300));
+    const merged = mergeAnomalyRecords({ table: informative, warGov: official, nuforc: external });
+    setCounts(merged.counts);
+
+    if (merged.records.length > 0) {
+      setSightings(merged.records);
       setFeedNote(
         informative.length > 0
           ? null
-          : `La tabla UAP no aporta registros propios: el registro se completa con ${external.length} informes del espejo abierto de NUFORC (avistamientos entre ${externalMeta?.dateFrom ?? "?"} y ${externalMeta?.dateTo ?? "?"}).`
+          : `La tabla UAP no aporta registros propios: el registro se completa con ${merged.counts.warGov} registros oficiales de war.gov/ufo y ${merged.counts.nuforc} informes del espejo abierto de NUFORC (avistamientos entre ${externalMeta?.dateFrom ?? "?"} y ${externalMeta?.dateTo ?? "?"}).`
       );
     } else {
       setSightings(SAMPLE_SIGHTINGS);
@@ -459,16 +465,36 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
               {Math.min(visibleCount, visibleSightings.length)} de {visibleSightings.length}
               {visibleSightings.length !== sightings.length ? ` de ${sightings.length}` : ""} · más recientes primero
             </span>
-            {nuforcCount > 0 && (
+            {counts && counts.total > 0 && (
               <span
                 className="font-mono text-[9px] text-muted-foreground/55"
-                title={`${sightings.length - nuforcCount} registros de la tabla UAP · ${nuforcCount} del espejo abierto de NUFORC (dataset DataHerb, ordenado por fecha de avistamiento). Instantánea generada el ${nuforcMeta?.generatedAt.slice(0, 10) ?? "—"}.`}
+                title={[
+                  warGovCount > 0
+                    ? `${warGovCount} registros oficiales de war.gov/ufo (${warGovMeta?.releases.length ?? 0} entregas, ${warGovMeta?.agencies ?? 0} agencias, última ${warGovMeta?.latestRelease ?? "—"}): documentos publicados por agencias de EE. UU., no avistamientos de testigos.`
+                    : "",
+                  `${tableCount} registros de la tabla UAP`,
+                  `${nuforcCount} del espejo abierto de NUFORC (dataset DataHerb, ordenado por fecha de avistamiento). Instantánea generada el ${nuforcMeta?.generatedAt.slice(0, 10) ?? "—"}.`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               >
-                {sightings.length - nuforcCount} tabla UAP{tableNewest ? ` (última ${tableNewest})` : ""} · {nuforcCount} NUFORC
-                {nuforcMeta?.dateFrom && nuforcMeta?.dateTo && ` (${nuforcMeta.dateFrom} → ${nuforcMeta.dateTo})`}
-                {nuforcMeta?.stale &&
-                  nuforcMeta.datasetAgeDays !== null &&
-                  ` · origen congelado hace ${Math.floor(nuforcMeta.datasetAgeDays / 365)} años`}
+                {[
+                  warGovCount > 0
+                    ? `${warGovCount} war.gov/ufo${warGovMeta?.latestRelease ? ` (última entrega ${warGovMeta.latestRelease})` : ""}`
+                    : "",
+                  `${tableCount} tabla UAP${tableNewest ? ` (última ${tableNewest})` : ""}`,
+                  nuforcCount > 0
+                    ? `${nuforcCount} NUFORC${
+                        nuforcMeta?.dateFrom && nuforcMeta?.dateTo ? ` (${nuforcMeta.dateFrom} → ${nuforcMeta.dateTo})` : ""
+                      }${
+                        nuforcMeta?.stale && nuforcMeta.datasetAgeDays !== null
+                          ? ` · origen congelado hace ${Math.floor(nuforcMeta.datasetAgeDays / 365)} años`
+                          : ""
+                      }`
+                    : "",
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-1">
@@ -519,6 +545,9 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
                     </span>
                     <SeverityBadge severity={s.severity || "signal"} />
                   </div>
+                  {s.title && (
+                    <p className="line-clamp-2 font-mono text-[10px] leading-4 text-foreground/75">{s.title}</p>
+                  )}
                   {s.description && (
                     <p className="font-mono text-[10px] leading-4 text-muted-foreground">{s.description}</p>
                   )}

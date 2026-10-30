@@ -3987,6 +3987,10 @@ export const SOURCE_KIND_LABEL: Record<SourceKind, string> = {
 export const OFFICIAL_SOURCES: OfficialSource[] = [
   // --- Agencias y organismos públicos ---------------------------------------
   { label: "AARO", url: "https://www.aaro.mil/", desc: "All-domain Anomaly Resolution Office (DoD)", kind: "official" },
+  // La fuente que alimenta el registro de anomalías con documentos oficiales:
+  // el Departamento de Guerra publica las entregas UAP en esta página.
+  { label: "war.gov/ufo", url: "https://www.war.gov/ufo/", desc: "Entregas de registros UAP del Departamento de Guerra de EE. UU.", kind: "official" },
+  { label: "war.gov UAP (CSV)", url: "https://www.war.gov/Portals/1/Interactive/2026/UFO/uap-data.csv", desc: "Índice CSV de los registros publicados, leído por el registro de anomalías", kind: "data" },
   { label: "NASA Live", url: "https://www.nasa.gov/live/", desc: "Emisiones oficiales de la NASA", kind: "official" },
   { label: "ESA Web TV", url: "https://watch.esa.int/", desc: "Televisión oficial de la ESA", kind: "official" },
   { label: "CNES GEIPAN", url: "https://www.cnes-geipan.fr/", desc: "Grupo francés de estudio de fenómenos aeroespaciales", kind: "official" },
