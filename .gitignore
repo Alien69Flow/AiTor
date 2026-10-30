@@ -24,6 +24,9 @@ dist-ssr
 *.sln
 *.sw?
 .env
+# El script del webhook lee también .env.local, así que no puede quedarse fuera
+.env.local
+.env.*.local
 
 # Claves de firma (Apple AuthKey_*.p8, certificados, claves SSH de despliegue)
 *.p8

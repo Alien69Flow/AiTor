@@ -142,6 +142,51 @@ async function main() {
       console.error('✖ La URL registrada no coincide con la esperada.');
       process.exit(1);
     }
+
+    // El registro en Telegram y la variable en Vercel son dos mitades del mismo
+    // secreto. Se comprueba el endpoint desde fuera, sin token del bot: una
+    // petición con la firma correcta y otra sin firma. Con la firma, un 401
+    // significa que Vercel tiene OTRO valor y el bot está mudo desde ya; sin
+    // firma, un 200 significa que el endpoint sigue abierto (la variable aún no
+    // ha llegado a Vercel o falta el redeploy).
+    const probe = async (headers) => {
+      try {
+        const res = await fetch(expected, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...headers },
+          body: '{}',
+        });
+        return res.status;
+      } catch {
+        return null;
+      }
+    };
+    const signed = await probe({ 'x-telegram-bot-api-secret-token': SECRET });
+    const unsigned = await probe({});
+
+    if (signed === 401) {
+      console.error(
+        '✖ El endpoint rechaza la firma que acabas de registrar: en Vercel hay un\n' +
+          '  TELEGRAM_WEBHOOK_SECRET distinto (o ninguno de los dos coincide). Mientras\n' +
+          '  siga así Telegram recibirá 401 y el bot quedará mudo. Copia el valor de\n' +
+          '  TELEGRAM_WEBHOOK_SECRET de tu .env a las variables de Vercel (Production)\n' +
+          '  y vuelve a desplegar; o re-registra con el valor que ya tenga Vercel.',
+      );
+      process.exit(1);
+    }
+    if (unsigned === 401) {
+      console.log('✔ Endpoint cerrado: rechaza las peticiones sin firma (401).');
+    } else if (unsigned === 200) {
+      console.log(
+        '→ El endpoint sigue aceptando peticiones sin firma (200). El registro en\n' +
+          '  Telegram ya lleva el secreto, así que sólo falta la otra mitad: añade\n' +
+          '  TELEGRAM_WEBHOOK_SECRET a las variables de Vercel (Production) con el mismo\n' +
+          '  valor y despliega. Orden seguro: Telegram primero (el bot sigue\n' +
+          '  respondiendo), Vercel después (cierra el endpoint sin cortar el servicio).',
+      );
+    } else {
+      console.log(`→ No pude comprobar el endpoint (respuesta ${unsigned ?? 'sin red'}).`);
+    }
     return;
   }
 
