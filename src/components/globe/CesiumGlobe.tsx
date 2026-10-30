@@ -714,6 +714,10 @@ export function CesiumGlobe({
     });
     quakeEntityIdsRef.current = [];
 
+    // La capa tiene interruptor en la leyenda: si está apagada no se pinta nada,
+    // en vez de dibujar los sismos siempre y dejar el control sin efecto.
+    if (envLayers && !envLayers.has("earthquakes")) return;
+
     const significant = earthquakes.filter(q => q.magnitude >= 2.5).slice(0, 100);
 
     significant.forEach((q, i) => {
@@ -764,7 +768,7 @@ export function CesiumGlobe({
       });
       quakeEntityIdsRef.current.push(entityId);
     });
-  }, [earthquakes]);
+  }, [earthquakes, envLayers]);
 
   // NASA EONET events — yellow warning points
   useEffect(() => {
@@ -829,7 +833,14 @@ export function CesiumGlobe({
     marketEntityIdsRef.current = [];
     arcEntityIdsRef.current = [];
 
-    if (visibleLayers && !visibleLayers.has("markets")) return;
+    // Dos interruptores legítimos para lo mismo: la marca clásica de la
+    // leyenda (`visibleLayers`) y la capa de catálogo (`marketData`). Se pinta
+    // si cualquiera de los dos está encendido, así que el catálogo deja de ser
+    // un botón muerto sin romper la leyenda de marcas.
+    const marketsOn =
+      (visibleLayers ? visibleLayers.has("markets") : true) ||
+      (envLayers ? envLayers.has("marketData") : false);
+    if (!marketsOn) return;
 
     HOTSPOT_DATA.forEach((spot, idx) => {
       const entityId = `market-${idx}`;
@@ -882,7 +893,7 @@ export function CesiumGlobe({
       });
       arcEntityIdsRef.current.push(arcId);
     });
-  }, [visibleLayers]);
+  }, [visibleLayers, envLayers]);
 
   // Sighting entities
   useEffect(() => {
@@ -1071,6 +1082,12 @@ export function CesiumGlobe({
     });
   }, [ships, envLayers]);
 
+  // Booleano, no el array: `cables` por defecto es `[]` nuevo en cada render,
+  // así que usarlo como dependencia reconstruiría los ~250 marcadores
+  // estáticos en cada pasada. Un primitivo sólo cambia cuando de verdad
+  // llegan (o se pierden) los datos de TeleGeography.
+  const hasLiveCables = cables.length > 0;
+
   // Conflicts + strategic infrastructure (static registries, Liveuamap-style)
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1185,13 +1202,16 @@ export function CesiumGlobe({
       staticEntityIdsRef.current.push(id);
     };
 
-    if (active.has("underseaCables")) {
+    // El catálogo estático sólo rellena el hueco cuando TeleGeography no
+    // responde. Con la geometría real cargada, pintar encima 27 rutas
+    // esquemáticas duplicaba la capa y falseaba los trazados.
+    if (active.has("underseaCables") && !hasLiveCables) {
       UNDERSEA_CABLES.forEach((c) => addLine(`cable-${c.id}`, c.path, "#0891b2", c.name));
     }
     if (active.has("pipelines")) {
       PIPELINES.forEach((p) => addLine(`pipe-${p.id}`, p.path, "#ca8a04", p.name));
     }
-  }, [envLayers]);
+  }, [envLayers, hasLiveCables]);
 
   // Orbital surveillance — propagated TLEs
   useEffect(() => {
@@ -1203,6 +1223,11 @@ export function CesiumGlobe({
       if (e) viewer.entities.remove(e);
     });
     satEntityIdsRef.current = [];
+
+    // Mismo caso que los sismos: el conector se apaga al desactivar la capa,
+    // pero las posiciones ya propagadas seguían en pantalla hasta el siguiente
+    // refresco. La guarda lo hace inmediato.
+    if (envLayers && !envLayers.has("satellites")) return;
 
     satellites.forEach((s) => {
       if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return;
@@ -1235,7 +1260,7 @@ export function CesiumGlobe({
       });
       satEntityIdsRef.current.push(entityId);
     });
-  }, [satellites]);
+  }, [satellites, envLayers]);
 
   // Internet outages (IODA)
   useEffect(() => {

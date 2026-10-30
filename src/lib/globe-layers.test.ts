@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CONNECTOR_LAYER_KEYS,
@@ -183,5 +185,47 @@ describe("envolturas y esferas de la Tierra", () => {
     });
     const dePago = caras.filter((shell) => TIER_RANK[shell.tier as Tier] > TIER_RANK.node);
     expect(dePago).toEqual([]);
+  });
+});
+
+/**
+ * El fallo que más veces ha llegado al usuario no es una capa mal configurada
+ * sino una capa huérfana: aparece en el catálogo y en la leyenda, se puede
+ * encender, y no la dibuja nadie. Pasó con «Live Market Data», y los sismos y
+ * los satélites tenían el problema inverso: se pintaban siempre, así que su
+ * interruptor no hacía nada.
+ *
+ * Aquí se exige que cada capa tenga un camino de dibujo real, y que las tres
+ * capas con entidad propia respeten su interruptor.
+ */
+describe("cada capa del catálogo tiene quien la pinte", () => {
+  const globeSource = readFileSync(resolve(process.cwd(), "src/components/globe/CesiumGlobe.tsx"), "utf8");
+
+  it("ninguna capa queda huérfana", () => {
+    const huerfanas = GLOBE_LAYERS.filter((layer) => {
+      // Los rásters los itera el efecto de imagery por `owm`/`gibs`.
+      if (layer.owm || layer.gibs) return false;
+      // Todo lo demás debe consultar su clave en el globo, con la forma de
+      // guarda que use (activa, envLayers o marcas).
+      return !globeSource.includes(`.has("${layer.key}")`);
+    }).map((layer) => layer.key);
+
+    expect(huerfanas).toEqual([]);
+  });
+
+  it("los sismos y los satélites obedecen a su capa, no a la suerte del refresco", () => {
+    expect(globeSource).toContain('if (envLayers && !envLayers.has("earthquakes")) return;');
+    expect(globeSource).toContain('if (envLayers && !envLayers.has("satellites")) return;');
+  });
+
+  it("«Live Market Data» enciende los focos de mercado desde el catálogo", () => {
+    expect(globeSource).toContain('envLayers.has("marketData")');
+  });
+
+  it("«Solar Activity» no arrastra un ráster que no es del Sol", () => {
+    // La capa de actividad solar pinta corona y Kp; cualquier ráster suyo
+    // duplicaría otra capa y taparía el globo.
+    expect(layerDef("solarActivity")?.gibs).toBeUndefined();
+    expect(layerDef("nightLights")?.gibs?.layer).toBe("VIIRS_Black_Marble");
   });
 });

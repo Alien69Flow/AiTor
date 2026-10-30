@@ -622,8 +622,11 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		requiredTier: "node",
 		source: "NOAA SWPC",
 		freshness: "30 min",
+		// Sin ráster: esta capa dibuja la corona de aurora y el Kp. Tenía colgada
+		// una capa GIBS de luces nocturnas que no tiene relación con el Sol y que
+		// además duplicaba «Night Lights», así que encenderla oscurecía el globo
+		// en vez de mostrar la actividad solar.
 		description: "Kp index and aurora borealis intensity",
-		gibs: { layer: "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance", level: 8, alpha: 0.35 },
 	},
 	{
 		key: "nightLights",
