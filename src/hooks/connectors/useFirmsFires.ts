@@ -9,6 +9,12 @@ export interface FireDetection {
   confidence: string;
   acquired: string;
   satellite: string;
+  /**
+   * De dónde sale la detección. FIRMS cuando hay clave de mapa; si no la hay,
+   * el respaldo son los incendios abiertos de EONET, y el globo lo dice en vez
+   * de atribuir a FIRMS un punto que no ha medido.
+   */
+  source?: string;
 }
 
 /**

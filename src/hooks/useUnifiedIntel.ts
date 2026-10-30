@@ -69,6 +69,31 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
   const emsc = useEmscQuakes(activeLayers ? on("earthquakes") : true);
   const fires = useFirmsFires(on("wildfires"), "ESP");
 
+  /**
+   * FIRMS exige una clave de mapa que este proyecto no tiene configurada, así
+   * que su feed llega vacío con la nota "FIRMS map key not configured" y la capa
+   * de incendios se quedaba en blanco aunque el resto del globo estuviera vivo.
+   * EONET —que ya se pide para los eventos de NASA y es abierto— publica los
+   * mismos incendios activos CON coordenadas, así que sirve de respaldo: se
+   * prefieren las detecciones de FIRMS cuando existen y, si no, se usan las de
+   * EONET, diciendo en cada punto de dónde viene.
+   */
+  const fireDetections = useMemo(() => {
+    if (fires.data.length > 0) return fires.data;
+    return realtime.nasaEvents
+      .filter((event) => event.category === "Wildfires" && Number.isFinite(event.lat) && Number.isFinite(event.lon))
+      .map((event) => ({
+        id: `eonet-${event.id}`,
+        lat: event.lat,
+        lon: event.lon,
+        brightness: 0,
+        confidence: "EONET · incendio activo",
+        acquired: event.date,
+        satellite: "EONET",
+        source: "NASA EONET",
+      }));
+  }, [fires.data, realtime.nasaEvents]);
+
   // --- 3. Space & satellites ---------------------------------------------
   // El óvalo auroral es la huella ionosférica de la magnetosfera: la misma
   // malla de OVATION sirve a las dos capas, así que se pide si cualquiera de
@@ -111,7 +136,12 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       rainRadar: toStatus(rain, rain.data.frames.length),
       surfaceWeather: toStatus(surface, surface.data.length),
       quakesEmsc: toStatus(emsc, emsc.data.length),
-      fires: toStatus(fires, fires.data.length),
+      fires: {
+        loading: fires.loading,
+        error: fires.error,
+        lastUpdate: fires.lastUpdate,
+        count: fireDetections.length,
+      },
       aurora: toStatus(aurora, aurora.data.cells.length),
       satellites: {
         loading: sats.loading,
@@ -144,7 +174,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, osint],
+    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -277,7 +307,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     rainTileUrl: rain.tileUrl,
     rainFrame: rain.latestFrame,
     surfaceWeather: surface.data,
-    fires: fires.data,
+    fires: fireDetections,
     auroraMesh: aurora.data,
     satellites: sats.positions,
     iss: iss.data,

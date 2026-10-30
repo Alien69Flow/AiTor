@@ -246,7 +246,7 @@ interface CesiumGlobeProps {
   /** NOAA Ovation aurora mesh cells. */
   auroraCells?: { lat: number; lon: number; probability: number }[];
   /** NASA FIRMS active fire detections. */
-  fires?: { id: string; lat: number; lon: number; brightness: number; confidence: string }[];
+  fires?: { id: string; lat: number; lon: number; brightness: number; confidence: string; source?: string }[];
   /** TeleGeography submarine cables. */
   cables?: { id: string; name: string; color: string; paths: [number, number][][] }[];
   /** Bitnodes reachable Bitcoin nodes. */
@@ -1368,7 +1368,7 @@ export function CesiumGlobe({
             sightingData: JSON.stringify({
               lat: f.lat, lon: f.lon, location: "Active fire",
               description: `Brightness ${f.brightness} · confidence ${f.confidence}`,
-              type: "fire", severity: "high", source: "NASA FIRMS (VIIRS)",
+              type: "fire", severity: "high", source: f.source ?? "NASA FIRMS (VIIRS)",
               category: "conflict", date_reported: "24h",
             }),
           } satisfies PlainEntityProperties,

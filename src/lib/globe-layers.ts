@@ -558,7 +558,11 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos",
 		color: "#22d3ee",
 		Icon: RadioTower,
-		requiredTier: "synapse",
+		// La ionosfera se mide con un TEC público de NOAA: no cuesta nada servirla
+		// y es parte de la misma pregunta que la estratosfera y la exosfera, así
+		// que basta con tener cuenta. Antes pedía Synapse y quedaba en gris sin
+		// explicación aparente al lado de sus vecinas.
+		requiredTier: "node",
 		source: "NOAA SWPC · GLOTEC",
 		freshness: "10 min",
 		description: "Contenido electrónico total de la termosfera: retraso de señal GNSS y corte de radio HF",
@@ -569,7 +573,9 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos",
 		color: "#c084fc",
 		Icon: Magnet,
-		requiredTier: "synapse",
+		// Mismo criterio que la ionosfera: el óvalo auroral sale de OVATION, que
+		// es abierto, y su sitio es la lista de envolturas de la Tierra.
+		requiredTier: "node",
 		source: "NOAA SWPC · OVATION",
 		freshness: "30 min",
 		description: "Huella ionosférica de la magnetosfera: el óvalo auroral, sin depender del Kp",
@@ -580,7 +586,9 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos",
 		color: "#f0abfc",
 		Icon: Radiation,
-		requiredTier: "synapse",
+		// Los cinturones cierran la lista de esferas; dejarlos tras Synapse partía
+		// la secuencia en dos y hacía que la mitad pareciera no existir.
+		requiredTier: "node",
 		source: "NOAA GOES · electrones >2 MeV",
 		freshness: "5 min",
 		description: "Los dos toroides de partículas atrapadas (1,2-8 R⊕) en el plano del ecuador magnético, con la intensidad que mide GOES",

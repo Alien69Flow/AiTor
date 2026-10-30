@@ -5,8 +5,10 @@ import {
   EARTH_SHELLS,
   GLOBE_LAYERS,
   LAYER_GROUPS,
+  TIER_RANK,
   layerDef,
   type EnvLayerKey,
+  type Tier,
 } from "./globe-layers";
 
 /**
@@ -152,5 +154,20 @@ describe("envolturas y esferas de la Tierra", () => {
     // dentro del cinturón exterior y el interior se dibuja sin intensidad.
     expect(EARTH_SHELLS.find((shell) => shell.id === "vanAllen")?.note).toContain("sin intensidad propia");
     expect(EARTH_SHELLS.find((shell) => shell.id === "heliosphere")?.note).toContain("Voyager");
+  });
+
+  /**
+   * La secuencia se lee de un tirón: si tres de las nueve pidieran un plan de
+   * pago, media lista aparecería en gris para quien sólo tiene cuenta y el
+   * conjunto parecería incompleto. Todas sus fuentes son abiertas —TEC de
+   * SWPC, OVATION y GOES—, así que basta con iniciar sesión.
+   */
+  it("ninguna esfera exige más que tener cuenta para encenderse", () => {
+    const caras = EARTH_SHELLS.filter((shell) => shell.layer).map((shell) => {
+      const def = layerDef(shell.layer!);
+      return { id: shell.id, tier: def?.requiredTier };
+    });
+    const dePago = caras.filter((shell) => TIER_RANK[shell.tier as Tier] > TIER_RANK.node);
+    expect(dePago).toEqual([]);
   });
 });

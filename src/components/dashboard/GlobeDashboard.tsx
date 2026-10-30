@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { LiveTicker } from "./LiveTicker";
 import { MarketTicker } from "./MarketTicker";
 import { GlobeOverlay } from "./GlobeOverlay";
@@ -49,12 +49,35 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
 
   const intel = useUnifiedIntel(envLayers);
   const { sightings } = useUAPSightings();
-  const { tier, hasAccess } = useTier();
+  const { tier, hasAccess, loading: tierLoading } = useTier();
   const airTraffic = useAirTraffic();
   const marineTraffic = useMarineTraffic();
   const { flights } = airTraffic;
   const { ships } = marineTraffic;
   const { outages } = useInternetOutages(true);
+
+  /**
+   * `DEFAULT_ACTIVE_LAYERS` trae encendidas dos esferas que no son públicas
+   * (Van Allen y heliosfera). Cuando el plan termina de resolverse, se apagan
+   * las capas que este visitante no puede encender: antes quedaban dibujadas en
+   * el globo mientras el panel las mostraba bloqueadas, de modo que la capa
+   * existía pero no había forma de apagarla ni de volver a encenderla.
+   */
+  useEffect(() => {
+    if (tierLoading) return;
+    setEnvLayers((previous) => {
+      let changed = false;
+      const next = new Set(previous);
+      for (const key of next) {
+        const definition = layerDef(key);
+        if (definition && !hasAccess(definition.requiredTier)) {
+          next.delete(key);
+          changed = true;
+        }
+      }
+      return changed ? next : previous;
+    });
+  }, [tierLoading, hasAccess]);
   // Inventario fijo (la lista de cámaras está curada en el repositorio): se
   // calcula una vez y se reutiliza, porque cada entrada de aquí acaba siendo
   // una entidad del globo cuando la capa está encendida.
