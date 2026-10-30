@@ -21,6 +21,7 @@ import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
 import type { PlacedCamera } from "@/lib/live-camera-places";
 import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
 import type { SolarWind } from "@/hooks/connectors/useSolarWind";
+import type { EnvironmentGrid } from "@/hooks/connectors/useEnvironmentGrid";
 
 const CesiumGlobe = lazyWithRetry(() =>
   import("./CesiumGlobe").then((m) => ({ default: m.CesiumGlobe }))
@@ -56,6 +57,7 @@ export interface HybridGlobeProps {
   vanAllen?: VanAllenBelts | null;
   solarWind?: SolarWind | null;
   cameras?: PlacedCamera[];
+  environment?: EnvironmentGrid | null;
 }
 
 function GlobeFallback() {
@@ -95,6 +97,7 @@ export function HybridGlobe({
   vanAllen = null,
   solarWind = null,
   cameras = [],
+  environment = null,
 }: HybridGlobeProps) {
   const isMobile = useIsMobile();
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; alt: number } | null>(null);
@@ -146,6 +149,7 @@ export function HybridGlobe({
           vanAllen={layers.has("vanAllen") ? vanAllen : null}
           solarWind={layers.has("heliosphere") ? solarWind : null}
           cameras={cameras}
+          environment={environment}
         />
       </Suspense>
     </div>

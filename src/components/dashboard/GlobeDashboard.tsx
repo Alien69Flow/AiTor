@@ -170,7 +170,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
             gdeltEvents={intel.gdeltEvents} iss={intel.iss} ionosphere={intel.ionosphere}
             vanAllen={intel.vanAllen} solarWind={intel.solarWind}
-            cameras={camerasOnGlobe} />
+            cameras={camerasOnGlobe} environment={intel.environment} />
         </div>
 
         {cosmicScale !== null && <CosmicZoom initialScale={cosmicScale} onExit={exitCosmicZoom} />}

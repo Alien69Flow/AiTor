@@ -31,6 +31,8 @@ la **API REST** directamente, por el mismo motivo.
 | `src/lib/mcp/registry.ts` | Registro: filtro por plan, `tools/list`, `tools/call`, despacho JSON-RPC |
 | `src/lib/mcp/tools/satellites.ts` | `telemetry.satellites` — posiciones reales desde CelesTrak |
 | `src/lib/mcp/tools/osint.ts` | `osint.events` — titulares de GDELT con fuente, enlace y tono |
+| `src/lib/mcp/tools/weather.ts` | `weather.outlook` — previsión, secado, mar, nieve y polen de Open-Meteo |
+| `src/lib/environment-metrics.ts` | Secado, bandera de baño y nivel de polen: sin React, los usan el globo y MCP |
 | `src/lib/mcp/tools/database.ts` | `db.select` — tablas y columnas en lista blanca, RLS del llamante |
 | `src/lib/mcp/gemini.ts` | Declaraciones de funciones, descubrimiento de modelo, límites y bucle |
 | `src/lib/mcp/http.ts` | Handler `Request`/`Response`: JSON-RPC o `{ prompt }` |
@@ -43,6 +45,7 @@ la **API REST** directamente, por el mismo motivo.
 | --- | --- | --- |
 | `telemetry.satellites` | `free` | CelesTrak TLE + `satellite.js` |
 | `osint.events` | `free` | GDELT DOC 2.0 |
+| `weather.outlook` | `free` | Open-Meteo (previsión, marine, air quality, geocoding) |
 | `github.repo` | `free` | Proxy de GitHub (lectura) |
 | `db.select` | `pro` | Supabase, con RLS |
 | `github.propose` | `pro` | Proxy de GitHub (rama + PR en borrador) |

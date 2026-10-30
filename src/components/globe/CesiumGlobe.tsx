@@ -48,6 +48,7 @@ import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
 import type { PlacedCamera } from "@/lib/live-camera-places";
 import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
 import type { SolarWind } from "@/hooks/connectors/useSolarWind";
+import type { EnvironmentGrid } from "@/hooks/connectors/useEnvironmentGrid";
 import { HELIOPAUSE_AU, FAST_WIND_KMS } from "@/hooks/connectors/useSolarWind";
 import { beltRings } from "@/lib/van-allen-belts";
 import { subsolarPoint } from "@/lib/solar-position";
@@ -137,6 +138,7 @@ const MARKER_GLYPHS: Record<string, string> = {
   quake: "⌁", fire: "▲", flight: "✈", ship: "◆", satellite: "✦",
   conflict: "✕", news: "!", bitcoin: "₿", outage: "⌁", market: "$", uap: "◉",
   camera: "▶", iss: "◈", belt: "☢", sun: "☉",
+  drying: "☀", sea: "≈", snow: "❄", pollen: "✿",
 };
 
 /** Radio medio terrestre, para pasar la geometría del dipolo a metros. */
@@ -273,6 +275,8 @@ interface CesiumGlobeProps {
    * que el visor no necesita saber nada de navegar a otro módulo.
    */
   cameras?: PlacedCamera[];
+  /** Rejilla ambiental de Open-Meteo: secado, polen, mar y nieve. */
+  environment?: EnvironmentGrid | null;
 }
 
 export function CesiumGlobe({
@@ -282,7 +286,7 @@ export function CesiumGlobe({
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
   bitcoinNodes = [], gdeltEvents = [], surfaceWeather = [],
   iss = null, ionosphere = null, cameras = [],
-  vanAllen = null, solarWind = null,
+  vanAllen = null, solarWind = null, environment = null,
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
@@ -307,6 +311,7 @@ export function CesiumGlobe({
   const cameraEntityIdsRef = useRef<string[]>([]);
   const vanAllenEntityIdsRef = useRef<string[]>([]);
   const heliosphereEntityIdsRef = useRef<string[]>([]);
+  const envGridEntityIdsRef = useRef<string[]>([]);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
@@ -1497,6 +1502,145 @@ export function CesiumGlobe({
       });
     }
   }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, surfaceWeather]);
+
+  /**
+   * Rejilla ambiental: secado de la ropa, polen, estado del mar y nieve.
+   *
+   * Cada marcador lleva su medida y su fuente en la ficha, porque un «78 %» sin
+   * decir de dónde sale es un número inventado. El color no decora: es la
+   * lectura de la capa (verde = seca / baño tranquilo / poca nieve acumulada,
+   * rojo = lluvia / bandera roja / polen muy alto).
+   */
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    envGridEntityIdsRef.current.forEach((id) => {
+      const entity = viewer.entities.getById(id);
+      if (entity) viewer.entities.remove(entity);
+    });
+    envGridEntityIdsRef.current = [];
+
+    const active = envLayers ?? new Set<EnvLayerKey>();
+    const env = environment;
+    if (!env) return;
+
+    const add = (
+      id: string,
+      lat: number,
+      lon: number,
+      glyph: string,
+      color: string,
+      labelText: string,
+      payload: Record<string, unknown>,
+    ) => {
+      viewer.entities.add({
+        id,
+        position: Cartesian3.fromDegrees(lon, lat, 20_000),
+        billboard: {
+          image: markerIcon(glyph, color), width: 18, height: 18,
+          scaleByDistance: new NearFarScalar(1e6, 1.1, 1e8, 0.35),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: labelText,
+          font: "9px monospace",
+          fillColor: hexToColor(color, 0.95),
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          pixelOffset: new Cartesian2(0, -8),
+          scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: eventPayload({ lat, lon, category: "weather", ...payload }),
+      });
+      envGridEntityIdsRef.current.push(id);
+    };
+
+    if (active.has("dryingIndex")) {
+      env.drying.forEach((point) => {
+        const color = point.index >= 70 ? "#22c55e" : point.index >= 40 ? "#f59e0b" : "#ef4444";
+        add(
+          `drying-${point.id}`, point.lat, point.lon, "drying", color,
+          `Secado ${point.index}%`,
+          {
+            location: `${point.name} · secado de la ropa`,
+            description:
+              `Índice de secado ${point.index}/100 con ${point.temperatureC.toFixed(1)} °C, ` +
+              `${point.humidityPercent.toFixed(0)} % HR, viento ${point.windKmh.toFixed(0)} km/h y ` +
+              `${point.precipitationMm.toFixed(1)} mm. ${point.index === 0 ? "No se seca: está lloviendo." : point.index >= 70 ? "Se seca sin problema." : point.index >= 40 ? "Se seca despacio." : "Casi no se seca."}`,
+            type: "drying", severity: point.index >= 70 ? "low" : point.index >= 40 ? "medium" : "high",
+            source: "Open-Meteo · previsión horaria", category: "weather",
+            date_reported: point.time || "LIVE", reliability: "Modelo de previsión (no medida directa)",
+          },
+        );
+      });
+    }
+
+    if (active.has("seaState")) {
+      const colorOf = { verde: "#22c55e", amarilla: "#facc15", roja: "#ef4444" } as const;
+      env.sea.forEach((point) => {
+        add(
+          `sea-${point.id}`, point.lat, point.lon, "sea", colorOf[point.flag],
+          `${point.waveHeightM.toFixed(1)} m`,
+          {
+            location: `${point.name} · estado del mar`,
+            description:
+              `Ola ${point.waveHeightM.toFixed(2)} m` +
+              `${point.swellHeightM !== null ? `, mar de fondo ${point.swellHeightM.toFixed(2)} m` : ""}` +
+              `${point.seaTempC !== null ? `, agua ${point.seaTempC.toFixed(1)} °C` : ""}. ` +
+              `Bandera ${point.flag} (deducida del oleaje, no del socorrista).`,
+            type: "sea", severity: point.flag === "roja" ? "high" : point.flag === "amarilla" ? "medium" : "low",
+            source: "Open-Meteo Marine · oleaje y mar de fondo", category: "weather",
+            date_reported: point.time || "LIVE", reliability: "Modelo de oleaje",
+          },
+        );
+      });
+    }
+
+    if (active.has("snowDepth")) {
+      env.snow.forEach((point) => {
+        const cm = point.snowDepthM * 100;
+        const color = cm >= 50 ? "#e2e8f0" : cm >= 20 ? "#93c5fd" : cm > 0 ? "#60a5fa" : "#64748b";
+        add(
+          `snow-${point.id}`, point.lat, point.lon, "snow", color,
+          `${cm.toFixed(0)} cm`,
+          {
+            location: `${point.name} · nieve`,
+            description:
+              `Espesor ${cm.toFixed(0)} cm, nevada ${point.snowfallCm.toFixed(1)} cm, ` +
+              `${point.temperatureC.toFixed(1)} °C` +
+              `${point.freezingLevelM !== null ? `, cota de nieve ≈ ${Math.round(point.freezingLevelM)} m (isoterma de 0 °C)` : ""}.`,
+            type: "snow", severity: cm >= 20 ? "low" : "medium",
+            source: "Open-Meteo · espesor e isoterma de 0 °C", category: "weather",
+            date_reported: point.time || "LIVE", reliability: "Modelo de previsión",
+          },
+        );
+      });
+    }
+
+    if (active.has("pollen")) {
+      const colorOf = { 0: "#38bdf8", 1: "#facc15", 2: "#fb923c", 3: "#f43f5e" } as const;
+      const labelOf = { 0: "bajo", 1: "moderado", 2: "alto", 3: "muy alto" } as const;
+      env.pollen.forEach((point) => {
+        add(
+          `pollen-${point.id}`, point.lat, point.lon, "pollen", colorOf[point.level],
+          `${point.dominant ?? "polen"} ${point.dominantGrains?.toFixed(0) ?? 0}/m³`,
+          {
+            location: `${point.name} · polen`,
+            description:
+              `${point.dominant ?? "Polen"}: ${point.dominantGrains?.toFixed(1) ?? 0} granos/m³ ` +
+              `(nivel ${labelOf[point.level]}). CAMS Europe sólo publica estos recuentos en Europa.`,
+            type: "pollen", severity: point.level >= 2 ? "high" : point.level === 1 ? "medium" : "low",
+            source: "CAMS Europe vía Open-Meteo Air Quality", category: "weather",
+            date_reported: point.time || "LIVE", reliability: "Modelo CAMS",
+          },
+        );
+      });
+    }
+  }, [environment, envLayers]);
 
   // ISS — posición real de WhereTheISS.at, a su altitud, con la huella de
   // cobertura de la estación (~2 250 km de radio) para que se entienda qué ve.

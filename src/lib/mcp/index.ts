@@ -3,6 +3,7 @@ import { databaseTools } from "./tools/database";
 import { githubTools } from "./tools/github";
 import { osintTools } from "./tools/osint";
 import { satelliteTools } from "./tools/satellites";
+import { weatherTools } from "./tools/weather";
 
 /**
  * Servidor MCP local de AI-TOR.
@@ -23,6 +24,7 @@ export const MCP_TOOLS: McpTool[] = [
   ...osintTools,
   ...databaseTools,
   ...githubTools,
+  ...weatherTools,
 ];
 
 export function createAiTorMcpServer(options: { db?: McpDatabase; github?: McpGitHub } = {}): McpServer {

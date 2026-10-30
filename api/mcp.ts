@@ -94,6 +94,22 @@ const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "weather.outlook",
+    title: "Previsión y entorno",
+    description:
+      "Estado actual y próximas horas de un lugar: temperatura, humedad, viento, lluvia, índice de " +
+      "secado de la ropa, nieve y cota, oleaje con bandera de baño y polen (Europa). Open-Meteo.",
+    minTier: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        place: { type: "string", description: "Nombre del lugar, p. ej. «Zaragoza»." },
+        lat: { type: "number", description: "Latitud, si ya la conoces." },
+        lon: { type: "number", description: "Longitud, si ya la conoces." },
+      },
+    },
+  },
+  {
     name: "db.select",
     title: "Leer mis datos",
     description:
@@ -118,6 +134,11 @@ const READABLE_TABLES: Record<string, string[]> = {
 };
 
 const GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc";
+const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
+const MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
+const AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
+const GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search";
+const WEATHER_HOURS = 6;
 const TLE_URL = {
   stations: "https://celestrak.org/NORAD/elements/gp.php?GROUP=stations&FORMAT=tle",
   active: "https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle",
@@ -329,6 +350,183 @@ async function runOsint(args: Record<string, unknown>): Promise<ToolResult> {
   return ok({ source: "gdeltproject.org", timespan, count: articles.length, articles });
 }
 
+/* ------------------------------- entorno ------------------------------- */
+
+function asNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+/** Mismos umbrales que `src/lib/environment-metrics.ts`, copiados aquí. */
+function dryingIndexOf(
+  temperatureC: number,
+  humidityPercent: number,
+  windKmh: number,
+  precipitationMm: number,
+): number {
+  if (!Number.isFinite(temperatureC) || !Number.isFinite(humidityPercent)) return 0;
+  if (precipitationMm > 0.1) return 0;
+  const dryness = Math.min(100, Math.max(0, 100 - humidityPercent)) * 0.5;
+  const wind = (Math.min(40, Math.max(0, Number.isFinite(windKmh) ? windKmh : 0)) / 40) * 25;
+  const warmth = Math.min(1, Math.max(0, (temperatureC - 5) / 30)) * 25;
+  return Math.round(Math.min(100, Math.max(0, dryness + wind + warmth)));
+}
+
+function dryingVerdictOf(index: number): string {
+  if (index === 0) return "No se seca: está lloviendo.";
+  if (index >= 70) return "Se seca sin problema.";
+  if (index >= 40) return "Se seca despacio.";
+  return "Casi no se seca.";
+}
+
+function seaFlagOf(waveHeightM: number): "verde" | "amarilla" | "roja" {
+  if (!Number.isFinite(waveHeightM)) return "amarilla";
+  if (waveHeightM >= 2) return "roja";
+  if (waveHeightM >= 1) return "amarilla";
+  return "verde";
+}
+
+const POLLEN_LABELS: [string, string][] = [
+  ["grass_pollen", "gramíneas"],
+  ["olive_pollen", "olivo"],
+  ["birch_pollen", "abedul"],
+  ["alder_pollen", "aliso"],
+  ["ragweed_pollen", "ambrosía"],
+];
+
+function pollenLevelOf(grains: number): number {
+  if (!Number.isFinite(grains) || grains < 1) return 0;
+  if (grains < 10) return 1;
+  if (grains < 50) return 2;
+  return 3;
+}
+
+interface WeatherCurrent {
+  time?: string;
+  [key: string]: unknown;
+}
+
+interface WeatherResponse {
+  current?: WeatherCurrent;
+  hourly?: { time?: string[]; precipitation_probability?: (number | null)[]; precipitation?: (number | null)[] };
+}
+
+/** Una fuente opcional caída no puede tumbar la herramienta. */
+async function optionalWeather(url: string): Promise<WeatherResponse | null> {
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    if (!response.ok) return null;
+    return (await response.json()) as WeatherResponse;
+  } catch {
+    return null;
+  }
+}
+
+async function runWeather(args: Record<string, unknown>): Promise<ToolResult> {
+  let lat = asNumber(args.lat);
+  let lon = asNumber(args.lon);
+  let name = typeof args.place === "string" ? args.place.trim() : "";
+
+  if (lat === null || lon === null) {
+    if (!name) throw new Error("Indica `place` (nombre) o `lat` + `lon`");
+    const response = await fetch(
+      `${GEOCODING_URL}?name=${encodeURIComponent(name)}&count=1&language=es&format=json`,
+      { signal: AbortSignal.timeout(12_000) },
+    );
+    if (!response.ok) throw new Error(`El buscador de lugares respondió ${response.status}`);
+    const payload = (await response.json()) as {
+      results?: { name?: string; latitude?: number; longitude?: number; country_code?: string }[];
+    };
+    const hit = payload.results?.[0];
+    if (!hit || typeof hit.latitude !== "number" || typeof hit.longitude !== "number") {
+      throw new Error(`No encuentro «${name}»; prueba con otro nombre o con coordenadas`);
+    }
+    lat = hit.latitude;
+    lon = hit.longitude;
+    name = hit.country_code ? `${hit.name ?? name} (${hit.country_code})` : (hit.name ?? name);
+  }
+
+  const currentFields =
+    "temperature_2m,relative_humidity_2m,wind_speed_10m,precipitation,snow_depth,freezing_level_height";
+  const response = await fetch(
+    `${FORECAST_URL}?latitude=${lat}&longitude=${lon}&current=${currentFields}` +
+      `&hourly=precipitation_probability,precipitation&forecast_hours=${WEATHER_HOURS}&timezone=UTC`,
+    { signal: AbortSignal.timeout(12_000) },
+  );
+  if (!response.ok) throw new Error(`Open-Meteo respondió ${response.status}`);
+  const forecast = (await response.json()) as WeatherResponse;
+  const now = forecast.current;
+  if (!now) throw new Error("Open-Meteo no devolvió el estado actual");
+
+  const temperatureC = asNumber(now.temperature_2m) ?? 0;
+  const humidityPercent = asNumber(now.relative_humidity_2m) ?? 0;
+  const windKmh = asNumber(now.wind_speed_10m) ?? 0;
+  const precipitationMm = asNumber(now.precipitation) ?? 0;
+  const index = dryingIndexOf(temperatureC, humidityPercent, windKmh, precipitationMm);
+
+  const [marine, air] = await Promise.all([
+    optionalWeather(
+      `${MARINE_URL}?latitude=${lat}&longitude=${lon}` +
+        `&current=wave_height,swell_wave_height,sea_surface_temperature&timezone=UTC`,
+    ),
+    optionalWeather(
+      `${AIR_QUALITY_URL}?latitude=${lat}&longitude=${lon}` +
+        `&current=grass_pollen,olive_pollen,birch_pollen,alder_pollen,ragweed_pollen&timezone=UTC`,
+    ),
+  ]);
+
+  let pollen: { species: string; grains: number; level: number } | null = null;
+  for (const [key, label] of POLLEN_LABELS) {
+    const value = asNumber(air?.current?.[key]);
+    if (value === null) continue;
+    if (!pollen || value > pollen.grains) {
+      pollen = { species: label, grains: value, level: pollenLevelOf(value) };
+    }
+  }
+
+  const waveHeightM = asNumber(marine?.current?.wave_height);
+  const hourlyTime = forecast.hourly?.time ?? [];
+  const probabilities = forecast.hourly?.precipitation_probability ?? [];
+  const precipitations = forecast.hourly?.precipitation ?? [];
+  const nextHours = hourlyTime.slice(0, WEATHER_HOURS).map((time, i) => ({
+    time,
+    precipitationProbability: asNumber(probabilities[i]),
+    precipitationMm: asNumber(precipitations[i]),
+  }));
+
+  return ok({
+    source: "open-meteo.com",
+    place: { lat, lon, name: name || `${lat}, ${lon}` },
+    observedAt: now.time ?? null,
+    now: {
+      temperatureC,
+      humidityPercent,
+      windKmh,
+      precipitationMm,
+      precipitationProbability: nextHours[0]?.precipitationProbability ?? null,
+    },
+    drying: { index, verdict: dryingVerdictOf(index) },
+    snow: {
+      snowDepthCm: Math.round((asNumber(now.snow_depth) ?? 0) * 100),
+      freezingLevelM: asNumber(now.freezing_level_height),
+    },
+    sea:
+      waveHeightM === null
+        ? { available: false, note: "Open-Meteo Marine no cubre este punto (tierra adentro)." }
+        : {
+            available: true,
+            waveHeightM,
+            swellHeightM: asNumber(marine?.current?.swell_wave_height),
+            seaTemperatureC: asNumber(marine?.current?.sea_surface_temperature),
+            flag: seaFlagOf(waveHeightM),
+            flagNote: "La bandera se deduce del oleaje; en playa manda la del socorrista.",
+          },
+    pollen: pollen
+      ? { available: true, ...pollen, unit: "granos/m³" }
+      : { available: false, note: "CAMS sólo publica recuentos de polen en Europa." },
+    nextHours,
+  });
+}
+
 async function runDbSelect(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
   const table = String(args.table ?? "");
   const allowed = READABLE_TABLES[table];
@@ -372,6 +570,7 @@ async function callTool(
   try {
     if (name === "telemetry.satellites") return await runSatellites(args);
     if (name === "osint.events") return await runOsint(args);
+    if (name === "weather.outlook") return await runWeather(args);
     return await runDbSelect(args, caller);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error de la herramienta";

@@ -105,13 +105,17 @@ describe("traducción a Gemini", () => {
   });
 
   it("declara una función por herramienta, con sus parámetros", () => {
-    const declarations = toGeminiTools(createAiTorMcpServer().listTools("free"))[0].functionDeclarations;
-    // Tres públicas: telemetría, OSINT y lectura del repositorio (leer el repo
-    // no cuesta nada; proponer un cambio sí pide plan y permiso).
-    expect(declarations).toHaveLength(3);
+    const publicTools = createAiTorMcpServer().listTools("free");
+    const declarations = toGeminiTools(publicTools)[0].functionDeclarations;
+    // Una declaración por herramienta pública: si el catálogo crece, el modelo
+    // tiene que verla sin que esta prueba se quede contando tres a mano.
+    expect(declarations).toHaveLength(publicTools.length);
     const satellites = declarations.find((d) => d.name === "telemetry.satellites");
     expect(satellites?.parameters?.properties?.group?.type).toBe("STRING");
     expect(declarations.some((d) => d.name === "github.repo")).toBe(true);
+    // La previsión viaja con su parámetro, o el modelo no puede pedir un lugar.
+    const weather = declarations.find((d) => d.name === "weather.outlook");
+    expect(weather?.parameters?.properties?.place?.type).toBe("STRING");
   });
 
   it("elige el Flash más nuevo y descarta los que no conversan", () => {
@@ -166,7 +170,7 @@ describe("handler HTTP", () => {
     );
     expect(listed.status).toBe(200);
     const payload = (await listed.json()) as { result?: { tools: unknown[] } };
-    expect(payload.result?.tools).toHaveLength(3);
+    expect(payload.result?.tools).toHaveLength(createAiTorMcpServer().listTools("free").length);
 
     const prompt = await handler(
       new Request("https://example.test/mcp", {

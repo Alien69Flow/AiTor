@@ -56,6 +56,11 @@ export type EnvLayerKey =
 	| "oceanChlorophyll"
 	| "seaIce"
 	| "carbonDioxide"
+	// Herramientas del día a día (Open-Meteo, sin clave)
+	| "dryingIndex"
+	| "seaState"
+	| "snowDepth"
+	| "pollen"
 	// Atmósfera alta y órbita
 	| "ionosphere"
 	| "magnetosphere"
@@ -220,6 +225,10 @@ export const EARTH_SHELLS: EarthShell[] = [
 ];
 
 export const CONNECTOR_LAYER_KEYS: readonly EnvLayerKey[] = [
+	"dryingIndex",
+	"seaState",
+	"snowDepth",
+	"pollen",
 	"ionosphere",
 	"iss",
 	"liveCameras",
@@ -787,8 +796,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "WorldMonitor / Oracle",
 		freshness: "15 min",
 		description: "Real-time internet disruption events"
-	},
-	{ 
+	},	{
 		key: "economicCenters", 
 		label: "Economic Centers", 
 		group: "Markets & Feeds", 
@@ -798,6 +806,56 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major financial and economic hubs"
+	},
+
+	// === El día a día (Open-Meteo, sin clave) ===
+	// Cuatro preguntas cotidianas que el globo no sabía contestar: si tiendes la
+	// ropa, si te bañas, si hay nieve en la estación y cuánto polen hay. Las tres
+	// APIs de Open-Meteo son abiertas y se piden en una sola rejilla batida, así
+	// que ninguna de estas capas necesita clave ni proxy.
+	{
+		key: "dryingIndex",
+		label: "Secado de la ropa",
+		group: "Atmospheric & Weather",
+		color: "#facc15",
+		Icon: ThermometerSun,
+		requiredTier: "signal",
+		source: "Open-Meteo · previsión horaria",
+		freshness: "15 min",
+		description: "Índice de secado 0-100 con temperatura, humedad, viento y lluvia",
+	},
+	{
+		key: "seaState",
+		label: "Estado del mar",
+		group: "Atmospheric & Weather",
+		color: "#0ea5e9",
+		Icon: Waves,
+		requiredTier: "signal",
+		source: "Open-Meteo Marine · oleaje y mar de fondo",
+		freshness: "15 min",
+		description: "Altura de ola, mar de fondo y bandera de baño en la costa",
+	},
+	{
+		key: "snowDepth",
+		label: "Nieve y cota",
+		group: "Atmospheric & Weather",
+		color: "#e2e8f0",
+		Icon: Snowflake,
+		requiredTier: "signal",
+		source: "Open-Meteo · espesor, nevada e isoterma de 0 °C",
+		freshness: "15 min",
+		description: "Nieve en estaciones de esquí y cota de nieve",
+	},
+	{
+		key: "pollen",
+		label: "Polen y alergias",
+		group: "Biosphere & Climate",
+		color: "#c084fc",
+		Icon: Sprout,
+		requiredTier: "signal",
+		source: "CAMS Europe vía Open-Meteo Air Quality",
+		freshness: "1 h",
+		description: "Gramíneas, olivo, abedul, aliso y ambrosía (sólo Europa)",
 	},
 ];
 

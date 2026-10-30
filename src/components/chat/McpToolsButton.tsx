@@ -22,6 +22,8 @@ const DEFAULT_ARGS: Record<string, Record<string, unknown>> = {
   "db.select": { table: "profiles", limit: 1 },
   // Lectura del repositorio: barata e inocua, sirve para probar la conexión.
   "github.repo": { action: "repo_info" },
+  // Sin coordenadas cae en el buscador de lugares: una pregunta útil de un clic.
+  "weather.outlook": { place: "Zaragoza" },
   // `github.propose` no tiene valores por defecto a propósito: abrir un PR
   // necesita un título, una ruta y el contenido, y rellenarlos por el usuario
   // sería peor que no ofrecerlo desde este botón.

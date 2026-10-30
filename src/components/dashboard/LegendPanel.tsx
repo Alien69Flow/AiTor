@@ -59,6 +59,10 @@ const LAYER_STATUS_KEY: Partial<Record<EnvLayerKey, keyof LayerStatusMap>> = {
   underseaCables: "cables",
   economicCenters: "bitcoinNodes",
   airTraffic: "aviation",
+  dryingIndex: "drying",
+  pollen: "pollen",
+  seaState: "sea",
+  snowDepth: "snow",
   conflictZones: "gdelt",
   internetOutages: "gdelt",
 };

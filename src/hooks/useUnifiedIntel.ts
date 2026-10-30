@@ -15,6 +15,7 @@ import { useIssPosition } from "./connectors/useIssPosition";
 import { useIonosphere } from "./connectors/useIonosphere";
 import { useVanAllenBelts } from "./connectors/useVanAllenBelts";
 import { useSolarWind } from "./connectors/useSolarWind";
+import { useEnvironmentGrid } from "./connectors/useEnvironmentGrid";
 import { toStatus, type LayerStatus } from "@/lib/connectors";
 import type { EnvLayerKey } from "@/lib/globe-layers";
 import type { Earthquake } from "./useEarthquakes";
@@ -43,6 +44,10 @@ export type ConnectorKey =
   | "bitcoinNodes"
   | "gdelt"
   | "aviation"
+  | "drying"
+  | "pollen"
+  | "sea"
+  | "snow"
   | "osint";
 
 export type LayerStatusMap = Record<ConnectorKey, LayerStatus>;
@@ -64,6 +69,14 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
   // --- 1. Weather & atmosphere -------------------------------------------
   const rain = useRainViewer(on("precipitation"));
   const surface = useSurfaceWeather(on("wind") || on("isobars") || on("temperature") || on("humidity"));
+  // Secado, polen, mar y nieve comparten rejilla y petición batida: se piden
+  // juntos si cualquiera de las cuatro capas está encendida.
+  const environment = useEnvironmentGrid({
+    drying: on("dryingIndex"),
+    pollen: on("pollen"),
+    sea: on("seaState"),
+    snow: on("snowDepth"),
+  });
 
   // --- 2. Seismic & emergencies ------------------------------------------
   const emsc = useEmscQuakes(activeLayers ? on("earthquakes") : true);
@@ -167,6 +180,10 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       bitcoinNodes: toStatus(btcNodes, btcNodes.data.length),
       gdelt: toStatus(gdelt, gdelt.data.length),
       aviation: toStatus(aviation, aviation.data.length),
+      drying: toStatus(environment, environment.data.drying.length),
+      pollen: toStatus(environment, environment.data.pollen.length),
+      sea: toStatus(environment, environment.data.sea.length),
+      snow: toStatus(environment, environment.data.snow.length),
       osint: {
         loading: osint.isLoading,
         error: osint.error,
@@ -174,7 +191,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, osint],
+    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, aviation, environment, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -318,6 +335,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,
     aviation: aviation.data,
+    environment: environment.data,
     // OSINT
     osint: osint.events,
     osintLoading: osint.isLoading,
