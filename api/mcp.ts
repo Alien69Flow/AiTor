@@ -43,6 +43,10 @@ const AUTH_KEY =
 const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
+/** Repositorio por defecto de las herramientas de GitHub. */
+const DEFAULT_OWNER = "Alien69Flow";
+const DEFAULT_REPO = "AiTor";
+
 type Tier = "free" | "pro" | "dao";
 const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, dao: 2 };
 
@@ -110,6 +114,53 @@ const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "github.repo",
+    title: "Leer el repositorio",
+    description:
+      "Lee el repositorio de AI Tor en GitHub: árbol de ficheros, contenido de un fichero, " +
+      "commits, pull requests abiertos o los checks de CI. Es la lectura con la que detecta " +
+      "fallos y decide qué mejorar. Necesita sesión iniciada.",
+    minTier: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["repo_info", "tree", "contents", "get_file", "commits", "pull_requests", "check_runs"],
+          description: "Qué se quiere leer. Por defecto, `tree`.",
+          default: "tree",
+        },
+        path: { type: "string", description: "Ruta del fichero o carpeta." },
+        branch: { type: "string", description: "Rama, etiqueta o commit. Por defecto `main`." },
+        owner: { type: "string", description: `Propietario; por defecto ${DEFAULT_OWNER}.` },
+        repo: { type: "string", description: `Repositorio; por defecto ${DEFAULT_REPO}.` },
+      },
+    },
+  },
+  {
+    name: "github.propose",
+    title: "Proponer un cambio",
+    description:
+      "Crea una rama, escribe un fichero y abre un pull request en borrador. Nunca escribe en " +
+      "`main`: la mejora queda propuesta para revisión. Requiere plan pro y permiso de escritura " +
+      "en el repositorio.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Título del pull request y origen de la rama." },
+        path: { type: "string", description: "Fichero a crear o modificar, relativo a la raíz." },
+        content: { type: "string", description: "Contenido completo del fichero (texto)." },
+        message: { type: "string", description: "Mensaje del commit; por defecto el título." },
+        body: { type: "string", description: "Descripción del PR: qué cambia y por qué." },
+        base: { type: "string", description: "Rama base; por defecto `main`." },
+        owner: { type: "string", description: `Propietario; por defecto ${DEFAULT_OWNER}.` },
+        repo: { type: "string", description: `Repositorio; por defecto ${DEFAULT_REPO}.` },
+      },
+      required: ["title", "path", "content"],
+    },
+  },
+  {
     name: "db.select",
     title: "Leer mis datos",
     description:
@@ -133,6 +184,13 @@ const READABLE_TABLES: Record<string, string[]> = {
   user_credits: ["user_id", "paid_tier", "used", "updated_at"],
 };
 
+/**
+ * Proxy de GitHub: vive en el proyecto de identidad porque es el único que
+ * puede validar el JWT del llamante. Aquí sólo viaja la acción; el token de
+ * servicio y la allowlist de repositorio se quedan allí.
+ */
+const GITHUB_PROXY = `${AUTH_URL}/functions/v1/github-proxy`;
+
 const GDELT_DOC = "https://api.gdeltproject.org/api/v2/doc/doc";
 const FORECAST_URL = "https://api.open-meteo.com/v1/forecast";
 const MARINE_URL = "https://marine-api.open-meteo.com/v1/marine";
@@ -145,9 +203,12 @@ const TLE_URL = {
 } as const;
 
 interface Caller {
-  userId: string;
-  token: string;
+  /** `null` en una llamada anónima: sólo alcanza las herramientas gratuitas. */
+  userId: string | null;
+  token: string | null;
   tier: Tier;
+  /** Para el cubo de cuota cuando no hay usuario. */
+  ip: string;
 }
 
 function json(body: unknown, status = 200) {
@@ -200,8 +261,18 @@ async function selectRows(
   return Array.isArray(rows) ? rows : [];
 }
 
-async function resolveCaller(authorization: string | undefined): Promise<Caller | null> {
-  if (!authorization?.startsWith("Bearer ")) return null;
+/**
+ * Identidad del llamante.
+ *
+ * Sin cabecera `Authorization` la llamada es **anónima**: plan gratuito y sólo
+ * las herramientas públicas. Antes se respondía 401 a todo, así que una visita
+ * sin cuenta no podía ni listar herramientas aunque el globo y sus datos sean
+ * públicos. Una cabecera presente pero inválida sigue siendo 401: degradar una
+ * sesión rota a invitado escondería el fallo.
+ */
+async function resolveCaller(authorization: string | undefined, ip: string): Promise<Caller | null> {
+  if (!authorization) return { userId: null, token: null, tier: "free", ip };
+  if (!authorization.startsWith("Bearer ")) return null;
   const token = authorization.slice("Bearer ".length).trim();
   if (!token) return null;
   const userId = await verifiedUserId(token);
@@ -216,7 +287,162 @@ async function resolveCaller(authorization: string | undefined): Promise<Caller 
     // Sin tabla o sin permiso de lectura el plan es el gratuito: un fallo de
     // lectura nunca asciende a nadie.
   }
-  return { userId, token, tier };
+  return { userId, token, tier, ip };
+}
+
+/* -------------------------------- github -------------------------------- */
+
+async function githubCall(caller: Caller, params: Record<string, unknown>): Promise<unknown> {
+  if (!caller.token) {
+    throw new Error("GitHub necesita una sesión iniciada: el proxy valida tu identidad");
+  }
+  const response = await fetch(GITHUB_PROXY, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      apikey: AUTH_KEY,
+      Authorization: `Bearer ${caller.token}`,
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(25_000),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; message?: string }
+    | null;
+
+  if (response.status === 404) {
+    throw new Error("GitHub: el proxy no está desplegado en el proyecto de identidad (github-proxy).");
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub: ${payload?.error ?? payload?.message ?? `HTTP ${response.status}`}`);
+  }
+  return payload;
+}
+
+/** Nombre de rama a partir del título: `aitor/…-AAAAMMDD`, sin acentos. */
+function branchName(title: string, now = new Date()): string {
+  const slug = title
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+  const stamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}${String(
+    now.getDate(),
+  ).padStart(2, "0")}`;
+  return `aitor/${slug || "mejora"}-${stamp}`;
+}
+
+function targetRepo(args: Record<string, unknown>) {
+  const owner =
+    typeof args.owner === "string" && args.owner.trim() ? args.owner.trim() : DEFAULT_OWNER;
+  const name =
+    typeof args.repo === "string" && args.repo.trim() ? args.repo.trim() : DEFAULT_REPO;
+  return { owner, repo: name };
+}
+
+const READ_ACTIONS = [
+  "repo_info",
+  "tree",
+  "contents",
+  "get_file",
+  "commits",
+  "pull_requests",
+  "check_runs",
+];
+
+async function runGitRepo(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
+  const action = typeof args.action === "string" ? args.action : "tree";
+  if (!READ_ACTIONS.includes(action)) throw new Error(`Acción de lectura no permitida: ${action}`);
+  const { owner, repo } = targetRepo(args);
+  const data = await githubCall(caller, {
+    action,
+    owner,
+    repo,
+    path: typeof args.path === "string" ? args.path : undefined,
+    branch: typeof args.branch === "string" ? args.branch : undefined,
+    ref: typeof args.branch === "string" ? args.branch : undefined,
+  });
+  return ok({ owner, repo, action, data });
+}
+
+async function runGitPropose(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  const path = typeof args.path === "string" ? args.path.trim().replace(/^\/+/, "") : "";
+  const content = typeof args.content === "string" ? args.content : "";
+  if (!title || !path) throw new Error("`title` y `path` son obligatorios");
+  if (!content.trim()) throw new Error("`content` está vacío: no hay cambio que proponer");
+  if (path.includes("..")) throw new Error("La ruta no puede salirse del repositorio");
+
+  const { owner, repo } = targetRepo(args);
+  const base = typeof args.base === "string" && args.base.trim() ? args.base.trim() : "main";
+  const head = branchName(title);
+  const message =
+    typeof args.message === "string" && args.message.trim() ? args.message.trim() : title;
+  const body = typeof args.body === "string" ? args.body : "";
+
+  const baseRef = (await githubCall(caller, { action: "get_ref", owner, repo, branch: base })) as {
+    object?: { sha?: string };
+  };
+  const baseSha = baseRef?.object?.sha;
+  if (!baseSha) throw new Error(`No pude leer la rama ${base}`);
+
+  await githubCall(caller, {
+    action: "create_branch",
+    owner,
+    repo,
+    new_branch: head,
+    from_sha: baseSha,
+  });
+
+  // Si el fichero ya existe, la API exige su sha para reemplazarlo.
+  let existingSha: string | undefined;
+  try {
+    const existing = (await githubCall(caller, {
+      action: "get_file",
+      owner,
+      repo,
+      path,
+      branch: base,
+    })) as { sha?: string };
+    existingSha = existing?.sha;
+  } catch {
+    existingSha = undefined;
+  }
+
+  await githubCall(caller, {
+    action: "create_or_update_file",
+    owner,
+    repo,
+    path,
+    branch: head,
+    content: Buffer.from(content, "utf8").toString("base64"),
+    message,
+    sha: existingSha,
+  });
+
+  const pull = (await githubCall(caller, {
+    action: "create_pull_request",
+    owner,
+    repo,
+    head,
+    base,
+    title,
+    body,
+    draft: true,
+  })) as { number?: number; html_url?: string };
+
+  return ok({
+    owner,
+    repo,
+    branch: head,
+    path,
+    pullRequest: pull?.number ?? null,
+    url: pull?.html_url ?? null,
+    draft: true,
+  });
 }
 
 function asInt(value: unknown, fallback: number, min: number, max: number): number {
@@ -551,6 +777,8 @@ async function runDbSelect(args: Record<string, unknown>, caller: Caller): Promi
     }
   }
 
+  if (!caller.token) throw new Error("Necesitas iniciar sesión para leer tus datos");
+
   const limit = asInt(args.limit, 10, 1, 50);
   const rows = await selectRows(caller.token, table, requestedColumns.join(","), limit, filters);
   return ok({ table, columns: requestedColumns, count: rows.length, rows });
@@ -571,6 +799,8 @@ async function callTool(
     if (name === "telemetry.satellites") return await runSatellites(args);
     if (name === "osint.events") return await runOsint(args);
     if (name === "weather.outlook") return await runWeather(args);
+    if (name === "github.repo") return await runGitRepo(args, caller);
+    if (name === "github.propose") return await runGitPropose(args, caller);
     return await runDbSelect(args, caller);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Error de la herramienta";
@@ -587,7 +817,14 @@ function handleJsonRpc(
   caller: Caller,
 ) {
   const id = body.id ?? null;
-  const visible = TOOLS.filter((tool) => TIER_RANK[tool.minTier] <= TIER_RANK[caller.tier]);
+  // Las herramientas de GitHub hablan por un proxy que valida la identidad: a
+  // un invitado no se le ofrecen, porque listarlas sería prometer algo que no
+  // puede ejecutar.
+  const visible = TOOLS.filter(
+    (tool) =>
+      TIER_RANK[tool.minTier] <= TIER_RANK[caller.tier] &&
+      (caller.userId !== null || !tool.name.startsWith("github.")),
+  );
 
   switch (body.method) {
     case "initialize":
@@ -607,9 +844,21 @@ function handleJsonRpc(
     case "tools/call": {
       const name = String(body.params?.name ?? "");
       const args = (body.params?.arguments ?? {}) as Record<string, unknown>;
-      return callTool(name, args, caller).then((result) =>
-        json({ jsonrpc: "2.0", id, result }),
-      );
+      // `.catch` no es decorativo: el rechazo por plan insuficiente sale de
+      // `callTool` antes de su propio try, y sin capturarlo la promesa quedaba
+      // sin manejar y el handler terminaba en un 500 sin JSON-RPC de vuelta.
+      return callTool(name, args, caller)
+        .then((result) => json({ jsonrpc: "2.0", id, result }))
+        .catch((error: unknown) =>
+          json({
+            jsonrpc: "2.0",
+            id,
+            error: {
+              code: -32603,
+              message: error instanceof Error ? error.message : "Error de la herramienta",
+            },
+          }),
+        );
     }
     default:
       return Promise.resolve(
@@ -810,7 +1059,12 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
   }
   if (req.method !== "POST") return send(json({ error: "Usa POST" }, 405));
 
-  const caller = await resolveCaller(req.headers.authorization);
+  const forwarded = req.headers["x-forwarded-for"];
+  const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0].trim() ||
+    req.socket?.remoteAddress ||
+    "unknown";
+
+  const caller = await resolveCaller(req.headers.authorization, ip);
   if (!caller) return send(json({ error: "No autorizado" }, 401));
 
   const body = (typeof req.body === "string" ? safeParse(req.body) : req.body) as
@@ -820,6 +1074,11 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
   if (!body || typeof body !== "object") return send(json({ error: "El cuerpo debe ser JSON" }, 400));
 
   if (typeof body.prompt === "string" && body.prompt.trim()) {
+    // El bucle del modelo gasta la cuota de una clave compartida, así que no se
+    // abre a invitados: sin identidad no hay a quién cobrarle el turno.
+    if (!caller.userId) {
+      return send(json({ error: "Inicia sesión para usar el agente MCP" }, 401));
+    }
     if (!GEMINI_KEY) {
       return send(json({ error: "GEMINI_API_KEY no está configurada en el despliegue" }, 501));
     }
@@ -834,7 +1093,14 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  if (body.method) return send(await handleJsonRpc(body, caller));
+  if (body.method) {
+    // Listar y ejecutar herramientas gratuitas no gasta credenciales, pero
+    // tampoco regala un ariete: el anónimo tiene su propio cubo por IP.
+    if (!caller.userId && !withinQuota(`anon:${caller.ip}`)) {
+      return send(json({ error: "Demasiadas peticiones; reintenta en unos segundos" }, 429));
+    }
+    return send(await handleJsonRpc(body, caller));
+  }
 
   return send(json({ error: "Se esperaba una petición JSON-RPC o { prompt }" }, 400));
 }

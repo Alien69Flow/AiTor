@@ -185,9 +185,39 @@ El proxy se despliega en el **proyecto de identidad**, porque es el único que
 puede validar ese JWT. Si no está allí, la herramienta responde que falta el
 proxy en vez de un 401 mudo.
 
-Para que el modelo lo use en el bucle de servidor, `/api/mcp` tendría que
-montar su propio puerto; hoy esa copia autocontenida no incluye estas dos
-herramientas, así que el agente del servidor no las ve y el del navegador sí.
+Las dos están también en el montaje de Vercel. `/api/mcp` es una copia
+ejecutable autocontenida —no importa `src/lib/mcp/…`, por el fallo de
+resolución que documenta `api/predictions.ts`—, así que la copia lleva su
+propio `githubCall` contra el mismo proxy con el JWT del llamante. El agente
+del servidor ve las mismas herramientas que el del navegador; `github.repo`
+es gratuita, `github.propose` exige plan `pro` y, además, rol `admin` en el
+proxy.
+
+## Quién puede llamar a `/api/mcp`
+
+| Llamante | `tools/list` | Herramientas públicas | `github.*` | `db.select` | `{ prompt }` |
+| --- | --- | --- | --- | --- | --- |
+| Sin cabecera `Authorization` | sí (plan `free`) | sí | no se listan | no | 401 |
+| `Bearer` válido, plan `free` | sí | sí | `github.repo` | no | sí |
+| `Bearer` válido, plan `pro`/`dao` | sí | sí | las dos | sí | sí |
+| `Bearer` inválido o caducado | 401 | 401 | 401 | 401 | 401 |
+
+Dos decisiones que no son obvias:
+
+- **El invitado ve las herramientas públicas.** Antes todo respondía 401 y una
+  visita sin cuenta no podía ni listar, aunque el globo y sus fuentes sean
+  públicas. Ahora el anónimo tiene su propio cubo de cuota por IP.
+- **Una sesión rota no se degrada a invitado.** Si llega un `Bearer` y no
+  valida, es 401: convertir ese caso en «gratuito» escondería el fallo de
+  autenticación justo cuando hay que verlo.
+
+El bucle del modelo sigue exigiendo identidad: gasta la cuota de una clave
+compartida y hay que saber a quién cobrársela.
+
+Los fallos de una herramienta —plan insuficiente, nombre desconocido, error del
+proxy— vuelven como error JSON-RPC. Ese `catch` faltaba: la comprobación de plan
+se lanzaba antes del `try` de `callTool`, la promesa quedaba rechazada sin
+manejar y el handler moría en un 500 sin JSON de vuelta.
 
 ## Lo que queda fuera a propósito
 
