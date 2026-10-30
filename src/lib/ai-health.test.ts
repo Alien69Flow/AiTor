@@ -132,6 +132,24 @@ describe("loadChatHealth", () => {
     expect(resolveOracles(AI_MODELS, peekChatHealth()).every((oracle) => oracle.availability !== "missing-key")).toBe(true);
   });
 
+  it("no repite la sonda cuando el despliegue no publica la ruta de salud", async () => {
+    // Así contestó `chat?health=1` en producción hasta que se redespliegue la
+    // función: el endpoint vive, la ruta no.
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: "Invalid JSON in request body" }),
+    });
+
+    expect(await loadChatHealth()).toBeNull();
+    expect(await loadChatHealth()).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // El reintento explícito del selector sí vuelve a preguntar.
+    await loadChatHealth(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("refresh ignora la caché", async () => {
     fetchMock.mockResolvedValue({ ok: true, json: async () => health });
     await loadChatHealth();

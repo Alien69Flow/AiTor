@@ -120,9 +120,22 @@ export function resolveOracles(models: readonly AIModel[], health: ChatHealth | 
 
 const HEALTH_TIMEOUT_MS = 6000;
 const CACHE_TTL_MS = 5 * 60_000;
+/**
+ * Cuánto se espera antes de volver a pedir un informe que el servidor no sabe
+ * servir.
+ *
+ * La función `chat` desplegada hoy es anterior a la ruta `?health=1`: contesta
+ * `400 {"error":"Invalid JSON in request body"}`. Eso no es un fallo de red ni
+ * un proveedor caído, es un despliegue más viejo, y no se arregla reintentando
+ * cada cinco minutos: sólo se arregla desplegando la función. Mientras tanto se
+ * recuerda la respuesta, se deja el catálogo sin verificar y no se repite la
+ * petición en cada carga de página.
+ */
+const HEALTH_UNSUPPORTED_BACKOFF_MS = 30 * 60_000;
 
 let cache: { at: number; health: ChatHealth } | null = null;
 let inflight: Promise<ChatHealth | null> | null = null;
+let unsupportedAt = 0;
 
 function isChatHealth(value: unknown): value is ChatHealth {
   if (!value || typeof value !== "object") return false;
@@ -146,6 +159,7 @@ export function peekChatHealth(): ChatHealth | null {
 export async function loadChatHealth(force = false): Promise<ChatHealth | null> {
   if (!force && peekChatHealth()) return cache!.health;
   if (inflight) return inflight;
+  if (!force && Date.now() - unsupportedAt < HEALTH_UNSUPPORTED_BACKOFF_MS) return null;
 
   inflight = (async () => {
     try {
@@ -153,6 +167,13 @@ export async function loadChatHealth(force = false): Promise<ChatHealth | null> 
         headers: { apikey: SUPABASE_PUBLISHABLE_KEY },
         signal: AbortSignal.timeout(HEALTH_TIMEOUT_MS),
       });
+      // 400/404 = la función vive pero no conoce la ruta de salud (despliegue
+      // anterior). No es transitorio: se recuerda y no se vuelve a preguntar
+      // hasta que expire la espera o alguien pulse reintentar.
+      if (response.status === 400 || response.status === 404) {
+        unsupportedAt = Date.now();
+        return null;
+      }
       if (!response.ok) return null;
       const body: unknown = await response.json();
       if (!isChatHealth(body)) return null;
@@ -173,6 +194,7 @@ export async function loadChatHealth(force = false): Promise<ChatHealth | null> 
 export function resetChatHealthCache(): void {
   cache = null;
   inflight = null;
+  unsupportedAt = 0;
 }
 
 export interface ChatHealthState {
