@@ -33,6 +33,7 @@ import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
 import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
+import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import {
   ZOOM_MAX_ALTITUDE_M,
@@ -280,6 +281,12 @@ export function CesiumGlobe({
   const flightEntityIdsRef = useRef<string[]>([]);
   const shipEntityIdsRef = useRef<string[]>([]);
   const staticEntityIdsRef = useRef<string[]>([]);
+  /**
+   * Repintado de los puntos fijos cuando el zoom cruza un escalón de
+   * agrupación. El efecto que los construye vive aparte del que crea el
+   * visor, así que la cámara lo llama a través de esta referencia.
+   */
+  const repaintStaticRef = useRef<(() => void) | null>(null);
   const satEntityIdsRef = useRef<string[]>([]);
   const outageEntityIdsRef = useRef<string[]>([]);
   const connectorEntityIdsRef = useRef<string[]>([]);
@@ -454,6 +461,13 @@ export function CesiumGlobe({
     };
     viewer.camera.changed.addEventListener(onCameraChanged);
 
+    // Los marcadores fijos se agrupan por altura: la cámara avisa y el efecto
+    // de las capas decide si el zoom cruzó un escalón (y sólo entonces
+    // reconstruye sus entidades).
+    const onCameraLod = () => repaintStaticRef.current?.();
+    viewer.camera.changed.addEventListener(onCameraLod);
+    viewer.camera.moveEnd.addEventListener(onCameraLod);
+
     // Límites de acercamiento reales. Sin suelo, la rueda seguía metiendo la
     // cámara dentro del elipsoide (pantalla negra sin detalle); sin techo, el
     // globo se alejaba indefinidamente en vez de pasar al zoom cósmico.
@@ -541,7 +555,9 @@ export function CesiumGlobe({
       resizeObserver?.disconnect();
       if (!viewer.isDestroyed()) {
         viewer.camera.changed.removeEventListener(onCameraChanged);
+        viewer.camera.changed.removeEventListener(onCameraLod);
         viewer.camera.changed.removeEventListener(scheduleScale);
+        viewer.camera.moveEnd.removeEventListener(onCameraLod);
         viewer.camera.moveEnd.removeEventListener(scheduleScale);
         viewer.destroy();
       }
@@ -1089,44 +1105,30 @@ export function CesiumGlobe({
     });
     staticEntityIdsRef.current = [];
 
+    /** Una entrada del catálogo fijo, con lo necesario para agruparse por zoom. */
+    type StaticPoint = MapLabelPoint & {
+      color: string;
+      size: number;
+      payload?: Record<string, unknown>;
+    };
+
+    // Los puntos no se pintan aqui: se acumulan y `paintPoints` decide cuantos
+    // marcadores existen a la altura actual de la camara. Con las cinco capas
+    // estrategicas encendidas son 197 etiquetas a la vez, y a 20 000 km eso es
+    // una mancha de texto sobre el globo entero.
+    const points: StaticPoint[] = [];
     const addPoint = (
-      id: string, lat: number, lon: number, color: string, label: string,
+      id: string, lat: number, lon: number, color: string, icon: string, name: string,
       size: number, payload?: Record<string, unknown>,
     ) => {
-      viewer.entities.add({
-        id,
-        position: Cartesian3.fromDegrees(lon, lat, 0),
-        point: {
-          pixelSize: size,
-          color: hexToColor(color, 0.9),
-          outlineColor: hexToColor(color, 0.35),
-          outlineWidth: 4,
-          scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.45),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: label,
-          font: "10px monospace",
-          fillColor: hexToColor(color, 0.95),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -12),
-          scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: payload ? ({ sightingData: JSON.stringify(payload) } as PlainEntityProperties) : undefined,
-      });
-      staticEntityIdsRef.current.push(id);
+      points.push({ id, lat, lon, color, icon, name, size, payload });
     };
 
     if (active.has("conflictZones")) {
       CONFLICT_ZONES.forEach((c) => {
         addPoint(
           `conflict-${c.id}`, c.lat, c.lon, CONFLICT_COLORS[c.category],
-          `${CONFLICT_ICONS[c.category]} ${c.name}`,
+          CONFLICT_ICONS[c.category], c.name,
           7 + c.intensity * 7,
           {
             lat: c.lat, lon: c.lon, location: `${c.name} — ${c.country}`,
@@ -1140,7 +1142,7 @@ export function CesiumGlobe({
 
     if (active.has("chokepoints")) {
       CHOKEPOINTS.forEach((p) =>
-        addPoint(`choke-${p.id}`, p.lat, p.lon, "#ea580c", `⚓ ${p.name}`, 8, {
+        addPoint(`choke-${p.id}`, p.lat, p.lon, "#ea580c", "⚓", p.name, 8, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "chokepoint", severity: "medium", source: "WorldMonitor registry",
           category: "logistics", date_reported: "static",
@@ -1149,7 +1151,7 @@ export function CesiumGlobe({
     }
     if (active.has("nuclearSites")) {
       NUCLEAR_SITES.forEach((p) =>
-        addPoint(`nuke-${p.id}`, p.lat, p.lon, "#7c3aed", `☢️ ${p.name}`, 8, {
+        addPoint(`nuke-${p.id}`, p.lat, p.lon, "#7c3aed", "☢️", p.name, 8, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "nuclear", severity: "high", source: "WorldMonitor registry",
           category: "geopolitical", date_reported: "static",
@@ -1158,7 +1160,7 @@ export function CesiumGlobe({
     }
     if (active.has("militaryBases")) {
       MILITARY_BASES.forEach((p) =>
-        addPoint(`mil-${p.id}`, p.lat, p.lon, "#94a3b8", `🛡️ ${p.name}`, 7, {
+        addPoint(`mil-${p.id}`, p.lat, p.lon, "#94a3b8", "🛡️", p.name, 7, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "military", severity: "medium", source: "WorldMonitor registry",
           category: "geopolitical", date_reported: "static",
@@ -1167,7 +1169,7 @@ export function CesiumGlobe({
     }
     if (active.has("economicCenters")) {
       ECONOMIC_CENTERS.forEach((p) =>
-        addPoint(`eco-${p.id}`, p.lat, p.lon, "#10b981", `💹 ${p.name}`, 7, {
+        addPoint(`eco-${p.id}`, p.lat, p.lon, "#10b981", "💹", p.name, 7, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "market", severity: "low", source: "WorldMonitor registry",
           category: "finance", date_reported: "static",
@@ -1200,6 +1202,123 @@ export function CesiumGlobe({
     if (active.has("pipelines")) {
       PIPELINES.forEach((p) => addLine(`pipe-${p.id}`, p.path, "#ca8a04", p.name));
     }
+
+    let pointIds: string[] = [];
+    let paintedCell = Number.NaN;
+
+    /**
+     * Pinta los puntos del catálogo para la altura actual de la cámara.
+     *
+     * Agrupa por celdas de tamaño creciente con la distancia (`clusterCellDegrees`)
+     * y sólo repinta cuando el zoom cruza un escalón: `paintedCell` guarda el
+     * último y así un arrastre o un giro no reconstruyen 197 entidades por
+     * fotograma. Un grupo se pinta como un punto con su cuenta y, al pulsarlo,
+     * abre la ficha con los nombres de sus miembros.
+     */
+    const paintPoints = () => {
+      if (viewer.isDestroyed()) return;
+      const cell = clusterCellDegrees(viewer.camera.positionCartographic?.height ?? 0);
+      if (cell === paintedCell) return;
+      paintedCell = cell;
+
+      pointIds.forEach((id) => {
+        const e = viewer.entities.getById(id);
+        if (e) viewer.entities.remove(e);
+      });
+      pointIds = [];
+
+      const drawLabel = (color: string, text: string) => ({
+        text,
+        font: "10px monospace",
+        fillColor: hexToColor(color, 0.95),
+        outlineColor: Color.BLACK,
+        outlineWidth: 2,
+        style: 2,
+        verticalOrigin: VerticalOrigin.BOTTOM,
+        horizontalOrigin: HorizontalOrigin.CENTER,
+        pixelOffset: new Cartesian2(0, -12),
+        scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
+        disableDepthTestDistance: Number.POSITIVE_INFINITY,
+      });
+
+      for (const group of clusterMapLabels(points, cell)) {
+        if (group.kind === "point") {
+          const { id, lat, lon, color, icon, name, size, payload } = group.point;
+          viewer.entities.add({
+            id,
+            position: Cartesian3.fromDegrees(lon, lat, 0),
+            point: {
+              pixelSize: size,
+              color: hexToColor(color, 0.9),
+              outlineColor: hexToColor(color, 0.35),
+              outlineWidth: 4,
+              scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.45),
+              disableDepthTestDistance: Number.POSITIVE_INFINITY,
+            },
+            label: drawLabel(color, `${icon} ${name}`),
+            properties: payload ? ({ sightingData: JSON.stringify(payload) } as PlainEntityProperties) : undefined,
+          });
+          pointIds.push(id);
+          continue;
+        }
+
+        // Grupo: gana el color y el icono de la capa mayoritaria, y la etiqueta
+        // pasa a ser la cuenta, que es el dato que cabe a este zoom.
+        const { members } = group;
+        const weight = new Map<string, { color: string; icon: string; count: number }>();
+        for (const member of members) {
+          const entry = weight.get(member.icon);
+          if (entry) entry.count += 1;
+          else weight.set(member.icon, { color: member.color, icon: member.icon, count: 1 });
+        }
+        const dominant = [...weight.values()].sort((a, b) => b.count - a.count)[0];
+        const icon = weight.size === 1 ? dominant.icon : "◈";
+        const base = members.find((member) => member.payload)?.payload ?? {};
+        const names = members.slice(0, 5).map((member) => member.name).join(" · ");
+        const extra = members.length > 5 ? ` · y ${members.length - 5} más` : "";
+
+        viewer.entities.add({
+          id: group.id,
+          position: Cartesian3.fromDegrees(group.lon, group.lat, 0),
+          point: {
+            pixelSize: Math.min(18, 9 + Math.log2(members.length) * 2),
+            color: hexToColor(dominant.color, 0.85),
+            outlineColor: hexToColor(dominant.color, 0.35),
+            outlineWidth: 5,
+            scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.55),
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+          label: drawLabel(dominant.color, `${icon} ${members.length}`),
+          properties: {
+            sightingData: JSON.stringify({
+              ...base,
+              lat: group.lat,
+              lon: group.lon,
+              location: `${members.length} sitios agrupados`,
+              description: `${names}${extra} · Acerca el globo para abrirlos uno a uno.`,
+              type: weight.size === 1 ? (base.type ?? "cluster") : "cluster",
+            }),
+          } as PlainEntityProperties,
+        });
+        pointIds.push(group.id);
+      }
+    };
+
+    repaintStaticRef.current = paintPoints;
+    paintPoints();
+
+    // Los puntos se pintan por celda y no viven en `staticEntityIdsRef` (que es
+    // de las líneas): sin retirarlos aquí, la siguiente pasada intentaría crear
+    // ids que ya existen y Cesium lanza «an entity with id … already exists».
+    return () => {
+      repaintStaticRef.current = null;
+      if (viewer.isDestroyed()) return;
+      pointIds.forEach((id) => {
+        const e = viewer.entities.getById(id);
+        if (e) viewer.entities.remove(e);
+      });
+      pointIds = [];
+    };
   }, [envLayers, hasLiveCables]);
 
   // Orbital surveillance — propagated TLEs
