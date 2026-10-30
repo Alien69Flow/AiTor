@@ -42,12 +42,22 @@ export interface McpDatabase {
   ): Promise<Record<string, unknown>[]>;
 }
 
+export interface McpGitHub {
+  /**
+   * Llamada al proxy de GitHub, que es quien tiene el token y la allowlist.
+   * La herramienta manda la acción y los parámetros; nunca credenciales.
+   */
+  call(params: Record<string, unknown>): Promise<unknown>;
+}
+
 export interface McpToolContext {
   /** Plan efectivo del llamante, resuelto en servidor. */
   tier: McpTier;
   /** Inyectado: el navegador usa la sesión, el servidor su propio cliente. */
   fetch: typeof fetch;
   db?: McpDatabase;
+  /** Sólo existe cuando hay una identidad con permiso sobre el repositorio. */
+  github?: McpGitHub;
 }
 
 export interface McpTool {

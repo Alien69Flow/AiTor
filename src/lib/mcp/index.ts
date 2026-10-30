@@ -1,5 +1,6 @@
-import { createMcpServer, type McpDatabase, type McpServer, type McpTool } from "./registry";
+import { createMcpServer, type McpDatabase, type McpGitHub, type McpServer, type McpTool } from "./registry";
 import { databaseTools } from "./tools/database";
+import { githubTools } from "./tools/github";
 import { osintTools } from "./tools/osint";
 import { satelliteTools } from "./tools/satellites";
 
@@ -17,34 +18,43 @@ import { satelliteTools } from "./tools/satellites";
  * entorno ni conoce credenciales.
  */
 
-export const MCP_TOOLS: McpTool[] = [...satelliteTools, ...osintTools, ...databaseTools];
+export const MCP_TOOLS: McpTool[] = [
+  ...satelliteTools,
+  ...osintTools,
+  ...databaseTools,
+  ...githubTools,
+];
 
-export function createAiTorMcpServer(options: { db?: McpDatabase } = {}): McpServer {
+export function createAiTorMcpServer(options: { db?: McpDatabase; github?: McpGitHub } = {}): McpServer {
   const server = createMcpServer({
     name: "aitor-mcp",
     version: "1.0.0",
     tools: MCP_TOOLS,
   });
 
-  if (!options.db) return server;
+  if (!options.db && !options.github) return server;
 
-  // El puerto de base de datos se inyecta al llamar, no se cierra aquí: el
-  // mismo servidor sirve para un usuario con sesión y para el proceso de
-  // servidor, sin arrastrar credenciales dentro del catálogo de herramientas.
+  // Los puertos se inyectan al llamar, no se cierran aquí: el mismo servidor
+  // sirve para un usuario con sesión y para el proceso de servidor, sin
+  // arrastrar credenciales dentro del catálogo de herramientas.
   return {
     ...server,
-    callTool: (name, args, context) => server.callTool(name, args, { ...context, db: options.db }),
-    handle: (request, context) => server.handle(request, { ...context, db: options.db }),
+    callTool: (name, args, context) =>
+      server.callTool(name, args, { ...context, db: options.db, github: options.github }),
+    handle: (request, context) =>
+      server.handle(request, { ...context, db: options.db, github: options.github }),
   };
 }
 
 export { createMcpServer, McpError, allowedByTier, toolResult } from "./registry";
 export type {
   McpDatabase,
+  McpGitHub,
   McpServer,
   McpTool,
   McpToolContext,
 } from "./registry";
+export { branchName as githubBranchName } from "./tools/github";
 export { MCP_PROTOCOL_VERSION, MCP_TIER_RANK, JSON_RPC_ERRORS } from "./types";
 export type {
   JsonRpcRequest,

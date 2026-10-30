@@ -43,7 +43,9 @@ la **API REST** directamente, por el mismo motivo.
 | --- | --- | --- |
 | `telemetry.satellites` | `free` | CelesTrak TLE + `satellite.js` |
 | `osint.events` | `free` | GDELT DOC 2.0 |
+| `github.repo` | `free` | Proxy de GitHub (lectura) |
 | `db.select` | `pro` | Supabase, con RLS |
+| `github.propose` | `pro` | Proxy de GitHub (rama + PR en borrador) |
 
 El plan se comprueba **dos veces**: al listar y al ejecutar. Listar no basta,
 porque un cliente puede pedir una herramienta que nunca llegó a listar.
@@ -158,10 +160,37 @@ de humo (`npx tsx mcp.smoke.ts`) que comprueba los 401 sin salir a la red.
 ejecuta una con valores por defecto. El filtrado lo hace el servidor; el botón
 sólo pinta lo que recibe.
 
+## GitHub: leer el repo y proponer mejoras
+
+`src/lib/mcp/tools/github.ts` da a AI Tor dos capacidades sobre su propio
+repositorio:
+
+- `github.repo` lee árbol, ficheros, commits, PRs abiertos y checks de CI. Es la
+  lectura con la que detecta qué está roto y qué merece una mejora.
+- `github.propose` crea una rama, escribe un fichero y abre un **PR en
+  borrador**. Nunca escribe en `main`: la mejora queda propuesta.
+
+Ninguna herramienta lleva credenciales. Las dos hablan por un puerto
+(`context.github`) que en el navegador es `githubPort`
+(`src/services/mcpClient.ts`) y envía la acción al proxy con la **sesión del
+usuario**. El token de servicio y la allowlist de repositorio viven en
+`supabase/functions/github-proxy`, que exige identidad verificada en todas las
+acciones y rol `admin` en las de escritura (`create_branch`,
+`create_or_update_file`, `create_pull_request`).
+
+El proxy se despliega en el **proyecto de identidad**, porque es el único que
+puede validar ese JWT. Si no está allí, la herramienta responde que falta el
+proxy en vez de un 401 mudo.
+
+Para que el modelo lo use en el bucle de servidor, `/api/mcp` tendría que
+montar su propio puerto; hoy esa copia autocontenida no incluye estas dos
+herramientas, así que el agente del servidor no las ve y el del navegador sí.
+
 ## Lo que queda fuera a propósito
 
-- Escrituras: ninguna herramienta escribe. `db.select` es lectura, con lista
-  blanca de tablas y columnas.
+- Escrituras: la base de datos sigue siendo sólo lectura (`db.select`, con lista
+  blanca de tablas y columnas). La única escritura posible es `github.propose`,
+  que va a una rama y a un PR en borrador, y el proxy la limita a `admin`.
 - Recursos y prompts MCP: sólo se implementan herramientas.
 - Persistencia de la cuota: el limitador es por proceso; para cuotas exactas hay
   que contar en la base de datos.

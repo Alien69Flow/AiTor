@@ -7,8 +7,11 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const READ_ACTIONS = new Set(['repo_info', 'contents', 'tree', 'branches', 'commits', 'get_file', 'get_ref']);
-const WRITE_ACTIONS = new Set(['create_or_update_file', 'create_branch']);
+const READ_ACTIONS = new Set([
+  'repo_info', 'contents', 'tree', 'branches', 'commits', 'get_file', 'get_ref',
+  'pull_requests', 'check_runs',
+]);
+const WRITE_ACTIONS = new Set(['create_or_update_file', 'create_branch', 'create_pull_request']);
 
 function allowedRepos(): string[] {
   return (Deno.env.get('GITHUB_REPO_ALLOWLIST') || '')
@@ -150,6 +153,42 @@ Deno.serve(async (req) => {
       case 'get_ref': {
         // Get a reference (branch) SHA
         url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch || 'main'}`;
+        break;
+      }
+      case 'pull_requests': {
+        const state = typeof body.state === 'string' ? body.state : 'open';
+        url = `https://api.github.com/repos/${owner}/${repo}/pulls?state=${encodeURIComponent(state)}&per_page=20`;
+        break;
+      }
+      case 'check_runs': {
+        // Últimos checks de una rama: es lo que permite mirar si una propuesta
+        // de mejora pasó el CI antes de pedir que se revise.
+        const ref = typeof body.ref === 'string' ? body.ref : 'main';
+        url = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs`;
+        break;
+      }
+      case 'create_pull_request': {
+        // Abrir el PR es la mitad que faltaba para que AI Tor pueda proponer un
+        // cambio en vez de sólo leer el repositorio. Sigue siendo admin-only:
+        // la escritura la decide el rol, no el modelo.
+        const head = body.head;
+        const base = typeof body.base === 'string' ? body.base : 'main';
+        const title = body.title;
+        if (typeof head !== 'string' || !head || typeof title !== 'string' || !title) {
+          return new Response(
+            JSON.stringify({ error: 'head y title son obligatorios' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+          );
+        }
+        url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
+        method = 'POST';
+        requestBody = JSON.stringify({
+          title,
+          head,
+          base,
+          body: typeof body.body === 'string' ? body.body : '',
+          draft: body.draft === true,
+        });
         break;
       }
       default:

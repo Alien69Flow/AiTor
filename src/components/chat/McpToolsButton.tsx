@@ -20,6 +20,11 @@ const DEFAULT_ARGS: Record<string, Record<string, unknown>> = {
   "telemetry.satellites": { group: "stations", limit: 5 },
   "osint.events": { timespan: "24h", limit: 5 },
   "db.select": { table: "profiles", limit: 1 },
+  // Lectura del repositorio: barata e inocua, sirve para probar la conexión.
+  "github.repo": { action: "repo_info" },
+  // `github.propose` no tiene valores por defecto a propósito: abrir un PR
+  // necesita un título, una ruta y el contenido, y rellenarlos por el usuario
+  // sería peor que no ofrecerlo desde este botón.
 };
 
 const TIER_LABEL: Record<McpTier, string> = { free: "Free", pro: "Pro", dao: "DAO" };
@@ -62,11 +67,20 @@ export function McpToolsButton() {
   }, [open]);
 
   const run = async (name: string) => {
-    setRunning(name);
     setError(null);
     setOutput(null);
+
+    const args = DEFAULT_ARGS[name] ?? {};
+    const required = tools?.find((tool) => tool.name === name)?.inputSchema.required ?? [];
+    const missing = required.filter((key) => !(key in args));
+    if (missing.length > 0) {
+      setError(`${name} necesita argumentos (${missing.join(", ")}): pídeselo al agente en el chat.`);
+      return;
+    }
+
+    setRunning(name);
     try {
-      const result = await callSessionTool(name, DEFAULT_ARGS[name] ?? {});
+      const result = await callSessionTool(name, args);
       const text = result.content.map((part) => part.text).join("\n");
       setOutput({ name, text, error: result.isError === true });
     } catch (e) {

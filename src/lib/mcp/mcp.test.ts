@@ -106,9 +106,12 @@ describe("traducción a Gemini", () => {
 
   it("declara una función por herramienta, con sus parámetros", () => {
     const declarations = toGeminiTools(createAiTorMcpServer().listTools("free"))[0].functionDeclarations;
-    expect(declarations).toHaveLength(2);
+    // Tres públicas: telemetría, OSINT y lectura del repositorio (leer el repo
+    // no cuesta nada; proponer un cambio sí pide plan y permiso).
+    expect(declarations).toHaveLength(3);
     const satellites = declarations.find((d) => d.name === "telemetry.satellites");
     expect(satellites?.parameters?.properties?.group?.type).toBe("STRING");
+    expect(declarations.some((d) => d.name === "github.repo")).toBe(true);
   });
 
   it("elige el Flash más nuevo y descarta los que no conversan", () => {
@@ -163,7 +166,7 @@ describe("handler HTTP", () => {
     );
     expect(listed.status).toBe(200);
     const payload = (await listed.json()) as { result?: { tools: unknown[] } };
-    expect(payload.result?.tools).toHaveLength(2);
+    expect(payload.result?.tools).toHaveLength(3);
 
     const prompt = await handler(
       new Request("https://example.test/mcp", {

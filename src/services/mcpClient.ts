@@ -5,7 +5,7 @@ import {
 } from "@/integrations/supabase/client";
 import { createAiTorMcpServer } from "@/lib/mcp";
 import { DEFAULT_TIER } from "@/lib/mcp/gemini";
-import type { McpDatabase, McpServer } from "@/lib/mcp";
+import type { McpDatabase, McpGitHub, McpServer } from "@/lib/mcp";
 import type { McpToolDefinition, McpToolResult, McpTier } from "@/lib/mcp";
 
 /**
@@ -57,6 +57,49 @@ async function restSelect(
 /** Puerto de base de datos: la sesión del usuario, sin privilegios extra. */
 export const sessionDatabase: McpDatabase = { select: restSelect };
 
+/**
+ * Puerto de GitHub: la sesión del usuario contra el proxy, que es quien tiene
+ * el token y la allowlist de repositorio. Aquí sólo viaja la acción.
+ *
+ * El proxy vive en el proyecto de identidad porque es el único que puede
+ * validar este JWT; si aún no está desplegado allí, el error lo dice en vez de
+ * devolver un 401 mudo.
+ */
+async function githubCall(params: Record<string, unknown>): Promise<unknown> {
+  const token = await sessionToken();
+  if (!token) throw new Error("Necesitas iniciar sesión para usar GitHub");
+
+  const response = await fetch(`${AUTH_SUPABASE_URL}/functions/v1/github-proxy`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      apikey: AUTH_SUPABASE_PUBLISHABLE_KEY,
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(25_000),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; message?: string }
+    | null;
+
+  if (response.status === 404) {
+    throw new Error(
+      "GitHub: el proxy no está desplegado en el proyecto de identidad (github-proxy).",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub: ${payload?.error ?? payload?.message ?? `HTTP ${response.status}`}`);
+  }
+  if (payload && typeof payload === "object" && "error" in payload && payload.error) {
+    throw new Error(`GitHub: ${payload.error}`);
+  }
+  return payload;
+}
+
+export const githubPort: McpGitHub = { call: githubCall };
+
 /** Plan real del usuario. Sin fila legible (o sin tabla) se asume el gratuito. */
 export async function getSessionTier(): Promise<McpTier> {
   const userId = (await authClient.auth.getUser()).data.user?.id;
@@ -72,7 +115,7 @@ export async function getSessionTier(): Promise<McpTier> {
 
 /** Servidor MCP local listo para usar desde la interfaz. */
 export function createSessionMcpServer(): McpServer {
-  return createAiTorMcpServer({ db: sessionDatabase });
+  return createAiTorMcpServer({ db: sessionDatabase, github: githubPort });
 }
 
 /** Herramientas que este usuario puede ver, ya filtradas por plan. */
@@ -89,6 +132,7 @@ export async function callSessionTool(
   return createSessionMcpServer().callTool(name, args, {
     tier,
     db: sessionDatabase,
+    github: githubPort,
     fetch,
   });
 }
