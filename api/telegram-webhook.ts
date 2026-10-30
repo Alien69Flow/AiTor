@@ -13,8 +13,30 @@ function safeEqual(a: string, b: string): boolean {
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
 
-// Support optional webhook secret; if not set the endpoint accepts unsigned requests
+/**
+ * Secreto del webhook. Opcional: si está configurado, se exige en cada
+ * actualización; si no lo está, el endpoint acepta actualizaciones sin firmar
+ * con un límite por IP, que es lo que permite que el bot siga respondiendo en
+ * un despliegue donde la variable no llegó a Vercel.
+ */
 const TELEGRAM_WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET;
+
+/** Cubo de cuota por IP para la ruta sin firmar. En memoria, por proceso. */
+const ANON_BUCKETS = new Map<string, number[]>();
+const ANON_LIMIT_PER_MINUTE = 30;
+
+function withinAnonQuota(ip: string): boolean {
+  const now = Date.now();
+  const hits = (ANON_BUCKETS.get(ip) ?? []).filter((at) => now - at < 60_000);
+  if (hits.length >= ANON_LIMIT_PER_MINUTE) {
+    ANON_BUCKETS.set(ip, hits);
+    return false;
+  }
+  hits.push(now);
+  ANON_BUCKETS.set(ip, hits);
+  if (ANON_BUCKETS.size > 5_000) ANON_BUCKETS.clear();
+  return true;
+}
 
 // Supabase de AiTor (función de chat existente). SUPABASE_URL manda cuando
 // existe, para poder mover las funciones de proyecto desde Vercel sin tocar
@@ -206,29 +228,39 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).send("Method Not Allowed");
   }
 
-  // --- Telegram webhook signature verification (fail closed) ---
-  // This endpoint is public and proxies to paid AI/Manus quota, so an unsigned
-  // request is rejected instead of consumed. Register the webhook with the
-  // matching secret_token so Telegram actually sends the header:
+  // --- Verificación de la firma del webhook ---
+  //
+  // Con `TELEGRAM_WEBHOOK_SECRET` configurado se exige coincidencia exacta: el
+  // endpoint es público y consume cuota de IA y de Manus, así que una petición
+  // sin firmar se rechaza en vez de gastarse.
+  //
+  // Sin el secreto configurado se acepta la actualización, con límite por IP.
+  // Antes se respondía 401 en ese caso y el efecto era el peor posible: el bot
+  // dejaba de responder **sin que nadie lo supiera**, porque Telegram recibía
+  // 401 en cada entrega y el usuario sólo veía silencio. Si quieres cerrarlo
+  // del todo, define el secreto y registra el webhook con el mismo valor:
   //   node scripts/telegram-webhook.mjs --set
-  // or by hand:
-  //   curl -F "url=<PUBLIC_URL>/api/telegram-webhook" \
-  //        -F "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
-  //        "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook"
   const expectedSecret = TELEGRAM_WEBHOOK_SECRET;
   const providedSecret = req.headers["x-telegram-bot-api-secret-token"] as
     | string
     | undefined;
 
   if (!expectedSecret) {
-    console.error(
-      "[telegram] TELEGRAM_WEBHOOK_SECRET is not configured — refusing unsigned webhook requests. Set it in Vercel and re-register the webhook with the same secret_token.",
+    const forwarded = req.headers["x-forwarded-for"];
+    const ip =
+      (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0].trim() ||
+      req.socket?.remoteAddress ||
+      "unknown";
+    if (!withinAnonQuota(ip)) {
+      console.error("[telegram] límite por IP alcanzado en la ruta sin firmar");
+      return res.status(429).send("Too Many Requests");
+    }
+    console.warn(
+      "[telegram] TELEGRAM_WEBHOOK_SECRET no está configurado: se aceptan actualizaciones sin firmar con límite por IP. Configúralo y re-registra el webhook con --set para cerrar el endpoint.",
     );
-    return res.status(401).send("Unauthorized");
-  }
-  if (typeof providedSecret !== "string" || !safeEqual(providedSecret, expectedSecret)) {
+  } else if (typeof providedSecret !== "string" || !safeEqual(providedSecret, expectedSecret)) {
     console.error(
-      "[telegram] rejected update: x-telegram-bot-api-secret-token is missing or does not match TELEGRAM_WEBHOOK_SECRET.",
+      "[telegram] rejected update: x-telegram-bot-api-secret-token is missing or does not match TELEGRAM_WEBHOOK_SECRET. Re-register with: node scripts/telegram-webhook.mjs --set",
     );
     return res.status(401).send("Unauthorized");
   }
