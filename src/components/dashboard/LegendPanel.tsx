@@ -34,6 +34,23 @@ import {
   type Tier,
 } from "@/lib/globe-layers";
 import type { LayerStatusMap } from "@/hooks/useUnifiedIntel";
+import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
+import {
+  ALTITUDE_BANDS,
+  ROLE_LABELS,
+  UNKNOWN_BAND,
+  type AircraftRole,
+} from "@/lib/aircraft-class";
+
+/** Orden en que se enseñan los tipos: de más a menos frecuentes en el cielo. */
+const ROLE_ORDER: AircraftRole[] = [
+  "pasajeros",
+  "carga",
+  "militar",
+  "gobierno",
+  "privado",
+  "otro",
+];
 
 /**
  * Capa → conector que la alimenta. Vive aquí, en un solo sitio, porque lo leen
@@ -204,6 +221,48 @@ export function LegendPanel({
             </div>
           );
         })}
+
+        {/*
+          Tráfico aéreo: la capa ya no pinta todos los contactos igual. El color
+          dice la altitud y la forma el tipo de vuelo, así que los dos canales
+          se explican aquí, con el marcador real y no con un cuadrado de color.
+        */}
+        <div>
+          <SectionTitle>Tráfico aéreo</SectionTitle>
+          <div className="grid grid-cols-2 gap-1.5">
+            {[...ALTITUDE_BANDS, UNKNOWN_BAND].map((band) => (
+              <span
+                key={band.id}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-md border border-slate-700/25 bg-slate-800/25"
+                title={`Color de los contactos entre ${band.label}`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ background: band.color }}
+                />
+                <span className="text-[9px] text-white/80 truncate">{band.label}</span>
+              </span>
+            ))}
+          </div>
+          <div className="grid grid-cols-2 gap-1 mt-1.5">
+            {ROLE_ORDER.map((role) => (
+              <span key={role} className="flex items-center gap-1.5 min-w-0">
+                <img
+                  src={aircraftMarkerIcon(null, "#E2E8F0", role)}
+                  alt=""
+                  aria-hidden
+                  className="w-4 h-4 shrink-0"
+                />
+                <span className="text-[9px] text-white/80 truncate">{ROLE_LABELS[role]}</span>
+              </span>
+            ))}
+          </div>
+          <p className="mt-1.5 text-[8px] leading-relaxed text-slate-500">
+            El color es la altitud; la forma, el tipo de vuelo. El tipo se infiere del código ICAO
+            de la aeronave y de su indicativo, no de una identidad declarada: lo que no se puede
+            asegurar aparece como «sin clasificar».
+          </p>
+        </div>
 
         {/*
           Esferas y envolturas de la Tierra — de la troposfera a la heliosfera,

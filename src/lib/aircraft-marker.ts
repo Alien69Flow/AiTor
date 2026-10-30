@@ -1,3 +1,4 @@
+import type { AircraftRole } from "./aircraft-class";
 import { aircraftSilhouette } from "./aircraft-silhouette";
 
 /**
@@ -27,18 +28,58 @@ const SILHOUETTES: Record<string, string> = {
   drone:
     `<path d="M16.6 16.6 23.4 23.4 21.8 25 15 18.2Z"/><path d="M23.4 16.6 16.6 23.4 15 21.8 21.8 15Z"/>` +
     `<circle cx="11" cy="11" r="5"/><circle cx="29" cy="11" r="5"/><circle cx="11" cy="29" r="5"/><circle cx="29" cy="29" r="5"/><circle cx="20" cy="20" r="5.2"/>`,
+
+  // Figuras de **tipo de vuelo**, para cuando la categoría del emisor no dice
+  // nada (el caso normal: A3 y a correr). Se distinguen por contorno a 32 px:
+  // el carguero lleva el vientre ancho, el militar es una flecha, el de Estado
+  // una estrella y el privado un avión de ala alta corto.
+  cargo:
+    `<path d="M20 2.5 23 12.5 37.5 21.5 37.5 25 23 21.5 22.6 31 28.5 35 28.5 37.5 20 35.2 11.5 37.5 11.5 35 17.4 31 17 21.5 2.5 25 2.5 21.5 17 12.5Z"/>` +
+    `<path d="M15.6 14.5h8.8v9.2h-8.8z"/>`,
+  militar: `<path d="M20 3 34.5 34 20 27.6 5.5 34Z"/>`,
+  gobierno:
+    `<path d="M20 3.2l4.4 11.1 11.9.8-9.1 7.6 2.9 11.5L20 27.9l-10.1 6.3 2.9-11.5-9.1-7.6 11.9-.8z"/>`,
+  privado:
+    `<path d="M20 7.2 21.9 15.4 30 21.2 30 23.6 21.2 20.8 21 26.8 24 29.8 24 31.6 20 30.4 16 31.6 16 29.8 19 26.8 18.8 20.8 10 23.6 10 21.2 18.1 15.4Z"/>`,
+};
+
+/** Forma por rol; `pasajeros` y `otro` se quedan con el avión genérico. */
+const ROLE_SHAPES: Record<AircraftRole, string> = {
+  pasajeros: "plane",
+  carga: "cargo",
+  militar: "militar",
+  gobierno: "gobierno",
+  privado: "privado",
+  otro: "plane",
 };
 
 /** Colores de los dos trazos, para que la prueba pueda comprobarlos. */
 export const MARKER_HALO = "#F8FAFC";
 export const MARKER_EDGE = "#0B1220";
 
+/**
+ * Forma que le toca a un contacto.
+ *
+ * La categoría del emisor manda cuando describe una máquina distinta —un
+ * helicóptero no es un avión de pasajeros—, y sólo cuando no dice nada
+ * (`A1`…`A6`, o vacío) entra el rol inferido del tipo y el indicativo.
+ */
+export function aircraftMarkerShape(
+  category: string | null | undefined,
+  role?: AircraftRole | null,
+): string {
+  const physical = aircraftSilhouette(category);
+  if (physical !== "plane") return physical;
+  return (role && ROLE_SHAPES[role]) || "plane";
+}
+
 /** SVG del marcador, como `data:` URI listo para un billboard de Cesium. */
 export function aircraftMarkerIcon(
   category: string | null | undefined,
   color: string,
+  role?: AircraftRole | null,
 ): string {
-  const shape = aircraftSilhouette(category);
+  const shape = aircraftMarkerShape(category, role);
   const body = SILHOUETTES[shape] ?? SILHOUETTES.plane;
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40">` +
@@ -52,6 +93,7 @@ export function aircraftMarkerIcon(
 export function aircraftMarkerSvg(
   category: string | null | undefined,
   color: string,
+  role?: AircraftRole | null,
 ): string {
-  return decodeURIComponent(aircraftMarkerIcon(category, color).split(",")[1] ?? "");
+  return decodeURIComponent(aircraftMarkerIcon(category, color, role).split(",")[1] ?? "");
 }

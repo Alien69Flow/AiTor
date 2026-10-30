@@ -51,4 +51,25 @@ describe("marcador de aeronave", () => {
     // Mejor un avión genérico que un dron falso.
     expect(aircraftMarkerSvg("ZZ", "#fff")).toBe(aircraftMarkerSvg("A1", "#fff"));
   });
+
+  it("cada tipo de vuelo tiene una forma distinta", () => {
+    const shapes = ["pasajeros", "carga", "militar", "gobierno", "privado"] as const;
+    const svgs = shapes.map((role) => aircraftMarkerSvg(null, "#fff", role));
+    expect(new Set(svgs).size).toBe(shapes.length);
+    // Pasajeros es el avión de siempre; militar, una flecha; Estado, una estrella.
+    expect(aircraftMarkerSvg(null, "#fff", "pasajeros")).toBe(aircraftMarkerSvg(null, "#fff"));
+    expect(aircraftMarkerSvg(null, "#fff", "militar")).toContain("M20 3 34.5 34");
+    expect(aircraftMarkerSvg(null, "#fff", "gobierno")).toContain("l4.4 11.1");
+  });
+
+  it("la categoría física manda sobre el tipo inferido", () => {
+    // Un helicóptero militar sigue siendo un helicóptero, no una flecha.
+    expect(aircraftMarkerSvg("A7", "#fff", "militar")).toBe(aircraftMarkerSvg("A7", "#fff"));
+    expect(aircraftMarkerSvg("B6", "#fff", "carga")).toBe(aircraftMarkerSvg("B6", "#fff"));
+  });
+
+  it("el color es el que le pasa la banda de altitud", () => {
+    expect(aircraftMarkerSvg(null, "#fbbf24", "pasajeros")).toContain('fill="#fbbf24"');
+    expect(aircraftMarkerSvg(null, "#34d399", "carga")).toContain('fill="#34d399"');
+  });
 });

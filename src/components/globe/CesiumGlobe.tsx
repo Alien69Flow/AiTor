@@ -33,6 +33,7 @@ import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
 import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
+import { ROLE_LABELS, aircraftRole, altitudeBand } from "@/lib/aircraft-class";
 import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
 import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
@@ -991,16 +992,17 @@ export function CesiumGlobe({
     });
     flightEntityIdsRef.current = [];
 
-    // El color sale del catálogo para que el icono y su chip en la leyenda no
-    // puedan discrepar; el halo claro del SVG lo hace legible sobre el mapamundi.
-    const airColor = GLOBE_LAYERS.find((layer) => layer.key === "airTraffic")?.color ?? "#E2E8F0";
-
+    // Dos canales, un icono: el color es la banda de altitud y la forma es el
+    // tipo de vuelo inferido. El halo claro del SVG sigue haciendo legible
+    // cualquiera de las dos sobre el mapamundi.
     // Add flight markers
     flights.forEach((flight, i) => {
       // `!latitude` descartaba los aviones en el ecuador y en el meridiano de
       // Greenwich: un vuelo sobre el golfo de Guinea desaparecía del mapa.
       if (!Number.isFinite(flight.latitude) || !Number.isFinite(flight.longitude)) return;
 
+      const band = altitudeBand(flight.altitude);
+      const role = aircraftRole(flight);
       const entityId = `flight-${i}`;
       viewer.entities.add({
         id: entityId,
@@ -1008,14 +1010,14 @@ export function CesiumGlobe({
         billboard: {
           // 32 px y con el desvanecido más tardío: a 26 px y con el factor 0,3
           // el avión se quedaba en un punto de 8 px en cuanto alejabas la cámara.
-          image: aircraftMarkerIcon(flight.aircraftCategory, airColor), width: 32, height: 32,
+          image: aircraftMarkerIcon(flight.aircraftCategory, band.color, role), width: 32, height: 32,
           rotation: -CesiumMath.toRadians(flight.heading || 0),
           scaleByDistance: new NearFarScalar(5e5, 1.35, 1.2e7, 0.55),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         properties: eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
-          description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+          description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${band.label} · ${ROLE_LABELS[role]} · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
           type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
         }),
@@ -1024,7 +1026,7 @@ export function CesiumGlobe({
           // el transpondedor siempre manda.
           text: flight.callsign || flight.icao24,
           font: "600 10px monospace",
-          fillColor: hexToColor(airColor, 0.95),
+          fillColor: hexToColor(band.color, 0.95),
           outlineColor: Color.BLACK,
           outlineWidth: 3,
           style: 2,
