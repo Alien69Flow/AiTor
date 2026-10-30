@@ -38,10 +38,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Exo:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.cdnfonts.com" crossorigin>
     <style>
+      /* El identificador /s/14795/ nunca existió: devolvía 404 en cada carga y
+         la tipografía de marca caía siempre al sans del sistema. El archivo
+         real de cdnfonts vive en /s/6224/ (verificado: 200 font/woff). */
       @font-face {
         font-family: 'Nasalization';
-        src: url('https://fonts.cdnfonts.com/s/14795/nasalization-rg.woff') format('woff');
+        src: url('https://fonts.cdnfonts.com/s/6224/nasalization%20rg.woff') format('woff');
         font-weight: normal;
         font-style: normal;
         font-display: swap;
