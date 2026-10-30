@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isFabricatedId, mapAdsbAircraft, mapOpenSkyStates } from "./traffic";
+import {
+  isFabricatedId,
+  mapAdsbAircraft,
+  mapOpenSkyStates,
+  normaliseHeading,
+  normaliseSpeed,
+} from "./traffic";
 
 /**
  * El proxy convierte dos formatos ajenos (adsb.lol y OpenSky) en la forma que ya
@@ -60,5 +66,26 @@ describe("identificadores", () => {
   it("el proxy usa el mismo criterio que el cliente", () => {
     expect(isFabricatedId("mock000000000")).toBe(true);
     expect(isFabricatedId("230987654")).toBe(false);
+  });
+});
+
+/**
+ * El AIS real trae centinelas: 1023 décimas de nudo y 511 de rumbo significan
+ * «no disponible». Sin limpiarlos, el globo pinta un barco amarrado a 102 nudos
+ * y un rumbo imposible.
+ */
+describe("centinelas del AIS", () => {
+  it("convierte la velocidad no disponible en cero", () => {
+    expect(normaliseSpeed(102.3)).toBe(0);
+    expect(normaliseSpeed(undefined)).toBe(0);
+    expect(normaliseSpeed(8.6)).toBe(8.6);
+    expect(normaliseSpeed(0.1)).toBe(0.1);
+  });
+
+  it("un rumbo imposible se sustituye por el rumbo sobre el fondo", () => {
+    expect(normaliseHeading(511, 208.4)).toBe(208);
+    expect(normaliseHeading(271, 100)).toBe(271);
+    expect(normaliseHeading(undefined, undefined)).toBe(0);
+    expect(normaliseHeading(999, 999)).toBe(0);
   });
 });

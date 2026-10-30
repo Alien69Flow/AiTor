@@ -237,6 +237,26 @@ interface DigitrafficVessel {
   shipTypeCode?: number;
 }
 
+/**
+ * Códigos de «no disponible» del AIS. La velocidad viaja en décimas de nudo y
+ * 1023 (102,3 kn) significa «sin dato»; el rumbo usa 511 por lo mismo. Sin
+ * normalizarlos, el globo enseña un petrolero amarrado navegando a 102 nudos.
+ */
+export const AIS_UNAVAILABLE_SPEED_KN = 102.2;
+export const AIS_UNAVAILABLE_HEADING = 360;
+
+export function normaliseSpeed(sog: number | undefined): number {
+  if (typeof sog !== "number" || !Number.isFinite(sog) || sog >= AIS_UNAVAILABLE_SPEED_KN) return 0;
+  return Number(sog.toFixed(1));
+}
+
+export function normaliseHeading(heading: number | undefined, cog: number | undefined): number {
+  const candidate =
+    typeof heading === "number" && heading < AIS_UNAVAILABLE_HEADING ? heading : cog;
+  if (typeof candidate !== "number" || !Number.isFinite(candidate) || candidate >= 360) return 0;
+  return Math.round(candidate);
+}
+
 const SHIP_TYPES: Record<number, string> = {
   30: "Pesquero", 31: "Remolcador", 32: "Remolcador", 35: "Militar", 36: "Velero", 37: "Deportivo",
   52: "Remolcador", 60: "Pasaje", 69: "Pasaje", 70: "Carga", 79: "Carga", 80: "Petrolero",
@@ -276,8 +296,8 @@ async function fetchMarine(): Promise<{
         type: SHIP_TYPES[Math.floor((meta?.shipType ?? meta?.shipTypeCode ?? 0) / 10) * 10] ?? "Buque",
         latitude: coords[1],
         longitude: coords[0],
-        speed: Number((feature.properties?.sog ?? 0).toFixed(1)),
-        heading: Math.round(feature.properties?.heading ?? feature.properties?.cog ?? 0),
+        speed: normaliseSpeed(feature.properties?.sog),
+        heading: normaliseHeading(feature.properties?.heading, feature.properties?.cog),
         destination: meta?.destination ?? null,
         timestamp: frameStamp(feature, now),
       });
