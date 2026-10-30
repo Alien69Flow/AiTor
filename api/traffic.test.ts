@@ -80,6 +80,9 @@ describe("centinelas del AIS", () => {
     expect(normaliseSpeed(undefined)).toBe(0);
     expect(normaliseSpeed(8.6)).toBe(8.6);
     expect(normaliseSpeed(0.1)).toBe(0.1);
+    // 77,5 kn existe en el feed: es un transpondedor roto, no un barco.
+    expect(normaliseSpeed(77.5)).toBe(0);
+    expect(normaliseSpeed(59.9)).toBe(59.9);
   });
 
   it("un rumbo imposible se sustituye por el rumbo sobre el fondo", () => {

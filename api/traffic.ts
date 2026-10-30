@@ -244,9 +244,12 @@ interface DigitrafficVessel {
  */
 export const AIS_UNAVAILABLE_SPEED_KN = 102.2;
 export const AIS_UNAVAILABLE_HEADING = 360;
+/** Ni el hidroala más rápido pasa de ~60 kn: por encima es un transpondedor roto. */
+export const AIS_MAX_PLAUSIBLE_SPEED_KN = 70;
 
 export function normaliseSpeed(sog: number | undefined): number {
-  if (typeof sog !== "number" || !Number.isFinite(sog) || sog >= AIS_UNAVAILABLE_SPEED_KN) return 0;
+  if (typeof sog !== "number" || !Number.isFinite(sog)) return 0;
+  if (sog >= AIS_UNAVAILABLE_SPEED_KN || sog > AIS_MAX_PLAUSIBLE_SPEED_KN) return 0;
   return Number(sog.toFixed(1));
 }
 
@@ -303,7 +306,9 @@ async function fetchMarine(): Promise<{
       });
     }
 
-    ships.sort((a, b) => b.speed - a.speed);
+    // Orden por lectura más reciente, no por velocidad: ordenar por `speed`
+    // subía a los transpondedores con datos absurdos a lo alto de la lista.
+    ships.sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
     return {
       ships: ships.slice(0, MAX_SHIPS),
       source: ships.length > 0 ? "digitraffic" : null,
