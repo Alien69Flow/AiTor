@@ -175,7 +175,8 @@ npx supabase secrets set --project-ref pnyigikagdxqaogbiift \
 | `VESSELFINDER_API_KEY` | `marine-traffic` | Sin clave se usa el AIS abierto de Digitraffic (Báltico), que tampoco necesita clave |
 | `NASA_FIRMS_MAP_KEY` (o `FIRMS_MAP_KEY`) | `globe-feeds` (feed `fires`) | Capa de incendios vacía |
 | `CESIUM_ION_TOKEN` (o `VITE_CESIUM_TOKEN`) | `cesium-tiles` | Tiles sin autenticar |
-| `GITHUB_PAT`, `GITHUB_REPO_ALLOWLIST` | `github-proxy` | 401/403 y allowlist vacía |
+| `GITHUB_REPO_ALLOWLIST` | `github-proxy` | 403 en todo: la allowlist es obligatoria |
+| `GITHUB_PAT` | `github-proxy` | Sólo afecta a las escrituras (500 «necesita el secreto»). Las lecturas van anónimas a la API pública y gastan la cuota por IP, no por token |
 | `UFO_FEED_SECRET` | `ufo-feed` | 401 en todas las llamadas (es un cron) |
 | `PAYOUT_WALLET_ADDRESS` | `_shared/uns.ts` | Sin fallback de cobro si el dominio Web3 no resuelve |
 

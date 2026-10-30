@@ -26,13 +26,12 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // El token se lee aquí pero **sólo es obligatorio para escribir**. Leer un
+    // repositorio público no necesita credencial: la API de GitHub permite 60
+    // peticiones por hora sin autenticar, y exigir el PAT para `repo_info`
+    // dejaba la herramienta inservible mientras no se configurase el secreto
+    // (500 en la primera lectura). Las escrituras siguen sin funcionar sin él.
     const GITHUB_PAT = Deno.env.get('GITHUB_PAT');
-    if (!GITHUB_PAT) {
-      return new Response(
-        JSON.stringify({ error: 'GitHub PAT not configured. Please add your GITHUB_PAT secret.' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Require a verified user for every call — the shared PAT must never be
     // reachable anonymously.
@@ -78,8 +77,15 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Write actions require an admin role.
+    // Write actions require an admin role, y además un token: sin PAT no hay
+    // forma de escribir en el repositorio.
     if (WRITE_ACTIONS.has(action)) {
+      if (!GITHUB_PAT) {
+        return new Response(
+          JSON.stringify({ error: 'Escribir en GitHub necesita el secreto GITHUB_PAT en este proyecto.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
+        );
+      }
       // Read the caller's own roles under RLS (the has_role helper is no
       // longer executable by client roles).
       const { data: roleRow } = await supabase
@@ -95,11 +101,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    const headers = {
-      'Authorization': `Bearer ${GITHUB_PAT}`,
+    const headers: Record<string, string> = {
       'Accept': 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
+    // Sin PAT la petición va anónima: sirve para leer lo público y agota la
+    // cuota por IP en vez de por token, que es lo que hay disponible.
+    if (GITHUB_PAT) headers.Authorization = `Bearer ${GITHUB_PAT}`;
 
     let url: string;
     let method = 'GET';
