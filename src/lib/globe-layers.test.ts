@@ -65,6 +65,20 @@ describe("catálogo de capas del globo", () => {
     }
   });
 
+  /**
+   * Ninguna capa puede pedir más que una cuenta. Todas sus fuentes son abiertas
+   * o las paga ya el proyecto (OpenWeather por su propia función, VesselFinder,
+   * GDELT, CelesTrak, el registro estático de infraestructura), así que
+   * esconderlas tras Synapse no protegía ningún coste: dejaba el panel con
+   * etiquetas de plan y capas que no se podían encender.
+   */
+  it("ninguna capa exige un plan de pago para encenderse", () => {
+    const dePago = GLOBE_LAYERS.filter((layer) => TIER_RANK[layer.requiredTier] > TIER_RANK.node).map(
+      (layer) => `${layer.key}:${layer.requiredTier}`,
+    );
+    expect(dePago).toEqual([]);
+  });
+
   it("están las capas nuevas del globo, con su fuente declarada", () => {
     const expected: EnvLayerKey[] = [
       "iss",

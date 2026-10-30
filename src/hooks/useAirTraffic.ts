@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { withTimeout } from "@/lib/with-timeout";
+import { countFabricatedIds, fetchAirTrafficDirect } from "@/lib/live-traffic";
 
 /** Plazo de la función de tráfico aéreo: si no contesta, se conserva lo último. */
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -64,21 +65,38 @@ export function useAirTraffic() {
         throw new Error(fnError.message);
       }
 
-      if (data) {
-        // La función desplegada todavía puede contestar `mock: true` con vuelos
-        // generados al azar; se descartan en vez de pintarlos como tráfico.
-        const legacyMock = data.mock === true;
-        setFlights(legacyMock ? [] : data.flights || []);
-        setSource(legacyMock ? null : data.source ?? null);
-        setUnavailable(legacyMock || (data.unavailable ?? false));
-        setUnavailableReason(
-          legacyMock
-            ? "La función air-traffic desplegada aún sirve vuelos simulados; falta desplegarla"
-            : data.reason ?? null,
-        );
-        setLastUpdate(new Date(data.timestamp));
+      const rows = data?.flights ?? [];
+      // Dos generaciones de datos falsos: la que se marcaba con `mock: true` y
+      // la que no lo hacía pero devolvía `icao24: "mock0000"`. Se detectan por
+      // identificador, que es lo que no puede coincidir con un avión real.
+      const fabricated = countFabricatedIds(rows.map((flight) => flight.icao24));
+      const usable = !fnError && data && data.mock !== true && fabricated === 0 && rows.length > 0;
+
+      if (usable) {
+        setFlights(rows);
+        setSource(data!.source ?? null);
+        setUnavailable(false);
+        setUnavailableReason(null);
+        setLastUpdate(new Date(data!.timestamp));
         setStale(false);
+        return;
       }
+
+      // La función no trajo vuelos reales: se piden al proxy propio, que sí
+      // llega a los feeds abiertos desde el servidor.
+      const direct = await fetchAirTrafficDirect();
+      const directRows = direct.flights ?? [];
+      setFlights(directRows);
+      setSource(direct.source ?? null);
+      setUnavailable(direct.unavailable || directRows.length === 0);
+      setUnavailableReason(
+        direct.reason ??
+          (fabricated > 0
+            ? `La función air-traffic desplegada sirve ${fabricated} vuelos simulados; se usa el proxy real`
+            : null),
+      );
+      if (direct.timestamp) setLastUpdate(new Date(direct.timestamp));
+      setStale(false);
     } catch (err) {
       console.error("Air traffic fetch error:", err);
       // No se vacía la capa: se marca como no fresca y se conservan los vuelos

@@ -303,7 +303,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#a5b4fc", 
 		Icon: Gauge, 
 		owm: "pressure_new", 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Barometric pressure lines and gradients"
@@ -314,7 +314,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#6ee7b7",
 		Icon: Compass,
 		owm: "wind_new",
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "OpenWeatherMap",
 		freshness: "15 min",
 		description: "Global wind patterns and direction"
@@ -619,7 +619,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos",
 		color: "#c084fc",
 		Icon: Sun,
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "NOAA SWPC",
 		freshness: "30 min",
 		description: "Kp index and aurora borealis intensity",
@@ -689,7 +689,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#38bdf8", 
 		Icon: Ship, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "VesselFinder / AIS",
 		freshness: "3 min",
 		description: "Ship tracking via VesselFinder AIS"
@@ -715,7 +715,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Geopolitical", 
 		color: "#dc2626", 
 		Icon: Crosshair, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "UCDP / WorldMonitor",
 		freshness: "Daily",
 		description: "Active armed conflict zones and events"
@@ -726,7 +726,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#7c3aed", 
 		Icon: AlertTriangle, 
-		requiredTier: "oracle",
+		requiredTier: "node",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Nuclear facilities and power plants"
@@ -737,7 +737,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#4b5563", 
 		Icon: Shield, 
-		requiredTier: "oracle",
+		requiredTier: "node",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major military installations worldwide"
@@ -748,7 +748,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#0891b2", 
 		Icon: Waves, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Submarine communications cables"
@@ -759,7 +759,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#ca8a04", 
 		Icon: Landmark, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Major oil and gas pipelines"
@@ -770,7 +770,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Strategic Infrastructure", 
 		color: "#ea580c", 
 		Icon: Zap, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Critical maritime straits and canals"
@@ -781,7 +781,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "Space & Cosmos", 
 		color: "#8b5cf6", 
 		Icon: Satellite, 
-		requiredTier: "oracle",
+		requiredTier: "node",
 		source: "Space-Track.org",
 		freshness: "1 hour",
 		description: "Active satellite positions"
@@ -792,7 +792,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#dc2626", 
 		Icon: Radio, 
-		requiredTier: "synapse",
+		requiredTier: "node",
 		source: "WorldMonitor / Oracle",
 		freshness: "15 min",
 		description: "Real-time internet disruption events"

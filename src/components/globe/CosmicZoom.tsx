@@ -14,6 +14,17 @@ import {
   stageOpacity,
   type CosmicDirection,
 } from "@/lib/cosmic-scale";
+import {
+  PLANETS,
+  SUN,
+  auToMillionKm,
+  displayRadius,
+  orbitPath,
+  scenePosition,
+  solarSystemState,
+  type PlanetState,
+  type SolarElements,
+} from "@/lib/solar-system";
 
 /**
  * Continuous "powers of ten" zoom out from the globe.
@@ -164,66 +175,87 @@ function CislunarStage({ opacity }: { opacity: number }) {
   );
 }
 
-interface PlanetDef {
-  name: string;
-  color: string;
-  size: number;
-  /** Orbit radius in scene units (log-compressed so Neptune still fits). */
-  orbit: number;
-  ring?: boolean;
+/**
+ * Órbita real: la elipse se calcula con la ecuación de Kepler del planeta, así
+ * que Mercurio y Plutón salen con su excentricidad y su perihelio orientado, en
+ * vez de círculos concéntricos iguales.
+ */
+function OrbitPath({ planet, opacity }: { planet: SolarElements; opacity: number }) {
+  // `THREE.Line` como objeto primitivo: en JSX, `<line>` colisiona con el
+  // elemento SVG del mismo nombre y TypeScript no deja pasar `geometry`.
+  const line = useMemo(() => {
+    const points = orbitPath(planet, 180).map(([x, z]) => new THREE.Vector3(x, 0, z));
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: "#26405c", transparent: true, opacity: 0.55 });
+    const object = new THREE.Line(geometry, material);
+    object.rotation.x = -Math.PI / 2;
+    return object;
+  }, [planet]);
+
+  useEffect(() => {
+    (line.material as THREE.LineBasicMaterial).opacity = 0.55 * opacity;
+  }, [line, opacity]);
+
+  useEffect(
+    () => () => {
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    },
+    [line],
+  );
+
+  return <primitive object={line} />;
 }
 
-const PLANETS: PlanetDef[] = [
-  { name: "Mercurio", color: "#a89a8c", size: 0.16, orbit: 1.5 },
-  { name: "Venus", color: "#e6c188", size: 0.24, orbit: 2.0 },
-  { name: "Tierra", color: "#3f7fd0", size: 0.26, orbit: 2.6 },
-  { name: "Marte", color: "#c1502e", size: 0.2, orbit: 3.3 },
-  { name: "Júpiter", color: "#d8b48b", size: 0.62, orbit: 4.6 },
-  { name: "Saturno", color: "#e0cfa2", size: 0.55, orbit: 6.0, ring: true },
-  { name: "Urano", color: "#9fd8e0", size: 0.4, orbit: 7.4 },
-  { name: "Neptuno", color: "#4a6fd0", size: 0.38, orbit: 8.8 },
-];
-
-function SolarStage({ opacity, glow }: { opacity: number; glow: THREE.Texture }) {
-  const planetRefs = useRef<(THREE.Group | null)[]>([]);
-  useFrame(({ clock }) => {
-    planetRefs.current.forEach((group, index) => {
-      if (!group) return;
-      const angle = clock.elapsedTime * (0.05 + index * 0.012) + index * 1.7;
-      const radius = PLANETS[index].orbit;
-      group.position.set(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
-    });
-  });
+/**
+ * Sistema solar con posiciones reales.
+ *
+ * Las distancias son las medidas —1 unidad de escena = 3,33 UA— y los planetas
+ * están donde los pone la ecuación de Kepler para la fecha de apertura, no
+ * girando con el reloj. Los tamaños son simbólicos (a escala real la Tierra
+ * mediría 4·10⁻⁵ UA): conservan el orden real de tamaños y el panel del
+ * overlay escribe el diámetro y la distancia verdaderos al lado.
+ */
+function SolarStage({
+  opacity,
+  glow,
+  states,
+}: {
+  opacity: number;
+  glow: THREE.Texture;
+  states: PlanetState[];
+}) {
   return (
     <group visible={opacity > 0.01} rotation={[0.32, 0, 0.1]}>
       <pointLight position={[0, 0, 0]} intensity={2.4 * opacity} distance={0} color="#fff2d0" />
       <mesh>
-        <sphereGeometry args={[0.62, 48, 48]} />
-        <meshBasicMaterial color="#ffd28a" />
+        <sphereGeometry args={[displayRadius(SUN.radiusKm), 48, 48]} />
+        <meshBasicMaterial color={SUN.color} />
       </mesh>
       <sprite scale={[6.5, 6.5, 1]}>
         <spriteMaterial map={glow} transparent opacity={0.8 * opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
       </sprite>
-      {PLANETS.map((planet, index) => (
-        <group key={planet.name}>
-          <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[planet.orbit - 0.006, planet.orbit + 0.006, 128]} />
-            <meshBasicMaterial color="#26405c" transparent opacity={0.42 * opacity} side={THREE.DoubleSide} />
-          </mesh>
-          <group ref={(node) => { planetRefs.current[index] = node; }}>
+      {PLANETS.map((planet) => (
+        <OrbitPath key={`orbit-${planet.id}`} planet={planet} opacity={opacity} />
+      ))}
+      {states.map((state) => {
+        const { x, z } = scenePosition(state);
+        const size = displayRadius(state.radiusKm);
+        return (
+          <group key={state.id} position={[x, 0, z]}>
             <mesh>
-              <sphereGeometry args={[planet.size, 32, 32]} />
-              <meshStandardMaterial color={planet.color} roughness={0.75} />
+              <sphereGeometry args={[size, 32, 32]} />
+              <meshStandardMaterial color={state.color} roughness={0.75} />
             </mesh>
-            {planet.ring && (
-              <mesh rotation={[-Math.PI / 2.6, 0, 0]}>
-                <ringGeometry args={[planet.size * 1.5, planet.size * 2.4, 64]} />
+            {state.ring && (
+              <mesh rotation={[-Math.PI / 2.4, 0, 0]}>
+                <ringGeometry args={[size * 1.45, size * 2.3, 64]} />
                 <meshBasicMaterial color="#d9cba8" transparent opacity={0.7 * opacity} side={THREE.DoubleSide} />
               </mesh>
             )}
           </group>
-        </group>
-      ))}
+        );
+      })}
     </group>
   );
 }
@@ -399,7 +431,15 @@ function UniverseStage({ opacity }: { opacity: number }) {
 
 // ---------------------------------------------------------------- scene
 
-function CosmicScene({ scale, drag }: { scale: number; drag: React.MutableRefObject<{ x: number; y: number }> }) {
+function CosmicScene({
+  scale,
+  drag,
+  solarStates,
+}: {
+  scale: number;
+  drag: React.MutableRefObject<{ x: number; y: number }>;
+  solarStates: PlanetState[];
+}) {
   const root = useRef<THREE.Group>(null);
   const glow = useMemo(() => radialTexture(), []);
   useFrame((_, delta) => {
@@ -422,7 +462,7 @@ function CosmicScene({ scale, drag }: { scale: number; drag: React.MutableRefObj
       <group ref={root}>
         <EarthStage opacity={op("earth")} />
         <CislunarStage opacity={op("cislunar")} />
-        <SolarStage opacity={op("solar")} glow={glow} />
+        <SolarStage opacity={op("solar")} glow={glow} states={solarStates} />
         <GalaxyStage opacity={op("galaxy")} />
         <LocalGroupStage opacity={op("localgroup")} />
         <UniverseStage opacity={op("universe")} />
@@ -441,6 +481,17 @@ interface CosmicZoomProps {
 
 export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZoomProps) {
   const [scale, setScale] = useState(() => Math.min(SCALE_MAX, Math.max(SCALE_MIN, initialScale)));
+  // Efemérides al abrir el overlay: la posición es la de este instante, no una
+  // animación, así que se calcula una vez y se dice la fecha en el panel.
+  const solarStates = useMemo(() => solarSystemState(new Date()), []);
+  const solarDateLabel = useMemo(
+    () =>
+      new Date().toLocaleString("es-ES", {
+        day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+        timeZone: "UTC",
+      }) + " UTC",
+    [],
+  );
   const [entered, setEntered] = useState(false);
   const drag = useRef({ x: 0, y: 0 });
   const dragging = useRef<{ active: boolean; x: number; y: number } | null>(null);
@@ -542,7 +593,7 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
         dpr={[1, 2]}
         fallback={<div className="flex h-full items-center justify-center text-[11px] uppercase text-primary/70">WebGL no disponible en este dispositivo</div>}
       >
-        <CosmicScene scale={scale} drag={drag} />
+        <CosmicScene scale={scale} drag={drag} solarStates={solarStates} />
       </Canvas>
 
       {/* Scale ladder */}
@@ -583,6 +634,39 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
           <div className="text-[10px] text-muted-foreground">{activeStage.caption}</div>
         </div>
       </div>
+
+      {/*
+        Datos reales del sistema solar. Las distancias son las de la fecha de
+        apertura y salen de los elementos del JPL; el diámetro va al lado para
+        que se vea que el tamaño dibujado es simbólico y no una mentira oculta.
+      */}
+      {activeStage.id === "solar" && (
+        <div className="pointer-events-none absolute right-3 top-16 w-[15rem] rounded-sm border border-primary/25 bg-black/65 p-2 backdrop-blur-md md:right-6 md:top-20">
+          <div className="mb-1 text-[8px] uppercase tracking-[0.18em] text-primary/70">
+            Sistema solar · {solarDateLabel}
+          </div>
+          <ul className="space-y-0.5">
+            {solarStates.map((state) => (
+              <li
+                key={state.id}
+                className="flex items-baseline justify-between gap-2 font-mono text-[9px] text-primary/85"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: state.color }} />
+                  {state.name}
+                </span>
+                <span className="text-primary/60">
+                  {state.au.toFixed(2)} UA
+                  <span className="ml-1 text-primary/35"> · {Math.round(auToMillionKm(state.au))} M km</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[7px] leading-relaxed text-primary/40">
+            Distancias a escala real · tamaños simbólicos · posición con elementos del JPL (proyección sobre la eclíptica)
+          </p>
+        </div>
+      )}
 
       {/* Controls */}
       <div className="absolute right-3 top-3 flex items-center gap-1.5 md:right-6 md:top-6">

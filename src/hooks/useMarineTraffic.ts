@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { withTimeout } from "@/lib/with-timeout";
+import { countFabricatedIds, fetchMarineTrafficDirect } from "@/lib/live-traffic";
 
 /** Plazo de la función de tráfico marítimo: si no contesta, se conserva lo último. */
 const REQUEST_TIMEOUT_MS = 25_000;
@@ -61,23 +62,40 @@ export function useMarineTraffic() {
         throw new Error(fnError.message);
       }
 
-      if (data) {
-        // Hasta que se despliegue la función nueva, la versión en producción
-        // sigue contestando `mock: true` con 40 barcos generados al azar. Esos
-        // barcos no se dibujan: una capa inventada se lee como AIS real.
-        const legacyMock = data.mock === true;
-        setShips(legacyMock ? [] : data.ships || []);
-        setSource(legacyMock ? null : data.source ?? null);
-        setCoverage(legacyMock ? null : data.coverage ?? null);
-        setUnavailable(legacyMock || (data.unavailable ?? false));
-        setUnavailableReason(
-          legacyMock
-            ? "La función marine-traffic desplegada aún sirve barcos simulados; falta desplegarla"
-            : data.reason ?? null,
-        );
-        setLastUpdate(new Date(data.timestamp));
+      const rows = data?.ships ?? [];
+      // La función desplegada devuelve barcos generados al azar **sin** marcar
+      // `mock: true`: se reconocen por el MMSI, que en las filas inventadas
+      // empieza por «mock» y en el AIS real es siempre numérico.
+      const fabricated = countFabricatedIds(rows.map((ship) => ship.mmsi));
+      const usable = !fnError && data && data.mock !== true && fabricated === 0 && rows.length > 0;
+
+      if (usable) {
+        setShips(rows);
+        setSource(data!.source ?? null);
+        setCoverage(data!.coverage ?? null);
+        setUnavailable(false);
+        setUnavailableReason(null);
+        setLastUpdate(new Date(data!.timestamp));
         setStale(false);
+        return;
       }
+
+      // Sin barcos reales de la función, se piden al proxy propio (Digitraffic,
+      // AIS abierto del Báltico: la cobertura se declara, no se extrapola).
+      const direct = await fetchMarineTrafficDirect();
+      const directRows = direct.ships ?? [];
+      setShips(directRows);
+      setSource(direct.source ?? null);
+      setCoverage(direct.coverage ?? null);
+      setUnavailable(direct.unavailable || directRows.length === 0);
+      setUnavailableReason(
+        direct.reason ??
+          (fabricated > 0
+            ? `La función marine-traffic desplegada sirve ${fabricated} barcos simulados; se usa el proxy real`
+            : null),
+      );
+      if (direct.timestamp) setLastUpdate(new Date(direct.timestamp));
+      setStale(false);
     } catch (err) {
       console.error("Marine traffic fetch error:", err);
       // No se vacía la capa: se marca como no fresca y se conservan los barcos
