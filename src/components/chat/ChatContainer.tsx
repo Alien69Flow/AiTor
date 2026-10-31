@@ -25,7 +25,7 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
   const [selectedModel, setSelectedModel] = useState(readPreferredModel);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspace, setWorkspace] = useState<ChatWorkspace>("chat");
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const { messages, isLoading, agentNotice, sendMessage, clearChat } = useChat();
   const { health } = useChatHealth();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -197,6 +197,19 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
           </div>
         )}
       </ScrollArea>
+
+      {/* Aviso persistente: si el turno va sin herramientas, el motivo se queda
+          a la vista. Un toast de cuatro segundos deja al usuario con una
+          respuesta sin datos y ninguna pista. */}
+      {agentNotice && (
+        <div
+          role="status"
+          className="flex items-start gap-2 border-t border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[10px] leading-snug text-amber-200"
+        >
+          <span aria-hidden="true" className="mt-[1px] shrink-0 font-mono">!</span>
+          <span className="min-w-0 flex-1">{agentNotice}</span>
+        </div>
+      )}
 
       <div className="border-t border-border bg-background/80 backdrop-blur-sm">
         <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />

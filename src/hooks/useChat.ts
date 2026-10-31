@@ -61,6 +61,17 @@ let agentWarningShown = false;
  * sistema. Se le dice en el mismo turno que no hay herramientas y qué hacer en
  * su lugar: decirlo con claridad es más útil que un código inventado.
  */
+/** Frase corta y accionable para el aviso que queda en el chat. */
+function describeNotice(failure: AgentTurnFailure): string {
+  if (failure.kind === "no-session") {
+    return "Sin sesión responde el oráculo general: no puede leer el repositorio ni la telemetría. Inicia sesión para que AI Tor use sus herramientas.";
+  }
+  if (failure.kind === "no-key") {
+    return "El agente con herramientas no tiene clave en el despliegue (falta GEMINI_API_KEY). Se responde sin datos en vivo; GET /api/mcp muestra el estado.";
+  }
+  return `El agente con herramientas no respondió (${failure.detail || "sin detalle"}). Se responde sin datos en vivo.`;
+}
+
 function noToolsBlock(failure: AgentTurnFailure): string {
   const why =
     failure.kind === "no-session"
@@ -94,6 +105,12 @@ export function useChat() {
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  /**
+   * Por qué el turno va sin herramientas. Se queda a la vista en el chat: un
+   * aviso que desaparece a los cuatro segundos deja al usuario con una respuesta
+   * sin datos y ninguna pista de qué arreglar.
+   */
+  const [agentNotice, setAgentNotice] = useState<string | null>(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
@@ -186,6 +203,8 @@ export function useChat() {
         },
       );
       if (agentTurn) {
+        // El agente volvió a atender: el aviso de «sin herramientas» ya no aplica.
+        setAgentNotice(null);
         const chips: MessageSkill[] = agentTurn.tools.map((name) => ({
           label: name,
           ok: !agentTurn.failed.includes(name),
@@ -228,21 +247,11 @@ export function useChat() {
       // Sin agente: se explica una vez por carga. Antes esto era silencioso y el
       // usuario sólo veía una respuesta sin datos que decía cosas como
       // «INTERFACE_NOT_BOUND», sin pista de qué faltaba.
-      if (agentFailure && !agentWarningShown) {
-        agentWarningShown = true;
-        const { kind, detail } = agentFailure as AgentTurnFailure;
-        if (kind === "no-session") {
-          toast.info("Inicia sesión para que AI Tor use sus herramientas", {
-            description: "Sin sesión responde el oráculo general, que no puede leer el repositorio ni la telemetría.",
-          });
-        } else if (kind === "no-key") {
-          toast.error("El agente con herramientas no tiene clave", {
-            description: "Falta GEMINI_API_KEY en el despliegue. Comprueba GET /api/mcp para ver el estado.",
-          });
-        } else {
-          toast.warning("El agente con herramientas no respondió", {
-            description: detail || "Se responde sin herramientas; los datos en vivo no estarán disponibles.",
-          });
+      if (agentFailure) {
+        setAgentNotice(describeNotice(agentFailure));
+        if (!agentWarningShown) {
+          agentWarningShown = true;
+          toast.warning("AI Tor responde sin herramientas", { description: describeNotice(agentFailure) });
         }
       }
 
@@ -474,6 +483,7 @@ export function useChat() {
 
   const clearChat = useCallback(() => {
     setMessages([]);
+    setAgentNotice(null);
     localStorage.removeItem(STORAGE_KEY);
     toast.success("Chat limpiado");
   }, []);
@@ -481,6 +491,7 @@ export function useChat() {
   return {
     messages,
     isLoading,
+    agentNotice,
     sendMessage,
     clearChat,
   };
