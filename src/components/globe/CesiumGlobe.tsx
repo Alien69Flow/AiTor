@@ -394,7 +394,11 @@ export function CesiumGlobe({
           const nlProvider = new UrlTemplateImageryProvider({
             url: "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_CityLights_2012/default/500m/{z}/{y}/{x}.jpeg",
             tilingScheme: new GeographicTilingScheme(),
-            maximumLevel: 8,
+            // El conjunto de matrices `500m` de GIBS tiene los niveles 0–7
+            // (comprobado en su WMTSCapabilities). Pedir el 8 devuelve 400
+            // TileOutOfRange y la capa se queda con huecos al acercarse; con
+            // el tope en 7 Cesium reutiliza la última tesela válida.
+            maximumLevel: 7,
           });
           if (viewer.isDestroyed()) return;
           const nl = viewer.imageryLayers.addImageryProvider(nlProvider);
@@ -1455,7 +1459,13 @@ export function CesiumGlobe({
     try {
       const provider = new UrlTemplateImageryProvider({
         url: rainTileUrl,
-        maximumLevel: 8,
+        // RainViewer sirve radar hasta el nivel 7 (su documentación: «Maximum
+        // zoom level is 7»). Del 8 en adelante devuelve una tesela con el
+        // texto «Zoom level not supported» en vez de un error: al acercar la
+        // cámara, ese texto se plantaba encima del globo como si fuera una
+        // capa. Declarando el tope real, Cesium amplía la última tesela válida
+        // y nunca pide la que no existe.
+        maximumLevel: 7,
         minimumLevel: 0,
         credit: "RainViewer",
       });
