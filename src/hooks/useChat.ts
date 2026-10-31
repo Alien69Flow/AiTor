@@ -73,8 +73,9 @@ function noToolsBlock(failure: AgentTurnFailure): string {
     "### Herramientas",
     `En este turno NO hay herramientas conectadas: ${why}.`,
     "No puedes leer el repositorio, la base de datos ni la telemetría en vivo, así que no finjas que lo has hecho.",
-    "Si te lo piden, dilo con palabras normales y ofrece lo que sí puedes responder. Nunca inventes códigos de " +
-      "interfaz ni mensajes de error como INTERFACE_NOT_BOUND.",
+    "Si te lo piden, dilo con una frase normal y ofrece lo que sí puedes responder.",
+    "Prohibido inventar identificadores de error: nada de INTERFACE_NOT_BOUND, REPOSITORY_CONTEXT_NULL, " +
+      "bloques [ERROR: ...] ni códigos por el estilo. Son frases que parecen fallos del sistema y no existen.",
   ].join("\n");
 }
 

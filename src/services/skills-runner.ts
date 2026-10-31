@@ -225,6 +225,61 @@ async function runRepo(text: string): Promise<string | null> {
   return parts.length > 1 ? parts.join("\n\n") : null;
 }
 
+// --- Código del propio proyecto ---------------------------------------------
+
+/** El repositorio de este terminal: público, así que se lee sin sesión. */
+const PROJECT = { owner: "Alien69Flow", repo: "AiTor" } as const;
+
+/**
+ * Árbol real del proyecto para preguntas sobre su código.
+ *
+ * Devuelve recuento por carpeta de primer nivel y una muestra de rutas, no las
+ * 500 y pico completas: el modelo necesita saber qué existe y cómo se organiza,
+ * y el árbol entero se come el turno sin aportar más.
+ */
+async function runCode(): Promise<string | null> {
+  const [tree, commits] = await Promise.all([
+    githubRead<RepoTree>({ action: "tree", ...PROJECT, branch: "main" }).catch(() => null),
+    githubRead<RepoCommit[]>({ action: "commits", ...PROJECT }).catch(() => null),
+  ]);
+
+  const blobs = (tree?.tree ?? []).filter(
+    (entry): entry is { path: string; type: string } =>
+      entry.type === "blob" && typeof entry.path === "string",
+  );
+  if (blobs.length === 0) return null;
+
+  const byTop = new Map<string, number>();
+  for (const entry of blobs) {
+    const top = entry.path.includes("/") ? entry.path.split("/")[0] : "(raíz)";
+    byTop.set(top, (byTop.get(top) ?? 0) + 1);
+  }
+  const folders = [...byTop.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([folder, count]) => `- ${folder}/ · ${count} ficheros`);
+
+  const sample = blobs
+    .map((entry) => entry.path)
+    .filter((path) => /^(src|api|supabase|scripts|docs)\//.test(path))
+    .slice(0, 40);
+
+  const parts = [
+    `### ${PROJECT.owner}/${PROJECT.repo} · rama main`,
+    `${blobs.length} ficheros en el árbol.`,
+    `Carpetas de primer nivel:\n${folders.join("\n")}`,
+  ];
+  if (sample.length) parts.push(`Rutas de ejemplo:\n${sample.join("\n")}`);
+
+  const recent = (commits ?? [])
+    .slice(0, 5)
+    .map((entry) => entry.commit?.message?.split("\n")[0])
+    .filter((line): line is string => Boolean(line));
+  if (recent.length) parts.push(`Últimos commits:\n${recent.map((line) => `- ${line}`).join("\n")}`);
+
+  return parts.join("\n\n");
+}
+
 // --- OSINT ------------------------------------------------------------------
 
 interface IntelEvent {
@@ -284,6 +339,8 @@ async function execute(id: SkillId, text: string): Promise<string | null> {
       return runMarket(text);
     case "repo":
       return runRepo(text);
+    case "code":
+      return runCode();
     case "osint":
       return runOsint();
     case "spaceWeather":

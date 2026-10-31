@@ -13,7 +13,7 @@
  * with no context at all.
  */
 
-export type SkillId = "web" | "market" | "repo" | "osint" | "spaceWeather";
+export type SkillId = "web" | "market" | "repo" | "code" | "osint" | "spaceWeather";
 
 export interface SkillDefinition {
   id: SkillId;
@@ -78,6 +78,28 @@ export const SKILLS: SkillDefinition[] = [
       // start with a letter so a path or a date is not mistaken for a repository.
       /\b(repositorio|repo|proyecto)\b.*\b([A-Za-z][\w.-]*)\/([A-Za-z][\w.-]*)\b/i,
       /\b([A-Za-z][\w.-]*)\/([A-Za-z][\w.-]*)\b.*\b(repositorio|repo|proyecto)\b/i,
+    ],
+  },
+  {
+    /**
+     * El propio proyecto, sin que el usuario tenga que nombrarlo.
+     *
+     * Nace de un fallo concreto: preguntar «¿qué archivos hay en el repositorio
+     * del proyecto?» acababa en un modelo sin herramientas que se inventaba
+     * códigos de error en vez de leer el árbol. El repositorio es público, así
+     * que se lee sin sesión y sus rutas viajan como contexto verificado.
+     */
+    id: "code",
+    label: "Código del proyecto",
+    gives: "rutas reales del árbol de Alien69Flow/AiTor y sus últimos commits (GitHub, ahora)",
+    patterns: [
+      /\b(repositorio|repo|c[oó]digo)\s+(del|de este)\s+(proyecto|terminal|repo)\b/i,
+      /\b(este|nuestro)\s+(repositorio|repo|c[oó]digo)\b/i,
+      /\b(tu|vuestro)\s+(c[oó]digo|repositorio)\b/i,
+      // Una ruta de fichero con carpeta (src/hooks/useChat.ts) es una pregunta
+      // sobre el código; un nombre suelto (package.json) puede ser cualquier cosa.
+      /\b[\w.-]+\/[\w./-]*\.(?:tsx?|jsx?|sql|ya?ml|css|md|json)\b/i,
+      /\b(archivos|ficheros|rutas)\b[^.]{0,40}\b(repositorio|repo|proyecto)\b/i,
     ],
   },
   {

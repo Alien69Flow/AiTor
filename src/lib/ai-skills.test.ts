@@ -21,6 +21,21 @@ describe("ai skills router", () => {
     expect(routeSkills("mira el repositorio Alien69Flow/aitor y dime qué hace")).toEqual(["repo"]);
   });
 
+  it("rutea al código del proyecto cuando se pregunta por sus ficheros", () => {
+    // Preguntar por el árbol del propio repo acababa en un modelo sin contexto
+    // que se inventaba códigos de error. Ahora trae el árbol real.
+    expect(routeSkills("¿qué archivos hay en el repositorio del proyecto?")).toEqual(["code"]);
+    expect(routeSkills("explícame src/hooks/useChat.ts")).toEqual(["code"]);
+    expect(routeSkills("revisa tu código y dime qué falta")).toEqual(["code"]);
+  });
+
+  it("no confunde una charla genérica con una pregunta sobre el código", () => {
+    // «¿qué es…?» ya dispara la búsqueda web por diseño; lo que no puede es
+    // arrastrar el árbol del proyecto a una pregunta que no lo menciona.
+    expect(routeSkills("¿qué es un hook en React?")).not.toContain("code");
+    expect(routeSkills("recomiéndame un editor de código")).toEqual([]);
+  });
+
   it("combina OSINT con búsqueda web cuando la pregunta pide ambas cosas", () => {
     expect(routeSkills("busca en internet las últimas noticias de UAP")).toEqual(["osint", "web"]);
   });
