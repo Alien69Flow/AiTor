@@ -110,6 +110,48 @@ describe("MCP en /api/mcp", () => {
     expect(result.content[0].text).toMatch(/sesión iniciada/);
   });
 
+  it("con sesión, la lectura va a GitHub y no al proxy", async () => {
+    // El proxy exige JWT y, si no está desplegado, dejaba `github.repo` sin
+    // poder leer ni un repositorio público. Ahora la lectura va directa a la
+    // API abierta: aquí se comprueba que no toca `github-proxy` ni pide token.
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const href = String(url);
+        urls.push(href);
+        if (href.includes("/auth/v1/user")) {
+          return new Response(JSON.stringify({ id: "usuario-1" }), { status: 200 });
+        }
+        if (href.includes("/rest/v1/profiles")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        return new Response(JSON.stringify({ full_name: "Alien69Flow/AiTor" }), { status: 200 });
+      }),
+    );
+
+    try {
+      const { status, body } = await call(
+        {
+          jsonrpc: "2.0",
+          id: 6,
+          method: "tools/call",
+          params: { name: "github.repo", arguments: { action: "repo_info" } },
+        },
+        { authorization: "Bearer sesion-valida" },
+      );
+
+      expect(status).toBe(200);
+      const result = JSON.parse(body).result;
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain("Alien69Flow/AiTor");
+      expect(urls.some((href) => href.includes("api.github.com/repos/Alien69Flow/AiTor"))).toBe(true);
+      expect(urls.some((href) => href.includes("github-proxy"))).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("el bucle del modelo no se abre a invitados", async () => {
     const { status, body } = await call({ prompt: "¿dónde está la ISS?" });
 
