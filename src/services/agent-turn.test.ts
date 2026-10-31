@@ -87,6 +87,23 @@ describe("turno del agente con herramientas", () => {
     expect(askAgent).not.toHaveBeenCalled();
   });
 
+  it("explica por qué no hubo agente: sin clave no es lo mismo que sin sesión", async () => {
+    // El chat usaba null y callaba; el usuario sólo veía una respuesta sin
+    // datos. Con el motivo se puede decir qué falta.
+    const failures: Array<{ kind: string; status: number | null }> = [];
+    askAgent.mockRejectedValue(new Error("El agente respondió 501: GEMINI_API_KEY no está configurada en el despliegue"));
+    await runAgentTurn([], "lee el repo", { onFailure: (failure) => failures.push(failure) });
+    expect(failures[0]).toMatchObject({ kind: "no-key", status: 501 });
+
+    askAgent.mockRejectedValue(new Error("Necesitas iniciar sesión para usar el agente"));
+    await runAgentTurn([], "lee el repo", { onFailure: (failure) => failures.push(failure) });
+    expect(failures[1]).toMatchObject({ kind: "no-session", status: null });
+
+    askAgent.mockRejectedValue(new Error("Failed to fetch"));
+    await runAgentTurn([], "lee el repo", { onFailure: (failure) => failures.push(failure) });
+    expect(failures[2].kind).toBe("unavailable");
+  });
+
   it("adjunta el contexto de la conversación al prompt", async () => {
     askAgent.mockResolvedValue({ answer: "ok", toolCalls: [] });
     await runAgentTurn(

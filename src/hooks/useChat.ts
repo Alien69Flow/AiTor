@@ -6,7 +6,7 @@ import { routeSkills } from "@/lib/ai-skills";
 import { AI_MODELS } from "@/lib/ai-models";
 import { peekChatHealth, resolveOracles } from "@/lib/ai-health";
 import { buildSkillContext, runSkills, type SkillRunResult } from "@/services/skills-runner";
-import { runAgentTurn } from "@/services/agent-turn";
+import { runAgentTurn, type AgentTurnFailure } from "@/services/agent-turn";
 
 export interface MessageSkill {
   label: string;
@@ -49,6 +49,34 @@ const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const PENDING_KEY = "aitor_chat_pending";
 const MAX_RETRIES = 3;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Un aviso por carga: el fallo del agente se explica una vez, no en cada mensaje. */
+let agentWarningShown = false;
+
+/**
+ * Bloque de contexto para el oráculo sin herramientas.
+ *
+ * La función `chat` desplegada no tiene bucle de herramientas y, al pedirle el
+ * repositorio, se inventaba `INTERFACE_NOT_BOUND`, que parece un error del
+ * sistema. Se le dice en el mismo turno que no hay herramientas y qué hacer en
+ * su lugar: decirlo con claridad es más útil que un código inventado.
+ */
+function noToolsBlock(failure: AgentTurnFailure): string {
+  const why =
+    failure.kind === "no-session"
+      ? "hace falta iniciar sesión para que el agente con herramientas atienda la petición"
+      : failure.kind === "no-key"
+        ? "el agente con herramientas no tiene clave configurada en el despliegue"
+        : "el agente con herramientas no respondió";
+
+  return [
+    "### Herramientas",
+    `En este turno NO hay herramientas conectadas: ${why}.`,
+    "No puedes leer el repositorio, la base de datos ni la telemetría en vivo, así que no finjas que lo has hecho.",
+    "Si te lo piden, dilo con palabras normales y ofrece lo que sí puedes responder. Nunca inventes códigos de " +
+      "interfaz ni mensajes de error como INTERFACE_NOT_BOUND.",
+  ].join("\n");
+}
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
@@ -104,22 +132,6 @@ export function useChat() {
       setMessages(baseMessages);
       setIsLoading(true);
 
-      // Skills run before the request, in parallel, and the turn continues even
-      // when one of them fails: the model is told what could not be consulted.
-      const skillIds = routeSkills(content);
-      let skillResults: SkillRunResult[] = [];
-      if (skillIds.length > 0) {
-        skillResults = await runSkills(skillIds, content);
-        const chips: MessageSkill[] = skillResults.map((result) => ({
-          label: result.label,
-          ok: result.ok,
-          ...(result.error && { error: result.error }),
-        }));
-        setMessages((prev) =>
-          prev.map((message) => (message.id === userMessage.id ? { ...message, skills: chips } : message)),
-        );
-      }
-      const skillContext = buildSkillContext(skillResults);
       // Persist pending so we can recover if the page reloads mid-request
       try {
         localStorage.setItem(
@@ -142,6 +154,8 @@ export function useChat() {
       const agentId = crypto.randomUUID();
       let agentText = "";
       let agentStarted = false;
+      /** Rellenado por el agente cuando no puede contestar. */
+      let agentFailure: AgentTurnFailure | null = null;
 
       const appendAgentDelta = (delta: string) => {
         agentText += delta;
@@ -162,7 +176,13 @@ export function useChat() {
       const agentTurn = await runAgentTurn(
         messages.map((message) => ({ role: message.role, content: message.content })),
         content,
-        { hasImage: Boolean(imageData), onDelta: appendAgentDelta },
+        {
+          hasImage: Boolean(imageData),
+          onDelta: appendAgentDelta,
+          onFailure: (failure) => {
+            agentFailure = failure;
+          },
+        },
       );
       if (agentTurn) {
         const chips: MessageSkill[] = agentTurn.tools.map((name) => ({
@@ -204,6 +224,27 @@ export function useChat() {
         return;
       }
 
+      // Sin agente: se explica una vez por carga. Antes esto era silencioso y el
+      // usuario sólo veía una respuesta sin datos que decía cosas como
+      // «INTERFACE_NOT_BOUND», sin pista de qué faltaba.
+      if (agentFailure && !agentWarningShown) {
+        agentWarningShown = true;
+        const { kind, detail } = agentFailure as AgentTurnFailure;
+        if (kind === "no-session") {
+          toast.info("Inicia sesión para que AI Tor use sus herramientas", {
+            description: "Sin sesión responde el oráculo general, que no puede leer el repositorio ni la telemetría.",
+          });
+        } else if (kind === "no-key") {
+          toast.error("El agente con herramientas no tiene clave", {
+            description: "Falta GEMINI_API_KEY en el despliegue. Comprueba GET /api/mcp para ver el estado.",
+          });
+        } else {
+          toast.warning("El agente con herramientas no respondió", {
+            description: detail || "Se responde sin herramientas; los datos en vivo no estarán disponibles.",
+          });
+        }
+      }
+
       // El flujo se cortó después de empezar: lo leído es real, no se borra ni
       // se pide otra respuesta encima (eso duplicaba el mensaje).
       if (agentStarted) {
@@ -216,6 +257,27 @@ export function useChat() {
         }
         return;
       }
+
+      // Sólo cuando el agente no contesta se pagan las skills: el agente ya
+      // tiene sus propias herramientas, así que consultarlas antes era gastar
+      // hasta nueve segundos de espera para que el modelo las ignorara.
+      const skillIds = routeSkills(content);
+      let skillResults: SkillRunResult[] = [];
+      if (skillIds.length > 0) {
+        skillResults = await runSkills(skillIds, content);
+        const skillChips: MessageSkill[] = skillResults.map((result) => ({
+          label: result.label,
+          ok: result.ok,
+          ...(result.error && { error: result.error }),
+        }));
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.id === userMessage.id ? { ...message, skills: skillChips } : message,
+          ),
+        );
+      }
+      const skillContext = buildSkillContext(skillResults);
+      if (agentFailure) skillContext.push(noToolsBlock(agentFailure));
 
       const assistantId = crypto.randomUUID();
       let assistantText = "";

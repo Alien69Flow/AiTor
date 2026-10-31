@@ -132,6 +132,38 @@ interface RepoInfo {
   private?: boolean;
 }
 
+/**
+ * Lectura de GitHub con dos caminos.
+ *
+ * El repositorio del proyecto es público, así que se lee por `/api/github`, la
+ * función de Vercel: sin sesión, sin PAT y sin depender del proxy de Supabase.
+ * Antes esta skill iba siempre por `github-proxy`, que exige JWT; a un invitado
+ * le fallaba la consulta y el chip decía «requiere sesión iniciada» aunque el
+ * repositorio que pedía leer fuera abierto. El proxy queda como respaldo para
+ * cuando la ruta pública no esté disponible (por ejemplo en `vite dev`).
+ */
+async function githubRead<T>(params: {
+  action: string;
+  owner: string;
+  repo: string;
+  path?: string;
+  branch?: string;
+}): Promise<T> {
+  try {
+    const response = await fetch("/api/github", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(params),
+      signal: AbortSignal.timeout(SKILL_TIMEOUT_MS),
+    });
+    if (!response.ok) throw new Error(`/api/github respondió ${response.status}`);
+    return (await response.json()) as T;
+  } catch {
+    // Sin función desplegada (dev) o caída: se intenta el proxy con sesión.
+    return invoke<T>("github-proxy", params);
+  }
+}
+
 interface RepoTree {
   tree?: Array<{ path?: string; type?: string }>;
 }
@@ -155,13 +187,10 @@ async function runRepo(text: string): Promise<string | null> {
     }
   };
 
-  // The metadata call runs unguarded so an authentication or configuration
-  // problem is reported as such; the tree and the commit list may legitimately
-  // be empty (private repo, other default branch) and are tolerated.
-  const info = await invoke<RepoInfo>("github-proxy", { action: "repo_info", owner, repo });
+  const info = await githubRead<RepoInfo>({ action: "repo_info", owner, repo });
   const [tree, commits] = await Promise.all([
-    settle(invoke<RepoTree>("github-proxy", { action: "tree", owner, repo, branch: "main" })),
-    settle(invoke<RepoCommit[]>("github-proxy", { action: "commits", owner, repo })),
+    settle(githubRead<RepoTree>({ action: "tree", owner, repo, branch: "main" })),
+    settle(githubRead<RepoCommit[]>({ action: "commits", owner, repo })),
   ]);
 
   if (!info && !tree && !commits) return null;

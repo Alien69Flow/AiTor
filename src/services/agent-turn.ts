@@ -31,10 +31,45 @@ export interface AgentTurnOptions {
   onDelta?: (text: string) => void;
   /** Aviso de herramienta ejecutada, mientras el flujo sigue abierto. */
   onTool?: (name: string, isError: boolean) => void;
+  /**
+   * Por qué no hubo respuesta del agente. Sin esto el chat caía al modelo sin
+   * herramientas en silencio y el usuario sólo veía una respuesta rara: así
+   * puede decir «falta GEMINI_API_KEY» o «inicia sesión» en vez de dejarlo
+   * adivinar.
+   */
+  onFailure?: (failure: AgentTurnFailure) => void;
+}
+
+export type AgentTurnFailureKind = "no-session" | "no-key" | "unavailable";
+
+export interface AgentTurnFailure {
+  kind: AgentTurnFailureKind;
+  /** Mensaje del servidor, ya recortado, para enseñarlo tal cual. */
+  detail: string;
+  /** Código HTTP del endpoint cuando lo hubo. */
+  status: number | null;
 }
 
 /** Un fallo por falta de sesión es el caso normal del invitado, no un error. */
 const isMissingSession = (detail: string) => /iniciar sesión/i.test(detail);
+
+/**
+ * Traduce el error del endpoint a algo accionable.
+ *
+ * «El agente respondió 501: GEMINI_API_KEY no está configurada» y «no hay red»
+ * no se arreglan igual, así que no pueden acabar en el mismo mensaje.
+ */
+export function describeAgentFailure(error: unknown): AgentTurnFailure {
+  const detail = error instanceof Error ? error.message : String(error);
+  const status = Number(/respondió (\d{3})/.exec(detail)?.[1] ?? NaN);
+  const code = Number.isFinite(status) ? status : null;
+
+  if (isMissingSession(detail)) return { kind: "no-session", detail, status: code };
+  if (/GEMINI_API_KEY|GOOGLE_API_KEY|no está configurada|501/i.test(detail)) {
+    return { kind: "no-key", detail, status: code };
+  }
+  return { kind: "unavailable", detail: detail.slice(0, 200), status: code };
+}
 
 export async function runAgentTurn(
   history: AgentTurn[],
@@ -58,10 +93,11 @@ export async function runAgentTurn(
       failed: calls.filter((call) => call.isError).map((call) => call.name),
     };
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    if (!isMissingSession(detail)) {
-      console.warn("[agent-turn] el agente MCP no respondió; se usa el chat sin herramientas:", detail);
+    const failure = describeAgentFailure(error);
+    if (failure.kind !== "no-session") {
+      console.warn("[agent-turn] el agente MCP no respondió; se usa el chat sin herramientas:", failure.detail);
     }
+    options.onFailure?.(failure);
     return null;
   }
 }

@@ -223,7 +223,7 @@ function json(body: unknown, status = 200) {
       "content-type": "application/json",
       "access-control-allow-origin": "*",
       "access-control-allow-headers": "authorization, content-type",
-      "access-control-allow-methods": "POST, OPTIONS",
+      "access-control-allow-methods": "GET, POST, OPTIONS",
     },
     body: JSON.stringify(body),
   };
@@ -1067,7 +1067,15 @@ async function generate(model: string, body: Record<string, unknown>) {
   return content.parts.filter((part) => !part.thought);
 }
 
-const MAX_ROUNDS = 3;
+/**
+ * Rondas del bucle de herramientas.
+ *
+ * Con tres, una pregunta de código se quedaba a medias: el modelo pedía el
+ * árbol, luego el fichero, y ya no le quedaba turno para redactar con lo leído.
+ * Cuatro cubre ese camino (árbol → fichero → otra lectura → respuesta) sin
+ * abrir la puerta a bucles infinitos.
+ */
+const MAX_ROUNDS = 4;
 
 /**
  * Gemini en modo flujo. `streamGenerateContent?alt=sse` emite un sobre SSE por
@@ -1187,15 +1195,29 @@ async function runAgentStream(
 }
 
 /**
- * Instrucciones del operador. El «sin narrar tu razonamiento» no es cosmética:
- * el chat mostraba el monólogo previo en lugar de la respuesta.
+ * Instrucciones del operador.
+ *
+ * Tres reglas que vienen de fallos reales del chat:
+ *
+ *  - «Usa la herramienta» explícito, porque sin él el modelo contestaba de
+ *    memoria preguntas sobre su propio código.
+ *  - «No narres tu razonamiento»: el monólogo previo se mostraba como respuesta.
+ *  - «No inventes códigos de error»: al no tener herramientas, el modelo se
+ *    sacaba de la manga `INTERFACE_NOT_BOUND`, que parece un error del sistema y
+ *    manda al usuario a buscar un fallo que no existe.
  */
 const SYSTEM_PROMPT =
-  "Eres el operador de AI-TOR. Usa las herramientas cuando necesites telemetría " +
-  "orbital o eventos OSINT, y cita siempre la fuente y la hora del dato. Si una " +
-  "herramienta falla, explícalo en vez de estimar cifras. Responde directamente y " +
-  "en el idioma del usuario: no narres tu razonamiento ni enumeres lo que vas a " +
-  "hacer, entrega el resultado.";
+  "Eres AI Tor, el operador de este terminal. Responde en el idioma del usuario, " +
+  "directo y sin narrar tu razonamiento ni enumerar los pasos que vas a dar. " +
+  "Cuando la respuesta dependa de datos reales —el árbol o el contenido del " +
+  "repositorio, telemetría orbital, base de datos, previsión meteorológica, " +
+  "eventos OSINT— usa la herramienta en vez de contestar de memoria. El " +
+  "repositorio del proyecto es Alien69Flow/AiTor: para hablar de su código usa " +
+  "github.repo con action `tree`, `contents` o `get_file`. Cita siempre la fuente " +
+  "y la hora del dato. Si una herramienta falla, di cuál es y qué error dio, con " +
+  "palabras normales; jamás inventes códigos de interfaz ni mensajes como " +
+  "INTERFACE_NOT_BOUND. Si no tienes herramienta para lo que te piden, dilo y " +
+  "ofrece lo que sí puedes consultar.";
 
 async function runAgent(prompt: string, caller: Caller) {
   const model = await resolveModel();
@@ -1273,8 +1295,25 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
     res.status(204);
     res.setHeader("access-control-allow-origin", "*");
     res.setHeader("access-control-allow-headers", "authorization, content-type");
-    res.setHeader("access-control-allow-methods", "POST, OPTIONS");
+    res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
     return res.end();
+  }
+  // Sonda de salud, sin sesión y sin secretos: dice si el bucle de herramientas
+  // puede funcionar en este despliegue. Sin esto, un `GEMINI_API_KEY` ausente
+  // sólo se notaba como un chat que contestaba sin herramientas.
+  if (req.method === "GET") {
+    return send(
+      json({
+        ok: true,
+        service: "mcp",
+        geminiConfigured: Boolean(geminiKey()),
+        tools: TOOLS.length,
+        maxRounds: MAX_ROUNDS,
+        hint: geminiKey()
+          ? "El agente puede ejecutar herramientas; pide sesión iniciada en el chat."
+          : "Falta GEMINI_API_KEY en las variables del despliegue: el chat responderá sin herramientas.",
+      }),
+    );
   }
   if (req.method !== "POST") return send(json({ error: "Usa POST" }, 405));
 

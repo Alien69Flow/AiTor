@@ -20,10 +20,14 @@ interface HarnessResult {
   headers?: Record<string, string>;
 }
 
-function call(body: unknown, headers: Record<string, string> = {}): Promise<HarnessResult> {
+function call(
+  body: unknown,
+  headers: Record<string, string> = {},
+  method = "POST",
+): Promise<HarnessResult> {
   return new Promise((resolve) => {
     const req = {
-      method: "POST",
+      method,
       body,
       headers,
       socket: { remoteAddress: "203.0.113.7" },
@@ -262,6 +266,27 @@ describe("MCP en /api/mcp", () => {
       expect(JSON.parse(result.body).error).toMatch(/GEMINI_API_KEY/);
     } finally {
       vi.unstubAllGlobals();
+    }
+  });
+
+  it("GET /api/mcp publica si el despliegue tiene clave del modelo", async () => {
+    // Sin esta sonda, una clave ausente sólo se notaba como un chat que
+    // contestaba sin herramientas y se inventaba códigos de error.
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GOOGLE_API_KEY", "");
+    try {
+      const { status, body } = await call(null, {}, "GET");
+      expect(status).toBe(200);
+      const health = JSON.parse(body) as { geminiConfigured: boolean; tools: number; hint: string };
+      expect(health.geminiConfigured).toBe(false);
+      expect(health.tools).toBeGreaterThan(5);
+      expect(health.hint).toMatch(/GEMINI_API_KEY/);
+
+      vi.stubEnv("GEMINI_API_KEY", "clave-de-prueba");
+      const withKey = await call(null, {}, "GET");
+      expect((JSON.parse(withKey.body) as { geminiConfigured: boolean }).geminiConfigured).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
     }
   });
 
