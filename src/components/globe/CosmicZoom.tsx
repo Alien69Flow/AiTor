@@ -458,8 +458,8 @@ function GalaxyStage({ opacity }: { opacity: number }) {
   );
 }
 
-/** 1 millón de años luz de escena: Andrómeda queda a 3,9 unidades. */
-const MLY_UNITS = 1.55;
+/** 1 millón de años luz de escena: Andrómeda queda a 3,4 unidades (cámara a 9). */
+const MLY_UNITS = 1.35;
 
 /**
  * Grupo Local con las galaxias en su sitio: antes eran cinco manchas
@@ -605,8 +605,12 @@ function VirgoStage({ opacity }: { opacity: number }) {
  */
 function SuperclusterStage({ opacity }: { opacity: number }) {
   const glow = useMemo(() => galaxySpriteTexture("rgba(255,226,180,0.5)"), []);
-  /** 1 Mal de escena: Coma, el nodo más lejano, cae a 6,4 unidades. */
-  const NODE_UNITS = 0.02;
+  /**
+   * 1 Mal de escena. Coma, el nodo más lejano (321 Mal), cae a 4,8 unidades: la
+   * cámara está a 9 con 50° de campo, así que entra en pantalla también en
+   * vertical.
+   */
+  const NODE_UNITS = 0.015;
 
   const nodes = useMemo(
     () =>
