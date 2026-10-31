@@ -255,8 +255,8 @@ interface CesiumGlobeProps {
   fires?: { id: string; lat: number; lon: number; brightness: number; confidence: string; source?: string }[];
   /** TeleGeography submarine cables. */
   cables?: { id: string; name: string; color: string; paths: [number, number][][] }[];
-  /** Bitnodes reachable Bitcoin nodes. */
-  bitcoinNodes?: { id: string; lat: number; lon: number; city: string; country: string }[];
+  /** Nodos Bitcoin alcanzables, un punto por país con su recuento. */
+  bitcoinNodes?: { id: string; lat: number; lon: number; country: string; count: number }[];
   /** GDELT geolocated news events. */
   gdeltEvents?: { id: string; title: string; lat: number; lon: number; domain: string; url: string }[];
   /** Sucesos de violencia geolocalizados de las últimas 48 h (GDELT). */
@@ -1725,10 +1725,10 @@ export function CesiumGlobe({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           properties: eventPayload({
-            lat: n.lat, lon: n.lon, location: n.city || n.country || "Bitcoin node",
-            description: `Reachable Bitcoin node · ${n.country || "unknown country"}`,
-            type: "bitcoin", severity: "low", source: "Bitnodes", category: "finance",
-            date_reported: "LIVE", reliability: "Public network crawler",
+            lat: n.lat, lon: n.lon, location: n.country || "Bitcoin nodes",
+            description: `${n.count} nodo${n.count === 1 ? "" : "s"} Bitcoin alcanzable${n.count === 1 ? "" : "s"} en ${n.country}. Recuento por país; la fuente no publica la posición de cada nodo.`,
+            type: "bitcoin", severity: "low", source: "Blockchair", category: "finance",
+            date_reported: "LIVE", reliability: "Recuento por país, no posición individual",
           }),
         });
         track(id);

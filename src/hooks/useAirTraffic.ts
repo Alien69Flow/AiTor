@@ -98,7 +98,30 @@ export function useAirTraffic() {
       if (direct.timestamp) setLastUpdate(new Date(direct.timestamp));
       setStale(false);
     } catch (err) {
-      console.error("Air traffic fetch error:", err);
+      // La función desplegada puede rechazar la petición por un preflight
+      // caído o por una versión que no conoce el cuerpo. Antes eso dejaba el
+      // globo sin aviones hasta la vuelta de dos minutos y llenaba la consola
+      // con un error que el usuario no podía accionar. Se pregunta al proxy de
+      // mismo origen antes de darlo por perdido.
+      try {
+        const direct = await fetchAirTrafficDirect();
+        if ((direct.flights ?? []).length > 0) {
+          setFlights(direct.flights);
+          setSource(direct.source ?? null);
+          setUnavailable(false);
+          setUnavailableReason(null);
+          if (direct.timestamp) setLastUpdate(new Date(direct.timestamp));
+          setStale(false);
+          setError(null);
+          return;
+        }
+        setUnavailable(true);
+        setUnavailableReason(direct.reason ?? null);
+      } catch {
+        // Tampoco hay proxy: se conserva lo último y se marca como no fresco.
+      }
+
+      console.warn("[air-traffic] sin datos frescos:", err instanceof Error ? err.message : err);
       // No se vacía la capa: se marca como no fresca y se conservan los vuelos
       // anteriores, que siguen siendo más útiles que un globo sin tráfico.
       setStale(true);
