@@ -53,6 +53,87 @@ const SUPABASE_ANON_KEY =
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
+/**
+ * Dónde tiene que apuntar el webhook. Es una constante del despliegue, no algo
+ * que llegue en la petición: así el auto-registro no puede redirigir las
+ * actualizaciones a un tercero.
+ */
+const PUBLIC_URL = (process.env.PUBLIC_URL || "https://aitor.alienflow.space").replace(/\/+$/, "");
+const WEBHOOK_URL = `${PUBLIC_URL}/api/telegram-webhook`;
+
+type TelegramWebhookInfo = {
+  url?: string;
+  pending_update_count?: number;
+  last_error_date?: number;
+  last_error_message?: string;
+  last_synchronization_error_date?: number;
+};
+
+/** Llama a la API del bot. Devuelve `null` (y lo registra) si Telegram falla. */
+async function telegramApi<T>(method: string, payload?: unknown): Promise<T | null> {
+  if (!TELEGRAM_BOT_TOKEN) return null;
+  try {
+    const response = await fetch(`${TELEGRAM_API}/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    });
+    const data = (await response.json().catch(() => null)) as
+      | { ok?: boolean; result?: T; description?: string }
+      | null;
+    if (!data?.ok) {
+      console.error(`[telegram] ${method} falló`, response.status, data?.description ?? "");
+      return null;
+    }
+    return (data.result ?? null) as T | null;
+  } catch (error) {
+    console.error(`[telegram] ${method} sin respuesta`, error);
+    return null;
+  }
+}
+
+/**
+ * Deja el webhook registrado sin que nadie tenga que ejecutar el script: la
+ * función desplegada tiene el token, así que es el único sitio donde el
+ * registro se puede hacer (y comprobar) sin sacar secretos de Vercel.
+ *
+ * Se registra con `secret_token` cuando el secreto está configurado; si aún no
+ * lo está, se registra la URL correcta sin secreto para que el bot siga vivo
+ * (el endpoint acepta entonces actualizaciones sin firmar con cuota por IP).
+ * En preview no se toca: un despliegue de preview robaría el webhook de
+ * producción.
+ */
+async function registerWebhook(): Promise<string> {
+  if (!TELEGRAM_BOT_TOKEN) return "sin-token";
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") return "no-produccion";
+
+  const info = await telegramApi<TelegramWebhookInfo>("getWebhookInfo");
+  if (info?.url === WEBHOOK_URL) return "ya-registrado";
+
+  const payload: Record<string, unknown> = {
+    url: WEBHOOK_URL,
+    allowed_updates: ["message"],
+    drop_pending_updates: false,
+  };
+  if (TELEGRAM_WEBHOOK_SECRET) payload.secret_token = TELEGRAM_WEBHOOK_SECRET;
+
+  const ok = await telegramApi("setWebhook", payload);
+  if (ok === null) return "error";
+  return TELEGRAM_WEBHOOK_SECRET ? "registrado-con-secreto" : "registrado-sin-secreto";
+}
+
+/** Una sola vez por instancia: si falla, se reintenta en la siguiente petición. */
+let registration: Promise<string> | null = null;
+function registerWebhookOnce(): Promise<string> {
+  if (!registration) {
+    registration = registerWebhook().then((state) => {
+      if (state === "error") registration = null;
+      return state;
+    });
+  }
+  return registration;
+}
+
 // --- Puente web <-> Telegram ---
 // La web abre la Mini App con `?startapp=web` y el terminal vuelve a la web con
 // `?source=telegram`; estos botones inline son la salida hacia la web desde el bot.
@@ -224,8 +305,57 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
 // ---------------------------------------------------------------------------
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // --- Diagnóstico (GET) ---
+  //
+  // Verificación sin sacar el token de Vercel: la función consulta a Telegram
+  // con su propio token y devuelve el estado real del webhook. No expone
+  // secretos (ni el token ni el secret_token, que Telegram no devuelve).
+  if (req.method === "GET") {
+    if (!TELEGRAM_BOT_TOKEN) {
+      return res.status(500).json({
+        ok: false,
+        service: "telegram-webhook",
+        error: "TELEGRAM_BOT_TOKEN no está configurado en este despliegue",
+      });
+    }
+
+    const registrationState = await registerWebhookOnce();
+    const [me, info] = await Promise.all([
+      telegramApi<{ id: number; username?: string; first_name?: string }>("getMe"),
+      telegramApi<TelegramWebhookInfo>("getWebhookInfo"),
+    ]);
+
+    return res.status(200).json({
+      ok: true,
+      service: "telegram-webhook",
+      vercelEnv: process.env.VERCEL_ENV ?? null,
+      secretConfigured: Boolean(TELEGRAM_WEBHOOK_SECRET),
+      expectedUrl: WEBHOOK_URL,
+      registration: registrationState,
+      bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
+      webhook: info
+        ? {
+            url: info.url || null,
+            matchesExpected: info.url === WEBHOOK_URL,
+            pendingUpdates: info.pending_update_count ?? 0,
+            lastErrorAt: info.last_error_date
+              ? new Date(info.last_error_date * 1000).toISOString()
+              : null,
+            lastErrorMessage: info.last_error_message ?? null,
+          }
+        : null,
+    });
+  }
+
   if (req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
+  }
+
+  // Auto-registro al recibir la primera actualización de la instancia. Sólo en
+  // producción y sin bloquear la respuesta: si Telegram llegara a firmar con
+  // otro secreto, reintenta por su cuenta en cuanto el registro queda bien.
+  if (process.env.VERCEL_ENV === "production") {
+    void registerWebhookOnce().catch(() => undefined);
   }
 
   // --- Verificación de la firma del webhook ---

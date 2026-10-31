@@ -28,6 +28,8 @@ async function load(env: Record<string, string>) {
   vi.resetModules();
   process.env.TELEGRAM_BOT_TOKEN = env.TELEGRAM_BOT_TOKEN ?? "";
   process.env.TELEGRAM_WEBHOOK_SECRET = env.TELEGRAM_WEBHOOK_SECRET ?? "";
+  if (env.VERCEL_ENV) process.env.VERCEL_ENV = env.VERCEL_ENV;
+  else delete process.env.VERCEL_ENV;
   const module = await import("./telegram-webhook");
   return module.default as unknown as (
     req: unknown,
@@ -57,6 +59,9 @@ function invoke(
       send(payload: string) {
         resolve({ status: this.statusCode, body: payload });
       },
+      json(payload: unknown) {
+        resolve({ status: this.statusCode, body: JSON.stringify(payload) });
+      },
       end() {
         resolve({ status: this.statusCode, body: "" });
       },
@@ -76,9 +81,24 @@ const update = (text: string) => ({
   },
 });
 
+const TELEGRAM_OK = (result: unknown) =>
+  new Response(JSON.stringify({ ok: true, result }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+
 /** Telegram responde ok a sendMessage; la función de chat responde un SSE. */
-function stubNetwork() {
+function stubNetwork(webhookUrl = "https://aitor.alienflow.space/api/telegram-webhook") {
   const fetchMock = vi.fn(async (url: string) => {
+    if (typeof url === "string" && url.includes("/getMe")) {
+      return TELEGRAM_OK({ id: 7_000_001, username: "Alien69Bot", first_name: "AI Tor" });
+    }
+    if (typeof url === "string" && url.includes("/getWebhookInfo")) {
+      return TELEGRAM_OK({ url: webhookUrl, pending_update_count: 0 });
+    }
+    if (typeof url === "string" && url.includes("/setWebhook")) {
+      return TELEGRAM_OK(true);
+    }
     if (typeof url === "string" && url.includes("/sendMessage")) {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -159,12 +179,57 @@ describe("webhook de Telegram", () => {
     expect(String(fetchMock.mock.calls[0][0])).toContain("/sendMessage");
   });
 
-  it("un GET no es un webhook", async () => {
+  it("el diagnóstico GET devuelve el estado real del webhook sin exponer secretos", async () => {
     stubNetwork();
-    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
+    const handler = await load({
+      TELEGRAM_BOT_TOKEN: "test-token",
+      TELEGRAM_WEBHOOK_SECRET: "s3cr3t",
+      VERCEL_ENV: "production",
+    });
 
-    const { status } = await invoke(handler, null, {}, "GET");
+    const { status, body } = await invoke(handler, null, {}, "GET");
 
-    expect(status).toBe(405);
+    expect(status).toBe(200);
+    const payload = JSON.parse(body);
+    expect(payload.bot.username).toBe("Alien69Bot");
+    expect(payload.secretConfigured).toBe(true);
+    expect(payload.webhook.matchesExpected).toBe(true);
+    expect(payload.registration).toBe("ya-registrado");
+    expect(body).not.toContain("test-token");
+    expect(body).not.toContain("s3cr3t");
+  });
+
+  it("si la URL registrada no es la buena, el diagnóstico la corrige con el secreto", async () => {
+    const fetchMock = stubNetwork("https://viejo.example/hook");
+    const handler = await load({
+      TELEGRAM_BOT_TOKEN: "test-token",
+      TELEGRAM_WEBHOOK_SECRET: "s3cr3t",
+      VERCEL_ENV: "production",
+    });
+
+    const { status, body } = await invoke(handler, null, {}, "GET");
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body).registration).toBe("registrado-con-secreto");
+    const set = fetchMock.mock.calls.find(([url]) => String(url).includes("/setWebhook"));
+    expect(set).toBeDefined();
+    const sent = JSON.parse(String((set![1] as RequestInit).body));
+    expect(sent.url).toBe("https://aitor.alienflow.space/api/telegram-webhook");
+    expect(sent.secret_token).toBe("s3cr3t");
+  });
+
+  it("un despliegue de preview no roba el webhook de producción", async () => {
+    const fetchMock = stubNetwork("https://viejo.example/hook");
+    const handler = await load({
+      TELEGRAM_BOT_TOKEN: "test-token",
+      TELEGRAM_WEBHOOK_SECRET: "s3cr3t",
+      VERCEL_ENV: "preview",
+    });
+
+    const { status, body } = await invoke(handler, null, {}, "GET");
+
+    expect(status).toBe(200);
+    expect(JSON.parse(body).registration).toBe("no-produccion");
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes("/setWebhook"))).toBe(false);
   });
 });
