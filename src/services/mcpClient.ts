@@ -58,16 +58,39 @@ async function restSelect(
 export const sessionDatabase: McpDatabase = { select: restSelect };
 
 /**
- * Puerto de GitHub: la sesión del usuario contra el proxy, que es quien tiene
- * el token y la allowlist de repositorio. Aquí sólo viaja la acción.
+ * Acciones de lectura: el repositorio es público, así que se leen sin sesión y
+ * sin PAT desde `/api/github`.
+ */
+const GITHUB_READ_ACTIONS = [
+  "repo_info",
+  "tree",
+  "contents",
+  "get_file",
+  "branches",
+  "commits",
+  "get_ref",
+  "pull_requests",
+  "check_runs",
+] as const;
+
+/**
+ * Puerto de GitHub, con dos caminos a propósito:
  *
- * El proxy vive en el proyecto de identidad porque es el único que puede
- * validar este JWT; si aún no está desplegado allí, el error lo dice en vez de
- * devolver un 401 mudo.
+ *  - **lectura** → `/api/github`, la función de Vercel. El repositorio es
+ *    público, así que no pide sesión ni token. Antes toda lectura pasaba por el
+ *    proxy de Supabase y, sin sesión o sin el proxy desplegado, AI Tor no podía
+ *    ni leer su propio árbol de ficheros.
+ *  - **escritura** → `github-proxy`, que es el único sitio con token y
+ *    allowlist, y exige rol `admin`. Ahí sí hace falta la sesión.
  */
 async function githubCall(params: Record<string, unknown>): Promise<unknown> {
+  const action = typeof params.action === "string" ? params.action : "";
+  if ((GITHUB_READ_ACTIONS as readonly string[]).includes(action)) {
+    return publicGithubCall(params);
+  }
+
   const token = await sessionToken();
-  if (!token) throw new Error("Necesitas iniciar sesión para usar GitHub");
+  if (!token) throw new Error("Necesitas iniciar sesión para proponer cambios en GitHub");
 
   const response = await fetch(`${AUTH_SUPABASE_URL}/functions/v1/github-proxy`, {
     method: "POST",
@@ -94,6 +117,30 @@ async function githubCall(params: Record<string, unknown>): Promise<unknown> {
   }
   if (payload && typeof payload === "object" && "error" in payload && payload.error) {
     throw new Error(`GitHub: ${payload.error}`);
+  }
+  return payload;
+}
+
+/** Lectura pública: sin `Authorization`, sin `apikey`, sin nada del usuario. */
+async function publicGithubCall(params: Record<string, unknown>): Promise<unknown> {
+  const response = await fetch("/api/github", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(params),
+    signal: AbortSignal.timeout(25_000),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { error?: string; message?: string }
+    | null;
+
+  if (response.status === 404) {
+    throw new Error(
+      "GitHub: `/api/github` no está disponible en este despliegue (en local, usa el build de Vercel o el chat con sesión).",
+    );
+  }
+  if (!response.ok) {
+    throw new Error(`GitHub: ${payload?.error ?? payload?.message ?? `HTTP ${response.status}`}`);
   }
   return payload;
 }

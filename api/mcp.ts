@@ -292,9 +292,99 @@ async function resolveCaller(authorization: string | undefined, ip: string): Pro
 
 /* -------------------------------- github -------------------------------- */
 
+const GITHUB_API = "https://api.github.com";
+
+/** Ruta codificada segmento a segmento: una ruta no puede cambiar la petición. */
+function encodeRepoPath(path: unknown): string {
+  if (typeof path !== "string" || !path) return "";
+  return path
+    .split("/")
+    .filter((segment) => segment && segment !== ".")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+/**
+ * Lectura del repositorio **público**, sin token ni sesión.
+ *
+ * Mismo camino que `/api/github`, repetido aquí porque este montaje es
+ * autocontenido (el runtime de Vercel ya falló resolviendo un import hermano,
+ * ver `api/predictions.ts`). Si `GITHUB_TOKEN` existe en el entorno se usa para
+ * ampliar la cuota; sin él, la lectura funciona igual contra el límite anónimo.
+ */
+async function githubRead(params: Record<string, unknown>): Promise<unknown> {
+  const owner = typeof params.owner === "string" ? params.owner : DEFAULT_OWNER;
+  const repo = typeof params.repo === "string" ? params.repo : DEFAULT_REPO;
+  const action = typeof params.action === "string" ? params.action : "tree";
+  if (!/^[\w.-]{1,100}$/.test(owner) || !/^[\w.-]{1,100}$/.test(repo)) {
+    throw new Error("Repositorio inválido: owner y repo deben ser nombres de GitHub");
+  }
+  const path = encodeRepoPath(params.path);
+  const branch = typeof params.branch === "string" ? params.branch : undefined;
+  const ref = encodeURIComponent(
+    typeof params.ref === "string" ? params.ref : branch || "main",
+  );
+  const base = `${GITHUB_API}/repos/${owner}/${repo}`;
+
+  const urls: Record<string, string> = {
+    repo_info: base,
+    branches: `${base}/branches`,
+    commits: `${base}/commits?per_page=10`,
+    tree: `${base}/git/trees/${ref}?recursive=1`,
+    get_ref: `${base}/git/ref/heads/${ref}`,
+    check_runs: `${base}/commits/${ref}/check-runs`,
+    pull_requests: `${base}/pulls?state=open&per_page=20`,
+    contents: `${base}/contents${path ? `/${path}` : ""}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`,
+    get_file: `${base}/contents${path ? `/${path}` : ""}${branch ? `?ref=${encodeURIComponent(branch)}` : ""}`,
+  };
+
+  const url = urls[action];
+  if (!url) throw new Error(`Acción de lectura no permitida: ${action}`);
+
+  const token = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || "";
+  const response = await fetch(url, {
+    headers: {
+      accept: "application/vnd.github+json",
+      "x-github-api-version": "2022-11-28",
+      "user-agent": "aitor-intel/1.0",
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    },
+    signal: AbortSignal.timeout(20_000),
+  });
+
+  const payload = (await response.json().catch(() => null)) as
+    | { message?: string }
+    | unknown[]
+    | null;
+
+  if (response.ok) return payload;
+
+  const detail =
+    payload && !Array.isArray(payload) && typeof payload.message === "string"
+      ? payload.message
+      : `HTTP ${response.status}`;
+  if (response.status === 429 || (response.status === 403 && /rate limit/i.test(detail))) {
+    throw new Error(
+      `GitHub alcanzó su límite de lecturas anónimas (60/hora por IP). ${token ? "" : "Configura GITHUB_TOKEN para ampliarlo."}`.trim(),
+    );
+  }
+  throw new Error(`GitHub respondió ${response.status}: ${detail}`);
+}
+
+/**
+ * Puerta de GitHub del agente: lectura pública directa, escritura por el proxy
+ * (que es el único sitio con token, allowlist y comprobación de rol `admin`).
+ */
 async function githubCall(caller: Caller, params: Record<string, unknown>): Promise<unknown> {
-  if (!caller.token) {
-    throw new Error("GitHub necesita una sesión iniciada: el proxy valida tu identidad");
+  // Las herramientas `github.*` siguen pidiendo identidad en el agente: la
+  // lectura pública es para `/api/github`, no para abrir el cubo de cuota del
+  // invitado a un tercero.
+  if (!caller.userId || !caller.token) {
+    throw new Error("GitHub necesita una sesión iniciada en el agente");
+  }
+  const action = typeof params.action === "string" ? params.action : "";
+  if (READ_ACTIONS.includes(action)) {
+    return githubRead(params);
   }
   const response = await fetch(GITHUB_PROXY, {
     method: "POST",
@@ -348,7 +438,9 @@ const READ_ACTIONS = [
   "tree",
   "contents",
   "get_file",
+  "branches",
   "commits",
+  "get_ref",
   "pull_requests",
   "check_runs",
 ];

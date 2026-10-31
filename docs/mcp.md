@@ -173,25 +173,36 @@ repositorio:
 - `github.propose` crea una rama, escribe un fichero y abre un **PR en
   borrador**. Nunca escribe en `main`: la mejora queda propuesta.
 
-Ninguna herramienta lleva credenciales. Las dos hablan por un puerto
+Ninguna herramienta lleva credenciales, y las dos hablan por un puerto
 (`context.github`) que en el navegador es `githubPort`
-(`src/services/mcpClient.ts`) y envía la acción al proxy con la **sesión del
-usuario**. El token de servicio y la allowlist de repositorio viven en
-`supabase/functions/github-proxy`, que exige identidad verificada en todas las
-acciones y rol `admin` en las de escritura (`create_branch`,
-`create_or_update_file`, `create_pull_request`).
+(`src/services/mcpClient.ts`). Ese puerto tiene **dos caminos**, y la diferencia
+importa:
+
+- **Lectura → `POST /api/github`** (`api/github.ts`). El repositorio es
+  público, así que la función de Vercel pide la API abierta de GitHub **sin
+  token y sin sesión**. Es lo que devuelve la lectura a la vida cuando el
+  proxy no está desplegado o el usuario no ha iniciado sesión. La cuota
+  anónima de GitHub es de 60 peticiones/hora por IP: por eso la respuesta se
+  cachea (`s-maxage=300`) y, si algún día se configura `GITHUB_TOKEN` en el
+  entorno, se usa sólo para ampliar esa cuota. Nunca es obligatorio.
+- **Escritura → `github-proxy`** (`supabase/functions/github-proxy`). Aquí vive
+  el token de servicio y la allowlist de repositorio, y exige identidad
+  verificada en todas las acciones más rol `admin` en `create_branch`,
+  `create_or_update_file` y `create_pull_request`. `/api/github` responde 501 a
+  esas tres: no es que no existan, es que no se hacen sin permiso.
 
 El proxy se despliega en el **proyecto de identidad**, porque es el único que
-puede validar ese JWT. Si no está allí, la herramienta responde que falta el
-proxy en vez de un 401 mudo.
+puede validar ese JWT. Si no está allí, `github.propose` lo dice en vez de
+devolver un 401 mudo; `github.repo` ya no depende de él.
 
 Las dos están también en el montaje de Vercel. `/api/mcp` es una copia
 ejecutable autocontenida —no importa `src/lib/mcp/…`, por el fallo de
-resolución que documenta `api/predictions.ts`—, así que la copia lleva su
-propio `githubCall` contra el mismo proxy con el JWT del llamante. El agente
-del servidor ve las mismas herramientas que el del navegador; `github.repo`
-es gratuita, `github.propose` exige plan `pro` y, además, rol `admin` en el
-proxy.
+resolución que documenta `api/predictions.ts`—, así que lleva su propio
+`githubRead` contra la API pública (mismo criterio que `/api/github`, sin
+imports hermanos) y su propio `githubCall` contra el proxy para escribir. El
+agente del servidor ve las mismas herramientas que el del navegador;
+`github.repo` es gratuita, `github.propose` exige plan `pro` y, además, rol
+`admin` en el proxy.
 
 ## Quién puede llamar a `/api/mcp`
 
