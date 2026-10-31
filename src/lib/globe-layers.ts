@@ -245,7 +245,8 @@ export const CONNECTOR_LAYER_KEYS: readonly EnvLayerKey[] = [
 	"heliosphere",
 ];
 
-export const GLOBE_LAYERS: globeLayerDef[] = [
+/** Catálogo tal y como lo declara cada capa, antes del techo de plan. */
+const LAYER_CATALOG: globeLayerDef[] = [
 	// === Atmospheric & Weather ===
 	{ 
 		key: "atmosphere", 
@@ -891,6 +892,28 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		description: "Gramíneas, olivo, abedul, aliso y ambrosía (sólo Europa)",
 	},
 ];
+
+/**
+ * Techo de plan del mapa: con cuenta registrada se enciende **todo**.
+ *
+ * El globo no vende capas. Todas sus fuentes son abiertas o las paga ya el
+ * proyecto (NASA GIBS, Open-Meteo, OpenWeather por su función, CelesTrak,
+ * GDACS, el registro estático de infraestructura), así que esconder una detrás
+ * de un plan de pago no protegía ningún coste: dejaba el panel con capas en
+ * gris que no se podían probar. Lo que se vende son los agentes, las skills y
+ * los cupos, y eso se cobra en el endpoint, no aquí.
+ *
+ * Se aplica al construir el catálogo y no a mano capa por capa para que una
+ * capa nueva no pueda volver a colarse detrás de un plan sin que salte la
+ * prueba que lo comprueba (`globe-layers.test.ts`).
+ */
+export const LAYER_TIER_CAP: Tier = "node";
+
+export const GLOBE_LAYERS: globeLayerDef[] = LAYER_CATALOG.map((layer) =>
+	TIER_RANK[layer.requiredTier] > TIER_RANK[LAYER_TIER_CAP]
+		? { ...layer, requiredTier: LAYER_TIER_CAP }
+		: layer,
+);
 
 export const LAYER_GROUPS: LayerGroup[] = [
 	"Atmospheric & Weather",

@@ -27,6 +27,7 @@ import {
   layerDef,
   type EnvLayerKey,
 } from "@/lib/globe-layers";
+import { planRasterBulk } from "@/lib/raster-quota";
 import { toast } from "sonner";
 import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen, TriangleAlert } from "lucide-react";
 import { GlobeCommandBar } from "./GlobeCommandBar";
@@ -185,6 +186,61 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
     }
   }, [envLayers, hasAccess]);
 
+  /**
+   * Encendido y apagado por lotes, que es lo que necesitan «Todas», «Ninguna» y
+   * el interruptor de un grupo entero.
+   *
+   * Va aparte de `toggleEnvLayer` por el cupo de teselas: encender veinte
+   * capas de una en una dispararía veinte avisos y veinte estados intermedios
+   * con el globo perdiendo el contexto WebGL por el camino. Aquí se resuelve en
+   * un solo paso, con `planRasterBulk`: los vectores entran todos y de las
+   * teselas se quedan las que ya estaban más las primeras del catálogo, así que
+   * pulsar «Todas» no quita al usuario lo que tenía puesto.
+   */
+  const setEnvLayersBulk = useCallback((keys: EnvLayerKey[], enabled: boolean) => {
+    const allowed = keys.filter((key) => {
+      const definition = layerDef(key);
+      return definition ? hasAccess(definition.requiredTier) : false;
+    });
+    if (allowed.length === 0) return;
+
+    const next = new Set(envLayers);
+    if (!enabled) {
+      for (const key of allowed) next.delete(key);
+      rasterOrderRef.current = rasterOrderRef.current.filter((key) => next.has(key));
+      setEnvLayers(next);
+      return;
+    }
+
+    for (const key of allowed) next.add(key);
+
+    const catalogRasters = GLOBE_LAYERS.filter((definition) => isRasterLayer(definition)).map(
+      (definition) => definition.key,
+    );
+    // Las que ya estaban puestas incluyen las de por defecto, que nunca pasaron
+    // por el registro de orden: se reconstruye con las activas reales.
+    const activeRasters = catalogRasters.filter(
+      (key) => envLayers.has(key) && !allowed.includes(key),
+    );
+    const { keep, evicted } = planRasterBulk({
+      max: MAX_RASTER_LAYERS,
+      catalogOrder: catalogRasters,
+      active: [...rasterOrderRef.current, ...activeRasters],
+      requested: allowed.filter((key) => catalogRasters.includes(key)),
+    });
+    for (const key of evicted) next.delete(key);
+    rasterOrderRef.current = keep;
+
+    setEnvLayers(next);
+
+    if (evicted.length > 0) {
+      const names = evicted.map((key) => layerDef(key)?.label ?? key).join(", ");
+      toast(`Máximo ${MAX_RASTER_LAYERS} capas de teselas a la vez`, {
+        description: `No se encienden ${names}: cada capa ráster ocupa su propia caché de texturas y con más el globo pierde el contexto WebGL.`,
+      });
+    }
+  }, [envLayers, hasAccess]);
+
   const handleNavigate = useCallback((lat: number, lng: number, altitude: number) => {
     globeNavRef.current?.(lat, lng, altitude);
     setMobilePanel(null);
@@ -193,7 +249,8 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
 
   const legend = (onClose?: () => void, collapsed = true) => (
     <LegendPanel visibleLayers={visibleLayers} onToggleLayer={toggleLayer} counts={intel.counts}
-      envLayers={envLayers} onToggleEnvLayer={toggleEnvLayer} tier={tier} hasAccess={hasAccess}
+      envLayers={envLayers} onToggleEnvLayer={toggleEnvLayer} onBulkEnvLayers={setEnvLayersBulk}
+      tier={tier} hasAccess={hasAccess}
       onClose={onClose} defaultCollapsed={collapsed} layerStatus={intel.layerStatus}
       viewScale={viewScale} />
   );
@@ -253,7 +310,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
         {/* Desktop: collapsible control rail so the globe stays visible */}
         <div className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden md:flex">
           {controlsOpen ? (
-            <aside className="pointer-events-auto w-[280px] overflow-y-auto border-r border-primary/20 bg-background/70 p-2.5 backdrop-blur-md">
+            <aside className="legend-scroll pointer-events-auto w-[320px] overflow-y-auto border-r border-primary/20 bg-background/70 p-2.5 backdrop-blur-md">
               <div className="mb-2 flex items-center justify-between">
                 <span className="text-[9px] uppercase tracking-wider text-primary">Mission controls</span>
                 <Button variant="ghost" size="icon" className="h-6 w-6 rounded-sm" onClick={() => setControlsOpen(false)} aria-label="Ocultar controles"><PanelLeftClose /></Button>
