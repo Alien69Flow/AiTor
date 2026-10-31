@@ -15,6 +15,15 @@ import {
   type CosmicDirection,
 } from "@/lib/cosmic-scale";
 import {
+  LOCAL_GROUP,
+  LOCAL_STARS,
+  STAGE_FACTS,
+  SUPERCLUSTER_NODES,
+  VIRGO_CENTER,
+  VIRGO_MEMBERS,
+  equatorialToCartesian,
+} from "@/lib/cosmic-objects";
+import {
   PLANETS,
   SUN,
   auToMillionKm,
@@ -171,6 +180,119 @@ function CislunarStage({ opacity }: { opacity: number }) {
           <meshStandardMaterial color="#b9b6ae" roughness={1} />
         </mesh>
       </group>
+    </group>
+  );
+}
+
+/**
+ * Nube de Oort: la cáscara de núcleos helados que cierra el sistema solar.
+ *
+ * Va de 2 000 a 100 000 UA del Sol —0,03 a 1,58 años luz—, así que es el primer
+ * escalón que ya se mide en años luz. La densidad cae hacia fuera: los puntos se
+ * reparten con raíz cúbica para que el borde interior se vea mucho más poblado
+ * que el exterior, como en los modelos de la nube.
+ */
+function OortStage({ opacity }: { opacity: number }) {
+  const geometry = useMemo(() => {
+    const count = 7000;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    const inner = 1.5;
+    const outer = 7.2;
+    const icy = new THREE.Color("#9fd4ff");
+    const dust = new THREE.Color("#ffe2b8");
+    for (let i = 0; i < count; i += 1) {
+      const t = Math.cbrt(Math.random());
+      const r = inner + (outer - inner) * t;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.cos(phi);
+      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+      const color = icy
+        .clone()
+        .lerp(dust, Math.random() * 0.5)
+        .multiplyScalar(0.45 + Math.random() * 0.6);
+      colors[i * 3] = color.r;
+      colors[i * 3 + 1] = color.g;
+      colors[i * 3 + 2] = color.b;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return geo;
+  }, []);
+
+  return (
+    <group visible={opacity > 0.01}>
+      <points geometry={geometry}>
+        <pointsMaterial
+          size={0.022}
+          sizeAttenuation
+          vertexColors
+          transparent
+          opacity={0.7 * opacity}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+    </group>
+  );
+}
+
+/** 1 año luz de escena. A esta escala Próxima queda a 2,3 unidades del Sol. */
+const LY_UNITS = 0.55;
+
+/**
+ * Vecindario solar: las 25 estrellas a menos de 17 años luz, en sus posiciones
+ * reales.
+ *
+ * Ascensión recta, declinación y distancia son las de Gaia DR3/Hipparcos, y la
+ * escala es lineal (1 unidad = 1 año luz): por eso Alfa Centauri y Próxima salen
+ * casi pegadas y Altair, a 16,7 al, es la más lejana del grupo. El Sol es la
+ * esfera dorada del centro.
+ */
+function NeighborhoodStage({ opacity }: { opacity: number }) {
+  const glow = useMemo(() => radialTexture(), []);
+  const stars = useMemo(
+    () =>
+      LOCAL_STARS.map((star) => ({
+        ...star,
+        position: equatorialToCartesian(star.ra, star.dec, star.ly * LY_UNITS),
+      })),
+    [],
+  );
+
+  return (
+    <group visible={opacity > 0.01}>
+      <sprite scale={[0.55, 0.55, 1]}>
+        <spriteMaterial
+          map={glow}
+          color="#ffe9a8"
+          transparent
+          opacity={0.9 * opacity}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </sprite>
+      {stars.map((star) => (
+        <group key={star.name} position={star.position as unknown as THREE.Vector3Tuple}>
+          <mesh>
+            <sphereGeometry args={[0.04, 12, 12]} />
+            <meshBasicMaterial color={star.color} transparent opacity={0.9 * opacity} />
+          </mesh>
+          <sprite scale={[0.3, 0.3, 1]}>
+            <spriteMaterial
+              map={glow}
+              color={star.color}
+              transparent
+              opacity={0.45 * opacity}
+              blending={THREE.AdditiveBlending}
+              depthWrite={false}
+            />
+          </sprite>
+        </group>
+      ))}
     </group>
   );
 }
@@ -336,22 +458,38 @@ function GalaxyStage({ opacity }: { opacity: number }) {
   );
 }
 
+/** 1 millón de años luz de escena: Andrómeda queda a 3,9 unidades. */
+const MLY_UNITS = 1.55;
+
+/**
+ * Grupo Local con las galaxias en su sitio: antes eran cinco manchas
+ * inventadas. Ahora cada sprite está en la dirección y a la distancia
+ * publicadas (M31 a 2,54 Mal, M33 a 2,73 Mal, las Nubes de Magallanes a 163 y
+ * 200 kal) y su tamaño es proporcional al diámetro real de la galaxia, no un
+ * número arbitrario.
+ */
 function LocalGroupStage({ opacity }: { opacity: number }) {
   const galaxies = useMemo(
-    () => [
-      { position: [0, 0, 0] as const, scale: 6, tint: "rgba(226,240,255,0.55)" },
-      { position: [9.5, 1.6, -2.5] as const, scale: 7.5, tint: "rgba(240,225,255,0.5)" },
-      { position: [-7.5, -2.4, 4.2] as const, scale: 3.6, tint: "rgba(255,235,215,0.45)" },
-      { position: [12.5, 4.2, 6.5] as const, scale: 3.0, tint: "rgba(215,240,255,0.4)" },
-      { position: [-13.5, 3.1, -6.5] as const, scale: 2.6, tint: "rgba(255,240,220,0.4)" },
-    ],
+    () =>
+      LOCAL_GROUP.map((galaxy) => ({
+        ...galaxy,
+        position:
+          galaxy.mly === 0
+            ? ([0, 0, 0] as [number, number, number])
+            : equatorialToCartesian(galaxy.ra, galaxy.dec, galaxy.mly * MLY_UNITS),
+        scale: Math.max(1.1, Math.sqrt(galaxy.kly) * 0.55),
+      })),
     [],
   );
   const textures = useMemo(() => galaxies.map((galaxy) => galaxySpriteTexture(galaxy.tint)), [galaxies]);
   return (
     <group visible={opacity > 0.01}>
       {galaxies.map((galaxy, index) => (
-        <sprite key={index} position={galaxy.position as unknown as THREE.Vector3Tuple} scale={[galaxy.scale, galaxy.scale * 0.62, 1]}>
+        <sprite
+          key={galaxy.name}
+          position={galaxy.position as unknown as THREE.Vector3Tuple}
+          scale={[galaxy.scale, galaxy.scale * 0.62, 1]}
+        >
           <spriteMaterial
             map={textures[index]}
             transparent
@@ -359,6 +497,152 @@ function LocalGroupStage({ opacity }: { opacity: number }) {
             blending={THREE.AdditiveBlending}
             depthWrite={false}
             rotation={index * 0.7}
+          />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/** Eslabón que une dos nodos del supercúmulo, para insinuar la red cósmica. */
+function Filament({ a, b, opacity }: { a: THREE.Vector3; b: THREE.Vector3; opacity: number }) {
+  const line = useMemo(() => {
+    const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
+    const material = new THREE.LineBasicMaterial({ color: "#2f7fa8", transparent: true, opacity: 0.35 });
+    return new THREE.Line(geometry, material);
+  }, [a, b]);
+
+  useEffect(() => {
+    (line.material as THREE.LineBasicMaterial).opacity = 0.35 * opacity;
+  }, [line, opacity]);
+
+  useEffect(
+    () => () => {
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    },
+    [line],
+  );
+
+  return <primitive object={line} />;
+}
+
+/**
+ * Cúmulo de Virgo: ~1 300 galaxias a 16,5 Mpc, con el núcleo de ~2,2 Mpc.
+ *
+ * Los miembros con nombre (M87, M49, M86…) van en sus coordenadas J2000 y el
+ * resto son puntos de relleno repartidos en el elipsoide del núcleo, más denso
+ * hacia M87: dibujar 1 300 galaxias una a una no aporta y cuesta GPU.
+ */
+function VirgoStage({ opacity }: { opacity: number }) {
+  const glow = useMemo(() => galaxySpriteTexture("rgba(255,232,190,0.55)"), []);
+  const MPC_UNITS = 2.4;
+
+  const named = useMemo(() => {
+    const center = equatorialToCartesian(VIRGO_CENTER.ra, VIRGO_CENTER.dec, VIRGO_CENTER.mpc);
+    return VIRGO_MEMBERS.map((member) => {
+      const point = equatorialToCartesian(member.ra, member.dec, VIRGO_CENTER.mpc);
+      return {
+        name: member.name,
+        position: new THREE.Vector3(
+          (point[0] - center[0]) * MPC_UNITS,
+          (point[1] - center[1]) * MPC_UNITS,
+          (point[2] - center[2]) * MPC_UNITS,
+        ),
+      };
+    });
+  }, []);
+
+  const field = useMemo(() => {
+    const count = 260;
+    const positions = new Float32Array(count * 3);
+    for (let i = 0; i < count; i += 1) {
+      // Elipsoide con más peso en el plano del cúmulo.
+      const r = Math.cbrt(Math.random()) * 1.05;
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.cos(phi) * 0.6;
+      positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    return geo;
+  }, []);
+
+  return (
+    <group visible={opacity > 0.01}>
+      <points geometry={field}>
+        <pointsMaterial
+          size={0.05}
+          sizeAttenuation
+          transparent
+          color="#ffe8c0"
+          opacity={0.5 * opacity}
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      {named.map((member) => (
+        <sprite key={member.name} position={member.position} scale={[0.85, 0.85, 1]}>
+          <spriteMaterial
+            map={glow}
+            transparent
+            opacity={0.75 * opacity}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </sprite>
+      ))}
+    </group>
+  );
+}
+
+/**
+ * Supercúmulo de Virgo y Laniakea: los cúmulos a su distancia real (53,8 Mal
+ * Virgo, 62 Fornax, 160 Centaurus, 220 el Gran Atractor, 321 Coma) unidos por
+ * filamentos. Es el peldaño que faltaba entre el Grupo Local y el universo.
+ */
+function SuperclusterStage({ opacity }: { opacity: number }) {
+  const glow = useMemo(() => galaxySpriteTexture("rgba(255,226,180,0.5)"), []);
+  /** 1 Mal de escena: Coma, el nodo más lejano, cae a 6,4 unidades. */
+  const NODE_UNITS = 0.02;
+
+  const nodes = useMemo(
+    () =>
+      SUPERCLUSTER_NODES.map((node) => ({
+        ...node,
+        position: new THREE.Vector3(
+          ...(equatorialToCartesian(node.ra, node.dec, node.mly * NODE_UNITS) as [number, number, number]),
+        ),
+      })),
+    [],
+  );
+
+  // La red se dibuja desde Virgo (el nodo que da nombre al supercúmulo) hacia el
+  // resto; es la forma en que se suele representar el flujo de Laniakea.
+  const hub = nodes.find((node) => node.name === "Virgo") ?? nodes[0];
+
+  return (
+    <group visible={opacity > 0.01}>
+      {nodes
+        .filter((node) => node !== hub)
+        .map((node) => (
+          <Filament key={`link-${node.name}`} a={hub.position} b={node.position} opacity={opacity} />
+        ))}
+      {nodes.map((node) => (
+        <sprite
+          key={node.name}
+          position={node.position}
+          scale={[node.size, node.size, 1]}
+        >
+          <spriteMaterial
+            map={glow}
+            color={node.tint}
+            transparent
+            opacity={0.8 * opacity}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
           />
         </sprite>
       ))}
@@ -463,8 +747,12 @@ function CosmicScene({
         <EarthStage opacity={op("earth")} />
         <CislunarStage opacity={op("cislunar")} />
         <SolarStage opacity={op("solar")} glow={glow} states={solarStates} />
-        <GalaxyStage opacity={op("galaxy")} />
+        <OortStage opacity={op("oort")} />
+        <NeighborhoodStage opacity={op("neighborhood")} />
+        <GalaxyStage opacity={op("milkyway")} />
         <LocalGroupStage opacity={op("localgroup")} />
+        <VirgoStage opacity={op("virgo")} />
+        <SuperclusterStage opacity={op("supercluster")} />
         <UniverseStage opacity={op("universe")} />
       </group>
     </>
@@ -553,6 +841,7 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
   };
 
   const activeStage = [...STAGES].reverse().find((stage) => scale >= stage.from) ?? STAGES[0];
+  const stageFacts = STAGE_FACTS[activeStage.id];
   const exponent = Math.floor(scale);
   const progress = (scale - SCALE_MIN) / (SCALE_MAX - SCALE_MIN);
   const canZoomOut = nextCosmicScale(scale, "out") !== null;
@@ -585,7 +874,7 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
       onTouchMove={onTouchMove}
       onTouchEnd={() => { pinch.current = null; }}
       role="application"
-      aria-label="Zoom cósmico: Tierra, sistema solar, galaxia y universo observable"
+      aria-label="Zoom cósmico: de la Tierra a la nube de Oort, el vecindario solar, la Vía Láctea, el Grupo Local, Virgo y el universo observable"
     >
       <Canvas
         camera={{ position: [0, 1.2, 9], fov: 50 }}
@@ -597,6 +886,9 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
       </Canvas>
 
       {/* Scale ladder */}
+      {/* La barra mide el rango completo del overlay, no la ventana de cada
+          escena: con diez peldaños, etiquetar por `from` deja todos los saltos
+          equidistantes en log10, que es la única forma de que se puedan leer. */}
       <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 md:left-6">
         <div className="relative h-[46vh] w-px bg-gradient-to-b from-transparent via-primary/30 to-transparent">
           <div
@@ -634,6 +926,33 @@ export function CosmicZoom({ initialScale = EARTH_SCALE + 1.2, onExit }: CosmicZ
           <div className="text-[10px] text-muted-foreground">{activeStage.caption}</div>
         </div>
       </div>
+
+      {/*
+        Panel de datos del peldaño. En el sistema solar son las efemérides del
+        JPL; en el resto, las cifras publicadas de cada objeto (distancias,
+        tamaños, número de galaxias) para que lo dibujado se pueda contrastar.
+      */}
+      {stageFacts && (
+        <div className="pointer-events-none absolute right-3 top-16 w-[15rem] rounded-sm border border-primary/25 bg-black/65 p-2 backdrop-blur-md md:right-6 md:top-20">
+          <div className="mb-1 text-[8px] uppercase tracking-[0.18em] text-primary/70">
+            {stageFacts.title}
+          </div>
+          <ul className="space-y-0.5">
+            {stageFacts.rows.map((row) => (
+              <li
+                key={row.label}
+                className="flex items-baseline justify-between gap-2 font-mono text-[9px] text-primary/85"
+              >
+                <span className="text-primary/55">{row.label}</span>
+                <span className="text-right">{row.value}</span>
+              </li>
+            ))}
+          </ul>
+          {stageFacts.note && (
+            <p className="mt-1 text-[7px] leading-relaxed text-primary/40">{stageFacts.note}</p>
+          )}
+        </div>
+      )}
 
       {/*
         Datos reales del sistema solar. Las distancias son las de la fecha de
