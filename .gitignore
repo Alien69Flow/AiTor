@@ -38,3 +38,6 @@ vite.preview.config.ts
 
 # Estado local del CLI de Supabase (enlace al proyecto, sesión): no se versiona
 supabase/.temp/
+
+# Caché de los scripts de datos (volcados y respuestas de geocodificación)
+scripts/.cache/
