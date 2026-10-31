@@ -17,6 +17,7 @@ import handler from "./mcp";
 interface HarnessResult {
   status: number;
   body: string;
+  headers?: Record<string, string>;
 }
 
 function call(body: unknown, headers: Record<string, string> = {}): Promise<HarnessResult> {
@@ -29,22 +30,41 @@ function call(body: unknown, headers: Record<string, string> = {}): Promise<Harn
     };
     const res = {
       statusCode: 0,
+      responseHeaders: {} as Record<string, string>,
+      chunks: [] as string[],
+      writableEnded: false,
       status(code: number) {
         this.statusCode = code;
         return this;
       },
-      setHeader() {},
+      setHeader(key: string, value: string) {
+        this.responseHeaders[key.toLowerCase()] = value;
+      },
+      flushHeaders() {},
+      write(chunk: string) {
+        this.chunks.push(chunk);
+        return true;
+      },
       send(payload: string) {
-        resolve({ status: this.statusCode, body: payload });
+        resolve({ status: this.statusCode, body: payload, headers: this.responseHeaders });
       },
       end() {
-        resolve({ status: this.statusCode, body: "" });
+        this.writableEnded = true;
+        resolve({
+          status: this.statusCode,
+          body: this.chunks.join(""),
+          headers: this.responseHeaders,
+        });
       },
     };
     // El handler es un (req, res) de Vercel; el arnés sólo necesita esa forma.
     void (handler as unknown as (req: unknown, res: unknown) => Promise<void>)(req, res);
   });
 }
+
+/** Sobre SSE tal y como lo manda Gemini con `alt=sse`. */
+const sseChunk = (parts: unknown[]) =>
+  `data: ${JSON.stringify({ candidates: [{ content: { role: "model", parts } }] })}\n\n`;
 
 const toolsOf = (body: string) =>
   (JSON.parse(body).result?.tools ?? []).map((tool: { name: string }) => tool.name) as string[];
@@ -157,6 +177,92 @@ describe("MCP en /api/mcp", () => {
 
     expect(status).toBe(401);
     expect(JSON.parse(body).error).toMatch(/Inicia sesión/);
+  });
+
+  it("el flujo reenvía el texto según llega y descarta el razonamiento", async () => {
+    // Un modelo con «thinking» manda primero sus partes `thought`: si se
+    // reenvían, el chat enseña el monólogo en vez de la respuesta.
+    vi.stubEnv("GEMINI_API_KEY", "clave-de-prueba");
+    const stream = [
+      sseChunk([{ text: "Estoy pensando", thought: true }]),
+      sseChunk([{ text: "Madrid" }]),
+      sseChunk([{ text: ", 21 °C" }]),
+    ].join("");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const href = String(url);
+        if (href.includes("/auth/v1/user")) {
+          return new Response(JSON.stringify({ id: "usuario-1" }), { status: 200 });
+        }
+        if (href.includes("/rest/v1/profiles")) {
+          return new Response(JSON.stringify([]), { status: 200 });
+        }
+        if (href.endsWith("/models")) {
+          return new Response(
+            JSON.stringify({
+              models: [
+                { name: "models/gemini-2.5-flash", supportedGenerationMethods: ["generateContent"] },
+              ],
+            }),
+            { status: 200 },
+          );
+        }
+        return new Response(stream, { status: 200 });
+      }),
+    );
+
+    try {
+      const result = await call(
+        { prompt: "¿qué tiempo hace en Madrid?", stream: true },
+        { authorization: "Bearer sesion-valida" },
+      );
+
+      expect(result.status).toBe(200);
+      expect(result.headers?.["content-type"]).toContain("text/event-stream");
+      // El proxy no debe acumular: sin esto Vercel suelta todo de golpe.
+      expect(result.headers?.["x-accel-buffering"]).toBe("no");
+
+      const events = result.body
+        .split("\n")
+        .filter((line) => line.startsWith("data: "))
+        .map((line) => JSON.parse(line.slice(6)) as { type: string; text?: string; answer?: string });
+
+      expect(events.filter((event) => event.type === "delta").map((event) => event.text)).toEqual([
+        "Madrid",
+        ", 21 °C",
+      ]);
+      expect(result.body).not.toContain("Estoy pensando");
+      expect(events.at(-1)).toMatchObject({ type: "done", answer: "Madrid, 21 °C" });
+    } finally {
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("sin clave del modelo el flujo no se abre: contesta 501 en JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        const href = String(url);
+        if (href.includes("/auth/v1/user")) {
+          return new Response(JSON.stringify({ id: "usuario-1" }), { status: 200 });
+        }
+        return new Response(JSON.stringify([]), { status: 200 });
+      }),
+    );
+
+    try {
+      const result = await call(
+        { prompt: "hola", stream: true },
+        { authorization: "Bearer sesion-valida" },
+      );
+      expect(result.status).toBe(501);
+      expect(JSON.parse(result.body).error).toMatch(/GEMINI_API_KEY/);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("una sesión inválida es 401 y no se degrada a invitado", async () => {

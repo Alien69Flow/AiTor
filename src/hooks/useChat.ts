@@ -6,6 +6,7 @@ import { routeSkills } from "@/lib/ai-skills";
 import { AI_MODELS } from "@/lib/ai-models";
 import { peekChatHealth, resolveOracles } from "@/lib/ai-health";
 import { buildSkillContext, runSkills, type SkillRunResult } from "@/services/skills-runner";
+import { runAgentTurn } from "@/services/agent-turn";
 
 export interface MessageSkill {
   label: string;
@@ -127,6 +128,93 @@ export function useChat() {
         );
       } catch {
         // Storage can be unavailable in private mode; the request still runs.
+      }
+
+      // El agente con herramientas va primero. Es la única vía que puede leer
+      // el repositorio, la telemetría o la base de datos: la función `chat` de
+      // Supabase no tiene bucle de herramientas, así que cuando le pedías el
+      // árbol del repo contestaba `INTERFACE_NOT_BOUND`. Si no hay sesión, hay
+      // imagen (el agente no acepta adjuntos) o el endpoint falla, se sigue con
+      // el chat de siempre en vez de dejar al usuario sin respuesta.
+      // El mensaje se crea vacío en cuanto llega el primer trozo: antes se
+      // esperaba a la respuesta completa y el chat parecía colgado hasta soltar
+      // el texto de golpe.
+      const agentId = crypto.randomUUID();
+      let agentText = "";
+      let agentStarted = false;
+
+      const appendAgentDelta = (delta: string) => {
+        agentText += delta;
+        setMessages((prev) => {
+          if (!agentStarted) {
+            agentStarted = true;
+            return [
+              ...prev,
+              { id: agentId, role: "assistant" as const, content: agentText, timestamp: new Date() },
+            ];
+          }
+          return prev.map((message) =>
+            message.id === agentId ? { ...message, content: agentText } : message,
+          );
+        });
+      };
+
+      const agentTurn = await runAgentTurn(
+        messages.map((message) => ({ role: message.role, content: message.content })),
+        content,
+        { hasImage: Boolean(imageData), onDelta: appendAgentDelta },
+      );
+      if (agentTurn) {
+        const chips: MessageSkill[] = agentTurn.tools.map((name) => ({
+          label: name,
+          ok: !agentTurn.failed.includes(name),
+        }));
+        if (agentStarted) {
+          // El texto ya está en pantalla: sólo se cierran las fichas de
+          // herramientas, sin reescribir lo que el usuario está leyendo.
+          setMessages((prev) =>
+            prev.map((message) =>
+              message.id === agentId
+                ? {
+                    ...message,
+                    content: agentTurn.content.length >= agentText.length ? agentTurn.content : message.content,
+                    ...(chips.length > 0 && { skills: chips }),
+                  }
+                : message,
+            ),
+          );
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: agentId,
+              role: "assistant",
+              content: agentTurn.content,
+              timestamp: new Date(),
+              ...(chips.length > 0 && { skills: chips }),
+            },
+          ]);
+        }
+        try {
+          localStorage.removeItem(PENDING_KEY);
+        } catch {
+          // Storage bloqueado: no hay nada que limpiar.
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // El flujo se cortó después de empezar: lo leído es real, no se borra ni
+      // se pide otra respuesta encima (eso duplicaba el mensaje).
+      if (agentStarted) {
+        toast.warning("El agente se cortó a mitad de la respuesta; lo mostrado sí llegó del modelo.");
+        setIsLoading(false);
+        try {
+          localStorage.removeItem(PENDING_KEY);
+        } catch {
+          // Storage bloqueado: no hay nada que limpiar.
+        }
+        return;
       }
 
       const assistantId = crypto.randomUUID();

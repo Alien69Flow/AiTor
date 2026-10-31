@@ -189,6 +189,110 @@ export interface AgentAnswer {
   toolCalls: Array<{ name: string; args: Record<string, unknown>; isError: boolean }>;
 }
 
+/**
+ * Lo que el chat quiere saber mientras la respuesta se está escribiendo.
+ *
+ * `onDelta` recibe texto ya limpio (sin el razonamiento del modelo, que el
+ * servidor descarta), así que el hook sólo tiene que añadirlo al mensaje.
+ */
+export interface AgentStreamHandlers {
+  onDelta?: (text: string) => void;
+  onTool?: (name: string, isError: boolean) => void;
+}
+
+interface AgentStreamEvent {
+  type?: string;
+  text?: string;
+  name?: string;
+  isError?: boolean;
+  answer?: string;
+  message?: string;
+  toolCalls?: AgentAnswer["toolCalls"];
+}
+
+/**
+ * Pregunta al agente y va devolviendo el texto según llega.
+ *
+ * El endpoint responde `text/event-stream`; cada `data:` es un evento
+ * `delta` (trozo de respuesta), `tool` / `tool-result` (herramienta ejecutada) o
+ * `done` / `error`. Se lee con `getReader` porque `EventSource` no permite POST
+ * ni mandar la cabecera de sesión.
+ */
+export async function streamAgentAnswer(
+  prompt: string,
+  handlers: AgentStreamHandlers = {},
+): Promise<AgentAnswer> {
+  const token = await sessionToken();
+  if (!token) throw new Error("Necesitas iniciar sesión para usar el agente");
+
+  const response = await fetch(AGENT_ENDPOINT, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "text/event-stream",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ prompt, stream: true }),
+    signal: AbortSignal.timeout(90_000),
+  });
+
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => "");
+    // 501 = clave del modelo sin configurar en el despliegue: no hay nada que
+    // reintentar, el chat debe caer al oráculo sin herramientas.
+    throw new Error(`El agente respondió ${response.status}: ${detail.slice(0, 200)}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  const toolCalls: AgentAnswer["toolCalls"] = [];
+  let answer = "";
+  let buffer = "";
+  let failure: string | null = null;
+
+  const handle = (raw: string) => {
+    const payload = raw.trim();
+    if (!payload || payload === "[DONE]") return;
+    let event: AgentStreamEvent;
+    try {
+      event = JSON.parse(payload) as AgentStreamEvent;
+    } catch {
+      return;
+    }
+
+    if (event.type === "delta" && event.text) {
+      answer += event.text;
+      handlers.onDelta?.(event.text);
+    } else if (event.type === "tool" && event.name) {
+      toolCalls.push({ name: event.name, args: {}, isError: false });
+    } else if (event.type === "tool-result" && event.name) {
+      const call = toolCalls.find((entry) => entry.name === event.name);
+      if (call) call.isError = event.isError === true;
+      handlers.onTool?.(event.name, event.isError === true);
+    } else if (event.type === "done") {
+      if (event.answer) answer = event.answer;
+    } else if (event.type === "error") {
+      failure = event.message || "El agente falló a mitad de la respuesta";
+    }
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newline: number;
+    while ((newline = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newline).replace(/\r$/, "");
+      buffer = buffer.slice(newline + 1);
+      if (line.startsWith("data:")) handle(line.slice(5));
+    }
+  }
+
+  if (failure && !answer.trim()) throw new Error(failure);
+  return { answer: answer.trim(), toolCalls };
+}
+
 /** Pregunta al modelo a través del servidor: la clave nunca llega al navegador. */
 export async function askAgent(prompt: string): Promise<AgentAnswer> {
   const token = await sessionToken();

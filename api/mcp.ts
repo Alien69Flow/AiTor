@@ -40,7 +40,12 @@ const AUTH_KEY =
   process.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY ||
   "sb_publishable_c4VVYw8uPzt7-24KvOre6A_91csa5Xp";
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+/**
+ * La clave se lee en cada petición, no al importar el módulo: así un cambio en
+ * Vercel (o una prueba que la inyecta) surte efecto sin redespliegue, y el
+ * arranque en frío no se queda con un valor vacío de la primera carga.
+ */
+const geminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 /** Repositorio por defecto de las herramientas de GitHub. */
@@ -1019,7 +1024,7 @@ function geminiTools(tools: ToolDefinition[]) {
 /** Un modelo Flash utilizable; se descubre para no fijar uno que caduque. */
 async function resolveModel(): Promise<string> {
   const response = await fetch(`${GEMINI_BASE}/models`, {
-    headers: { "x-goog-api-key": GEMINI_KEY },
+    headers: { "x-goog-api-key": geminiKey() },
     signal: AbortSignal.timeout(10_000),
   });
   if (!response.ok) throw new Error(`Gemini /models respondió ${response.status}`);
@@ -1036,6 +1041,8 @@ async function resolveModel(): Promise<string> {
 
 interface GeminiPart {
   text?: string;
+  /** Razonamiento interno del modelo: se descarta, no se le enseña al usuario. */
+  thought?: boolean;
   functionCall?: { name?: string; args?: Record<string, unknown> };
   functionResponse?: { name: string; response: Record<string, unknown> };
 }
@@ -1043,7 +1050,7 @@ interface GeminiPart {
 async function generate(model: string, body: Record<string, unknown>) {
   const response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-goog-api-key": GEMINI_KEY },
+    headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(30_000),
   });
@@ -1056,10 +1063,139 @@ async function generate(model: string, body: Record<string, unknown>) {
   };
   const content = payload.candidates?.[0]?.content;
   if (!content?.parts?.length) throw new Error("Gemini devolvió una respuesta sin partes");
-  return content.parts;
+  // Igual que en el flujo: el razonamiento del modelo no es la respuesta.
+  return content.parts.filter((part) => !part.thought);
 }
 
 const MAX_ROUNDS = 3;
+
+/**
+ * Gemini en modo flujo. `streamGenerateContent?alt=sse` emite un sobre SSE por
+ * trozo; de cada uno se quedan las partes de texto y las llamadas a función.
+ *
+ * Las partes marcadas `thought: true` **no** salen: son el razonamiento interno
+ * del modelo y hasta ahora se colaban en el chat como si fueran la respuesta.
+ */
+async function* streamGenerate(model: string, body: Record<string, unknown>): AsyncGenerator<GeminiPart> {
+  const response = await fetch(`${GEMINI_BASE}/models/${model}:streamGenerateContent?alt=sse`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(55_000),
+  });
+  if (!response.ok || !response.body) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Gemini ${response.status}: ${detail.slice(0, 200)}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let newline: number;
+    while ((newline = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, newline).trim();
+      buffer = buffer.slice(newline + 1);
+      if (!line.startsWith("data:")) continue;
+      const data = line.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+
+      let payload: {
+        candidates?: { content?: { parts?: (GeminiPart & { thought?: boolean })[] } }[];
+      };
+      try {
+        payload = JSON.parse(data);
+      } catch {
+        continue;
+      }
+
+      for (const part of payload.candidates?.[0]?.content?.parts ?? []) {
+        if (part.thought) continue;
+        if (part.text || part.functionCall?.name) yield part;
+      }
+    }
+  }
+}
+
+/**
+ * Mismo bucle de herramientas que `runAgent`, pero cada trozo de texto se
+ * empuja al cliente en cuanto llega.
+ */
+async function runAgentStream(
+  prompt: string,
+  caller: Caller,
+  emit: (event: Record<string, unknown>) => void,
+) {
+  const model = await resolveModel();
+  const visible = TOOLS.filter((tool) => TIER_RANK[tool.minTier] <= TIER_RANK[caller.tier]);
+  const contents: { role: string; parts: GeminiPart[] }[] = [{ role: "user", parts: [{ text: prompt }] }];
+  const toolCalls: { name: string; args: Record<string, unknown>; isError: boolean }[] = [];
+  let answer = "";
+
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const body: Record<string, unknown> = {
+      contents,
+      tools: geminiTools(visible),
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+    };
+
+    const roundParts: GeminiPart[] = [];
+    for await (const part of streamGenerate(model, body)) {
+      roundParts.push(part);
+      if (part.text) {
+        answer += part.text;
+        emit({ type: "delta", text: part.text });
+      }
+    }
+
+    const calls = roundParts.filter((part) => part.functionCall?.name);
+    if (calls.length === 0) {
+      emit({ type: "done", answer: answer.trim(), toolCalls, model });
+      return { answer: answer.trim(), toolCalls, model };
+    }
+
+    contents.push({ role: "model", parts: roundParts });
+    const responses: GeminiPart[] = [];
+
+    for (const part of calls) {
+      const name = part.functionCall?.name as string;
+      const args = part.functionCall?.args ?? {};
+      emit({ type: "tool", name });
+      const result = await callTool(name, args, caller);
+      const isError = result.isError === true;
+      toolCalls.push({ name, args, isError });
+      emit({ type: "tool-result", name, isError });
+      responses.push({
+        functionResponse: {
+          name,
+          response: result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+        },
+      });
+    }
+
+    contents.push({ role: "user", parts: responses });
+  }
+
+  const fallback = "Se agotaron las rondas de herramientas sin respuesta final.";
+  emit({ type: "done", answer: answer.trim() || fallback, toolCalls, model });
+  return { answer: answer.trim() || fallback, toolCalls, model };
+}
+
+/**
+ * Instrucciones del operador. El «sin narrar tu razonamiento» no es cosmética:
+ * el chat mostraba el monólogo previo en lugar de la respuesta.
+ */
+const SYSTEM_PROMPT =
+  "Eres el operador de AI-TOR. Usa las herramientas cuando necesites telemetría " +
+  "orbital o eventos OSINT, y cita siempre la fuente y la hora del dato. Si una " +
+  "herramienta falla, explícalo en vez de estimar cifras. Responde directamente y " +
+  "en el idioma del usuario: no narres tu razonamiento ni enumeres lo que vas a " +
+  "hacer, entrega el resultado.";
 
 async function runAgent(prompt: string, caller: Caller) {
   const model = await resolveModel();
@@ -1071,16 +1207,7 @@ async function runAgent(prompt: string, caller: Caller) {
     const body: Record<string, unknown> = {
       contents,
       tools: geminiTools(visible),
-      systemInstruction: {
-        parts: [
-          {
-            text:
-              "Eres el operador de AI-TOR. Usa las herramientas cuando necesites telemetría " +
-              "orbital o eventos OSINT, y cita siempre la fuente y la hora del dato. Si una " +
-              "herramienta falla, explícalo en vez de estimar cifras.",
-          },
-        ],
-      },
+      systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
     };
 
     const parts = await generate(model, body);
@@ -1160,7 +1287,13 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
   if (!caller) return send(json({ error: "No autorizado" }, 401));
 
   const body = (typeof req.body === "string" ? safeParse(req.body) : req.body) as
-    | { id?: string | number | null; method?: string; params?: Record<string, unknown>; prompt?: unknown }
+    | {
+        id?: string | number | null;
+        method?: string;
+        params?: Record<string, unknown>;
+        prompt?: unknown;
+        stream?: unknown;
+      }
     | null;
 
   if (!body || typeof body !== "object") return send(json({ error: "El cuerpo debe ser JSON" }, 400));
@@ -1171,14 +1304,43 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
     if (!caller.userId) {
       return send(json({ error: "Inicia sesión para usar el agente MCP" }, 401));
     }
-    if (!GEMINI_KEY) {
+    if (!geminiKey()) {
       return send(json({ error: "GEMINI_API_KEY no está configurada en el despliegue" }, 501));
     }
     if (!withinQuota(caller.userId)) {
       return send(json({ error: "Demasiadas peticiones por minuto; reintenta en unos segundos" }, 429));
     }
+    const prompt = body.prompt.trim().slice(0, 4000);
+
+    // Respuesta en flujo: el chat la pinta palabra a palabra. Las cabeceras van
+    // antes de tocar Gemini para que el primer token no espere al modelo.
+    if (body.stream === true) {
+      res.status(200);
+      res.setHeader("content-type", "text/event-stream; charset=utf-8");
+      res.setHeader("cache-control", "no-cache, no-transform");
+      res.setHeader("connection", "keep-alive");
+      // Sin esto, el proxy de turno acumula el cuerpo y lo suelta de golpe.
+      res.setHeader("x-accel-buffering", "no");
+      res.setHeader("access-control-allow-origin", "*");
+      res.flushHeaders?.();
+
+      const emit = (event: Record<string, unknown>) => {
+        if (res.writableEnded) return;
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      };
+
+      try {
+        await runAgentStream(prompt, caller, emit);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Error del agente";
+        emit({ type: "error", message });
+      }
+      res.end();
+      return;
+    }
+
     try {
-      return send(json(await runAgent(body.prompt.trim().slice(0, 4000), caller)));
+      return send(json(await runAgent(prompt, caller)));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Error del agente";
       return send(json({ error: message }, /Límite|quota|429/i.test(message) ? 429 : 502));

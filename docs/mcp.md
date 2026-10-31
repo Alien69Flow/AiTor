@@ -157,6 +157,47 @@ importan `@langchain/google-genai`, que no está declarado, y usan imports sin
 extensión bajo `NodeNext`. `backend/mcp.ts` sí compila aislado y tiene una prueba
 de humo (`npx tsx mcp.smoke.ts`) que comprueba los 401 sin salir a la red.
 
+## El chat usa el agente
+
+El chat pregunta **primero al agente con herramientas**. `src/services/agent-turn.ts`
+compone el prompt con los últimos turnos (`src/lib/agent-prompt.ts`, recortado a
+3 500 caracteres para que el endpoint no corte la pregunta al recortar a 4 000) y
+llama a `askAgent` → `POST /api/mcp` con el JWT de la sesión.
+
+Antes no era así: `useChat` publicaba en la función `chat` de Supabase, que no
+tiene bucle de herramientas, y al pedirle el repositorio contestaba
+`INTERFACE_NOT_BOUND`. Ahora:
+
+- hay sesión → contesta el agente y el mensaje lleva chips con las herramientas
+  que ejecutó (y cuáles fallaron);
+- no hay sesión, hay imagen o el endpoint falla → se cae al chat de siempre, sin
+  herramientas, en vez de dejar al usuario sin respuesta.
+
+## Streaming
+
+`POST /api/mcp` acepta `{ "prompt": "…", "stream": true }` y contesta
+`text/event-stream`. Cada `data:` es un evento:
+
+| `type` | Cuándo | Contenido |
+| --- | --- | --- |
+| `delta` | Cada trozo de la respuesta | `text` |
+| `tool` | Justo antes de ejecutar | `name` |
+| `tool-result` | Al terminar la herramienta | `name`, `isError` |
+| `done` | Fin normal | `answer`, `toolCalls`, `model` |
+| `error` | Fallo a mitad | `message` |
+
+El servidor usa `streamGenerateContent?alt=sse` y **descarta las partes con
+`thought: true`**: el razonamiento del modelo no es la respuesta y hasta ahora
+se colaba en el chat como si lo fuera. El `systemInstruction` también pide
+responder directamente, sin narrar el plan.
+
+En el navegador, `streamAgentAnswer` (`src/services/mcpClient.ts`) lee ese flujo
+con `getReader()` —`EventSource` no permite POST ni cabecera `Authorization`— y
+`useChat` crea el mensaje con el primer `delta` en vez de esperar la respuesta
+entera. Si el flujo se corta después de haber pintado texto, lo mostrado se
+conserva (llegó del modelo) y se avisa; si falla antes del primer trozo, se cae
+al chat de Supabase como antes.
+
 ## Botón en el chat
 
 `src/components/chat/McpToolsButton.tsx` lista las herramientas del plan real y
