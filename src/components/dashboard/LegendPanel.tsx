@@ -28,12 +28,16 @@ import {
   EARTH_SHELLS,
   GLOBE_LAYERS,
   LAYER_GROUPS,
+  MAX_RASTER_LAYERS,
   TIER_LABEL,
+  isRasterLayer,
   layerDef,
   type EnvLayerKey,
   type Tier,
 } from "@/lib/globe-layers";
 import type { LayerStatusMap } from "@/hooks/useUnifiedIntel";
+import type { ViewScale } from "@/components/globe/GlobeScaleHud";
+import { overscanLabel, tileOverscan, type TileOverscan } from "@/lib/tile-zoom";
 import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
 import {
   ALTITUDE_BANDS,
@@ -130,6 +134,12 @@ interface LegendPanelProps {
   onClose?: () => void;
   defaultCollapsed?: boolean;
   layerStatus?: LayerStatusMap;
+  /**
+   * Escala actual de la cámara. Con ella se sabe si una capa de teselas se
+   * está viendo ampliada por encima de su último nivel real (píxeles
+   * estirados) y el panel lo avisa.
+   */
+  viewScale?: ViewScale | null;
 }
 
 export function LegendPanel({
@@ -143,7 +153,32 @@ export function LegendPanel({
   onClose,
   defaultCollapsed = true,
   layerStatus,
+  viewScale,
 }: LegendPanelProps) {
+  /**
+   * Capas de teselas activas que la cámara ya está pidiendo por encima de su
+   * último nivel. Se calcula una vez por render y no por fila: todas comparten
+   * la misma escala y la misma latitud.
+   */
+  /**
+   * Cuántas capas de teselas están dibujadas y cuántas quedan fuera por plan.
+   * Se enseña arriba porque las dos cosas se confunden con «está roto»: una
+   * capa que no enciende porque su plan no llega, y un globo sin teselas porque
+   * se ha pasado el techo de cachés de textura.
+   */
+  const rasterActive = GLOBE_LAYERS.filter(
+    (def) => envLayers.has(def.key) && isRasterLayer(def),
+  ).length;
+  const lockedCount = GLOBE_LAYERS.filter((def) => !hasAccess(def.requiredTier)).length;
+
+  const overscans = new Map<EnvLayerKey, TileOverscan>();
+  if (viewScale && Number.isFinite(viewScale.metresPerPixel)) {
+    for (const def of GLOBE_LAYERS) {
+      if (!envLayers.has(def.key)) continue;
+      const overscan = tileOverscan(def, viewScale.metresPerPixel, viewScale.latitudeDeg ?? 0);
+      if (overscan) overscans.set(def.key, overscan);
+    }
+  }
   return (
     <GlassPanel
       icon={Layers}
@@ -182,6 +217,17 @@ export function LegendPanel({
           </div>
         </div>
 
+        <div className="flex items-center justify-between gap-2 text-[8px] uppercase tracking-wider">
+          <span className={rasterActive >= MAX_RASTER_LAYERS ? "text-amber-400" : "text-muted-foreground"}>
+            Teselas {rasterActive}/{MAX_RASTER_LAYERS}
+          </span>
+          {lockedCount > 0 && (
+            <span className="text-muted-foreground/80">
+              {lockedCount} por plan {TIER_LABEL[tier]}
+            </span>
+          )}
+        </div>
+
         {/* Explicit layer enumeration, grouped */}
         {LAYER_GROUPS.map((group) => {
           const defs = GLOBE_LAYERS.filter((l) => l.group === group);
@@ -194,6 +240,7 @@ export function LegendPanel({
                   const locked = !hasAccess(def.requiredTier);
                   const statusKey = LAYER_STATUS_KEY[def.key];
                   const status = statusKey ? layerStatus?.[statusKey] : undefined;
+                  const overscan = locked ? undefined : overscans.get(def.key);
                   return (
                     <div key={def.key} className="relative">
                       <ToggleRow
@@ -213,6 +260,20 @@ export function LegendPanel({
                       )}
                       {!locked && status && envLayers.has(def.key) && (
                         <span className={`absolute right-11 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full ${status.error ? "bg-destructive" : status.loading ? "bg-accent animate-pulse" : "bg-primary"}`} title={status.error ?? `${status.count} señales`} />
+                      )}
+                      {overscan && !locked && (
+                        <span
+                          className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/15 border border-amber-500/30 pointer-events-none"
+                          title={
+                            `La fuente de esta capa llega a z${overscan.max} y la cámara pide z${overscan.requested}: ` +
+                            `lo que se ve está ampliado ${overscan.levels === 1 ? "el doble" : `${2 ** overscan.levels} veces`} ` +
+                            "por píxel, interpolado sobre la última tesela real. Es dato real, no detalle nuevo."
+                          }
+                        >
+                          <span className="text-[7px] uppercase tracking-wider text-amber-400 font-bold">
+                            Interpolada {overscanLabel(overscan)}
+                          </span>
+                        </span>
                       )}
                     </div>
                   );

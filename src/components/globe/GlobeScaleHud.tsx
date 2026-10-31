@@ -22,6 +22,8 @@ export interface ViewScale {
   /** Campo de visión vertical de la cámara, para acotar la vista al horizonte. */
   fovYRad?: number;
   aspectRatio?: number;
+  /** Latitud de la cámara: el nivel de tesela equivalente depende de ella. */
+  latitudeDeg?: number;
   /** `true` cuando no se pudo proyectar sobre el globo y se usó el campo de visión. */
   estimated: boolean;
 }

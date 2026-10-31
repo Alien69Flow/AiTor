@@ -37,6 +37,7 @@ import { ROLE_LABELS, aircraftRole, altitudeBand } from "@/lib/aircraft-class";
 import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
 import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
+import { createTerrariumTerrainProvider } from "@/lib/terrarium-terrain";
 import {
   ZOOM_MAX_ALTITUDE_M,
   ZOOM_MIN_ALTITUDE_M,
@@ -66,7 +67,30 @@ import {
   UNDERSEA_CABLES,
   PIPELINES,
 } from "@/lib/geo-datasets";
+import { GAMMA_IRRADIATORS } from "@/lib/gamma-irradiators";
+import { isRasterLayer } from "@/lib/globe-layers";
+import { tileOverscan } from "@/lib/tile-zoom";
 import { SUPABASE_URL } from "@/integrations/supabase/client";
+
+/**
+ * Fronteras y topónimos de Esri (capa de referencia transparente).
+ *
+ * La base es World_Imagery: satélite de un metro, pero sin una sola etiqueta
+ * ni frontera, así que al acercarte no sabes si estás en Huelva o en Cádiz.
+ * Esta capa pone lo que hace Google Maps: límites administrativos y nombres de
+ * países, provincias y ciudades, dibujados encima de la imagen.
+ */
+const PLACES_TILE_URL =
+  "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer";
+
+/**
+ * Cuánto se puede estirar una capa antes de ocultarla: el doble (un nivel de
+ * zoom). Más allá de eso la tesela cubre continentes enteros y lo que se ve
+ * sobre tu ciudad son los píxeles de otra región del planeta: parece que la
+ * lluvia de la India ha aparecido en España. Con esto la capa se apaga en vez
+ * de mentir.
+ */
+const MAX_UPSAMPLE_LEVELS = 1;
 
 /** OWM tiles are proxied server-side so the API key never reaches the bundle. */
 const OWM_TILE_URL = (layerId: string) =>
@@ -274,6 +298,15 @@ export function CesiumGlobe({
   const viewerRef = useRef<CesiumViewer | null>(null);
   const owmLayersRef = useRef<Record<string, ImageryLayer>>({});
   const gibsLayersRef = useRef<Record<string, ImageryLayer>>({});
+  /** Fronteras y topónimos: por encima de todo lo que se añada después. */
+  const placesLayerRef = useRef<ImageryLayer | null>(null);
+  const nightLightsRef = useRef<ImageryLayer | null>(null);
+  /** Escala actual de la cámara, para decidir qué teselas no deben estirarse. */
+  const scaleRef = useRef<{ mpp: number; lat: number } | null>(null);
+  /** Capas encendidas por el usuario, leídas sin cerrar sobre props viejas. */
+  const activeEnvLayersRef = useRef<Set<EnvLayerKey>>(new Set());
+  /** Aplica el límite de ampliación a las capas ráster ya creadas. */
+  const applyRasterLimitRef = useRef<(() => void) | null>(null);
   const rainLayerRef = useRef<ImageryLayer | null>(null);
   const rainUrlRef = useRef<string | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
@@ -325,6 +358,10 @@ export function CesiumGlobe({
       selectionIndicator: false, timeline: false, navigationHelpButton: false,
       creditContainer: document.createElement("div"),
       terrainProvider: new EllipsoidTerrainProvider(),
+      // Nitidez: en pantallas de alta densidad Cesium dibujaba a resolución CSS
+      // y todo salía blando al acercarse. Se rinde a la densidad del panel con
+      // un tope de 1,5× para no hundir la GPU con catorce capas encendidas.
+      useBrowserRecommendedResolution: false,
       contextOptions: { webgl: { alpha: false } },
       // Start with no base layer so async imagery never wipes overlays that
       // were already added (that race made toggled-on layers invisible).
@@ -335,6 +372,21 @@ export function CesiumGlobe({
     viewer.scene.backgroundColor = Color.BLACK;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 8.0;
+    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.5);
+
+    // Relieve real: teselas Terrarium abiertas (sin token de Ion) en vez del
+    // elipsoide liso. Si el proveedor no se puede construir, el visor sigue con
+    // el elipsoide: el globo nunca se queda en blanco por el terreno.
+    const terrain = createTerrariumTerrainProvider();
+    if (terrain) {
+      viewer.terrainProvider = terrain;
+      viewer.scene.globe.depthTestAgainstTerrain = false;
+      // Más teselas vivas y menos error de pantalla = se pide el nivel real de
+      // detalle al acercarse (Google Earth) en vez de estirar la última.
+      viewer.scene.globe.tileCacheSize = 1000;
+      viewer.scene.globe.maximumScreenSpaceError = 1.5;
+      viewer.scene.globe.preloadSiblings = true;
+    }
 
     // Enable sky atmosphere (the glow halo around the Earth)
     if (viewer.scene.skyAtmosphere) {
@@ -384,6 +436,20 @@ export function CesiumGlobe({
         const baseLayer = viewer.imageryLayers.addImageryProvider(baseProvider);
         viewer.imageryLayers.lowerToBottom(baseLayer);
 
+        // Fronteras y topónimos sobre la imagen base: sin esto el mapa es una
+        // foto de satélite sin un solo nombre, que es lo que se veía al
+        // acercarse a España. Va último y se mantiene arriba (ver más abajo),
+        // para que las capas de datos no la tapen.
+        try {
+          const placesProvider = await ArcGisMapServerImageryProvider.fromUrl(PLACES_TILE_URL);
+          if (viewer.isDestroyed()) return;
+          const places = viewer.imageryLayers.addImageryProvider(placesProvider);
+          places.alpha = 0.9;
+          placesLayerRef.current = places;
+        } catch (e) {
+          console.warn("Places/boundaries layer failed:", e);
+        }
+
         // 3. Night lights SECOND (above base, below weather overlays).
         //
         // Antes se pedía el asset 3812 de Cesium Ion, pero el token está en
@@ -405,6 +471,7 @@ export function CesiumGlobe({
           nl.dayAlpha = 0.0;
           nl.nightAlpha = 0.9;
           nl.brightness = 2.0;
+          nightLightsRef.current = nl;
           viewer.imageryLayers.lowerToBottom(nl);
           viewer.imageryLayers.raise(nl);
         } catch (e) {
@@ -550,8 +617,65 @@ export function CesiumGlobe({
         viewportWidthPx: width,
         fovYRad: fovY,
         aspectRatio: aspect,
+        // La latitud viaja con la escala porque el nivel de tesela que pide
+        // Cesium depende de ella: la misma resolución en metros es un nivel
+        // menos de zoom a 60° que en el ecuador. Sin este dato, el aviso de
+        // «tesela ampliada» saltaría un nivel tarde en el norte.
+        latitudeDeg: CesiumMath.toDegrees(viewer.camera.positionCartographic?.latitude ?? 0),
         estimated,
       });
+
+      // La misma escala decide qué teselas no se pueden estirar más.
+      scaleRef.current = {
+        mpp: metresPerPixel,
+        lat: CesiumMath.toDegrees(viewer.camera.positionCartographic?.latitude ?? 0),
+      };
+      applyRasterLimitRef.current?.();
+    };
+
+    /**
+     * Apaga suavemente (o esconde) las capas ráster cuya fuente ya no llega al
+     * nivel que pide la cámara.
+     *
+     * A un nivel de ampliación se deja al 50 % de opacidad: es el doble de
+     * píxel, se nota poco. A dos o más, la tesela cubre un continente y sobre
+     * tu ciudad se ven los píxeles de otra región del planeta —el «efecto
+     * lluvia de la India sobre España»— así que la capa desaparece. La insignia
+     * del panel sigue diciendo qué capa está fuera y por qué.
+     */
+    applyRasterLimitRef.current = () => {
+      if (viewer.isDestroyed()) return;
+      const scale = scaleRef.current;
+      const active = activeEnvLayersRef.current;
+      if (!scale) return;
+      for (const def of GLOBE_LAYERS) {
+        if (!isRasterLayer(def) || !active.has(def.key)) continue;
+        const layer = def.gibs
+          ? gibsLayersRef.current[def.gibs.layer]
+          : owmLayersRef.current[def.owm as string];
+        if (!layer) continue;
+        const overscan = tileOverscan(def, scale.mpp, scale.lat);
+        const levels = overscan ? overscan.levels : 0;
+        const baseAlpha = def.gibs ? (def.gibs.alpha ?? 0.8) : (OWM_ALPHA[def.owm as string] ?? 0.7);
+        const allowed = def.gibs?.maxUpsample ?? MAX_UPSAMPLE_LEVELS;
+        if (levels > allowed) {
+          layer.show = false;
+          continue;
+        }
+        layer.show = true;
+        layer.alpha = levels === 1 ? baseAlpha * 0.5 : baseAlpha;
+      }
+
+      // Las luces nocturnas son un compuesto de 2012 con techo en z7: a partir
+      // de ahí se convierten en manchas de ciudades que no son las que miras.
+      const nightLights = nightLightsRef.current;
+      if (nightLights) {
+        const nightOverscan = tileOverscan({ gibs: { level: 7 } }, scale.mpp, scale.lat);
+        nightLights.show = active.has("nightLights") && !nightOverscan;
+      }
+
+      // La capa de fronteras debe seguir arriba aunque se añadan teselas nuevas.
+      if (placesLayerRef.current) viewer.imageryLayers.raiseToTop(placesLayerRef.current);
     };
 
     let scaleFrame = 0;
@@ -592,6 +716,7 @@ export function CesiumGlobe({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     const active = envLayers ?? new Set<EnvLayerKey>();
+    activeEnvLayersRef.current = active;
     
     console.log("[CesiumGlobe] envLayers changed:", Array.from(active));
 
@@ -652,6 +777,10 @@ export function CesiumGlobe({
         existing.alpha = shouldShow ? alpha : 0;
       }
     });
+
+    // Con las capas nuevas ya creadas, se aplica el límite de ampliación y se
+    // devuelve fronteras/topónimos a la cima de la pila.
+    applyRasterLimitRef.current?.();
 
     // Atmosphere halo toggle
     if (viewer.scene.skyAtmosphere) {
@@ -1179,6 +1308,24 @@ export function CesiumGlobe({
         }),
       );
     }
+    if (active.has("gammaIrradiators")) {
+      // Un irradiador no es un reactor: no hay riesgo de criticidad, pero sí
+      // material radiactivo de categoría IV y un uso industrial que explica la
+      // mitad de los implantes y alimentos esterilizados del país. La ficha
+      // dice qué es y a qué distancia quedaba el topónimo que declara la IAEA.
+      GAMMA_IRRADIATORS.forEach((p) =>
+        addPoint(`gamma-${p.id}`, p.lat, p.lon, "#f59e0b", "☢", p.city, 7, {
+          lat: p.lat, lon: p.lon, location: `${p.city} — ${p.country}`,
+          description:
+            `Industrial gamma irradiation facility (IAEA DIIF). ` +
+            `Sterilises medical devices and treats food; cobalt-60 source, no reactor.` +
+            (p.declaredKm !== null ? ` Verified ${p.declaredKm} km from the IAEA place name.` : ""),
+          type: "gamma", severity: "medium", source: "IAEA DIIF / OpenStreetMap",
+          category: "infrastructure", date_reported: "static",
+        }),
+      );
+    }
+
     if (active.has("militaryBases")) {
       MILITARY_BASES.forEach((p) =>
         addPoint(`mil-${p.id}`, p.lat, p.lon, "#94a3b8", "🛡️", p.name, 7, {

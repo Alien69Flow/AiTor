@@ -26,6 +26,7 @@ export type EnvLayerKey =
 	// WorldMonitor-style layers
 	| "conflictZones"
 	| "nuclearSites"
+	| "gammaIrradiators"
 	| "militaryBases"
 	| "underseaCables"
 	| "pipelines"
@@ -119,6 +120,12 @@ export interface globeLayerDef {
 			dateOffsetHours?: number;
 			/** Fixed TIME value for layers that no longer publish daily data */
 			date?: string;
+			/**
+			 * Niveles de ampliación que se toleran antes de ocultar la capa. Por
+			 * defecto 1, que es el doble de píxel. Los compuestos fijos (mosaicos de
+			 * un año concreto) ponen 0: cualquier ampliación ya es data de otra región.
+			 */
+			maxUpsample?: number;
 			/**
 			 * Sin segmento TIME. Sirve para dos casos, ambos comprobados contra
 			 * el servidor: capas de climatología que no tienen dimensión temporal
@@ -292,9 +299,10 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#22d3ee",
 		Icon: Droplets,
 		requiredTier: "signal",
-		source: "Open-Meteo",
-		freshness: "15 min",
-		description: "Global relative humidity telemetry"
+		source: "NASA GIBS · AIRS HR superficial (Open-Meteo para los puntos)",
+		freshness: "1 día · 15 min en los puntos",
+		description: "Humedad relativa global: malla AIRS sobre el globo y lectura puntual de Open-Meteo al abrir el marcador",
+		gibs: { layer: "AIRS_L2_Surface_Relative_Humidity_Day", level: 6, alpha: 0.7, dateOffsetHours: 36 },
 	},
 	{ 
 		key: "isobars", 
@@ -433,10 +441,12 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#93c5fd",
 		Icon: Cloud,
 		requiredTier: "signal",
-		source: "NASA GIBS · MODIS Cloud Top Height",
+		source: "NASA GIBS · AIRS Cloud Top Height",
 		freshness: "1 día",
 		description: "A qué altura está el techo de cada nube: el grosor real de la troposfera, de 2 km en los polos a 16 km en el ecuador",
-		gibs: { layer: "MODIS_Terra_Cloud_Top_Height_Day", level: 6, alpha: 0.8, timeless: true },
+		// El equivalente de MODIS responde 500 en GIBS desde que se retiró su
+		// serie (última imagen 2022); AIRS publica la misma magnitud cada día.
+		gibs: { layer: "AIRS_L2_Cloud_Top_Height_Day", level: 6, alpha: 0.8, dateOffsetHours: 36 },
 	},
 	{
 		key: "stratosphere",
@@ -460,7 +470,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "NASA GIBS · MODIS LST",
 		freshness: "1 día",
 		description: "Temperatura del suelo y de la cubierta vegetal, de día",
-		gibs: { layer: "MODIS_Terra_Land_Surface_Temp_Day", level: 7, alpha: 0.75, timeless: true },
+		gibs: { layer: "MODIS_Terra_Land_Surface_Temp_Day", level: 7, alpha: 0.75, dateOffsetHours: 36 },
 	},
 
 	// === Biosphere & Climate ================================================
@@ -486,7 +496,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "NASA GIBS · VIIRS",
 		freshness: "1 día",
 		description: "Fitoplancton: la base de la cadena trófica y el bombeo de carbono",
-		gibs: { layer: "VIIRS_SNPP_L2_Chlorophyll_A", level: 7, alpha: 0.8, timeless: true },
+		gibs: { layer: "VIIRS_SNPP_L2_Chlorophyll_A", level: 7, alpha: 0.8, dateOffsetHours: 36 },
 	},
 	{
 		key: "soilMoisture",
@@ -519,10 +529,12 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		color: "#e0f2fe",
 		Icon: Snowflake,
 		requiredTier: "signal",
-		source: "NASA GIBS · AMSR2 (JAXA)",
-		freshness: "Última disponible (estacional)",
+		source: "NASA GIBS · GHRSST MUR (diario)",
+		freshness: "1 día",
 		description: "Concentración de hielo en el Ártico y la Antártida",
-		gibs: { layer: "AMSRU2_Sea_Ice_Concentration_12km", level: 6, alpha: 0.85, timeless: true },
+		// La serie AMSR2 de GIBS termina en 2025-09: pedirle una fecha actual da
+		// 404. MUR publica la misma magnitud todos los días.
+		gibs: { layer: "GHRSST_L4_MUR25_Sea_Ice_Concentration", level: 6, alpha: 0.85, dateOffsetHours: 60 },
 	},
 	{
 		key: "iceSurfaceTemp",
@@ -534,7 +546,7 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "NASA GIBS · MODIS Ice Surface Temp",
 		freshness: "1 día",
 		description: "Criósfera: a qué temperatura está el hielo y la nieve, el termómetro del deshielo",
-		gibs: { layer: "MODIS_Terra_Ice_Surface_Temp_Day", level: 7, alpha: 0.8, timeless: true },
+		gibs: { layer: "MODIS_Terra_Ice_Surface_Temp_Day", level: 7, alpha: 0.8, dateOffsetHours: 36 },
 	},
 	{
 		key: "seaSalinity",
@@ -638,7 +650,9 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "NASA GIBS · VIIRS Black Marble",
 		freshness: "Mosaico 2016",
 		description: "Luces nocturnas vistas desde el espacio",
-		gibs: { layer: "VIIRS_Black_Marble", level: 8, alpha: 0.9, date: "2016-01-01" },
+		// Mosaico cerrado de 2016 a z8: ampliado siquiera un nivel, las manchas
+		// de luz que caen sobre tu ciudad son de la tesela de 600 km de al lado.
+		gibs: { layer: "VIIRS_Black_Marble", level: 8, alpha: 0.9, date: "2016-01-01", maxUpsample: 0 },
 	},
 
 	// === OSINT & Hazards ===
@@ -733,6 +747,22 @@ export const GLOBE_LAYERS: globeLayerDef[] = [
 		source: "WorldMonitor Registry",
 		freshness: "Static",
 		description: "Nuclear facilities and power plants"
+	},
+	// Plantas de irradiación gamma (esterilización y tratamiento de alimentos).
+	// Catálogo reconstruido desde el volcado de la IAEA DIIF: cada punto está
+	// validado por geolocalización inversa contra OpenStreetMap, así que la
+	// ciudad y el país de la ficha son los del lugar, no los de una lista
+	// paralela que no se podía unir por fila.
+	{ 
+		key: "gammaIrradiators", 
+		label: "Gamma Irradiators", 
+		group: "Strategic Infrastructure", 
+		color: "#f59e0b", 
+		Icon: Radiation, 
+		requiredTier: "node",
+		source: "IAEA DIIF",
+		freshness: "Static",
+		description: "Industrial gamma irradiation plants: medical sterilisation and food treatment"
 	},
 	{ 
 		key: "militaryBases", 
@@ -894,3 +924,24 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 export function layerDef(key: EnvLayerKey): globeLayerDef | undefined {
 	return GLOBE_LAYERS.find((l) => l.key === key);
 }
+
+/**
+ * ¿La pinta Cesium como teselas? Cada capa así es una `ImageryLayer` con su
+ * propia caché de texturas en la GPU; las de puntos, las esferas y los
+ * servicios que no son ráster no cuestan lo mismo.
+ */
+export function isRasterLayer(def: globeLayerDef): boolean {
+	return Boolean(def.gibs || def.owm);
+}
+
+/**
+ * Techo de capas de teselas dibujadas a la vez.
+ *
+ * Encender las veinte a la vez agota la memoria de texturas y el navegador
+ * pierde el contexto WebGL: el globo se queda negro o con bandas de colores
+ * (reproducido en local con 37 capas, `THREE.WebGLRenderer: Context Lost`).
+ * No es un límite de estilo: es lo mismo que hacen Windy o earth.nullschool,
+ * donde se comparan dos o tres capas, no veinte. Seis deja sitio para comparar
+ * atmósfera + océano + biosfera sin tocar el techo.
+ */
+export const MAX_RASTER_LAYERS = 6;

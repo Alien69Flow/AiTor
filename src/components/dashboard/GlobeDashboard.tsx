@@ -18,7 +18,16 @@ import { useAirTraffic } from "@/hooks/useAirTraffic";
 import { useMarineTraffic } from "@/hooks/useMarineTraffic";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
 import { CONFLICT_ZONES } from "@/lib/geo-datasets";
-import { DEFAULT_ACTIVE_LAYERS, TIER_LABEL, layerDef, type EnvLayerKey } from "@/lib/globe-layers";
+import {
+  DEFAULT_ACTIVE_LAYERS,
+  GLOBE_LAYERS,
+  MAX_RASTER_LAYERS,
+  TIER_LABEL,
+  isRasterLayer,
+  layerDef,
+  type EnvLayerKey,
+} from "@/lib/globe-layers";
+import { toast } from "sonner";
 import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen, TriangleAlert } from "lucide-react";
 import { GlobeCommandBar } from "./GlobeCommandBar";
 import { CosmicZoom } from "../globe/CosmicZoom";
@@ -118,19 +127,63 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
     return next;
   }), []);
 
+  /**
+   * Orden en que se encendieron las capas de teselas. Es lo que decide qué se
+   * apaga cuando se llega al techo: la más antigua, que es la que el usuario ya
+   * ha mirado. Sin este orden, `Set` daría el orden de inserción de React y no
+   * el de las pulsaciones.
+   */
+  const rasterOrderRef = useRef<EnvLayerKey[]>([]);
+
   const toggleEnvLayer = useCallback((key: EnvLayerKey) => {
     const definition = layerDef(key);
     if (definition && !hasAccess(definition.requiredTier)) {
       setPaywallReason(`La capa "${definition.label}" requiere el plan ${TIER_LABEL[definition.requiredTier]}.`);
       return;
     }
+
+    // Apagar siempre es libre; el techo solo cuenta al encender.
+    if (envLayers.has(key)) {
+      rasterOrderRef.current = rasterOrderRef.current.filter((active) => active !== key);
+      setEnvLayers((previous) => {
+        const next = new Set(previous);
+        next.delete(key);
+        return next;
+      });
+      return;
+    }
+
+    // El ref solo conoce las que se han pulsado en esta sesión; las que vienen
+    // encendidas por defecto (`DEFAULT_ACTIVE_LAYERS`) nunca pasaron por aquí.
+    // Se reconstruye el orden con las activas reales y las que faltan se ponen
+    // delante, porque son las que llevan más tiempo dibujadas.
+    const activeRasters = GLOBE_LAYERS.filter(
+      (def) => isRasterLayer(def) && envLayers.has(def.key),
+    ).map((def) => def.key);
+    const knownOrder = rasterOrderRef.current.filter((active) => activeRasters.includes(active));
+    const unknown = activeRasters.filter((active) => !knownOrder.includes(active));
+    const turnedOnRasters = [...unknown, ...knownOrder];
+    const order = definition && isRasterLayer(definition) ? [...turnedOnRasters, key] : turnedOnRasters;
+    const excess = definition && isRasterLayer(definition)
+      ? Math.max(0, order.length - MAX_RASTER_LAYERS)
+      : 0;
+    const evicted = order.slice(0, excess);
+    rasterOrderRef.current = order.slice(excess);
+
     setEnvLayers((previous) => {
       const next = new Set(previous);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
+      next.add(key);
+      for (const retired of evicted) next.delete(retired);
       return next;
     });
-  }, [hasAccess]);
+
+    if (evicted.length > 0) {
+      const names = evicted.map((retired) => layerDef(retired)?.label ?? retired).join(", ");
+      toast(`Máximo ${MAX_RASTER_LAYERS} capas de teselas a la vez`, {
+        description: `He apagado ${names}: cada capa ráster ocupa su propia caché de texturas y con más el globo pierde el contexto WebGL.`,
+      });
+    }
+  }, [envLayers, hasAccess]);
 
   const handleNavigate = useCallback((lat: number, lng: number, altitude: number) => {
     globeNavRef.current?.(lat, lng, altitude);
@@ -141,7 +194,8 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const legend = (onClose?: () => void, collapsed = true) => (
     <LegendPanel visibleLayers={visibleLayers} onToggleLayer={toggleLayer} counts={intel.counts}
       envLayers={envLayers} onToggleEnvLayer={toggleEnvLayer} tier={tier} hasAccess={hasAccess}
-      onClose={onClose} defaultCollapsed={collapsed} layerStatus={intel.layerStatus} />
+      onClose={onClose} defaultCollapsed={collapsed} layerStatus={intel.layerStatus}
+      viewScale={viewScale} />
   );
 
   const activeSignals = intel.earthquakes.length + intel.nasaEvents.length + allFlights.length + ships.length + intel.gdeltEvents.length;
