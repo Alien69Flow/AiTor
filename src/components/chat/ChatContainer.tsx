@@ -14,7 +14,7 @@ export function ChatContainer() {
   const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [workspace, setWorkspace] = useState<"chat" | "neural">("chat");
-  const { messages, isLoading, sendMessage, clearChat } = useChat();
+  const { messages, isLoading, error, sendMessage, clearChat } = useChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -61,7 +61,7 @@ export function ChatContainer() {
         onWorkspaceChange={setWorkspace}
       />
 
-      {workspace === "neural" ? <DaoCity messages={messages} isLoading={isLoading} onSend={(prompt) => sendMessage(prompt, selectedModel)} onChat={() => setWorkspace("chat")} /> : <>
+      {workspace === "neural" ? <DaoCity messages={messages} isLoading={isLoading} error={error} onSend={(prompt) => sendMessage(prompt, selectedModel)} onChat={() => setWorkspace("chat")} /> : <>
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         {messages.length === 0 ? (
           <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />
@@ -76,6 +76,7 @@ export function ChatContainer() {
       </ScrollArea>
 
       <div className="border-t border-border bg-background/80 backdrop-blur-sm">
+        {error && <p role="alert" className="px-4 pt-2 text-xs text-destructive">{error}</p>}
         <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />
       </div>
       </>}

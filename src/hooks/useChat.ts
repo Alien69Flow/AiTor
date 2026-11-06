@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { readChatHistory, chatRequestError } from "@/lib/chat-state";
 
 export interface Message {
   id: string;
@@ -44,27 +45,20 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        return parsed.map((m: any) => ({ ...m, timestamp: new Date(m.timestamp) }));
-      } catch {
-        return [];
-      }
-    }
-    return [];
+    try { return readChatHistory(sessionStorage, STORAGE_KEY); } catch { return []; }
   });
 
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(messages)); } catch { /* Storage can be unavailable or full; chat remains usable. */ }
   }, [messages]);
 
   const sendMessage = useCallback(
     async (content: string, model: string, imageData?: string) => {
       if (!content.trim()) return;
+      setError(null);
 
       const userMessage: Message = {
         id: crypto.randomUUID(),
@@ -79,7 +73,7 @@ export function useChat() {
       setIsLoading(true);
       // Persist pending so we can recover if the page reloads mid-request
       try {
-        localStorage.setItem(
+        sessionStorage.setItem(
           PENDING_KEY,
           JSON.stringify({ content, model, imageData, ts: Date.now() })
         );
@@ -137,7 +131,7 @@ export function useChat() {
             const { data: sessionData } = await supabase.auth.getSession();
             const bearer =
               sessionData?.session?.access_token ||
-              SUPABASE_KEY ||
+              (SUPABASE_KEY.startsWith("eyJ") ? SUPABASE_KEY : FALLBACK_ANON) ||
               FALLBACK_ANON;
 
             const resp = await fetch(CHAT_URL, {
@@ -161,11 +155,13 @@ export function useChat() {
 
             // 429/402 = no retry, surface immediately
             if (resp.status === 429) {
-              toast.error("Límite de peticiones alcanzado. Intenta de nuevo en unos segundos.");
+              setError(chatRequestError(resp.status));
+              toast.error(chatRequestError(resp.status));
               return null;
             }
             if (resp.status === 402) {
-              toast.error("Créditos agotados. Añade saldo en tu workspace.");
+              setError(chatRequestError(resp.status));
+              toast.error(chatRequestError(resp.status));
               return null;
             }
             // 5xx / 503 (paused backend) → retry with backoff
@@ -175,7 +171,8 @@ export function useChat() {
                 await sleep(1500 * (attempt + 1));
                 continue;
               }
-              toast.error("Error al conectar con el oráculo");
+              setError(chatRequestError(resp.status));
+              toast.error(chatRequestError(resp.status));
               return null;
             }
             dismissWaiting();
@@ -236,14 +233,16 @@ export function useChat() {
         }
 
         if (!assistantStarted) {
+          setError("No se recibió una respuesta. Puedes volver a intentarlo.");
           toast.error("Sin respuesta del oráculo");
         }
-      } catch (error: any) {
-        console.warn("Chat error after retries:", error?.message);
+      } catch (requestError: unknown) {
+        console.warn("Chat error after retries:", requestError instanceof Error ? requestError.message : "Unknown error");
+        setError(chatRequestError(502));
         toast.error("Oráculo en espera — backend pausado. Reintenta en unos segundos.");
       } finally {
         dismissWaiting();
-        try { localStorage.removeItem(PENDING_KEY); } catch {}
+        try { sessionStorage.removeItem(PENDING_KEY); } catch {}
         setIsLoading(false);
       }
     },
@@ -252,13 +251,15 @@ export function useChat() {
 
   const clearChat = useCallback(() => {
     setMessages([]);
-    localStorage.removeItem(STORAGE_KEY);
+    setError(null);
+    try { sessionStorage.removeItem(STORAGE_KEY); sessionStorage.removeItem(PENDING_KEY); } catch {}
     toast.success("Chat limpiado");
   }, []);
 
   return {
     messages,
     isLoading,
+    error,
     sendMessage,
     clearChat,
   };

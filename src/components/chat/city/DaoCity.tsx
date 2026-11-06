@@ -6,9 +6,9 @@ import type { Message } from "@/hooks/useChat";
 import ReactMarkdown from "react-markdown";
 
 const CityScene = lazy(() => import("./CityScene"));
-interface DaoCityProps { messages: Message[]; isLoading: boolean; onSend: (prompt: string) => Promise<void>; onChat: () => void }
+interface DaoCityProps { messages: Message[]; isLoading: boolean; error: string | null; onSend: (prompt: string) => Promise<void>; onChat: () => void }
 
-export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
+export function DaoCity({ messages, isLoading, error, onSend, onChat }: DaoCityProps) {
   const [selected, setSelected] = useState("nexus");
   const [moving, setMoving] = useState(() => !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [reset, setReset] = useState(0);
@@ -24,7 +24,9 @@ export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
     if (!objective.trim() || busy.current || isLoading) return;
     busy.current = true;
     setMission({ baseline: messages.length, agent: district.agent });
-    try { await onSend(district.prompt + objective.trim()); } finally { busy.current = false; }
+    try { await onSend(district.prompt + objective.trim()); }
+    catch { /* The chat hook reports request failures; keep the city mounted. */ }
+    finally { busy.current = false; }
   };
 
   return <section className="dao-city relative flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground" aria-label="AlienFlow.Space DAO City">
@@ -60,6 +62,7 @@ export function DaoCity({ messages, isLoading, onSend, onChat }: DaoCityProps) {
             <textarea id="city-objective" value={objective} onChange={e => setObjective(e.target.value)} maxLength={6000} rows={3} placeholder={district.id === "academy" ? "Especialidad y conocimientos a evaluar…" : "¿Qué necesita la DAO?"} className="mt-2 w-full resize-none rounded-sm border border-border bg-card/60 p-2 text-xs leading-5 text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
             <Button type="submit" disabled={!objective.trim() || isLoading} className="mt-2 h-8 w-full text-xs">{isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}{district.action}</Button>
           </form>
+          {error && <p role="alert" className="mt-3 text-xs text-destructive">{error}</p>}
           {mission && <div className="mt-4 border-t border-border pt-3" aria-live="polite">
             <div className="mb-2 flex items-center justify-between font-mono text-[9px]"><span>{mission.agent} / AI Tor</span><span className="text-secondary">{isLoading ? "PROCESANDO" : response?.content ? "RESULTADO" : "SIN RESPUESTA"}</span></div>
             {response?.content ? <div className="space-y-2 break-words text-xs leading-5 text-foreground [&_p]:mb-2 [&_ul]:list-inside [&_ul]:list-disc [&_pre]:overflow-x-auto"><ReactMarkdown>{response.content}</ReactMarkdown></div> : <p className="text-xs text-muted-foreground">{isLoading ? "AI Tor está preparando el entregable…" : "No se recibió un resultado. Puedes volver a intentarlo."}</p>}
