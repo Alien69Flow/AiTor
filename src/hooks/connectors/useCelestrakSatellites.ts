@@ -71,7 +71,7 @@ async function loadRecords(signal: AbortSignal, max: number): Promise<Rec[]> {
       if (!tle) continue;
       try {
         const satrec = satellite.twoline2satrec(tle[0], tle[1]);
-        if (satrec && !(satrec as any).error) {
+        if (satrec && !(satrec as { error?: number }).error) {
           out.push({ name: o.OBJECT_NAME ?? `NORAD ${o.NORAD_CAT_ID}`, satrec });
         }
       } catch {

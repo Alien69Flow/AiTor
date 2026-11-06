@@ -34,8 +34,16 @@ export function useSpaceWeather(intervalMs = 120_000) {
       if (kpRes.ok) {
         const raw = await kpRes.json();
         if (Array.isArray(raw) && raw.length > 1) {
+          // NOAA devuelve objetos `{ time_tag, Kp, ... }`. Antes se leía
+          // `latest[1]`, que en esa forma es `undefined`: el Kp valía siempre 0
+          // y la barra nunca podía avisar de actividad geomagnética. Se aceptan
+          // también las filas en array por si el producto cambia de formato.
           const latest = raw[raw.length - 1];
-          kpIndex = parseFloat(latest[1]) || 0;
+          const value = Array.isArray(latest)
+            ? latest[1]
+            : (latest as { Kp?: unknown } | null)?.Kp;
+          const kp = typeof value === "number" ? value : Number(value);
+          kpIndex = Number.isFinite(kp) ? kp : 0;
         }
       }
 

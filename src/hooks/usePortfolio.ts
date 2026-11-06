@@ -11,6 +11,15 @@ export interface PortfolioAsset {
   image?: string;
 }
 
+/** Row of the CoinGecko markets list used to price the portfolio. */
+interface CoinMarketRow {
+  id?: string;
+  symbol?: string;
+  name?: string;
+  current_price?: number;
+  image?: string;
+}
+
 export interface PortfolioAssetWithPrice extends PortfolioAsset {
   currentPrice: number;
   value: number;
@@ -43,9 +52,9 @@ export function usePortfolio() {
         body: { action: "movers" },
       });
       if (error) throw error;
-      const coins = data?.coins || [];
+      const coins: CoinMarketRow[] = data?.coins || [];
       const map: Record<string, { price: number; image: string; name: string }> = {};
-      coins.forEach((c: any) => {
+      coins.forEach((c) => {
         map[c.id] = { price: c.current_price, image: c.image, name: c.name };
         map[c.symbol] = { price: c.current_price, image: c.image, name: c.name };
       });

@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import BBOXES from "@/integrations/worldmonitor/shared/country-bboxes.json";
+import {
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY as KEY,
+} from "@/integrations/supabase/client";
 
 export interface OutageEvent {
   code: string;
@@ -10,13 +14,13 @@ export interface OutageEvent {
   lon: number;
 }
 
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-const KEY =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  "";
+/** Raw row of the `globe-feeds?feed=outages` edge function. */
+interface RawOutage {
+  code?: string;
+  name?: string;
+  events?: number;
+  score?: number;
+}
 
 function centroid(code: string): [number, number] | null {
   const box = (BBOXES as Record<string, number[]>)[code];
@@ -35,12 +39,12 @@ export function useInternetOutages(enabled = true) {
         headers: { apikey: KEY, Authorization: `Bearer ${KEY}` },
       });
       const json = await res.json();
-      const mapped: OutageEvent[] = (json?.outages ?? [])
-        .map((o: any) => {
-          const c = centroid(o.code);
-          return c ? { ...o, lat: c[0], lon: c[1] } : null;
+      const mapped = ((json?.outages ?? []) as RawOutage[])
+        .map((o) => {
+          const c = o.code ? centroid(o.code) : null;
+          return c ? ({ ...o, lat: c[0], lon: c[1] } as OutageEvent) : null;
         })
-        .filter(Boolean);
+        .filter((o): o is OutageEvent => o !== null);
       setOutages(mapped);
       setError(json?.error ?? null);
     } catch (err) {

@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/hooks/useChat";
-import { User, Copy, Check, Cpu } from "lucide-react";
+import { User, Copy, Check, Cpu, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 
@@ -51,6 +51,29 @@ export function ChatMessage({ message }: ChatMessageProps) {
               {formatTime(message.timestamp)}
             </span>
           </div>
+
+          {/* What this turn consulted. A failed source stays visible in amber:
+              a silent gap is how a broken integration looks like a thoughtful
+              answer. */}
+          {isUser && message.skills && message.skills.length > 0 && (
+            <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Fuentes consultadas">
+              {message.skills.map((skill) => (
+                <span
+                  key={skill.label}
+                  title={skill.ok ? "Datos consultados en este turno" : `Sin datos: ${skill.error ?? "fuente no disponible"}`}
+                  className={cn(
+                    "flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider",
+                    skill.ok
+                      ? "border-secondary/40 bg-secondary/10 text-secondary"
+                      : "border-accent/50 bg-accent/10 text-accent",
+                  )}
+                >
+                  {skill.ok ? <Check className="h-2.5 w-2.5" /> : <AlertTriangle className="h-2.5 w-2.5" />}
+                  {skill.label}
+                </span>
+              ))}
+            </div>
+          )}
 
           {message.imageData && (
             <div className="mb-3 overflow-hidden rounded-lg border border-border max-w-xs">

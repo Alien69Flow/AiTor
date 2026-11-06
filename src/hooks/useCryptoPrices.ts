@@ -7,6 +7,12 @@ export interface CryptoPrice {
   change24h: number;
 }
 
+/** Quote block of the CoinGecko simple/price response. */
+interface CoinGeckoQuote {
+  usd?: number;
+  usd_24h_change?: number;
+}
+
 const COIN_IDS = [
   "bitcoin", "ethereum", "binancecoin", "solana", "ripple", "cardano",
   "avalanche-2", "chainlink", "polkadot", "dogecoin", "the-open-network",
@@ -55,7 +61,7 @@ export function useCryptoPrices(intervalMs = 60_000) {
       const res = await fetch(COINGECKO_URL);
       if (!res.ok) throw new Error("CoinGecko fetch failed");
       const json = await res.json();
-      const parsed: CryptoPrice[] = Object.entries(json).map(([id, data]: [string, any]) => ({
+      const parsed: CryptoPrice[] = Object.entries(json).map(([id, data]: [string, CoinGeckoQuote]) => ({
         id,
         symbol: SYMBOLS[id] || id.toUpperCase(),
         price: data.usd || 0,

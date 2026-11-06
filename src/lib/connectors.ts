@@ -61,14 +61,18 @@ export async function safeFetchText(
   }
 }
 
+/** `requestIdleCallback` is still missing from some Safari builds. */
+type IdleCapableWindow = Window & {
+  requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+  cancelIdleCallback?: (handle: number) => void;
+};
+
 /** Runs `cb` when the browser is idle (falls back to a macrotask). */
 function whenIdle(cb: () => void): () => void {
-  const ric = (window as any).requestIdleCallback as
-    | ((c: () => void, o?: { timeout: number }) => number)
-    | undefined;
-  if (ric) {
-    const id = ric(cb, { timeout: 2000 });
-    return () => (window as any).cancelIdleCallback?.(id);
+  const idleWindow = window as IdleCapableWindow;
+  if (idleWindow.requestIdleCallback) {
+    const id = idleWindow.requestIdleCallback(cb, { timeout: 2000 });
+    return () => idleWindow.cancelIdleCallback?.(id);
   }
   const id = window.setTimeout(cb, 0);
   return () => clearTimeout(id);

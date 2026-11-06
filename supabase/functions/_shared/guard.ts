@@ -3,12 +3,15 @@
 // public), so abuse is contained with an origin allowlist + per-IP rate limit
 // instead of a JWT requirement.
 
-const ALLOWED_ORIGIN_SUFFIXES = [
-  "aitor.lovable.app",
+// Only origins this project actually serves. The Lovable editor/preview hosts
+// were removed with the rest of that integration: leaving them here would let
+// any `*.lovable.app` preview spend the paid upstream quota.
+// A leading dot means "this domain and its subdomains"; without it the entry
+// matches only that exact host, so `notalienflow.space` cannot sneak in.
+const ALLOWED_ORIGINS = [
   "aitor.alienflow.space",
   "alienflow.space",
-  ".lovable.app",
-  ".lovableproject.com",
+  ".alienflow.space",
   "localhost",
   "127.0.0.1",
 ];
@@ -22,8 +25,8 @@ export function isAllowedOrigin(req: Request): boolean {
   } catch {
     return false;
   }
-  return ALLOWED_ORIGIN_SUFFIXES.some(
-    (s) => host === s || host.endsWith(s),
+  return ALLOWED_ORIGINS.some((allowed) =>
+    allowed.startsWith(".") ? host.endsWith(allowed) : host === allowed,
   );
 }
 

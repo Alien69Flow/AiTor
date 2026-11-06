@@ -1,11 +1,8 @@
 import { useState, useEffect } from "react";
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
-const SUPABASE_KEY =
-  (import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (import.meta.env.VITE_SUPABASE_ANON_KEY as string) ||
-  "";
+import {
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY as SUPABASE_KEY,
+} from "@/integrations/supabase/client";
 
 interface Diagnostics {
   owmKeyConfigured: boolean | null;

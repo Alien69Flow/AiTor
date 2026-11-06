@@ -9,8 +9,14 @@ import { useAurora } from "./connectors/useAurora";
 import { useSubmarineCables } from "./connectors/useSubmarineCables";
 import { useBitcoinNodes } from "./connectors/useBitcoinNodes";
 import { useGdeltEvents } from "./connectors/useGdeltEvents";
+import { useConflictEvents } from "./connectors/useConflictEvents";
 import { useAdsbTraffic } from "./connectors/useAdsbTraffic";
 import { useCelestrakSatellites } from "./connectors/useCelestrakSatellites";
+import { useIssPosition } from "./connectors/useIssPosition";
+import { useIonosphere } from "./connectors/useIonosphere";
+import { useVanAllenBelts } from "./connectors/useVanAllenBelts";
+import { useSolarWind } from "./connectors/useSolarWind";
+import { useEnvironmentGrid } from "./connectors/useEnvironmentGrid";
 import { toStatus, type LayerStatus } from "@/lib/connectors";
 import type { EnvLayerKey } from "@/lib/globe-layers";
 import type { Earthquake } from "./useEarthquakes";
@@ -31,10 +37,19 @@ export type ConnectorKey =
   | "fires"
   | "aurora"
   | "satellites"
+  | "iss"
+  | "ionosphere"
+  | "vanAllen"
+  | "heliosphere"
   | "cables"
   | "bitcoinNodes"
   | "gdelt"
+  | "conflicts"
   | "aviation"
+  | "drying"
+  | "pollen"
+  | "sea"
+  | "snow"
   | "osint";
 
 export type LayerStatusMap = Record<ConnectorKey, LayerStatus>;
@@ -56,14 +71,57 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
   // --- 1. Weather & atmosphere -------------------------------------------
   const rain = useRainViewer(on("precipitation"));
   const surface = useSurfaceWeather(on("wind") || on("isobars") || on("temperature") || on("humidity"));
+  // Secado, polen, mar y nieve comparten rejilla y petición batida: se piden
+  // juntos si cualquiera de las cuatro capas está encendida.
+  const environment = useEnvironmentGrid({
+    drying: on("dryingIndex"),
+    pollen: on("pollen"),
+    sea: on("seaState"),
+    snow: on("snowDepth"),
+  });
 
   // --- 2. Seismic & emergencies ------------------------------------------
   const emsc = useEmscQuakes(activeLayers ? on("earthquakes") : true);
   const fires = useFirmsFires(on("wildfires"), "ESP");
 
+  /**
+   * FIRMS exige una clave de mapa que este proyecto no tiene configurada, así
+   * que su feed llega vacío con la nota "FIRMS map key not configured" y la capa
+   * de incendios se quedaba en blanco aunque el resto del globo estuviera vivo.
+   * EONET —que ya se pide para los eventos de NASA y es abierto— publica los
+   * mismos incendios activos CON coordenadas, así que sirve de respaldo: se
+   * prefieren las detecciones de FIRMS cuando existen y, si no, se usan las de
+   * EONET, diciendo en cada punto de dónde viene.
+   */
+  const fireDetections = useMemo(() => {
+    if (fires.data.length > 0) return fires.data;
+    return realtime.nasaEvents
+      .filter((event) => event.category === "Wildfires" && Number.isFinite(event.lat) && Number.isFinite(event.lon))
+      .map((event) => ({
+        id: `eonet-${event.id}`,
+        lat: event.lat,
+        lon: event.lon,
+        brightness: 0,
+        confidence: "EONET · incendio activo",
+        acquired: event.date,
+        satellite: "EONET",
+        source: "NASA EONET",
+      }));
+  }, [fires.data, realtime.nasaEvents]);
+
   // --- 3. Space & satellites ---------------------------------------------
-  const aurora = useAurora(on("solarActivity"));
+  // El óvalo auroral es la huella ionosférica de la magnetosfera: la misma
+  // malla de OVATION sirve a las dos capas, así que se pide si cualquiera de
+  // las dos está encendida (antes sólo respondía al Kp de `solarActivity`).
+  const aurora = useAurora(on("solarActivity") || on("magnetosphere"));
   const sats = useCelestrakSatellites(on("satellites"));
+  const iss = useIssPosition(on("iss"));
+  const iono = useIonosphere(on("ionosphere"));
+  // Van Allen y heliosfera comparten un mismo motivo: lo que rodea a la Tierra
+  // se mide desde dentro (GOES, en el cinturón exterior) o desde L1 (el viento
+  // solar que infla la burbuja), no desde una órbita dedicada.
+  const belts = useVanAllenBelts(on("vanAllen"));
+  const solarWind = useSolarWind(on("heliosphere"));
 
   // --- 4. Infrastructure & blockchain ------------------------------------
   const cables = useSubmarineCables(on("underseaCables"));
@@ -71,6 +129,9 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
 
   // --- 5. OSINT & aviation -----------------------------------------------
   const gdelt = useGdeltEvents(on("conflictZones") || on("internetOutages"));
+  // Sucesos de violencia de las últimas 48 h, aparte del feed OSINT general:
+  // lo que la capa «Conflict Zones» pinta encima de las zonas curadas.
+  const conflicts = useConflictEvents(on("conflictZones"));
   const aviation = useAdsbTraffic(on("airTraffic"), 15_000);
 
   /** USGS (global) merged with EMSC (Europe / Iberia), de-duplicated by proximity. */
@@ -93,7 +154,12 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       rainRadar: toStatus(rain, rain.data.frames.length),
       surfaceWeather: toStatus(surface, surface.data.length),
       quakesEmsc: toStatus(emsc, emsc.data.length),
-      fires: toStatus(fires, fires.data.length),
+      fires: {
+        loading: fires.loading,
+        error: fires.error,
+        lastUpdate: fires.lastUpdate,
+        count: fireDetections.length,
+      },
       aurora: toStatus(aurora, aurora.data.cells.length),
       satellites: {
         loading: sats.loading,
@@ -101,10 +167,29 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         lastUpdate: null,
         count: sats.positions.length,
       },
+      iss: {
+        loading: iss.loading,
+        error: iss.error,
+        lastUpdate: iss.lastUpdate,
+        count: Number.isFinite(iss.data.lat) ? 1 : 0,
+      },
+      ionosphere: toStatus(iono, iono.data.points.length),
+      vanAllen: {
+        loading: belts.loading,
+        error: belts.error,
+        lastUpdate: belts.lastUpdate,
+        count: belts.data.measuredAt ? 1 : 0,
+      },
+      heliosphere: toStatus(solarWind, solarWind.data.measuredAt ? 1 : 0),
       cables: toStatus(cables, cables.data.length),
       bitcoinNodes: toStatus(btcNodes, btcNodes.data.length),
       gdelt: toStatus(gdelt, gdelt.data.length),
+      conflicts: toStatus(conflicts, conflicts.data.length),
       aviation: toStatus(aviation, aviation.data.length),
+      drying: toStatus(environment, environment.data.drying.length),
+      pollen: toStatus(environment, environment.data.pollen.length),
+      sea: toStatus(environment, environment.data.sea.length),
+      snow: toStatus(environment, environment.data.snow.length),
       osint: {
         loading: osint.isLoading,
         error: osint.error,
@@ -112,7 +197,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
         count: osint.events.length,
       },
     }),
-    [rain, surface, emsc, fires, aurora, sats, cables, btcNodes, gdelt, aviation, osint],
+    [rain, surface, emsc, fires, fireDetections, aurora, sats, iss, iono, belts, solarWind, cables, btcNodes, gdelt, conflicts, aviation, environment, osint],
   );
 
   // Correlate OSINT critical events with crypto volatility (>5% 24h)
@@ -167,7 +252,7 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
       }
     });
 
-    realtime.sightings.slice(0, 60).forEach((s: any) => {
+    realtime.sightings.slice(0, 60).forEach((s) => {
       if (typeof s.lat === "number" && typeof s.lon === "number") {
         markers.push({
           lat: s.lat,
@@ -245,13 +330,19 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     rainTileUrl: rain.tileUrl,
     rainFrame: rain.latestFrame,
     surfaceWeather: surface.data,
-    fires: fires.data,
+    fires: fireDetections,
     auroraMesh: aurora.data,
     satellites: sats.positions,
+    iss: iss.data,
+    ionosphere: iono.data,
+    vanAllen: belts.data,
+    solarWind: solarWind.data,
     cables: cables.data,
     bitcoinNodes: btcNodes.data,
     gdeltEvents: gdelt.data,
+    conflictEvents: conflicts.data,
     aviation: aviation.data,
+    environment: environment.data,
     // OSINT
     osint: osint.events,
     osintLoading: osint.isLoading,

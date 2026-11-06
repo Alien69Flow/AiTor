@@ -3,17 +3,14 @@
  * Agente especializado en auditoría de seguridad del repositorio
  */
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { createGeminiModel } from "./llm";
 import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-pro",
-  temperature: 0.3,
-});
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.3 });
 
 export type SecurityLevel = 'critical' | 'high' | 'medium' | 'low' | 'info';
 
@@ -81,6 +78,24 @@ Analiza y responde en formato JSON:
 }
 `);
 
+/** `npm audit --json`: severidad con su recuento y desglose por paquete. */
+interface NpmAuditSeverity {
+  count?: number;
+  byDependency?: Record<string, NpmAuditDependency>;
+}
+
+/** Dependencia dentro de un bloque de severidad de `npm audit`. */
+interface NpmAuditDependency {
+  vulns?: string[];
+}
+
+/** Entrada de `npm outdated --json`. */
+interface NpmOutdatedPackage {
+  current?: string;
+  latest?: string;
+  wanted?: string;
+}
+
 export class SecurityAgent {
   private static repositoryPath = '/workspace/project/AiTor';
 
@@ -143,11 +158,11 @@ export class SecurityAgent {
         summary += `- Total vulnerabilities: ${parsed.metadata?.vulnerabilities?.total || 0}\n`;
         
         for (const [severity, data] of Object.entries(vulnerabilities)) {
-          const v = data as any;
+          const v = data as NpmAuditSeverity;
           summary += `- ${severity}: ${v.count || 0}\n`;
           if (v.byDependency) {
             for (const [dep, issues] of Object.entries(v.byDependency)) {
-              const issuesData = issues as any;
+              const issuesData = issues as NpmAuditDependency;
               summary += `  - ${dep}: ${issuesData.vulns?.length || 0} issues\n`;
             }
           }
@@ -179,7 +194,7 @@ export class SecurityAgent {
         let summary = 'Dependencies outdated:\n';
         
         for (const [pkg, data] of Object.entries(outdated)) {
-          const d = data as any;
+          const d = data as NpmOutdatedPackage;
           summary += `- ${pkg}: ${d.current} -> ${d.latest} (wanted: ${d.wanted})\n`;
         }
         
@@ -250,7 +265,7 @@ export class SecurityAgent {
    */
   private static async generateReport(scanResults: string): Promise<SecurityReport> {
     try {
-      const chain = securityPrompt.pipe(llm);
+      const chain = securityPrompt.pipe(getLlm());
       const response = await chain.invoke({ scanResults });
       
       const content = response.content.toString();

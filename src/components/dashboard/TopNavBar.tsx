@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Bot, Radio, Orbit, Globe, BarChart3, Settings, LogOut, LogIn, Crown } from "lucide-react";
+import { Bot, Radio, Orbit, Globe, BarChart3, Settings, LogOut, LogIn, Crown, Search } from "lucide-react";
 import { ConnectWalletButton } from "@/components/web3/ConnectWalletButton";
 import { PricingModal } from "./PricingModal";
 import { useTier } from "@/hooks/useTier";
@@ -22,9 +22,11 @@ const SECTIONS: { id: TabId; label: string; icon: typeof Bot }[] = [
 interface TopNavBarProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  /** Opens the ⌘K palette. */
+  onOpenPalette?: () => void;
 }
 
-export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
+export function TopNavBar({ activeTab, onTabChange, onOpenPalette }: TopNavBarProps) {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
 
@@ -48,14 +50,15 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
         </div>
 
         {/* Center: 6 section tabs (desktop only) */}
-        <nav className="hidden md:flex items-center gap-0.5">
+        <nav aria-label="Secciones del terminal" className="hidden md:flex items-center gap-0.5">
           {SECTIONS.map((section) => {
             const isActive = activeTab === section.id;
             return (
               <button
                 key={section.id}
                 onClick={() => onTabChange(section.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-heading tracking-wider uppercase transition-all duration-200 ${
+                aria-current={isActive ? "page" : undefined}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-heading tracking-wider uppercase transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
                   isActive
                     ? "bg-primary/15 text-primary shadow-[0_0_8px_hsl(var(--primary)/0.2)]"
                     : "text-muted-foreground/60 hover:text-foreground hover:bg-muted/30"
@@ -70,6 +73,19 @@ export function TopNavBar({ activeTab, onTabChange }: TopNavBarProps) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {onOpenPalette && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenPalette}
+              aria-label="Abrir la paleta de comandos"
+              title="Paleta de comandos (Ctrl/⌘ + K)"
+              className="hidden h-7 items-center gap-1.5 border-border/50 px-2 font-mono text-[9px] text-muted-foreground/70 hover:text-primary sm:flex"
+            >
+              <Search className="h-3 w-3" />
+              <kbd className="rounded border border-border/60 px-1 text-[8px]">⌘K</kbd>
+            </Button>
+          )}
           <Button
             variant="outline"
             size="sm"

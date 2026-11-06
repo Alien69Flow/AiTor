@@ -3,13 +3,26 @@ import { lazyWithRetry } from "@/lib/lazy-retry";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { type UnifiedHotspotData } from "./GlobeScene";
 import type { EnvLayerKey } from "@/lib/globe-layers";
+import type { ViewScale } from "./GlobeScaleHud";
 import type { Earthquake } from "@/hooks/useEarthquakes";
+import type { SurfaceWeatherPoint } from "@/hooks/connectors/useSurfaceWeather";
+import type { SubmarineCable } from "@/hooks/connectors/useSubmarineCables";
+import type { BitcoinNode } from "@/hooks/connectors/useBitcoinNodes";
+import type { GdeltEvent } from "@/hooks/connectors/useGdeltEvents";
+import type { ConflictEvent } from "@/lib/conflict-events";
+import type { FireDetection } from "@/hooks/connectors/useFirmsFires";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { UAPSighting } from "@/hooks/useUAPSightings";
 import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
 import { useSatellites } from "@/hooks/useSatellites";
 import { useInternetOutages } from "@/hooks/useInternetOutages";
+import type { IssPosition } from "@/hooks/connectors/useIssPosition";
+import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
+import type { PlacedCamera } from "@/lib/live-camera-places";
+import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
+import type { SolarWind } from "@/hooks/connectors/useSolarWind";
+import type { EnvironmentGrid } from "@/hooks/connectors/useEnvironmentGrid";
 
 const CesiumGlobe = lazyWithRetry(() =>
   import("./CesiumGlobe").then((m) => ({ default: m.CesiumGlobe }))
@@ -18,6 +31,12 @@ const CesiumGlobe = lazyWithRetry(() =>
 export interface HybridGlobeProps {
   layers: Set<EnvLayerKey>;
   onHotspotClick?: (d: UnifiedHotspotData | null) => void;
+  /** Camera pulled out past the globe → hand over to the cosmic zoom. */
+  onZoomFar?: (altitudeMetres: number) => void;
+  /** Escala real de la vista, para la barra de escala y la pista de zoom. */
+  onViewScale?: (scale: ViewScale | null) => void;
+  /** Botones de acercar/alejar de la barra de escala. */
+  onZoomControls?: (controls: { zoomIn: () => void; zoomOut: () => void } | null) => void;
   onReady?: (navigateFn: (lat: number, lng: number, altitude: number) => void) => void;
   externalMarkers?: UnifiedHotspotData[];
   kpIndex?: number;
@@ -28,12 +47,20 @@ export interface HybridGlobeProps {
   ships?: Ship[];
   satellites?: { id: string; name: string; lat: number; lon: number; altKm: number }[];
   rainTileUrl?: string | null;
-  surfaceWeather?: any[];
-  fires?: any[];
+  surfaceWeather?: SurfaceWeatherPoint[];
+  fires?: FireDetection[];
   auroraCells?: { lat: number; lon: number; probability: number }[];
-  cables?: any[];
-  bitcoinNodes?: any[];
-  gdeltEvents?: any[];
+  cables?: SubmarineCable[];
+  bitcoinNodes?: BitcoinNode[];
+  gdeltEvents?: GdeltEvent[];
+  /** Sucesos de violencia de las últimas 48 h (GDELT). */
+  conflictEvents?: ConflictEvent[];
+  iss?: IssPosition | null;
+  ionosphere?: IonosphereMesh | null;
+  vanAllen?: VanAllenBelts | null;
+  solarWind?: SolarWind | null;
+  cameras?: PlacedCamera[];
+  environment?: EnvironmentGrid | null;
 }
 
 function GlobeFallback() {
@@ -49,6 +76,9 @@ function GlobeFallback() {
 export function HybridGlobe({
   layers,
   onHotspotClick,
+  onZoomFar,
+  onViewScale,
+  onZoomControls,
   onReady,
   externalMarkers,
   kpIndex = 0,
@@ -65,6 +95,13 @@ export function HybridGlobe({
   cables = [],
   bitcoinNodes = [],
   gdeltEvents = [],
+  conflictEvents = [],
+  iss = null,
+  ionosphere = null,
+  vanAllen = null,
+  solarWind = null,
+  cameras = [],
+  environment = null,
 }: HybridGlobeProps) {
   const isMobile = useIsMobile();
   const [flyTo, setFlyTo] = useState<{ lat: number; lon: number; alt: number } | null>(null);
@@ -91,7 +128,10 @@ export function HybridGlobe({
       <Suspense fallback={<GlobeFallback />}>
         <CesiumGlobe
           envLayers={layers}
-          onHotspotClick={onHotspotClick as any}
+          onHotspotClick={onHotspotClick}
+          onZoomFar={onZoomFar}
+          onViewScale={onViewScale}
+          onZoomControls={onZoomControls}
           sightings={sightings}
           flyTo={flyTo}
           kpIndex={layers.has("solarActivity") ? kpIndex : 0}
@@ -108,6 +148,13 @@ export function HybridGlobe({
           cables={cables}
           bitcoinNodes={bitcoinNodes}
           gdeltEvents={gdeltEvents}
+          conflictEvents={layers.has("conflictZones") ? conflictEvents : []}
+          iss={layers.has("iss") ? iss : null}
+          ionosphere={layers.has("ionosphere") ? ionosphere : null}
+          vanAllen={layers.has("vanAllen") ? vanAllen : null}
+          solarWind={layers.has("heliosphere") ? solarWind : null}
+          cameras={cameras}
+          environment={environment}
         />
       </Suspense>
     </div>

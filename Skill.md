@@ -27,14 +27,14 @@ Cuando el usuario activa herramientas desde la interfaz `SYS_OS // v69`, respond
 - **Frecuencias:** Diario (8 AM UTC), Semanal (Lunes 9 AM UTC)
 - **Integración:** GitHub Issues para vulnerabilidades críticas
 
-## Capas Activas en el Globe Tactical (v.69.2)
-- **Atmósfera (OpenWeather):** clouds / temp / precip / wind muestreados en grid de 7×7 alrededor de Zaragoza. Key servida vía edge function `openweather` (proxy seguro, cap 60 req/min, sin exposición cliente).
-- **Nubes en tiempo real (NASA GIBS):** textura MODIS Aqua/Terra envolviendo el globo, con fallback estático si CORS falla.
-- **Eventos NASA EONET:** incendios MODIS, tormentas, volcanes, hielo marino — inyectados como `externalMarkers`.
-- **Sismos (USGS):** feed continuo de magnitudes ≥ 2.5 últimas 24h.
-- **Tráfico aéreo (OpenSky):** estados ADS-B en vivo (lat/lon/alt/velocidad), bbox EU+MENA, hasta 80 vuelos.
-- **Clima espacial (NOAA):** Kp index → atmósfera magenta/cyan, anillos aurorales, cinturones de Van Allen.
-- **Mercados predictivos (Polymarket Gamma):** sin auth, con referido DAO.
+## Capas Activas en el Globe Tactical (v.69.3)
+- **Atmósfera (OpenWeather vía proxy `openweather`):** clouds / temp / precip / pressure / wind como tiles raster (key server-side, cap 900 s de caché).
+- **Observación terrestre (NASA GIBS, sin key):** true color MODIS Terra (nivel 9, ~ayer), aerosoles AOD 3km, polvo AIRS, SST GHRSST MUR25 (offset 60 h), UV CERES (climatología), luces nocturnas VIIRS Black Marble y radiance DNB para la capa Solar. Cada capa declara su TileMatrixSet y ventana TEMPORAL en `globe-layers.ts` (`gibs: {...}`) — el nivel equivocado responde `TILEMATRIXSET is invalid`.
+- **Día/noche:** terminador real vía `globe.enableLighting` (capa `dayNight`, activada por defecto).
+- **Sismos (USGS + EMSC):** merge deduplicado, magnitudes ≥ 2.5, anillos pulsantes.
+- **Incendios (NASA FIRMS):** puntos NRT (España) — el raster GIBS de anomalías térmicas pasó a vector tiles (MVT) y ya no sirve PNG, así que se retiró el overlay raster.
+- **Tráfico aéreo (OpenSky/adsb.lol), clima espacial (NOAA Kp → aurora), mercados predictivos (Polymarket).**
+- **Robustez:** los ejes de las elipses pulsantes (sismos/aurora) comparten pulso acotado — antes una carrera entre callbacks congelaba todo el globo (`semiMajorAxis must be >= semiMinorAxis`).
 
 ## Habilidades Multimodales (v.69.3)
 - **Generación de imágenes:** integración con Gemini / GPT image-preview para visiones, infografías y conceptos de la DAO.

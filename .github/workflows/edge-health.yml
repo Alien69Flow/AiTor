@@ -1,0 +1,39 @@
+name: Edge health
+
+# The Edge Functions are this app's backend, and until now nothing checked them:
+# an expired provider key or a dead upstream shows up in the product as "no data",
+# not as a failed build. `scripts/check-edge-functions.mjs` probes every deployed
+# function and knows which 401s are correct (signed-in only) and which are not.
+#
+# Scheduled, never on pull requests: a third party being down must not block a
+# merge. Run it by hand with `workflow_dispatch` or `npm run edge:check`.
+
+on:
+  schedule:
+    # 06:17 UTC daily — off the hour so it does not queue behind everyone else.
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edge-health
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: funciones desplegadas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # No `npm ci`: the script uses node's fetch plus the public anon key that
+      # already ships inside the browser bundle, so it needs no dependencies and
+      # no secrets.
+      - name: Probar cada función Edge
+        run: npm run edge:check
