@@ -53,7 +53,7 @@ export function useUAPSightings() {
                 setSightings((prev) => [newRow as UAPSighting, ...prev]);
               }
             } else if (payload.eventType === "DELETE") {
-              setSightings((prev) => prev.filter((s) => s.id !== (payload.old as { id?: string }).id));
+              setSightings((prev) => prev.filter((s) => s.id !== (payload.old as any).id));
             }
           }
         )
@@ -64,7 +64,7 @@ export function useUAPSightings() {
 
     return () => {
       if (channel) {
-        try { supabase.removeChannel(channel); } catch { /* channel already closed */ }
+        try { supabase.removeChannel(channel); } catch {}
       }
     };
   }, []);

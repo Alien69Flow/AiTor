@@ -3,7 +3,7 @@
  * Sistema de automatización para generar contenido según diferentes frecuencias
  */
 
-import { SocialMediaManager, FrequencyType, SocialContent, SocialPlatform } from "../agents/socialMediaManager";
+import { SocialMediaManager, FrequencyType, SocialContent } from "../agents/socialMediaManager";
 import { ProposalQueue } from "./socialProposalQueue";
 import { SocialPublisher } from "../socialPublisher";
 
@@ -114,7 +114,7 @@ export class SocialAutomationLoops {
     
     try {
       const { proposals, summary } = await SocialMediaManager.generateContent(frequency, {
-        platform: config.platforms?.[0] as SocialPlatform,
+        platform: config.platforms?.[0] as any,
         theme: config.theme,
         tone: config.tone,
       });
@@ -200,11 +200,10 @@ export class SocialAutomationLoops {
    * Obtiene el estado de todos los loops
    */
   static getStatus(): {
-    // Solo existen los loops configurados: el resto no tiene entrada.
-    loops: Partial<Record<FrequencyType, AutomationConfig & { isRunning: boolean }>>;
+    loops: Record<FrequencyType, AutomationConfig & { isRunning: boolean }>;
     stats: ReturnType<typeof ProposalQueue.getStats>;
   } {
-    const loops: Partial<Record<FrequencyType, AutomationConfig & { isRunning: boolean }>> = {};
+    const loops: any = {};
     
     for (const [freq, config] of this.configs.entries()) {
       loops[freq] = {

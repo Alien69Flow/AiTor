@@ -7,11 +7,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const READ_ACTIONS = new Set([
-  'repo_info', 'contents', 'tree', 'branches', 'commits', 'get_file', 'get_ref',
-  'pull_requests', 'check_runs',
-]);
-const WRITE_ACTIONS = new Set(['create_or_update_file', 'create_branch', 'create_pull_request']);
+const READ_ACTIONS = new Set(['repo_info', 'contents', 'tree', 'branches', 'commits', 'get_file', 'get_ref']);
+const WRITE_ACTIONS = new Set(['create_or_update_file', 'create_branch']);
 
 function allowedRepos(): string[] {
   return (Deno.env.get('GITHUB_REPO_ALLOWLIST') || '')
@@ -26,12 +23,13 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // El token se lee aquí pero **sólo es obligatorio para escribir**. Leer un
-    // repositorio público no necesita credencial: la API de GitHub permite 60
-    // peticiones por hora sin autenticar, y exigir el PAT para `repo_info`
-    // dejaba la herramienta inservible mientras no se configurase el secreto
-    // (500 en la primera lectura). Las escrituras siguen sin funcionar sin él.
     const GITHUB_PAT = Deno.env.get('GITHUB_PAT');
+    if (!GITHUB_PAT) {
+      return new Response(
+        JSON.stringify({ error: 'GitHub PAT not configured. Please add your GITHUB_PAT secret.' }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Require a verified user for every call — the shared PAT must never be
     // reachable anonymously.
@@ -77,15 +75,8 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Write actions require an admin role, y además un token: sin PAT no hay
-    // forma de escribir en el repositorio.
+    // Write actions require an admin role.
     if (WRITE_ACTIONS.has(action)) {
-      if (!GITHUB_PAT) {
-        return new Response(
-          JSON.stringify({ error: 'Escribir en GitHub necesita el secreto GITHUB_PAT en este proyecto.' }),
-          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-        );
-      }
       // Read the caller's own roles under RLS (the has_role helper is no
       // longer executable by client roles).
       const { data: roleRow } = await supabase
@@ -101,13 +92,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const headers: Record<string, string> = {
+    const headers = {
+      'Authorization': `Bearer ${GITHUB_PAT}`,
       'Accept': 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
     };
-    // Sin PAT la petición va anónima: sirve para leer lo público y agota la
-    // cuota por IP en vez de por token, que es lo que hay disponible.
-    if (GITHUB_PAT) headers.Authorization = `Bearer ${GITHUB_PAT}`;
 
     let url: string;
     let method = 'GET';
@@ -146,7 +135,7 @@ Deno.serve(async (req) => {
           ...(sha && { sha }), // Include SHA if updating existing file
         });
         break;
-      case 'create_branch': {
+      case 'create_branch':
         // Create a new branch from a reference
         url = `https://api.github.com/repos/${owner}/${repo}/git/refs`;
         method = 'POST';
@@ -157,48 +146,10 @@ Deno.serve(async (req) => {
           sha: refSha,
         });
         break;
-      }
-      case 'get_ref': {
+      case 'get_ref':
         // Get a reference (branch) SHA
         url = `https://api.github.com/repos/${owner}/${repo}/git/ref/heads/${branch || 'main'}`;
         break;
-      }
-      case 'pull_requests': {
-        const state = typeof body.state === 'string' ? body.state : 'open';
-        url = `https://api.github.com/repos/${owner}/${repo}/pulls?state=${encodeURIComponent(state)}&per_page=20`;
-        break;
-      }
-      case 'check_runs': {
-        // Últimos checks de una rama: es lo que permite mirar si una propuesta
-        // de mejora pasó el CI antes de pedir que se revise.
-        const ref = typeof body.ref === 'string' ? body.ref : 'main';
-        url = `https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}/check-runs`;
-        break;
-      }
-      case 'create_pull_request': {
-        // Abrir el PR es la mitad que faltaba para que AI Tor pueda proponer un
-        // cambio en vez de sólo leer el repositorio. Sigue siendo admin-only:
-        // la escritura la decide el rol, no el modelo.
-        const head = body.head;
-        const base = typeof body.base === 'string' ? body.base : 'main';
-        const title = body.title;
-        if (typeof head !== 'string' || !head || typeof title !== 'string' || !title) {
-          return new Response(
-            JSON.stringify({ error: 'head y title son obligatorios' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } },
-          );
-        }
-        url = `https://api.github.com/repos/${owner}/${repo}/pulls`;
-        method = 'POST';
-        requestBody = JSON.stringify({
-          title,
-          head,
-          base,
-          body: typeof body.body === 'string' ? body.body : '',
-          draft: body.draft === true,
-        });
-        break;
-      }
       default:
         return new Response(
           JSON.stringify({ error: `Unknown action: ${action}` }),

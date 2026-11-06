@@ -253,7 +253,7 @@ export class PortfolioManager {
    * Detecta concentración excesiva
    */
   static detectConcentration(): { symbol: string; percentage: number; risk: string }[] {
-    const assets = this.getAssets();
+    const assets = this.getAllAssets();
     if (assets.length === 0) return [];
 
     // Get prices (mock for now)

@@ -3,16 +3,13 @@
  * Análisis técnico y fundamental de mercados crypto
  */
 
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { createGeminiModel } from "./llm";
 
-const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.3 });
-
-/** Evento de mercado con el que se correlacionan movimientos de precio. */
-export interface MarketEvent {
-  title?: string;
-  description?: string;
-}
+const llm = new ChatGoogleGenerativeAI({
+  modelName: "gemini-2.5-pro",
+  temperature: 0.3,
+});
 
 export interface PriceData {
   symbol: string;
@@ -86,7 +83,7 @@ export class MarketAnalyzer {
    */
   static async analyze(priceData: PriceData, previousAnalysis?: string): Promise<MarketAnalysis> {
     try {
-      const chain = analysisPrompt.pipe(getLlm());
+      const chain = analysisPrompt.pipe(llm);
       const response = await chain.invoke({
         priceData: JSON.stringify(priceData),
         previousAnalysis: previousAnalysis || "Sin análisis anterior",
@@ -133,8 +130,8 @@ export class MarketAnalyzer {
 
     let summary = `📊 **RESUMEN DE MERCADO**
 
-**Bitcoin:** $${btc?.price?.toLocaleString() || 'N/A'} (${(btc?.change24h ?? 0) >= 0 ? '+' : ''}${btc?.change24h?.toFixed(2) ?? 'N/A'}%)
-**Ethereum:** $${eth?.price?.toLocaleString() || 'N/A'} (${(eth?.change24h ?? 0) >= 0 ? '+' : ''}${eth?.change24h?.toFixed(2) ?? 'N/A'}%)
+**Bitcoin:** $${btc?.price?.toLocaleString() || 'N/A'} (${btc?.change24h >= 0 ? '+' : ''}${btc?.change24h?.toFixed(2) || 'N/A'}%)
+**Ethereum:** $${eth?.price?.toLocaleString() || 'N/A'} (${eth?.change24h >= 0 ? '+' : ''}${eth?.change24h?.toFixed(2) || 'N/A'}%)
 
 **Market Cap Total:** $${(totalCap / 1e9).toFixed(2)}B
 
@@ -160,7 +157,7 @@ export class MarketAnalyzer {
   /**
    * Análisis de correlación con eventos
    */
-  static async correlateWithEvents(prices: PriceData[], events: MarketEvent[]): Promise<string> {
+  static async correlateWithEvents(prices: PriceData[], events: any[]): Promise<string> {
     const volatileCoins = prices.filter(p => Math.abs(p.change24h) > 5);
     
     if (volatileCoins.length === 0 || events.length === 0) {
@@ -206,15 +203,15 @@ export class MarketAnalyzer {
       technical: {
         support: priceData.price * 0.95,
         resistance: priceData.price * 1.05,
-        trend,
+        trend: trend as any,
       },
       summary: `Análisis de ${priceData.symbol}: tendencia ${trend}`,
       signals: [
         change > 0 ? 'Momentum positivo' : 'Momentum negativo',
         `Cambio 24h: ${change.toFixed(2)}%`,
       ],
-      riskLevel,
-      recommendation,
+      riskLevel: riskLevel as any,
+      recommendation: recommendation as any,
     };
   }
 }

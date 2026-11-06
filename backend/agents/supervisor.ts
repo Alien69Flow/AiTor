@@ -1,10 +1,8 @@
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { createGeminiModel } from "./llm";
 
-// El modelo se construye la primera vez que se usa, no al importar el módulo:
-// si no hay clave, el fallo se queda en esta clase (cae a CHAT_GENERAL) en vez
-// de tumbar el proceso al arrancar el servidor.
-const getLlm = createGeminiModel({
+// Inicializamos el modelo de Gemini (Asegúrate de tener GEMINI_API_KEY en tu .env)
+const llm = new ChatGoogleGenerativeAI({
   modelName: "gemini-2.5-pro",
   maxOutputTokens: 2048,
   temperature: 0.2, // Temperatura baja para que tome decisiones frías y precisas
@@ -66,7 +64,7 @@ export class SupervisorAgent {
    */
   static async routeRequest(userInput: string): Promise<string> {
     try {
-      const chain = supervisorPrompt.pipe(getLlm());
+      const chain = supervisorPrompt.pipe(llm);
       const decision = await chain.invoke({ input: userInput });
       
       // Limpiamos la respuesta por si el LLM añade espacios

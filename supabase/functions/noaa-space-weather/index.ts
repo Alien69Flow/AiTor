@@ -3,20 +3,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-/** One alert scale of the NOAA `/products/noaa-scales.json` feed. */
-interface NoaaScale {
-  Scale?: string;
-}
-
-/** NOAA scales payload: keyed by "0", holding the R/S/G scales. */
-interface NoaaScales {
-  "0"?: {
-    R?: NoaaScale;
-    S?: NoaaScale;
-    G?: NoaaScale;
-  };
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -34,15 +20,15 @@ Deno.serve(async (req) => {
     });
 
     let kpIndex = 0;
-    let kpData: string[][] = [];
+    let kpData: any[] = [];
     if (kpRes.ok) {
-      const raw: unknown = await kpRes.json();
+      const raw = await kpRes.json();
       // Format: array of arrays, first row is header, last row is most recent
       if (Array.isArray(raw) && raw.length > 1) {
-        const latest = raw[raw.length - 1] as string[];
+        const latest = raw[raw.length - 1];
         // Index 1 is Kp value
         kpIndex = parseFloat(latest[1]) || 0;
-        kpData = raw.slice(-5) as string[][]; // last 5 readings
+        kpData = raw.slice(-5); // last 5 readings
       }
     }
 
@@ -50,10 +36,10 @@ Deno.serve(async (req) => {
     let stormLevel = "none";
     let radioBlackout = "none";
     let geomagneticStorm = "none";
-    let scalesData: NoaaScales | null = null;
+    let scalesData: any = null;
     
     if (scalesRes.ok) {
-      scalesData = (await scalesRes.json()) as NoaaScales;
+      scalesData = await scalesRes.json();
       // NOAA scales JSON has format: { "0": { "DateStamp": "...", "R": {...}, "S": {...}, "G": {...} } }
       if (scalesData && scalesData["0"]) {
         const current = scalesData["0"];

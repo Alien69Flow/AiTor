@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Environment, Html, Lightformer, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
+import { Button } from "@/components/ui/button";
 import { CITY_DISTRICTS, type CityDistrict } from "./districts";
 
 function readPalette() {
@@ -97,9 +98,9 @@ function District({ district, selected, onSelect, palette }: { district: CityDis
     {[0.8, 1.5, 2.2].map(y => <mesh key={y} position-y={y} rotation-x={-Math.PI / 2}><ringGeometry args={[width * 0.9, width * 0.93, central ? 6 : 4]} /><meshBasicMaterial color={color} side={THREE.DoubleSide} /></mesh>)}
     {central && <mesh position-y={4.3} rotation-x={Math.PI / 2}><torusGeometry args={[1.7, 0.025, 6, 64]} /><meshBasicMaterial color={color} /></mesh>}
     <Html position={[0, height + 0.9, 0]} center zIndexRange={[5, 0]}>
-      <button type="button" aria-label={`Seleccionar ${district.name}`} onClick={() => onSelect(district.id)} className={`whitespace-nowrap border bg-background/90 px-2 py-1 font-mono text-[9px] transition-colors ${selected ? "border-secondary/70 text-secondary" : "border-border/70 text-muted-foreground hover:text-foreground"}`}>
+      <Button variant="outline" size="sm" aria-label={`Seleccionar ${district.name}`} onClick={() => onSelect(district.id)} className={`h-6 whitespace-nowrap rounded-sm bg-background/90 px-2 font-mono text-[9px] transition-colors ${selected ? "border-secondary/70 text-secondary" : "border-border/70 text-muted-foreground hover:text-foreground"}`}>
         {district.name}
-      </button>
+      </Button>
     </Html>
   </group>;
 }
@@ -131,7 +132,13 @@ function Links({ palette, moving }: { palette: Palette; moving: boolean }) {
 
 function CameraSetup() {
   const { camera, size } = useThree();
-  useEffect(() => { camera.position.set(20, 21, 25); camera.lookAt(0, 0, 0); if (camera instanceof THREE.PerspectiveCamera) { camera.fov = size.width < size.height ? 52 : 42; camera.updateProjectionMatrix(); } }, [camera, size.width, size.height]);
+  useEffect(() => {
+    const aspect = size.width / Math.max(size.height, 1);
+    const distance = Math.max(38, 34 / aspect);
+    camera.position.set(0.52 * distance, 0.55 * distance, 0.65 * distance);
+    camera.lookAt(0, 0, 0);
+    if (camera instanceof THREE.PerspectiveCamera) { camera.fov = 48; camera.updateProjectionMatrix(); }
+  }, [camera, size.width, size.height]);
   return null;
 }
 
@@ -146,6 +153,6 @@ export default function CityScene({ selected, onSelect, moving, reset }: { selec
     <CameraSetup />
     <CityFloor palette={palette} /><Skyline palette={palette} /><Links palette={palette} moving={moving} />
     {CITY_DISTRICTS.map(d => <District key={d.id} district={d} selected={selected === d.id} onSelect={onSelect} palette={palette} />)}
-    <OrbitControls makeDefault enablePan={false} minDistance={17} maxDistance={48} maxPolarAngle={Math.PI / 2.3} minPolarAngle={0.2} />
+    <OrbitControls makeDefault enablePan={false} minDistance={17} maxDistance={100} maxPolarAngle={Math.PI / 2.3} minPolarAngle={0.2} />
   </Canvas>;
 }

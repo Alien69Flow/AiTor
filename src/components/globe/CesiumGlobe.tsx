@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   Ion,
@@ -14,7 +15,7 @@ import {
   PolylineGlowMaterialProperty,
   Cartesian2,
   ArcGisMapServerImageryProvider,
-  GeographicTilingScheme,
+  IonImageryProvider,
   EllipsoidTerrainProvider,
   CallbackProperty,
   SkyBox,
@@ -22,7 +23,6 @@ import {
   UrlTemplateImageryProvider,
   ImageryLayer,
   ProviderViewModel,
-  ArcType,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -31,31 +31,9 @@ import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 import type { Flight } from "@/hooks/useAirTraffic";
 import type { Ship } from "@/hooks/useMarineTraffic";
-import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-layers";
-import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
-import { ROLE_LABELS, aircraftRole, altitudeBand } from "@/lib/aircraft-class";
-import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
-import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
-import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
-import { createTerrariumTerrainProvider } from "@/lib/terrarium-terrain";
-import {
-  ZOOM_MAX_ALTITUDE_M,
-  ZOOM_MIN_ALTITUDE_M,
-  groundWidthFromFov,
-  nextZoomAltitude,
-} from "@/lib/globe-scale";
-import type { ViewScale } from "./GlobeScaleHud";
+import { GLOBE_LAYERS, type EnvLayerKey } from "@/lib/globe-layers";
 import type { SatellitePosition } from "@/hooks/useSatellites";
 import type { OutageEvent } from "@/hooks/useInternetOutages";
-import type { IssPosition } from "@/hooks/connectors/useIssPosition";
-import type { IonosphereMesh } from "@/hooks/connectors/useIonosphere";
-import type { PlacedCamera } from "@/lib/live-camera-places";
-import type { VanAllenBelts } from "@/hooks/connectors/useVanAllenBelts";
-import type { SolarWind } from "@/hooks/connectors/useSolarWind";
-import type { EnvironmentGrid } from "@/hooks/connectors/useEnvironmentGrid";
-import { HELIOPAUSE_AU, FAST_WIND_KMS } from "@/hooks/connectors/useSolarWind";
-import { beltRings } from "@/lib/van-allen-belts";
-import { subsolarPoint } from "@/lib/solar-position";
 import {
   CONFLICT_ZONES,
   CONFLICT_ICONS,
@@ -67,30 +45,10 @@ import {
   UNDERSEA_CABLES,
   PIPELINES,
 } from "@/lib/geo-datasets";
-import { GAMMA_IRRADIATORS } from "@/lib/gamma-irradiators";
-import { isRasterLayer } from "@/lib/globe-layers";
-import { tileOverscan } from "@/lib/tile-zoom";
-import { SUPABASE_URL } from "@/integrations/supabase/client";
 
-/**
- * Fronteras y topónimos de Esri (capa de referencia transparente).
- *
- * La base es World_Imagery: satélite de un metro, pero sin una sola etiqueta
- * ni frontera, así que al acercarte no sabes si estás en Huelva o en Cádiz.
- * Esta capa pone lo que hace Google Maps: límites administrativos y nombres de
- * países, provincias y ciudades, dibujados encima de la imagen.
- */
-const PLACES_TILE_URL =
-  "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer";
-
-/**
- * Cuánto se puede estirar una capa antes de ocultarla: el doble (un nivel de
- * zoom). Más allá de eso la tesela cubre continentes enteros y lo que se ve
- * sobre tu ciudad son los píxeles de otra región del planeta: parece que la
- * lluvia de la India ha aparecido en España. Con esto la capa se apaga en vez
- * de mentir.
- */
-const MAX_UPSAMPLE_LEVELS = 1;
+const SUPABASE_URL =
+  (import.meta.env.VITE_SUPABASE_URL as string) ||
+  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
 
 /** OWM tiles are proxied server-side so the API key never reaches the bundle. */
 const OWM_TILE_URL = (layerId: string) =>
@@ -105,20 +63,17 @@ const OWM_ALPHA: Record<string, number> = {
 };
 
 /**
- * NASA GIBS (open, no API key) rasters. Every layer links its own
- * TileMatrixSet and TIME window — the wrong level answers `TILEMATRIXSET is
- * invalid for LAYER` and an out-of-range date answers 404 — so the level and
- * the date policy live in each layer's `gibs` config in globe-layers.ts.
+ * NASA GIBS (open, no API key) — VIIRS thermal anomalies give global wildfire
+ * detection including Spain and the rest of Europe, which the EONET point feed
+ * misses. GIBS publishes yesterday's full mosaic reliably.
  */
-function gibsDate(offsetHours = 36): string {
-  const d = new Date(Date.now() - offsetHours * 3600 * 1000);
+function gibsDate(): string {
+  const d = new Date(Date.now() - 36 * 3600 * 1000);
   return d.toISOString().slice(0, 10);
 }
 
-function gibsTileUrl(cfg: NonNullable<globeLayerDef["gibs"]>): string {
-  const time = cfg.timeless ? "" : `${cfg.date ?? gibsDate(cfg.dateOffsetHours ?? 36)}/`;
-  return `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${cfg.layer}/default/${time}GoogleMapsCompatible_Level${cfg.level}/{z}/{y}/{x}.png`;
-}
+const GIBS_URL = (layer: string, level = 8) =>
+  `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${layer}/default/${gibsDate()}/GoogleMapsCompatible_Level${level}/{z}/{y}/{x}.png`;
 
 // The Cesium Ion token is never shipped to the browser bundle; it is fetched
 // at runtime from the server-side `cesium-tiles` proxy.
@@ -164,53 +119,7 @@ function hexToColor(hex: string, alpha = 1): Color {
 const MARKER_GLYPHS: Record<string, string> = {
   quake: "⌁", fire: "▲", flight: "✈", ship: "◆", satellite: "✦",
   conflict: "✕", news: "!", bitcoin: "₿", outage: "⌁", market: "$", uap: "◉",
-  camera: "▶", iss: "◈", belt: "☢", sun: "☉",
-  drying: "☀", sea: "≈", snow: "❄", pollen: "✿",
 };
-
-/** Radio medio terrestre, para pasar la geometría del dipolo a metros. */
-const EARTH_RADIUS_M = 6_378_137;
-
-/** Color del cinturón exterior según lo que mide GOES. */
-const BELT_LEVEL_COLORS: Record<VanAllenBelts["level"], string> = {
-  quiet: "#38bdf8",
-  elevated: "#facc15",
-  high: "#fb7185",
-  extreme: "#f43f5e",
-};
-
-/**
- * Pulse helper for the paired axes of a pulsing ellipse.
- *
- * `semiMajorAxis` and `semiMinorAxis` are two independent CallbackProperties:
- * evaluating the pulse in each one let a 50ms quantization-bucket straddle
- * make the minor axis larger than the major one, and
- * `semiMajorAxis must be >= semiMinorAxis` then froze the whole globe
- * (DeveloperError from EllipseGeometry). Cesium rebuilds the geometry reading
- * `semiMajorAxis` before `semiMinorAxis`, so `minor` clamps itself against the
- * major value computed in the same pass — the invariant now holds on every
- * evaluation, whatever the clock does.
- */
-function makePulsePair(startTime: number, periodMs: number, amplitude: number, phase = 0) {
-  let lastBucket = -1;
-  let lastPulse = 1;
-  let lastMajor = 0;
-  const pulse = () => {
-    const t = Math.floor((Date.now() - startTime) / 50) * 50;
-    if (t !== lastBucket) {
-      lastBucket = t;
-      lastPulse = 1 + amplitude * Math.sin(((t % periodMs) / periodMs) * Math.PI * 2 + phase);
-    }
-    return lastPulse;
-  };
-  return {
-    major: (base: number) => {
-      lastMajor = base * pulse();
-      return lastMajor;
-    },
-    minor: (base: number, factor: number) => Math.min(lastMajor, base * pulse() * factor),
-  };
-}
 
 function markerIcon(type: string, color: string): string {
   const glyph = MARKER_GLYPHS[type] || "•";
@@ -218,24 +127,14 @@ function markerIcon(type: string, color: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
-/** Propiedades planas de entidad: Cesium las envuelve en ConstantProperty. */
-type PlainEntityProperties = Record<string, string | number | boolean>;
-
-function eventPayload(data: Record<string, unknown>): PlainEntityProperties {
-  return { sightingData: JSON.stringify(data) };
+function eventPayload(data: Record<string, unknown>) {
+  return { sightingData: JSON.stringify(data) } as any;
 }
 
 type LayerKey = "markets" | "uap" | "cryptozoo";
 
 interface CesiumGlobeProps {
   onHotspotClick?: (data: HotspotData | null) => void;
-  /** Fired when the camera pulls out past the globe, so the view can hand over
-   *  to the cosmic zoom. Receives the camera altitude in metres. */
-  onZoomFar?: (altitudeMetres: number) => void;
-  /** Escala real de la vista (metros por píxel en el centro de la pantalla). */
-  onViewScale?: (scale: ViewScale | null) => void;
-  /** Botones de zoom de la barra de escala. `null` al desmontar. */
-  onZoomControls?: (controls: { zoomIn: () => void; zoomOut: () => void } | null) => void;
   sightings?: UAPSighting[];
   visibleLayers?: Set<LayerKey>;
   envLayers?: Set<EnvLayerKey>;
@@ -252,62 +151,33 @@ interface CesiumGlobeProps {
   /** NOAA Ovation aurora mesh cells. */
   auroraCells?: { lat: number; lon: number; probability: number }[];
   /** NASA FIRMS active fire detections. */
-  fires?: { id: string; lat: number; lon: number; brightness: number; confidence: string; source?: string }[];
+  fires?: { id: string; lat: number; lon: number; brightness: number; confidence: string }[];
   /** TeleGeography submarine cables. */
   cables?: { id: string; name: string; color: string; paths: [number, number][][] }[];
-  /** Nodos Bitcoin alcanzables, un punto por país con su recuento. */
-  bitcoinNodes?: { id: string; lat: number; lon: number; country: string; count: number }[];
+  /** Bitnodes reachable Bitcoin nodes. */
+  bitcoinNodes?: { id: string; lat: number; lon: number; city: string; country: string }[];
   /** GDELT geolocated news events. */
   gdeltEvents?: { id: string; title: string; lat: number; lon: number; domain: string; url: string }[];
-  /** Sucesos de violencia geolocalizados de las últimas 48 h (GDELT). */
-  conflictEvents?: ConflictEvent[];
   /** Open-Meteo surface wind / pressure vectors. */
   surfaceWeather?: {
     id: string; name: string; lat: number; lon: number;
     pressureHpa: number; windSpeedMs: number; windDirectionDeg: number;
     temperatureC: number; humidityPercent: number;
   }[];
-  /** ISS en su posición real (WhereTheISS.at). `null` mientras no hay medida. */
-  iss?: IssPosition | null;
-  /** Malla TEC de la ionosfera (NOAA SWPC GLOTEC). */
-  ionosphere?: IonosphereMesh | null;
-  /** Electrones >2 MeV medidos por GOES: intensidad del cinturón exterior. */
-  vanAllen?: VanAllenBelts | null;
-  /** Viento solar en L1: lo que infla la heliosfera. */
-  solarWind?: SolarWind | null;
-  /**
-   * Cámaras del Alien con sede conocida. Al pulsarlas abren su ficha como
-   * cualquier otro marcador; el directo se pide desde dentro de la ficha, así
-   * que el visor no necesita saber nada de navegar a otro módulo.
-   */
-  cameras?: PlacedCamera[];
-  /** Rejilla ambiental de Open-Meteo: secado, polen, mar y nieve. */
-  environment?: EnvironmentGrid | null;
 }
 
 export function CesiumGlobe({
-  onHotspotClick, onZoomFar, onViewScale, onZoomControls, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
+  onHotspotClick, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [], flights = [], ships = [],
   satellites = [], outages = [],
   rainTileUrl = null, auroraCells = [], fires = [], cables = [],
-  bitcoinNodes = [], gdeltEvents = [], conflictEvents = [], surfaceWeather = [],
-  iss = null, ionosphere = null, cameras = [],
-  vanAllen = null, solarWind = null, environment = null,
+  bitcoinNodes = [], gdeltEvents = [], surfaceWeather = [],
 }: CesiumGlobeProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<CesiumViewer | null>(null);
-  const owmLayersRef = useRef<Record<string, ImageryLayer>>({});
-  const gibsLayersRef = useRef<Record<string, ImageryLayer>>({});
-  /** Fronteras y topónimos: por encima de todo lo que se añada después. */
-  const placesLayerRef = useRef<ImageryLayer | null>(null);
-  const nightLightsRef = useRef<ImageryLayer | null>(null);
-  /** Escala actual de la cámara, para decidir qué teselas no deben estirarse. */
-  const scaleRef = useRef<{ mpp: number; lat: number } | null>(null);
-  /** Capas encendidas por el usuario, leídas sin cerrar sobre props viejas. */
-  const activeEnvLayersRef = useRef<Set<EnvLayerKey>>(new Set());
-  /** Aplica el límite de ampliación a las capas ráster ya creadas. */
-  const applyRasterLimitRef = useRef<(() => void) | null>(null);
-  const rainLayerRef = useRef<ImageryLayer | null>(null);
+  const owmLayersRef = useRef<Record<string, any>>({});
+  const gibsLayersRef = useRef<Record<string, any>>({});
+  const rainLayerRef = useRef<any>(null);
   const rainUrlRef = useRef<string | null>(null);
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
@@ -318,34 +188,14 @@ export function CesiumGlobe({
   const flightEntityIdsRef = useRef<string[]>([]);
   const shipEntityIdsRef = useRef<string[]>([]);
   const staticEntityIdsRef = useRef<string[]>([]);
-  /**
-   * Repintado de los puntos fijos cuando el zoom cruza un escalón de
-   * agrupación. El efecto que los construye vive aparte del que crea el
-   * visor, así que la cámara lo llama a través de esta referencia.
-   */
-  const repaintStaticRef = useRef<(() => void) | null>(null);
   const satEntityIdsRef = useRef<string[]>([]);
   const outageEntityIdsRef = useRef<string[]>([]);
   const connectorEntityIdsRef = useRef<string[]>([]);
-  const issEntityIdsRef = useRef<string[]>([]);
-  const ionoEntityIdsRef = useRef<string[]>([]);
-  const cameraEntityIdsRef = useRef<string[]>([]);
-  const vanAllenEntityIdsRef = useRef<string[]>([]);
-  const heliosphereEntityIdsRef = useRef<string[]>([]);
-  const envGridEntityIdsRef = useRef<string[]>([]);
 
   const handleHotspotClick = useCallback(
     (data: HotspotData | null) => { onHotspotClick?.(data); },
     [onHotspotClick]
   );
-
-  // Keep the callback in a ref so the viewer is never re-created when it changes.
-  const onZoomFarRef = useRef(onZoomFar);
-  onZoomFarRef.current = onZoomFar;
-  const onViewScaleRef = useRef(onViewScale);
-  onViewScaleRef.current = onViewScale;
-  const onZoomControlsRef = useRef(onZoomControls);
-  onZoomControlsRef.current = onZoomControls;
 
   // Initialize viewer once
   useEffect(() => {
@@ -358,35 +208,16 @@ export function CesiumGlobe({
       selectionIndicator: false, timeline: false, navigationHelpButton: false,
       creditContainer: document.createElement("div"),
       terrainProvider: new EllipsoidTerrainProvider(),
-      // Nitidez: en pantallas de alta densidad Cesium dibujaba a resolución CSS
-      // y todo salía blando al acercarse. Se rinde a la densidad del panel con
-      // un tope de 1,5× para no hundir la GPU con catorce capas encendidas.
-      useBrowserRecommendedResolution: false,
       contextOptions: { webgl: { alpha: false } },
       // Start with no base layer so async imagery never wipes overlays that
       // were already added (that race made toggled-on layers invisible).
-      baseLayer: false,
+      baseLayer: false as any,
     });
 
     // Enable built-in Cesium sky with stars and atmosphere
     viewer.scene.backgroundColor = Color.BLACK;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 8.0;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.5);
-
-    // Relieve real: teselas Terrarium abiertas (sin token de Ion) en vez del
-    // elipsoide liso. Si el proveedor no se puede construir, el visor sigue con
-    // el elipsoide: el globo nunca se queda en blanco por el terreno.
-    const terrain = createTerrariumTerrainProvider();
-    if (terrain) {
-      viewer.terrainProvider = terrain;
-      viewer.scene.globe.depthTestAgainstTerrain = false;
-      // Más teselas vivas y menos error de pantalla = se pide el nivel real de
-      // detalle al acercarse (Google Earth) en vez de estirar la última.
-      viewer.scene.globe.tileCacheSize = 1000;
-      viewer.scene.globe.maximumScreenSpaceError = 1.5;
-      viewer.scene.globe.preloadSiblings = true;
-    }
 
     // Enable sky atmosphere (the glow halo around the Earth)
     if (viewer.scene.skyAtmosphere) {
@@ -436,62 +267,29 @@ export function CesiumGlobe({
         const baseLayer = viewer.imageryLayers.addImageryProvider(baseProvider);
         viewer.imageryLayers.lowerToBottom(baseLayer);
 
-        // Fronteras y topónimos sobre la imagen base: sin esto el mapa es una
-        // foto de satélite sin un solo nombre, que es lo que se veía al
-        // acercarse a España. Va último y se mantiene arriba (ver más abajo),
-        // para que las capas de datos no la tapen.
-        try {
-          const placesProvider = await ArcGisMapServerImageryProvider.fromUrl(PLACES_TILE_URL);
-          if (viewer.isDestroyed()) return;
-          const places = viewer.imageryLayers.addImageryProvider(placesProvider);
-          places.alpha = 0.9;
-          placesLayerRef.current = places;
-        } catch (e) {
-          console.warn("Places/boundaries layer failed:", e);
-        }
-
         // 3. Night lights SECOND (above base, below weather overlays).
-        //
-        // Antes se pedía el asset 3812 de Cesium Ion, pero el token está en
-        // blanco (`Ion.defaultAccessToken = ""`), así que Ion contestaba 401 y
-        // el globo se quedaba sin luces nocturnas. NASA GIBS sirve la misma
-        // capa (VIIRS City Lights) con CORS abierto y sin credencial.
         try {
-          const nlProvider = new UrlTemplateImageryProvider({
-            url: "https://gibs.earthdata.nasa.gov/wmts/epsg4326/best/VIIRS_CityLights_2012/default/500m/{z}/{y}/{x}.jpeg",
-            tilingScheme: new GeographicTilingScheme(),
-            // El conjunto de matrices `500m` de GIBS tiene los niveles 0–7
-            // (comprobado en su WMTSCapabilities). Pedir el 8 devuelve 400
-            // TileOutOfRange y la capa se queda con huecos al acercarse; con
-            // el tope en 7 Cesium reutiliza la última tesela válida.
-            maximumLevel: 7,
-          });
+          const nlProvider = await IonImageryProvider.fromAssetId(3812);
           if (viewer.isDestroyed()) return;
           const nl = viewer.imageryLayers.addImageryProvider(nlProvider);
           nl.dayAlpha = 0.0;
           nl.nightAlpha = 0.9;
           nl.brightness = 2.0;
-          nightLightsRef.current = nl;
           viewer.imageryLayers.lowerToBottom(nl);
           viewer.imageryLayers.raise(nl);
-        } catch (e) {
+        } catch (e: any) {
           console.warn("Night lights failed:", e);
         }
-      } catch (e) {
+      } catch (e: any) {
         console.warn("ArcGIS base imagery failed:", e);
       }
     })();
 
     // Click handler
     const handler = new ScreenSpaceEventHandler(viewer.scene.canvas);
-    handler.setInputAction((click: { position: Cartesian2 }) => {
+    handler.setInputAction((click: any) => {
       const picked = viewer.scene.pick(click.position);
       if (defined(picked) && picked.id?.properties) {
-        // Una cámara del Alien NO cambia de módulo al pulsarla: abre su ficha
-        // como cualquier otro marcador y el directo se pide desde dentro, para
-        // que el clic nunca saque al operador del globo antes de leer nada.
-        // `cameraId` viaja en el hotspot para que la ficha sepa qué abrir.
-        const cameraId = picked.id.properties.cameraId?.getValue();
         const idx = picked.id.properties.hotspotIndex?.getValue();
         if (idx !== undefined && HOTSPOT_DATA[idx]) {
           handleHotspotClick(HOTSPOT_DATA[idx]);
@@ -504,8 +302,7 @@ export function CesiumGlobe({
             handleHotspotClick({
               lat: parsed.lat, lon: parsed.lon,
               intensity: parsed.severity === "critical" ? 1 : 0.5,
-              // Las cámaras conservan el rosa de su marcador en la ficha.
-              color: parsed.type === "camera" ? "#f472b6" : TACTICAL_COLORS[parsed.category] || "#00FF41",
+              color: TACTICAL_COLORS[parsed.category] || "#00FF41",
               name: parsed.location, country: parsed.category?.toUpperCase() || "UAP",
               marketVolume: parsed.source || "Unknown", trend: parsed.date_reported || "",
               topTokens: [parsed.type || "unknown"], type: parsed.category || "uap",
@@ -513,7 +310,6 @@ export function CesiumGlobe({
               source: parsed.source || "Unknown",
               timestamp: parsed.date_reported || "LIVE",
               reliability: parsed.reliability || undefined,
-              ...(typeof cameraId === "string" && cameraId ? { cameraId } : {}),
             });
           } catch { /* ignore */ }
           return;
@@ -528,185 +324,9 @@ export function CesiumGlobe({
       duration: 0,
     });
 
-    // Hand over to the cosmic zoom once the camera is far enough out that the
-    // globe no longer fills the view. Threshold lives in CosmicZoom.
-    const onCameraChanged = () => {
-      const altitude = viewer.camera.positionCartographic?.height ?? 0;
-      if (altitude > COSMIC_TRIGGER_ALTITUDE_M) onZoomFarRef.current?.(altitude);
-    };
-    viewer.camera.changed.addEventListener(onCameraChanged);
-
-    // Los marcadores fijos se agrupan por altura: la cámara avisa y el efecto
-    // de las capas decide si el zoom cruzó un escalón (y sólo entonces
-    // reconstruye sus entidades).
-    const onCameraLod = () => repaintStaticRef.current?.();
-    viewer.camera.changed.addEventListener(onCameraLod);
-    viewer.camera.moveEnd.addEventListener(onCameraLod);
-
-    // Límites de acercamiento reales. Sin suelo, la rueda seguía metiendo la
-    // cámara dentro del elipsoide (pantalla negra sin detalle); sin techo, el
-    // globo se alejaba indefinidamente en vez de pasar al zoom cósmico.
-    const controller = viewer.scene.screenSpaceCameraController;
-    controller.minimumZoomDistance = ZOOM_MIN_ALTITUDE_M;
-    controller.maximumZoomDistance = ZOOM_MAX_ALTITUDE_M;
-    // `camera.changed` sólo dispara cuando la cámara se mueve más de este
-    // porcentaje: con el 0,5 % por defecto la escala se quedaba atrás.
-    viewer.camera.percentageChanged = 0.01;
-
-    // Botones de la barra de escala: un paso = 60 % de la altura, con los mismos
-    // topes que la rueda (250 m … 63 000 km). `zoomIn`/`zoomOut` mueven la cámara
-    // a lo largo de su dirección de vista, así que respetan la inclinación.
-    const applyZoom = (direction: "in" | "out") => {
-      if (viewer.isDestroyed()) return;
-      const height = viewer.camera.positionCartographic?.height;
-      if (!height || !Number.isFinite(height)) return;
-      const target = nextZoomAltitude(height, direction);
-      if (target === null) return;
-      const delta = Math.abs(height - target);
-      if (direction === "in") viewer.camera.zoomIn(delta);
-      else viewer.camera.zoomOut(delta);
-    };
-    onZoomControlsRef.current?.({
-      zoomIn: () => applyZoom("in"),
-      zoomOut: () => applyZoom("out"),
-    });
-
-    // Escala real: se proyectan dos píxeles a la misma altura a ambos lados del
-    // centro de la pantalla y se mide la distancia geodésica sobre el globo.
-    // Así la barra dice kilómetros de verdad, incluso con la cámara inclinada.
-    const measureScale = () => {
-      if (viewer.isDestroyed()) return;
-      const scene = viewer.scene;
-      const canvas = scene.canvas;
-      const width = canvas.clientWidth || canvas.width;
-      const height = canvas.clientHeight || canvas.height;
-      const altitude = viewer.camera.positionCartographic?.height ?? 0;
-      if (!width || !height) return;
-
-      const sample = (x: number) => {
-        const pixel = new Cartesian2(x, height / 2);
-        const ray = viewer.camera.getPickRay(pixel);
-        const hit = ray ? scene.globe.pick(ray, scene) : undefined;
-        return hit ?? viewer.camera.pickEllipsoid(pixel, scene.globe.ellipsoid);
-      };
-      const left = sample(width / 2 - 60);
-      const right = sample(width / 2 + 60);
-
-      // El campo de visión viaja con la escala: la etiqueta de la vista («globo
-      // entero», «hemisferio») y el tope del horizonte dependen de él, no de la
-      // altura sola.
-      const fovY = (viewer.camera.frustum as { fovy?: number }).fovy ?? CesiumMath.toRadians(60);
-      const aspect = width / height;
-
-      let metresPerPixel = Number.NaN;
-      let estimated = true;
-      if (left && right) {
-        const span = Cartesian3.distance(left, right);
-        if (span > 0.1) {
-          metresPerPixel = span / 120;
-          estimated = false;
-        }
-      }
-      if (!Number.isFinite(metresPerPixel)) {
-        metresPerPixel = groundWidthFromFov(altitude, fovY, aspect) / width;
-      }
-
-      onViewScaleRef.current?.({
-        altitudeM: altitude,
-        metresPerPixel,
-        viewportWidthPx: width,
-        fovYRad: fovY,
-        aspectRatio: aspect,
-        // La latitud viaja con la escala porque el nivel de tesela que pide
-        // Cesium depende de ella: la misma resolución en metros es un nivel
-        // menos de zoom a 60° que en el ecuador. Sin este dato, el aviso de
-        // «tesela ampliada» saltaría un nivel tarde en el norte.
-        latitudeDeg: CesiumMath.toDegrees(viewer.camera.positionCartographic?.latitude ?? 0),
-        estimated,
-      });
-
-      // La misma escala decide qué teselas no se pueden estirar más.
-      scaleRef.current = {
-        mpp: metresPerPixel,
-        lat: CesiumMath.toDegrees(viewer.camera.positionCartographic?.latitude ?? 0),
-      };
-      applyRasterLimitRef.current?.();
-    };
-
-    /**
-     * Apaga suavemente (o esconde) las capas ráster cuya fuente ya no llega al
-     * nivel que pide la cámara.
-     *
-     * A un nivel de ampliación se deja al 50 % de opacidad: es el doble de
-     * píxel, se nota poco. A dos o más, la tesela cubre un continente y sobre
-     * tu ciudad se ven los píxeles de otra región del planeta —el «efecto
-     * lluvia de la India sobre España»— así que la capa desaparece. La insignia
-     * del panel sigue diciendo qué capa está fuera y por qué.
-     */
-    applyRasterLimitRef.current = () => {
-      if (viewer.isDestroyed()) return;
-      const scale = scaleRef.current;
-      const active = activeEnvLayersRef.current;
-      if (!scale) return;
-      for (const def of GLOBE_LAYERS) {
-        if (!isRasterLayer(def) || !active.has(def.key)) continue;
-        const layer = def.gibs
-          ? gibsLayersRef.current[def.gibs.layer]
-          : owmLayersRef.current[def.owm as string];
-        if (!layer) continue;
-        const overscan = tileOverscan(def, scale.mpp, scale.lat);
-        const levels = overscan ? overscan.levels : 0;
-        const baseAlpha = def.gibs ? (def.gibs.alpha ?? 0.8) : (OWM_ALPHA[def.owm as string] ?? 0.7);
-        const allowed = def.gibs?.maxUpsample ?? MAX_UPSAMPLE_LEVELS;
-        if (levels > allowed) {
-          layer.show = false;
-          continue;
-        }
-        layer.show = true;
-        layer.alpha = levels === 1 ? baseAlpha * 0.5 : baseAlpha;
-      }
-
-      // Las luces nocturnas son un compuesto de 2012 con techo en z7: a partir
-      // de ahí se convierten en manchas de ciudades que no son las que miras.
-      const nightLights = nightLightsRef.current;
-      if (nightLights) {
-        const nightOverscan = tileOverscan({ gibs: { level: 7 } }, scale.mpp, scale.lat);
-        nightLights.show = active.has("nightLights") && !nightOverscan;
-      }
-
-      // La capa de fronteras debe seguir arriba aunque se añadan teselas nuevas.
-      if (placesLayerRef.current) viewer.imageryLayers.raiseToTop(placesLayerRef.current);
-    };
-
-    let scaleFrame = 0;
-    const scheduleScale = () => {
-      if (scaleFrame) return;
-      scaleFrame = requestAnimationFrame(() => {
-        scaleFrame = 0;
-        measureScale();
-      });
-    };
-    viewer.camera.changed.addEventListener(scheduleScale);
-    viewer.camera.moveEnd.addEventListener(scheduleScale);
-    const resizeObserver =
-      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(() => scheduleScale());
-    if (containerRef.current) resizeObserver?.observe(containerRef.current);
-    scheduleScale();
-
     return () => {
       handler.destroy();
-      if (scaleFrame) cancelAnimationFrame(scaleFrame);
-      resizeObserver?.disconnect();
-      if (!viewer.isDestroyed()) {
-        viewer.camera.changed.removeEventListener(onCameraChanged);
-        viewer.camera.changed.removeEventListener(onCameraLod);
-        viewer.camera.changed.removeEventListener(scheduleScale);
-        viewer.camera.moveEnd.removeEventListener(onCameraLod);
-        viewer.camera.moveEnd.removeEventListener(scheduleScale);
-        viewer.destroy();
-      }
-      onViewScaleRef.current?.(null);
-      onZoomControlsRef.current?.(null);
+      if (!viewer.isDestroyed()) viewer.destroy();
       viewerRef.current = null;
     };
   }, [handleHotspotClick]);
@@ -716,7 +336,6 @@ export function CesiumGlobe({
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     const active = envLayers ?? new Set<EnvLayerKey>();
-    activeEnvLayersRef.current = active;
     
     console.log("[CesiumGlobe] envLayers changed:", Array.from(active));
 
@@ -751,26 +370,26 @@ export function CesiumGlobe({
     });
 
     // NASA GIBS imagery overlays (no key required).
-    // NASA GIBS raster overlays (no key required), driven by the `gibs` config
-    // on each layer definition so panel data and renderer can never drift.
-    GLOBE_LAYERS.filter((l) => l.gibs).forEach((def) => {
-      const cfg = def.gibs as NonNullable<globeLayerDef["gibs"]>;
-      const shouldShow = active.has(def.key);
-      const alpha = cfg.alpha ?? 0.8;
-      const existing = gibsLayersRef.current[cfg.layer];
+    const GIBS_OVERLAYS: { key: EnvLayerKey; layer: string; alpha: number; level?: number }[] = [
+      { key: "wildfires", layer: "VIIRS_NOAA20_Thermal_Anomalies_375m_All", alpha: 0.95, level: 8 },
+      { key: "solarActivity", layer: "VIIRS_SNPP_DayNightBand_At_Sensor_Radiance", alpha: 0.35, level: 8 },
+    ];
+    GIBS_OVERLAYS.forEach(({ key, layer: layerId, alpha, level }) => {
+      const shouldShow = active.has(key);
+      const existing = gibsLayersRef.current[layerId];
       if (shouldShow && !existing) {
         try {
           const provider = new UrlTemplateImageryProvider({
-            url: gibsTileUrl(cfg),
-            maximumLevel: cfg.level,
+            url: GIBS_URL(layerId, level),
+            maximumLevel: level ?? 8,
             minimumLevel: 0,
             credit: "NASA GIBS / EOSDIS",
           });
           const l = viewer.imageryLayers.addImageryProvider(provider);
           l.alpha = alpha;
-          gibsLayersRef.current[cfg.layer] = l;
+          gibsLayersRef.current[layerId] = l;
         } catch (e) {
-          console.error("[CesiumGlobe] GIBS layer add failed:", cfg.layer, e);
+          console.error("[CesiumGlobe] GIBS layer add failed:", layerId, e);
         }
       } else if (existing) {
         existing.show = shouldShow;
@@ -778,19 +397,9 @@ export function CesiumGlobe({
       }
     });
 
-    // Con las capas nuevas ya creadas, se aplica el límite de ampliación y se
-    // devuelve fronteras/topónimos a la cima de la pila.
-    applyRasterLimitRef.current?.();
-
     // Atmosphere halo toggle
     if (viewer.scene.skyAtmosphere) {
       viewer.scene.skyAtmosphere.show = active.has("atmosphere");
-    }
-
-    // Day/night terminator: real solar lighting. Only applied when the caller
-    // supplies an env-layer set, so callers without one keep the init default.
-    if (envLayers) {
-      viewer.scene.globe.enableLighting = active.has("dayNight");
     }
   }, [envLayers]);
 
@@ -825,14 +434,22 @@ export function CesiumGlobe({
         const entityId = `aurora-${suffix}-${ring}`;
         const baseRadius = 400000 + ring * 200000;
         const color = colors[ring];
-        const pulse = makePulsePair(startTime, 6000, 0.15, ring);
 
         viewer.entities.add({
           id: entityId,
           position: Cartesian3.fromDegrees(0, ringLat, 80000 + ring * 30000),
           ellipse: {
-            semiMajorAxis: new CallbackProperty(() => pulse.major(baseRadius), false),
-            semiMinorAxis: new CallbackProperty(() => pulse.minor(baseRadius, 0.6), false),
+            semiMajorAxis: new CallbackProperty(() => {
+              // Quantize time so major/minor callbacks always agree within a frame
+              const t = Math.floor((Date.now() - startTime) / 50) * 50;
+              const pulse = 1 + 0.15 * Math.sin(((t % 6000) / 6000) * Math.PI * 2 + ring);
+              return baseRadius * pulse;
+            }, false) as any,
+            semiMinorAxis: new CallbackProperty(() => {
+              const t = Math.floor((Date.now() - startTime) / 50) * 50;
+              const pulse = 1 + 0.15 * Math.sin(((t % 6000) / 6000) * Math.PI * 2 + ring);
+              return baseRadius * pulse * 0.6;
+            }, false) as any,
             material: hexToColor(color, 0.03 + intensity * 0.05),
             outline: true,
             outlineColor: hexToColor(color, 0.08 + intensity * 0.12),
@@ -856,24 +473,27 @@ export function CesiumGlobe({
     });
     quakeEntityIdsRef.current = [];
 
-    // La capa tiene interruptor en la leyenda: si está apagada no se pinta nada,
-    // en vez de dibujar los sismos siempre y dejar el control sin efecto.
-    if (envLayers && !envLayers.has("earthquakes")) return;
-
     const significant = earthquakes.filter(q => q.magnitude >= 2.5).slice(0, 100);
 
     significant.forEach((q, i) => {
       const entityId = `quake-${i}`;
       const baseRadius = Math.max(20000, q.magnitude * 30000);
       const startTime = Date.now();
-      const pulse = makePulsePair(startTime, 4000, 0.3);
 
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(q.lon, q.lat, 0),
         ellipse: {
-          semiMajorAxis: new CallbackProperty(() => pulse.major(baseRadius), false),
-          semiMinorAxis: new CallbackProperty(() => pulse.minor(baseRadius, 0.98), false),
+          semiMajorAxis: new CallbackProperty(() => {
+            const t = Math.floor((Date.now() - startTime) / 50) * 50;
+            const pulse = 1 + 0.3 * Math.sin(((t % 4000) / 4000) * Math.PI * 2);
+            return baseRadius * pulse;
+          }, false) as any,
+          semiMinorAxis: new CallbackProperty(() => {
+            const t = Math.floor((Date.now() - startTime) / 50) * 50;
+            const pulse = 1 + 0.3 * Math.sin(((t % 4000) / 4000) * Math.PI * 2);
+            return baseRadius * pulse * 0.98;
+          }, false) as any,
           material: Color.fromCssColorString("#FF4444").withAlpha(
             Math.min(0.6, q.magnitude / 10)
           ),
@@ -910,7 +530,7 @@ export function CesiumGlobe({
       });
       quakeEntityIdsRef.current.push(entityId);
     });
-  }, [earthquakes, envLayers]);
+  }, [earthquakes]);
 
   // NASA EONET events — yellow warning points
   useEffect(() => {
@@ -975,14 +595,7 @@ export function CesiumGlobe({
     marketEntityIdsRef.current = [];
     arcEntityIdsRef.current = [];
 
-    // Dos interruptores legítimos para lo mismo: la marca clásica de la
-    // leyenda (`visibleLayers`) y la capa de catálogo (`marketData`). Se pinta
-    // si cualquiera de los dos está encendido, así que el catálogo deja de ser
-    // un botón muerto sin romper la leyenda de marcas.
-    const marketsOn =
-      (visibleLayers ? visibleLayers.has("markets") : true) ||
-      (envLayers ? envLayers.has("marketData") : false);
-    if (!marketsOn) return;
+    if (visibleLayers && !visibleLayers.has("markets")) return;
 
     HOTSPOT_DATA.forEach((spot, idx) => {
       const entityId = `market-${idx}`;
@@ -1008,7 +621,7 @@ export function CesiumGlobe({
           scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
-        properties: { hotspotIndex: idx } as PlainEntityProperties,
+        properties: { hotspotIndex: idx } as any,
       });
       marketEntityIdsRef.current.push(entityId);
     });
@@ -1035,7 +648,7 @@ export function CesiumGlobe({
       });
       arcEntityIdsRef.current.push(arcId);
     });
-  }, [visibleLayers, envLayers]);
+  }, [visibleLayers]);
 
   // Sighting entities
   useEffect(() => {
@@ -1085,7 +698,7 @@ export function CesiumGlobe({
             type: s.type, severity: s.severity, source: s.source, category: s.category,
             date_reported: s.date_reported,
           }),
-        } satisfies PlainEntityProperties,
+        } as any,
       });
       sightingEntityIdsRef.current.push(entityId);
     });
@@ -1125,50 +738,37 @@ export function CesiumGlobe({
     });
     flightEntityIdsRef.current = [];
 
-    // Dos canales, un icono: el color es la banda de altitud y la forma es el
-    // tipo de vuelo inferido. El halo claro del SVG sigue haciendo legible
-    // cualquiera de las dos sobre el mapamundi.
     // Add flight markers
     flights.forEach((flight, i) => {
-      // `!latitude` descartaba los aviones en el ecuador y en el meridiano de
-      // Greenwich: un vuelo sobre el golfo de Guinea desaparecía del mapa.
-      if (!Number.isFinite(flight.latitude) || !Number.isFinite(flight.longitude)) return;
-
-      const band = altitudeBand(flight.altitude);
-      const role = aircraftRole(flight);
+      if (!flight.latitude || !flight.longitude) return;
+      
       const entityId = `flight-${i}`;
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
         billboard: {
-          // 32 px y con el desvanecido más tardío: a 26 px y con el factor 0,3
-          // el avión se quedaba en un punto de 8 px en cuanto alejabas la cámara.
-          image: aircraftMarkerIcon(flight.aircraftCategory, band.color, role), width: 32, height: 32,
+          image: markerIcon("flight", "#69AF00"), width: 22, height: 22,
           rotation: -CesiumMath.toRadians(flight.heading || 0),
-          scaleByDistance: new NearFarScalar(5e5, 1.35, 1.2e7, 0.55),
+          scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
         properties: eventPayload({
           lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
-          description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${band.label} · ${ROLE_LABELS[role]} · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
+          description: `${Math.round(flight.altitude)} m · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+          type: "aircraft", severity: "low", source: "OpenSky / ADS-B.lol", category: "aircraft",
           date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
         }),
         label: {
-          // El indicativo vacío dejaba una etiqueta en blanco; el hex es lo que
-          // el transpondedor siempre manda.
-          text: flight.callsign || flight.icao24,
-          font: "600 10px monospace",
-          fillColor: hexToColor(band.color, 0.95),
+          text: `${flight.callsign}`,
+          font: "8px monospace",
+          fillColor: hexToColor("#00FFFF", 0.8),
           outlineColor: Color.BLACK,
-          outlineWidth: 3,
+          outlineWidth: 1,
           style: 2,
           verticalOrigin: VerticalOrigin.BOTTOM,
           horizontalOrigin: HorizontalOrigin.CENTER,
-          pixelOffset: new Cartesian2(0, -17),
-          // Antes moría a 5 000 km de cámara (escala 0,1): justo la vista en la
-          // que se mira una capa de tráfico aéreo. Ahora aguanta hasta 20 000 km.
-          scaleByDistance: new NearFarScalar(5e5, 1.0, 2e7, 0.42),
+          pixelOffset: new Cartesian2(0, -8),
+          scaleByDistance: new NearFarScalar(1e5, 0.8, 5e6, 0.1),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
         },
       });
@@ -1237,12 +837,6 @@ export function CesiumGlobe({
     });
   }, [ships, envLayers]);
 
-  // Booleano, no el array: `cables` por defecto es `[]` nuevo en cada render,
-  // así que usarlo como dependencia reconstruiría los ~250 marcadores
-  // estáticos en cada pasada. Un primitivo sólo cambia cuando de verdad
-  // llegan (o se pierden) los datos de TeleGeography.
-  const hasLiveCables = cables.length > 0;
-
   // Conflicts + strategic infrastructure (static registries, Liveuamap-style)
   useEffect(() => {
     const viewer = viewerRef.current;
@@ -1255,30 +849,44 @@ export function CesiumGlobe({
     });
     staticEntityIdsRef.current = [];
 
-    /** Una entrada del catálogo fijo, con lo necesario para agruparse por zoom. */
-    type StaticPoint = MapLabelPoint & {
-      color: string;
-      size: number;
-      payload?: Record<string, unknown>;
-    };
-
-    // Los puntos no se pintan aqui: se acumulan y `paintPoints` decide cuantos
-    // marcadores existen a la altura actual de la camara. Con las cinco capas
-    // estrategicas encendidas son 197 etiquetas a la vez, y a 20 000 km eso es
-    // una mancha de texto sobre el globo entero.
-    const points: StaticPoint[] = [];
     const addPoint = (
-      id: string, lat: number, lon: number, color: string, icon: string, name: string,
+      id: string, lat: number, lon: number, color: string, label: string,
       size: number, payload?: Record<string, unknown>,
     ) => {
-      points.push({ id, lat, lon, color, icon, name, size, payload });
+      viewer.entities.add({
+        id,
+        position: Cartesian3.fromDegrees(lon, lat, 0),
+        point: {
+          pixelSize: size,
+          color: hexToColor(color, 0.9),
+          outlineColor: hexToColor(color, 0.35),
+          outlineWidth: 4,
+          scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.45),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        label: {
+          text: label,
+          font: "10px monospace",
+          fillColor: hexToColor(color, 0.95),
+          outlineColor: Color.BLACK,
+          outlineWidth: 2,
+          style: 2,
+          verticalOrigin: VerticalOrigin.BOTTOM,
+          horizontalOrigin: HorizontalOrigin.CENTER,
+          pixelOffset: new Cartesian2(0, -12),
+          scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
+          disableDepthTestDistance: Number.POSITIVE_INFINITY,
+        },
+        properties: payload ? ({ sightingData: JSON.stringify(payload) } as any) : undefined,
+      });
+      staticEntityIdsRef.current.push(id);
     };
 
     if (active.has("conflictZones")) {
       CONFLICT_ZONES.forEach((c) => {
         addPoint(
           `conflict-${c.id}`, c.lat, c.lon, CONFLICT_COLORS[c.category],
-          CONFLICT_ICONS[c.category], c.name,
+          `${CONFLICT_ICONS[c.category]} ${c.name}`,
           7 + c.intensity * 7,
           {
             lat: c.lat, lon: c.lon, location: `${c.name} — ${c.country}`,
@@ -1292,7 +900,7 @@ export function CesiumGlobe({
 
     if (active.has("chokepoints")) {
       CHOKEPOINTS.forEach((p) =>
-        addPoint(`choke-${p.id}`, p.lat, p.lon, "#ea580c", "⚓", p.name, 8, {
+        addPoint(`choke-${p.id}`, p.lat, p.lon, "#ea580c", `⚓ ${p.name}`, 8, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "chokepoint", severity: "medium", source: "WorldMonitor registry",
           category: "logistics", date_reported: "static",
@@ -1301,34 +909,16 @@ export function CesiumGlobe({
     }
     if (active.has("nuclearSites")) {
       NUCLEAR_SITES.forEach((p) =>
-        addPoint(`nuke-${p.id}`, p.lat, p.lon, "#7c3aed", "☢️", p.name, 8, {
+        addPoint(`nuke-${p.id}`, p.lat, p.lon, "#7c3aed", `☢️ ${p.name}`, 8, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "nuclear", severity: "high", source: "WorldMonitor registry",
           category: "geopolitical", date_reported: "static",
         }),
       );
     }
-    if (active.has("gammaIrradiators")) {
-      // Un irradiador no es un reactor: no hay riesgo de criticidad, pero sí
-      // material radiactivo de categoría IV y un uso industrial que explica la
-      // mitad de los implantes y alimentos esterilizados del país. La ficha
-      // dice qué es y a qué distancia quedaba el topónimo que declara la IAEA.
-      GAMMA_IRRADIATORS.forEach((p) =>
-        addPoint(`gamma-${p.id}`, p.lat, p.lon, "#f59e0b", "☢", p.city, 7, {
-          lat: p.lat, lon: p.lon, location: `${p.city} — ${p.country}`,
-          description:
-            `Industrial gamma irradiation facility (IAEA DIIF). ` +
-            `Sterilises medical devices and treats food; cobalt-60 source, no reactor.` +
-            (p.declaredKm !== null ? ` Verified ${p.declaredKm} km from the IAEA place name.` : ""),
-          type: "gamma", severity: "medium", source: "IAEA DIIF / OpenStreetMap",
-          category: "infrastructure", date_reported: "static",
-        }),
-      );
-    }
-
     if (active.has("militaryBases")) {
       MILITARY_BASES.forEach((p) =>
-        addPoint(`mil-${p.id}`, p.lat, p.lon, "#94a3b8", "🛡️", p.name, 7, {
+        addPoint(`mil-${p.id}`, p.lat, p.lon, "#94a3b8", `🛡️ ${p.name}`, 7, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "military", severity: "medium", source: "WorldMonitor registry",
           category: "geopolitical", date_reported: "static",
@@ -1337,7 +927,7 @@ export function CesiumGlobe({
     }
     if (active.has("economicCenters")) {
       ECONOMIC_CENTERS.forEach((p) =>
-        addPoint(`eco-${p.id}`, p.lat, p.lon, "#10b981", "💹", p.name, 7, {
+        addPoint(`eco-${p.id}`, p.lat, p.lon, "#10b981", `💹 ${p.name}`, 7, {
           lat: p.lat, lon: p.lon, location: p.name, description: p.detail,
           type: "market", severity: "low", source: "WorldMonitor registry",
           category: "finance", date_reported: "static",
@@ -1356,138 +946,18 @@ export function CesiumGlobe({
             color: Color.fromCssColorString(color).withAlpha(0.6),
           }),
         },
-        properties: { cableName: name } as PlainEntityProperties,
+        properties: { cableName: name } as any,
       });
       staticEntityIdsRef.current.push(id);
     };
 
-    // El catálogo estático sólo rellena el hueco cuando TeleGeography no
-    // responde. Con la geometría real cargada, pintar encima 27 rutas
-    // esquemáticas duplicaba la capa y falseaba los trazados.
-    if (active.has("underseaCables") && !hasLiveCables) {
+    if (active.has("underseaCables")) {
       UNDERSEA_CABLES.forEach((c) => addLine(`cable-${c.id}`, c.path, "#0891b2", c.name));
     }
     if (active.has("pipelines")) {
       PIPELINES.forEach((p) => addLine(`pipe-${p.id}`, p.path, "#ca8a04", p.name));
     }
-
-    let pointIds: string[] = [];
-    let paintedCell = Number.NaN;
-
-    /**
-     * Pinta los puntos del catálogo para la altura actual de la cámara.
-     *
-     * Agrupa por celdas de tamaño creciente con la distancia (`clusterCellDegrees`)
-     * y sólo repinta cuando el zoom cruza un escalón: `paintedCell` guarda el
-     * último y así un arrastre o un giro no reconstruyen 197 entidades por
-     * fotograma. Un grupo se pinta como un punto con su cuenta y, al pulsarlo,
-     * abre la ficha con los nombres de sus miembros.
-     */
-    const paintPoints = () => {
-      if (viewer.isDestroyed()) return;
-      const cell = clusterCellDegrees(viewer.camera.positionCartographic?.height ?? 0);
-      if (cell === paintedCell) return;
-      paintedCell = cell;
-
-      pointIds.forEach((id) => {
-        const e = viewer.entities.getById(id);
-        if (e) viewer.entities.remove(e);
-      });
-      pointIds = [];
-
-      const drawLabel = (color: string, text: string) => ({
-        text,
-        font: "10px monospace",
-        fillColor: hexToColor(color, 0.95),
-        outlineColor: Color.BLACK,
-        outlineWidth: 2,
-        style: 2,
-        verticalOrigin: VerticalOrigin.BOTTOM,
-        horizontalOrigin: HorizontalOrigin.CENTER,
-        pixelOffset: new Cartesian2(0, -12),
-        scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      });
-
-      for (const group of clusterMapLabels(points, cell)) {
-        if (group.kind === "point") {
-          const { id, lat, lon, color, icon, name, size, payload } = group.point;
-          viewer.entities.add({
-            id,
-            position: Cartesian3.fromDegrees(lon, lat, 0),
-            point: {
-              pixelSize: size,
-              color: hexToColor(color, 0.9),
-              outlineColor: hexToColor(color, 0.35),
-              outlineWidth: 4,
-              scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.45),
-              disableDepthTestDistance: Number.POSITIVE_INFINITY,
-            },
-            label: drawLabel(color, `${icon} ${name}`),
-            properties: payload ? ({ sightingData: JSON.stringify(payload) } as PlainEntityProperties) : undefined,
-          });
-          pointIds.push(id);
-          continue;
-        }
-
-        // Grupo: gana el color y el icono de la capa mayoritaria, y la etiqueta
-        // pasa a ser la cuenta, que es el dato que cabe a este zoom.
-        const { members } = group;
-        const weight = new Map<string, { color: string; icon: string; count: number }>();
-        for (const member of members) {
-          const entry = weight.get(member.icon);
-          if (entry) entry.count += 1;
-          else weight.set(member.icon, { color: member.color, icon: member.icon, count: 1 });
-        }
-        const dominant = [...weight.values()].sort((a, b) => b.count - a.count)[0];
-        const icon = weight.size === 1 ? dominant.icon : "◈";
-        const base = members.find((member) => member.payload)?.payload ?? {};
-        const names = members.slice(0, 5).map((member) => member.name).join(" · ");
-        const extra = members.length > 5 ? ` · y ${members.length - 5} más` : "";
-
-        viewer.entities.add({
-          id: group.id,
-          position: Cartesian3.fromDegrees(group.lon, group.lat, 0),
-          point: {
-            pixelSize: Math.min(18, 9 + Math.log2(members.length) * 2),
-            color: hexToColor(dominant.color, 0.85),
-            outlineColor: hexToColor(dominant.color, 0.35),
-            outlineWidth: 5,
-            scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.55),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-          label: drawLabel(dominant.color, `${icon} ${members.length}`),
-          properties: {
-            sightingData: JSON.stringify({
-              ...base,
-              lat: group.lat,
-              lon: group.lon,
-              location: `${members.length} sitios agrupados`,
-              description: `${names}${extra} · Acerca el globo para abrirlos uno a uno.`,
-              type: weight.size === 1 ? (base.type ?? "cluster") : "cluster",
-            }),
-          } as PlainEntityProperties,
-        });
-        pointIds.push(group.id);
-      }
-    };
-
-    repaintStaticRef.current = paintPoints;
-    paintPoints();
-
-    // Los puntos se pintan por celda y no viven en `staticEntityIdsRef` (que es
-    // de las líneas): sin retirarlos aquí, la siguiente pasada intentaría crear
-    // ids que ya existen y Cesium lanza «an entity with id … already exists».
-    return () => {
-      repaintStaticRef.current = null;
-      if (viewer.isDestroyed()) return;
-      pointIds.forEach((id) => {
-        const e = viewer.entities.getById(id);
-        if (e) viewer.entities.remove(e);
-      });
-      pointIds = [];
-    };
-  }, [envLayers, hasLiveCables]);
+  }, [envLayers]);
 
   // Orbital surveillance — propagated TLEs
   useEffect(() => {
@@ -1499,11 +969,6 @@ export function CesiumGlobe({
       if (e) viewer.entities.remove(e);
     });
     satEntityIdsRef.current = [];
-
-    // Mismo caso que los sismos: el conector se apaga al desactivar la capa,
-    // pero las posiciones ya propagadas seguían en pantalla hasta el siguiente
-    // refresco. La guarda lo hace inmediato.
-    if (envLayers && !envLayers.has("satellites")) return;
 
     satellites.forEach((s) => {
       if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return;
@@ -1536,7 +1001,7 @@ export function CesiumGlobe({
       });
       satEntityIdsRef.current.push(entityId);
     });
-  }, [satellites, envLayers]);
+  }, [satellites]);
 
   // Internet outages (IODA)
   useEffect(() => {
@@ -1581,7 +1046,7 @@ export function CesiumGlobe({
             type: "outage", severity: "medium", source: "IODA / Georgia Tech",
             category: "intel", date_reported: "24h",
           }),
-        } satisfies PlainEntityProperties,
+        } as any,
       });
       outageEntityIdsRef.current.push(entityId);
     });
@@ -1606,13 +1071,7 @@ export function CesiumGlobe({
     try {
       const provider = new UrlTemplateImageryProvider({
         url: rainTileUrl,
-        // RainViewer sirve radar hasta el nivel 7 (su documentación: «Maximum
-        // zoom level is 7»). Del 8 en adelante devuelve una tesela con el
-        // texto «Zoom level not supported» en vez de un error: al acercar la
-        // cámara, ese texto se plantaba encima del globo como si fuera una
-        // capa. Declarando el tope real, Cesium amplía la última tesela válida
-        // y nunca pide la que no existe.
-        maximumLevel: 7,
+        maximumLevel: 8,
         minimumLevel: 0,
         credit: "RainViewer",
       });
@@ -1644,10 +1103,7 @@ export function CesiumGlobe({
     const track = (id: string) => connectorEntityIdsRef.current.push(id);
 
     // --- NOAA Ovation aurora mesh ---
-    // La malla se dibuja para `solarActivity` y para `magnetosphere`: es la
-    // huella ionosférica del óvalo auroral, y la segunda capa existe para verla
-    // también con Kp bajo (la corona de `solarActivity` sólo aparece con Kp>3).
-    if (active.has("solarActivity") || active.has("magnetosphere")) {
+    if (active.has("solarActivity")) {
       auroraCells.forEach((c, i) => {
         const id = `aurora-cell-${i}`;
         const a = Math.min(0.5, c.probability / 140);
@@ -1680,10 +1136,10 @@ export function CesiumGlobe({
             sightingData: JSON.stringify({
               lat: f.lat, lon: f.lon, location: "Active fire",
               description: `Brightness ${f.brightness} · confidence ${f.confidence}`,
-              type: "fire", severity: "high", source: f.source ?? "NASA FIRMS (VIIRS)",
+              type: "fire", severity: "high", source: "NASA FIRMS (VIIRS)",
               category: "conflict", date_reported: "24h",
             }),
-          } satisfies PlainEntityProperties,
+          } as any,
         });
         track(id);
       });
@@ -1705,7 +1161,7 @@ export function CesiumGlobe({
                 color: Color.fromCssColorString(cable.color || "#0891b2").withAlpha(0.55),
               }),
             },
-            properties: { cableName: cable.name } as PlainEntityProperties,
+            properties: { cableName: cable.name } as any,
           });
           track(id);
         });
@@ -1725,10 +1181,10 @@ export function CesiumGlobe({
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           properties: eventPayload({
-            lat: n.lat, lon: n.lon, location: n.country || "Bitcoin nodes",
-            description: `${n.count} nodo${n.count === 1 ? "" : "s"} Bitcoin alcanzable${n.count === 1 ? "" : "s"} en ${n.country}. Recuento por país; la fuente no publica la posición de cada nodo.`,
-            type: "bitcoin", severity: "low", source: "Blockchair", category: "finance",
-            date_reported: "LIVE", reliability: "Recuento por país, no posición individual",
+            lat: n.lat, lon: n.lon, location: n.city || n.country || "Bitcoin node",
+            description: `Reachable Bitcoin node · ${n.country || "unknown country"}`,
+            type: "bitcoin", severity: "low", source: "Bitnodes", category: "finance",
+            date_reported: "LIVE", reliability: "Public network crawler",
           }),
         });
         track(id);
@@ -1753,58 +1209,7 @@ export function CesiumGlobe({
               description: g.url, type: "news", severity: "medium",
               source: `GDELT · ${g.domain}`, category: "intel", date_reported: "24h",
             }),
-          } satisfies PlainEntityProperties,
-        });
-        track(id);
-      });
-    }
-
-    // --- Conflictos en vivo (GDELT, últimas 48 h) ---
-    // Las zonas curadas dicen dónde hay conflicto abierto; esto dice qué ha
-    // pasado ahí hoy. Sólo se rotulan los sucesos con muertos: son los pocos
-    // que se leen a escala global y los que no se pueden perder entre puntos.
-    if (active.has("conflictZones")) {
-      conflictEvents.slice(0, 120).forEach((event) => {
-        const id = `conflict-live-${event.id}`;
-        const color = event.severity === "HIGH" ? "#dc2626" : event.severity === "MEDIUM" ? "#f97316" : "#eab308";
-        viewer.entities.add({
-          id,
-          position: Cartesian3.fromDegrees(event.lon, event.lat, 0),
-          billboard: {
-            image: markerIcon("conflict", color), width: 20, height: 20,
-            scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.4),
-            disableDepthTestDistance: Number.POSITIVE_INFINITY,
-          },
-          ...(event.severity === "HIGH"
-            ? {
-                label: {
-                  text: `⚔ ${CONFLICT_KIND_LABEL[event.kind]} · ${event.location}`.slice(0, 48),
-                  font: "9px monospace",
-                  fillColor: hexToColor("#fecaca", 0.95),
-                  outlineColor: Color.BLACK,
-                  outlineWidth: 2,
-                  style: 2,
-                  verticalOrigin: VerticalOrigin.BOTTOM,
-                  pixelOffset: new Cartesian2(0, -10),
-                  scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.18),
-                  disableDepthTestDistance: Number.POSITIVE_INFINITY,
-                },
-              }
-            : {}),
-          properties: {
-            sightingData: JSON.stringify({
-              lat: event.lat,
-              lon: event.lon,
-              location: `${CONFLICT_KIND_LABEL[event.kind]} · ${event.location}`,
-              description: `${event.title} · ${event.url}`,
-              type: "conflict",
-              severity: event.severity === "HIGH" ? "critical" : event.severity === "MEDIUM" ? "high" : "medium",
-              source: `GDELT · ${event.domain}`,
-              category: "geopolitical",
-              date_reported: event.date || "48h",
-              reliability: "Titular geolocalizado por GDELT, no un parte oficial",
-            }),
-          } satisfies PlainEntityProperties,
+          } as any,
         });
         track(id);
       });
@@ -1859,501 +1264,7 @@ export function CesiumGlobe({
         track(labelId);
       });
     }
-  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, conflictEvents, surfaceWeather]);
-
-  /**
-   * Rejilla ambiental: secado de la ropa, polen, estado del mar y nieve.
-   *
-   * Cada marcador lleva su medida y su fuente en la ficha, porque un «78 %» sin
-   * decir de dónde sale es un número inventado. El color no decora: es la
-   * lectura de la capa (verde = seca / baño tranquilo / poca nieve acumulada,
-   * rojo = lluvia / bandera roja / polen muy alto).
-   */
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    envGridEntityIdsRef.current.forEach((id) => {
-      const entity = viewer.entities.getById(id);
-      if (entity) viewer.entities.remove(entity);
-    });
-    envGridEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    const env = environment;
-    if (!env) return;
-
-    const add = (
-      id: string,
-      lat: number,
-      lon: number,
-      glyph: string,
-      color: string,
-      labelText: string,
-      payload: Record<string, unknown>,
-    ) => {
-      viewer.entities.add({
-        id,
-        position: Cartesian3.fromDegrees(lon, lat, 20_000),
-        billboard: {
-          image: markerIcon(glyph, color), width: 18, height: 18,
-          scaleByDistance: new NearFarScalar(1e6, 1.1, 1e8, 0.35),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: labelText,
-          font: "9px monospace",
-          fillColor: hexToColor(color, 0.95),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          pixelOffset: new Cartesian2(0, -8),
-          scaleByDistance: new NearFarScalar(1e6, 0.9, 1e8, 0.2),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: eventPayload({ lat, lon, category: "weather", ...payload }),
-      });
-      envGridEntityIdsRef.current.push(id);
-    };
-
-    if (active.has("dryingIndex")) {
-      env.drying.forEach((point) => {
-        const color = point.index >= 70 ? "#22c55e" : point.index >= 40 ? "#f59e0b" : "#ef4444";
-        add(
-          `drying-${point.id}`, point.lat, point.lon, "drying", color,
-          `Secado ${point.index}%`,
-          {
-            location: `${point.name} · secado de la ropa`,
-            description:
-              `Índice de secado ${point.index}/100 con ${point.temperatureC.toFixed(1)} °C, ` +
-              `${point.humidityPercent.toFixed(0)} % HR, viento ${point.windKmh.toFixed(0)} km/h y ` +
-              `${point.precipitationMm.toFixed(1)} mm. ${point.index === 0 ? "No se seca: está lloviendo." : point.index >= 70 ? "Se seca sin problema." : point.index >= 40 ? "Se seca despacio." : "Casi no se seca."}`,
-            type: "drying", severity: point.index >= 70 ? "low" : point.index >= 40 ? "medium" : "high",
-            source: "Open-Meteo · previsión horaria", category: "weather",
-            date_reported: point.time || "LIVE", reliability: "Modelo de previsión (no medida directa)",
-          },
-        );
-      });
-    }
-
-    if (active.has("seaState")) {
-      const colorOf = { verde: "#22c55e", amarilla: "#facc15", roja: "#ef4444" } as const;
-      env.sea.forEach((point) => {
-        add(
-          `sea-${point.id}`, point.lat, point.lon, "sea", colorOf[point.flag],
-          `${point.waveHeightM.toFixed(1)} m`,
-          {
-            location: `${point.name} · estado del mar`,
-            description:
-              `Ola ${point.waveHeightM.toFixed(2)} m` +
-              `${point.swellHeightM !== null ? `, mar de fondo ${point.swellHeightM.toFixed(2)} m` : ""}` +
-              `${point.seaTempC !== null ? `, agua ${point.seaTempC.toFixed(1)} °C` : ""}. ` +
-              `Bandera ${point.flag} (deducida del oleaje, no del socorrista).`,
-            type: "sea", severity: point.flag === "roja" ? "high" : point.flag === "amarilla" ? "medium" : "low",
-            source: "Open-Meteo Marine · oleaje y mar de fondo", category: "weather",
-            date_reported: point.time || "LIVE", reliability: "Modelo de oleaje",
-          },
-        );
-      });
-    }
-
-    if (active.has("snowDepth")) {
-      env.snow.forEach((point) => {
-        const cm = point.snowDepthM * 100;
-        const color = cm >= 50 ? "#e2e8f0" : cm >= 20 ? "#93c5fd" : cm > 0 ? "#60a5fa" : "#64748b";
-        add(
-          `snow-${point.id}`, point.lat, point.lon, "snow", color,
-          `${cm.toFixed(0)} cm`,
-          {
-            location: `${point.name} · nieve`,
-            description:
-              `Espesor ${cm.toFixed(0)} cm, nevada ${point.snowfallCm.toFixed(1)} cm, ` +
-              `${point.temperatureC.toFixed(1)} °C` +
-              `${point.freezingLevelM !== null ? `, cota de nieve ≈ ${Math.round(point.freezingLevelM)} m (isoterma de 0 °C)` : ""}.`,
-            type: "snow", severity: cm >= 20 ? "low" : "medium",
-            source: "Open-Meteo · espesor e isoterma de 0 °C", category: "weather",
-            date_reported: point.time || "LIVE", reliability: "Modelo de previsión",
-          },
-        );
-      });
-    }
-
-    if (active.has("pollen")) {
-      const colorOf = { 0: "#38bdf8", 1: "#facc15", 2: "#fb923c", 3: "#f43f5e" } as const;
-      const labelOf = { 0: "bajo", 1: "moderado", 2: "alto", 3: "muy alto" } as const;
-      env.pollen.forEach((point) => {
-        add(
-          `pollen-${point.id}`, point.lat, point.lon, "pollen", colorOf[point.level],
-          `${point.dominant ?? "polen"} ${point.dominantGrains?.toFixed(0) ?? 0}/m³`,
-          {
-            location: `${point.name} · polen`,
-            description:
-              `${point.dominant ?? "Polen"}: ${point.dominantGrains?.toFixed(1) ?? 0} granos/m³ ` +
-              `(nivel ${labelOf[point.level]}). CAMS Europe sólo publica estos recuentos en Europa.`,
-            type: "pollen", severity: point.level >= 2 ? "high" : point.level === 1 ? "medium" : "low",
-            source: "CAMS Europe vía Open-Meteo Air Quality", category: "weather",
-            date_reported: point.time || "LIVE", reliability: "Modelo CAMS",
-          },
-        );
-      });
-    }
-  }, [environment, envLayers]);
-
-  // ISS — posición real de WhereTheISS.at, a su altitud, con la huella de
-  // cobertura de la estación (~2 250 km de radio) para que se entienda qué ve.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    issEntityIdsRef.current.forEach((id) => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    issEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    if (!active.has("iss") || !iss) return;
-    if (!Number.isFinite(iss.lat) || !Number.isFinite(iss.lon)) return;
-
-    const id = "iss-station";
-    viewer.entities.add({
-      id,
-      position: Cartesian3.fromDegrees(iss.lon, iss.lat, Math.max(0, iss.altKm) * 1000),
-      ellipse: {
-        semiMajorAxis: 2_250_000,
-        semiMinorAxis: 2_250_000,
-        material: hexToColor("#f472b6", 0.05),
-        outline: true,
-        outlineColor: hexToColor("#f472b6", 0.3),
-        outlineWidth: 1,
-        height: 0,
-      },
-      billboard: {
-        image: markerIcon("iss", "#f472b6"), width: 26, height: 26,
-        verticalOrigin: VerticalOrigin.CENTER,
-        scaleByDistance: new NearFarScalar(1e6, 1.2, 1e8, 0.45),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-      label: {
-        text: `ISS · ${iss.altKm.toFixed(0)} km`,
-        font: "10px monospace",
-        fillColor: hexToColor("#fbcfe8", 0.95),
-        outlineColor: Color.BLACK,
-        outlineWidth: 2,
-        style: 2,
-        verticalOrigin: VerticalOrigin.BOTTOM,
-        pixelOffset: new Cartesian2(0, -10),
-        scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.25),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-      properties: eventPayload({
-        lat: iss.lat, lon: iss.lon, location: "Estación Espacial Internacional",
-        description:
-          `Altitud ${iss.altKm.toFixed(0)} km · ${iss.speedKmh.toFixed(0)} km/h · ` +
-          `${iss.visibility === "daylight" ? "a la luz del día" : "en eclipse"}`,
-        type: "iss", severity: "low", source: "WhereTheISS.at (TLE NORAD 25544)",
-        category: "intel", date_reported: "LIVE", reliability: "Elementos orbitales oficiales",
-      }),
-    });
-    issEntityIdsRef.current.push(id);
-  }, [iss, envLayers]);
-
-  // Ionosfera — malla TEC de NOAA. El tamaño y el color del punto son el TEC:
-  // azul (bajo) → violeta → magenta (alto), que es donde la señal GNSS llega
-  // con retardo y las comunicaciones HF fallan.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    ionoEntityIdsRef.current.forEach((id) => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    ionoEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    if (!active.has("ionosphere") || !ionosphere || !ionosphere.points.length) return;
-
-    const span = Math.max(1, ionosphere.maxTec - ionosphere.minTec);
-    ionosphere.points.forEach((p, i) => {
-      const t = Math.min(1, Math.max(0, (p.tec - ionosphere.minTec) / span));
-      const id = `iono-${i}`;
-      viewer.entities.add({
-        id,
-        position: Cartesian3.fromDegrees(p.lon, p.lat, 350_000),
-        point: {
-          pixelSize: 4 + t * 7,
-          color: hexToColor(t > 0.66 ? "#f472b6" : t > 0.33 ? "#c084fc" : "#22d3ee", 0.3 + t * 0.45),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: eventPayload({
-          lat: p.lat, lon: p.lon, location: "Ionosfera",
-          description: `TEC ${p.tec.toFixed(1)} TECU`, type: "ionosphere",
-          severity: t > 0.66 ? "high" : "low", source: "NOAA SWPC GLOTEC",
-          category: "intel", date_reported: ionosphere.observationTime, reliability: "Medido",
-        }),
-      });
-      ionoEntityIdsRef.current.push(id);
-    });
-  }, [ionosphere, envLayers]);
-
-  // Cámaras del Alien en su sitio. El marcador lleva `cameraId` en las
-  // propiedades para que el clic del visor abra esa cámara en la pestaña UAP.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    cameraEntityIdsRef.current.forEach((id) => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    cameraEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    if (!active.has("liveCameras")) return;
-
-    cameras.forEach((camera) => {
-      const id = `camera-${camera.id}`;
-      viewer.entities.add({
-        id,
-        position: Cartesian3.fromDegrees(camera.lon, camera.lat, 0),
-        billboard: {
-          image: markerIcon("camera", "#f472b6"), width: 22, height: 22,
-          scaleByDistance: new NearFarScalar(1e6, 1.4, 1e8, 0.3),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: camera.label,
-          font: "9px monospace",
-          fillColor: hexToColor("#fbcfe8", 0.9),
-          outlineColor: Color.BLACK,
-          outlineWidth: 2,
-          style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM,
-          pixelOffset: new Cartesian2(0, -10),
-          // Las etiquetas sólo aparecen de cerca: con 259 cámaras, escribirlas
-          // todas a la vez tapaban el globo entero.
-          scaleByDistance: new NearFarScalar(1e6, 0.9, 3e7, 0),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: {
-          cameraId: camera.id,
-          sightingData: JSON.stringify({
-            lat: camera.lat, lon: camera.lon, location: camera.label,
-            description:
-              `${camera.source} · ${camera.categoryLabel}` +
-              (camera.approximate ? " · sede aproximada (la ficha da la región)" : "") +
-              " · pulsar para ver su ficha",
-            type: "camera", severity: "low", source: camera.source,
-            category: "intel", date_reported: "LIVE",
-          }),
-        } as PlainEntityProperties,
-      });
-      cameraEntityIdsRef.current.push(id);
-    });
-  }, [cameras, envLayers]);
-
-  // Cinturones de Van Allen — los dos toroides de partículas atrapadas por el
-  // dipolo. La geometría es la real (sección de cada cinturón en el plano del
-  // ecuador magnético, inclinado 9,4° respecto al eje de rotación) y el color
-  // del exterior es la intensidad que mide GOES, que orbita *dentro* de él: a
-  // 6,6 R⊕ el satélite es parte del cinturón que mide. El interior es de
-  // protones y se dibuja gris, sin intensidad, porque ninguna fuente abierta de
-  // este proyecto lo mide: pintarlo del color de otro cinturón sería inventarlo.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    vanAllenEntityIdsRef.current.forEach((id) => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    vanAllenEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    if (!active.has("vanAllen") || !vanAllen || !vanAllen.measuredAt) return;
-
-    const track = (id: string) => vanAllenEntityIdsRef.current.push(id);
-    const outerColor = BELT_LEVEL_COLORS[vanAllen.level];
-    const toEcef = (x: number, y: number, z: number) =>
-      new Cartesian3(x * EARTH_RADIUS_M, y * EARTH_RADIUS_M, z * EARTH_RADIUS_M);
-
-    for (const ring of beltRings("outer")) {
-      const id = `van-allen-outer-${ring.radiusEarth}`;
-      viewer.entities.add({
-        id,
-        polyline: {
-          positions: ring.points.map((p) => toEcef(p.x, p.y, p.z)),
-          width: 2,
-          // El anillo exterior, el más lejano, se dibuja más tenue: es el que se
-          // pierde antes al alejarse la vista.
-          material: hexToColor(outerColor, ring.radiusEarth >= 8 ? 0.4 : 0.65),
-          arcType: ArcType.NONE,
-        },
-        properties: eventPayload({
-          location: `Cinturón exterior · ${ring.radiusEarth} R⊕`,
-          description:
-            `Electrones >2 MeV: ${vanAllen.electronFlux.toFixed(0)} e⁻·cm⁻²·s⁻¹·sr⁻¹ ` +
-            `(${vanAllen.level === "quiet" ? "tranquilo" : vanAllen.level === "elevated" ? "elevado" : vanAllen.level === "high" ? "alto" : "extremo"})`,
-          type: "vanAllen", severity: vanAllen.level === "high" || vanAllen.level === "extreme" ? "high" : "low",
-          source: `NOAA GOES-${vanAllen.satellite} · ${vanAllen.satellites} satélites`, category: "intel",
-          date_reported: vanAllen.measuredAt, reliability: "Medido (sección en el plano del ecuador magnético)",
-        }),
-      });
-      track(id);
-    }
-
-    for (const ring of beltRings("inner")) {
-      const id = `van-allen-inner-${ring.radiusEarth}`;
-      viewer.entities.add({
-        id,
-        polyline: {
-          positions: ring.points.map((p) => toEcef(p.x, p.y, p.z)),
-          width: 2,
-          material: hexToColor("#64748b", 0.45),
-          arcType: ArcType.NONE,
-        },
-        properties: eventPayload({
-          location: `Cinturón interior · ${ring.radiusEarth} R⊕`,
-          description: "Protones de alta energía. Sin intensidad propia: no hay fuente abierta que lo mida con esta cadencia.",
-          type: "vanAllen", severity: "low", source: "Modelo estándar de radiación (geometría)",
-          category: "intel", date_reported: "LIVE", reliability: "Geometría, no medida",
-        }),
-      });
-      track(id);
-    }
-
-    // Una etiqueta en el borde exterior para poder identificar la capa de un
-    // vistazo, como el hueco que dejan las líneas del cinturón.
-    const labelRing = beltRings("outer").at(-1);
-    const anchor = labelRing?.points[0];
-    if (anchor) {
-      const id = "van-allen-label";
-      viewer.entities.add({
-        id,
-        position: toEcef(anchor.x, anchor.y, anchor.z),
-        billboard: {
-          image: markerIcon("belt", outerColor), width: 22, height: 22,
-          scaleByDistance: new NearFarScalar(1e7, 1.3, 1e9, 0.4),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        label: {
-          text: `Van Allen · ${vanAllen.level}`,
-          font: "10px monospace",
-          fillColor: hexToColor("#fbcfe8", 0.95),
-          outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
-          verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: new Cartesian2(0, -10),
-          scaleByDistance: new NearFarScalar(1e7, 1, 1e9, 0.3),
-          disableDepthTestDistance: Number.POSITIVE_INFINITY,
-        },
-        properties: eventPayload({
-          location: "Cinturones de Van Allen",
-          description:
-            `Cinturón exterior medido por GOES: ${vanAllen.electronFlux.toFixed(0)} e⁻·cm⁻²·s⁻¹·sr⁻¹ (${vanAllen.level}). ` +
-            "Cinturón interior de protones: sólo geometría, sin intensidad propia.",
-          type: "vanAllen", severity: "low", source: "NOAA GOES", category: "intel",
-          date_reported: vanAllen.measuredAt, reliability: "Medido",
-        }),
-      });
-      track(id);
-    }
-  }, [vanAllen, envLayers]);
-
-  // Heliosfera — el viento solar llega por el punto subsolar y sigue de largo
-  // por el lado opuesto: la burbuja vista desde dentro, que es lo único que se
-  // puede medir de ella (L1, a 1,5 millones de km). La frontera (heliopausa, a
-  // ~120 UA, cruzada por las Voyager) va escrita en la ficha porque a escala de
-  // globo no es dibujable: sería una esfera 12 000 veces más lejos que el Sol.
-  useEffect(() => {
-    const viewer = viewerRef.current;
-    if (!viewer || viewer.isDestroyed()) return;
-
-    heliosphereEntityIdsRef.current.forEach((id) => {
-      const e = viewer.entities.getById(id);
-      if (e) viewer.entities.remove(e);
-    });
-    heliosphereEntityIdsRef.current = [];
-
-    const active = envLayers ?? new Set<EnvLayerKey>();
-    if (!active.has("heliosphere") || !solarWind || !solarWind.measuredAt) return;
-
-    const track = (id: string) => heliosphereEntityIdsRef.current.push(id);
-    const { lat, lon } = subsolarPoint();
-    const fast = solarWind.speedKms >= FAST_WIND_KMS;
-    const color = fast ? "#fdba74" : "#fcd34d";
-    const south = -lat;
-
-    // Dos trazos radiales: el viento entrando por el punto subsolar y saliendo
-    // por el antisolar. Es la dirección real del flujo, no una flecha decorativa.
-    viewer.entities.add({
-      id: "heliosphere-inflow",
-      polyline: {
-        positions: [
-          Cartesian3.fromDegrees(lon, lat, 1_200_000),
-          Cartesian3.fromDegrees(lon, lat, 0),
-        ],
-        width: 2.5,
-        material: hexToColor(color, 0.75),
-      },
-      properties: eventPayload({
-        location: "Viento solar llegando (punto subsolar)",
-        description: `Velocidad ${solarWind.speedKms.toFixed(0)} km/s · Bz ${solarWind.bzGsm} nT (${solarWind.bzGsm < 0 ? "acoplado: entra" : "desacoplado: rebota"})`,
-        type: "heliosphere", severity: fast ? "moderate" : "low",
-        source: "NOAA SWPC · L1 (DSCOVR/ACE)", category: "intel",
-        date_reported: solarWind.measuredAt, reliability: "Medido",
-      }),
-    });
-    track("heliosphere-inflow");
-
-    viewer.entities.add({
-      id: "heliosphere-outflow",
-      polyline: {
-        positions: [
-          Cartesian3.fromDegrees(lon + 180, south, 0),
-          Cartesian3.fromDegrees(lon + 180, south, 1_200_000),
-        ],
-        width: 2,
-        material: hexToColor(color, 0.45),
-      },
-      properties: eventPayload({
-        location: "Viento solar saliendo (lado antisolar)",
-        description: "El flujo continúa y estira la magnetosfera en cola: la misma corriente que infla la heliosfera.",
-        type: "heliosphere", severity: "low", source: "NOAA SWPC · L1",
-        category: "intel", date_reported: solarWind.measuredAt, reliability: "Dirección del flujo (geometría)",
-      }),
-    });
-    track("heliosphere-outflow");
-
-    viewer.entities.add({
-      id: "heliosphere-marker",
-      position: Cartesian3.fromDegrees(lon, lat, 1_400_000),
-      billboard: {
-        image: markerIcon("sun", color), width: 24, height: 24,
-        scaleByDistance: new NearFarScalar(1e6, 1.3, 1e8, 0.5),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-      label: {
-        text: `Viento solar ${solarWind.speedKms.toFixed(0)} km/s`,
-        font: "10px monospace",
-        fillColor: hexToColor("#fed7aa", 0.95),
-        outlineColor: Color.BLACK, outlineWidth: 2, style: 2,
-        verticalOrigin: VerticalOrigin.BOTTOM, pixelOffset: new Cartesian2(0, -12),
-        scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.3),
-        disableDepthTestDistance: Number.POSITIVE_INFINITY,
-      },
-      properties: eventPayload({
-        location: "Heliosfera · viento solar en L1",
-        description:
-          `Velocidad ${solarWind.speedKms.toFixed(0)} km/s · campo total ${solarWind.bt} nT · Bz ${solarWind.bzGsm} nT · ` +
-          `F10,7 ${solarWind.f107} sfu. Frontera del dominio solar (heliopausa) a ~${HELIOPAUSE_AU} UA: ` +
-          "cruzada por Voyager 1 en 2012 (121,6 UA) y Voyager 2 en 2018 (119 UA), sin sondeo en vivo.",
-        type: "heliosphere", severity: fast ? "moderate" : "low", source: "NOAA SWPC · viento solar en L1",
-        category: "intel", date_reported: solarWind.measuredAt, reliability: "Medido en L1",
-      }),
-    });
-    track("heliosphere-marker");
-  }, [solarWind, envLayers]);
+  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, surfaceWeather]);
 
   return (
     <div ref={containerRef} className="w-full h-full" style={{ background: "#000000" }} />

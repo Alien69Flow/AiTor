@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database, Video } from "lucide-react";
+import { X, MapPin, Zap, Crosshair, Activity, Flame, Radio, ChevronDown, Database } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { HotspotData } from "@/components/globe/GlobeScene";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
@@ -26,16 +26,9 @@ interface GlobeOverlayProps {
   earthquakeCount?: number;
   nasaEventCount?: number;
   conflictCount?: number;
-  /** Sucesos de violencia de las últimas 48 h; el resto de `conflictCount` son zonas curadas. */
-  liveConflictCount?: number;
   wildfireCount?: number;
   outageCount?: number;
   criticalIntelCount?: number;
-  /**
-   * Sólo lo usan las fichas de cámara: el clic en el globo abre la ficha, y
-   * saltar al directo es una decisión explícita de quien la está leyendo.
-   */
-  onOpenCamera?: (cameraId: string) => void;
 }
 
 export function GlobeOverlay({
@@ -45,11 +38,9 @@ export function GlobeOverlay({
   earthquakeCount = 0,
   nasaEventCount = 0,
   conflictCount = 0,
-  liveConflictCount = 0,
   wildfireCount = 0,
   outageCount = 0,
   criticalIntelCount = 0,
-  onOpenCamera,
 }: GlobeOverlayProps) {
   const [showBreakdown, setShowBreakdown] = useState(false);
 
@@ -57,13 +48,7 @@ export function GlobeOverlay({
   const { tensionLevel, factors } = useMemo(() => {
     const kp = spaceWeather?.kpIndex ?? 0;
     const rows = [
-      {
-        key: liveConflictCount > 0 ? `Conflict events (${liveConflictCount} en 48 h)` : "Conflict events",
-        value: conflictCount,
-        points: Math.min(conflictCount * 1.6, 32),
-        Icon: Crosshair,
-        color: "#f87171",
-      },
+      { key: "Conflict events", value: conflictCount, points: Math.min(conflictCount * 1.6, 32), Icon: Crosshair, color: "#f87171" },
       { key: "Critical intel", value: criticalIntelCount, points: Math.min(criticalIntelCount * 3, 18), Icon: Radio, color: "#fbbf24" },
       { key: "Seismic (M2.5+)", value: earthquakeCount, points: Math.min(earthquakeCount * 0.12, 14), Icon: Activity, color: "#fb923c" },
       { key: "Wildfires / hazards", value: wildfireCount || nasaEventCount, points: Math.min((wildfireCount || nasaEventCount) * 0.4, 12), Icon: Flame, color: "#f97316" },
@@ -72,7 +57,7 @@ export function GlobeOverlay({
     ];
     const total = rows.reduce((sum, r) => sum + r.points, 0);
     return { tensionLevel: Math.max(5, Math.min(100, Math.round(total))), factors: rows };
-  }, [spaceWeather, conflictCount, liveConflictCount, criticalIntelCount, earthquakeCount, wildfireCount, nasaEventCount, outageCount]);
+  }, [spaceWeather, conflictCount, criticalIntelCount, earthquakeCount, wildfireCount, nasaEventCount, outageCount]);
 
   const tensionColor =
     tensionLevel > 70 ? "#f87171" : tensionLevel > 40 ? "#fbbf24" : "#34d399";
@@ -164,9 +149,7 @@ export function GlobeOverlay({
       </div>
 
       {/* Detail Popup */}
-      {selectedHotspot && (
-        <CountryPopup hotspot={selectedHotspot} onClose={onClose} onOpenCamera={onOpenCamera} />
-      )}
+      {selectedHotspot && <CountryPopup hotspot={selectedHotspot} onClose={onClose} />}
     </>
   );
 }
@@ -174,11 +157,9 @@ export function GlobeOverlay({
 function CountryPopup({
   hotspot,
   onClose,
-  onOpenCamera,
 }: {
   hotspot: HotspotData;
   onClose?: () => void;
-  onOpenCamera?: (cameraId: string) => void;
 }) {
   const [uapCount, setUapCount] = useState(0);
 
@@ -278,18 +259,6 @@ function CountryPopup({
               </div>
             </div>
           </div>
-
-          {/* Cámaras: el directo es un botón, no el efecto del clic. */}
-          {hotspot.cameraId && onOpenCamera && (
-            <div className="px-4 pb-3">
-              <Button
-                onClick={() => onOpenCamera(hotspot.cameraId as string)}
-                className="h-8 w-full rounded-sm text-[10px] uppercase tracking-wider"
-              >
-                <Video className="w-3.5 h-3.5" /> Abrir directo de la cámara
-              </Button>
-            </div>
-          )}
 
           {/* Footer */}
           <div className="px-4 py-3 flex items-center justify-between border-t border-slate-700/25">

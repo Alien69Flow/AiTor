@@ -65,11 +65,3 @@ export interface AuditEvent {
 }
 
 export type AuditSink = (event: AuditEvent) => void | Promise<void>;
-
-/**
- * Quien decide los pasos. El motor solo ejecuta: cualquier agente,
- * humano o modelo que sepa devolver un WorkflowPlan encaja aquí.
- */
-export interface Planner {
-  plan(task: string, metadata: Record<string, unknown>): Promise<WorkflowPlan>;
-}

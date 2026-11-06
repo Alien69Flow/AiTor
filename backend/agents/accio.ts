@@ -1,8 +1,10 @@
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
-import { createGeminiModel } from "./llm";
 
-// Temperatura 0.3: baja para que no alucine con los datos reales.
-const getLlm = createGeminiModel({ modelName: "gemini-2.5-pro", temperature: 0.3 });
+const llm = new ChatGoogleGenerativeAI({
+  modelName: "gemini-2.5-pro",
+  temperature: 0.3, // Temperatura baja para que no alucine con los datos reales
+});
 
 const accioPrompt = PromptTemplate.fromTemplate(`
 Eres ACCIO, el agente investigador, rastreador y recolector de datos en tiempo real del Swarm AI-TOR.
@@ -22,7 +24,7 @@ export class AccioAgent {
     console.log(`[Accio Agent] Iniciando rastreo cuántico para: "${query}"`);
     
     try {
-      const chain = accioPrompt.pipe(getLlm());
+      const chain = accioPrompt.pipe(llm);
       const response = await chain.invoke({ query, context });
       
       return response.content.toString();

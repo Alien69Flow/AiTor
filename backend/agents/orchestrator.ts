@@ -2,13 +2,14 @@ import { SupervisorAgent } from "./supervisor";
 import { ThreadManager } from "../memory/threadManager";
 import { KnowledgeBase } from "../rag/knowledge";
 import { ManusAgent } from "./manus";
-import { SocialPlatform } from "./socialMediaManager";
-import { PriceAlert } from "./tradingSignals";
 import { MonetizationManager } from "../workflows/monetizationLoop"; // Importamos tu flujo freemium
-import { createGeminiModel } from "./llm";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 
-// Modelo general para las respuestas ordinarias; se construye al primer uso.
-const getGeneralLlm = createGeminiModel({ modelName: "gemini-2.5-flash", temperature: 0.7 });
+// Inicializamos un modelo general para las respuestas ordinarias
+const llmGeneral = new ChatGoogleGenerativeAI({
+  modelName: "gemini-2.5-flash", 
+  temperature: 0.7,
+});
 
 export class SwarmOrchestrator {
   /**
@@ -47,7 +48,7 @@ export class SwarmOrchestrator {
         const context = await KnowledgeBase.retrieveContext(route);
         
         console.log(`[Orquestador] Generando respuesta con RAG e inyección de contexto.`);
-        const response = await getGeneralLlm().invoke([
+        const response = await llmGeneral.invoke([
           { role: "system", content: `Eres AI-TOR, la inteligencia central de AlienFlowSpace DAO. Responde al usuario utilizando estrictamente este contexto fundacional:\n${context}` },
           { role: "system", content: `Historial reciente:\n${history}` },
           { role: "user", content: userInput }
@@ -98,7 +99,7 @@ export class SwarmOrchestrator {
       default: {
         // Chat normal, soporte o saludos
         console.log(`[Orquestador] Procesando como conversación general.`);
-        const response = await getGeneralLlm().invoke([
+        const response = await llmGeneral.invoke([
           { role: "system", content: "Eres AI-TOR, un aliado inteligente, directo y avanzado. Estás ayudando al usuario a gestionar su ecosistema." },
           { role: "system", content: `Historial reciente:\n${history}` },
           { role: "user", content: userInput }
@@ -125,20 +126,20 @@ export class SwarmOrchestrator {
    * Maneja requests de redes sociales
    */
   private static async handleSocialMediaRequest(userInput: string, history: string): Promise<string> {
-    const { SocialMediaManager } = await import('./socialMediaManager');
+    const { SocialMediaManager, FrequencyType } = await import('./socialMediaManager');
     const { ProposalQueue } = await import('../workflows/socialProposalQueue');
 
     const input = userInput.toLowerCase();
 
     // Detectar tipo de frecuencia
-    let frequency: import('./socialMediaManager').FrequencyType = 'daily';
+    let frequency: FrequencyType = 'daily';
     if (input.includes('semanal')) frequency = 'weekly';
     else if (input.includes('mensual')) frequency = 'monthly';
     else if (input.includes('trimestral')) frequency = 'quarterly';
     else if (input.includes('anual')) frequency = 'yearly';
 
     // Detectar plataforma
-    let platform: SocialPlatform | undefined = undefined;
+    let platform: any = undefined;
     if (input.includes('twitter')) platform = 'twitter';
     else if (input.includes('linkedin')) platform = 'linkedin';
     else if (input.includes('instagram')) platform = 'instagram';
@@ -265,7 +266,7 @@ export class SwarmOrchestrator {
     }
 
     // Análisis general de mercado
-    return await MarketKnowledge.retrieveContext('marketSentiment');
+    return await MarketKnowledge.retrieveContext('marketSentiment' as any);
   }
 
   /**
@@ -282,7 +283,7 @@ export class SwarmOrchestrator {
       if (input.includes('btc')) symbols.push('BTC');
       if (input.includes('eth')) symbols.push('ETH');
       
-      const condition: PriceAlert['condition'] = input.includes('sobre') ? 'above' : input.includes('bajo') ? 'below' : 'crosses';
+      const condition = input.includes('sobre') ? 'above' : input.includes('bajo') ? 'below' : 'crosses';
       
       // Extraer número del mensaje
       const priceMatch = userInput.match(/\$?([\d,]+)/);
@@ -291,7 +292,7 @@ export class SwarmOrchestrator {
       if (symbols.length > 0 && price > 0) {
         const alert = TradingSignals.createPriceAlert(
           symbols[0],
-          condition,
+          condition as any,
           price,
           `Alerta ${condition} $${price}`
         );

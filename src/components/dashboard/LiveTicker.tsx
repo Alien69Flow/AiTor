@@ -2,7 +2,6 @@ import { useEffect, useState, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Activity } from "lucide-react";
 import type { SpaceWeather } from "@/hooks/useSpaceWeather";
-import { spaceWeatherAlert } from "@/lib/space-weather-alert";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
 
@@ -30,12 +29,17 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
 
   const tickerItems: TickerItem[] = [];
 
-  // Una sola entrada de clima espacial, con la escala que de verdad está
-  // activa (R/S/G) y su gravedad: la barra anunciaba «radiación solar» para
-  // cualquier tormenta y la marcaba siempre CRITICAL.
-  const weatherAlert = spaceWeather ? spaceWeatherAlert(spaceWeather) : null;
-  if (weatherAlert) {
-    tickerItems.push({ ...weatherAlert, time: "NOW" });
+  if (spaceWeather?.solarStorm) {
+    tickerItems.push({
+      text: `SOLAR RADIATION DETECTED — Radio: ${spaceWeather.radioBlackout} | Storm: ${spaceWeather.stormLevel} | Geo: ${spaceWeather.geomagneticStorm}`,
+      severity: "CRITICAL", time: "NOW",
+    });
+  }
+  if ((spaceWeather?.kpIndex || 0) > 4) {
+    tickerItems.push({
+      text: `TESLA CONVERGENCE — Kp Index: ${spaceWeather?.kpIndex?.toFixed(1)} — Magnetic field anomaly active`,
+      severity: "CRITICAL", time: "NOW",
+    });
   }
 
   const topQuakes = [...earthquakes].sort((a, b) => b.magnitude - a.magnitude).slice(0, 5);
@@ -70,11 +74,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
   useEffect(() => {
     if (spaceWeather?.solarStorm && !prevStormRef.current) {
       try {
-        const AudioContextCtor =
-          window.AudioContext ??
-          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-        if (!AudioContextCtor) return;
-        const ctx = new AudioContextCtor();
+        const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
         const osc = ctx.createOscillator();
         const gain = ctx.createGain();
         osc.type = "sine";

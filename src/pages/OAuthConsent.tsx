@@ -1,31 +1,23 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { authClient } from "@/integrations/supabase/client";
+import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { SpaceBackground } from "@/components/SpaceBackground";
 import { Loader2, ShieldCheck } from "lucide-react";
 import { Helmet } from "react-helmet-async";
 
-/** Respuesta del endpoint experimental de consentimiento OAuth. */
-type OAuthPayload = {
-  redirect_url?: string;
-  redirect_to?: string;
-  scope?: string;
-  client?: { name?: string; client_name?: string; redirect_uri?: string };
+type OAuthApi = {
+  getAuthorizationDetails: (id: string) => Promise<{ data: any; error: any }>;
+  approveAuthorization: (id: string) => Promise<{ data: any; error: any }>;
+  denyAuthorization: (id: string) => Promise<{ data: any; error: any }>;
 };
 
-type OAuthError = { message?: string } | null;
-
-type OAuthApi = {
-  getAuthorizationDetails: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
-  approveAuthorization: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
-  denyAuthorization: (id: string) => Promise<{ data: OAuthPayload | null; error: OAuthError }>;
-};  const oauth = () => (authClient.auth as unknown as { oauth: OAuthApi }).oauth;
+const oauth = () => (supabase.auth as unknown as { oauth: OAuthApi }).oauth;
 
 export default function OAuthConsent() {
   const [params] = useSearchParams();
   const authorizationId = params.get("authorization_id") ?? "";
-  const [details, setDetails] = useState<OAuthPayload | null>(null);
+  const [details, setDetails] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [email, setEmail] = useState<string | null>(null);
@@ -37,7 +29,7 @@ export default function OAuthConsent() {
         setError("Falta el parámetro authorization_id.");
         return;
       }
-      const { data: sess } = await authClient.auth.getSession();
+      const { data: sess } = await supabase.auth.getSession();
       if (!sess.session) {
         const next = window.location.pathname + window.location.search;
         window.location.href = "/auth?next=" + encodeURIComponent(next);
@@ -47,7 +39,7 @@ export default function OAuthConsent() {
       try {
         const { data, error } = await oauth().getAuthorizationDetails(authorizationId);
         if (!active) return;
-        if (error) return setError(error.message ?? "No se pudo cargar la solicitud.");
+        if (error) return setError(error.message);
         const immediate = data?.redirect_url ?? data?.redirect_to;
         if (immediate && !data?.client) {
           window.location.href = immediate;
@@ -71,7 +63,7 @@ export default function OAuthConsent() {
         : await oauth().denyAuthorization(authorizationId);
       if (error) {
         setBusy(false);
-        return setError(error.message ?? "El servidor de autorización rechazó la decisión.");
+        return setError(error.message);
       }
       const target = data?.redirect_url ?? data?.redirect_to;
       if (!target) {

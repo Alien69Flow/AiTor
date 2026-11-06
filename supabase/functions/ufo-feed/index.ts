@@ -7,17 +7,6 @@ const corsHeaders = {
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { secretMatches } from '../_shared/guard.ts';
 
-/** One sighting before it is upserted into `uap_sightings`. */
-interface CollectedSighting {
-  location: string;
-  date_reported: string;
-  type: string;
-  severity: string;
-  description: string;
-  source: string;
-  source_url: string;
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -77,7 +66,7 @@ Deno.serve(async (req) => {
     });
     const searchData = await searchResponse.json();
 
-    const sightings: CollectedSighting[] = [];
+    const sightings: any[] = [];
 
     // Parse NUFORC markdown for sighting entries
     const nuforcMarkdown = nuforcData?.data?.markdown || nuforcData?.markdown || '';
@@ -165,8 +154,6 @@ function formatDate(dateStr: string): string {
       if (year.length === 2) year = '20' + year;
       return `${year}-${month}-${day}`;
     }
-  } catch {
-    // Malformed date: keep the report with today's date instead of dropping it.
-  }
+  } catch {}
   return new Date().toISOString().split('T')[0];
 }
