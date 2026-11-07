@@ -1,77 +1,116 @@
 import { describe, expect, it } from "vitest";
-import { classifyConflict, conflictDocUrl, mapConflictGeoJson } from "./conflict-events";
+import {
+  CONFLICT_THEME,
+  conflictProxyUrl,
+  mapGkgConflictGeoJson,
+  severityFromTone,
+} from "./conflict-events";
 
-describe("clasificación de sucesos de conflicto", () => {
-  it("reconoce los tipos que pinta el globo", () => {
-    expect(classifyConflict("Russian airstrike hits power grid in Kharkiv").kind).toBe("airstrike");
-    expect(classifyConflict("Artillery shelling kills three in Donetsk").kind).toBe("shelling");
-    expect(classifyConflict("Drone strike targets base near Sevastopol").kind).toBe("drone");
-    expect(classifyConflict("Clashes erupt along the border").kind).toBe("clashes");
-    expect(classifyConflict("Explosion reported at airport depot").kind).toBe("explosion");
-  });
+/**
+ * La capa de conflictos se alimenta del GKG v1 de GDELT, el único endpoint
+ * geolocalizado que sigue vivo (`DOC 2.0` no acepta geojson y `GEO 2.0` da 404).
+ *
+ * Lo que fijan estas pruebas, con la forma real del feed:
+ *  - un punto por lugar, quedándose con la mención más reciente;
+ *  - coordenadas imposibles y lugares sin nombre fuera;
+ *  - la gravedad sale del tono, no de bajas que la fuente no da;
+ *  - el navegador pide `/api/gdelt` con el tema y la ventana, no GDELT a pelo.
+ */
 
-  it("sube la gravedad cuando hay muertos", () => {
-    expect(classifyConflict("Shelling kills nine civilians in market").severity).toBe("HIGH");
-    expect(classifyConflict("Clashes reported near the buffer zone").severity).toBe("MEDIUM");
-  });
+const feature = (name: string, lat: number, lon: number, date: string, tone?: number) => ({
+  geometry: { type: "Point", coordinates: [lon, lat] as [number, number] },
+  properties: {
+    name,
+    url: `https://medio.example/${encodeURIComponent(name)}`,
+    domain: "medio.example",
+    urlpubtimedate: date,
+    ...(tone === undefined ? {} : { urltone: tone }),
+  },
+});
 
-  it("no convierte una noticia diplomática en un conflicto", () => {
-    // La capa pinta violencia; sin violencia no hay marcador.
-    expect(classifyConflict("Peace talks resume in Geneva").kind).toBe("other");
-    expect(classifyConflict("Minister announces ceasefire summit").kind).toBe("other");
-  });
-
-  it("descarta el mismo suceso repetido y las coordenadas imposibles", () => {
-    const json = {
-      features: [
-        {
-          properties: { name: "Kyiv", html: '<a href="https://a.example/1">Airstrike hits district in Kyiv</a>', domain: "a.example", seendate: "20261030T101500Z" },
-          geometry: { coordinates: [30.52, 50.45] as [number, number] },
-        },
-        {
-          // Mismo titular en otro medio: una sola chincheta.
-          properties: { name: "Kyiv", html: '<a href="https://b.example/2">Airstrike hits district in Kyiv</a>', domain: "b.example" },
-          geometry: { coordinates: [30.52, 50.45] as [number, number] },
-        },
-        {
-          // Sin violencia explícita.
-          properties: { name: "Paris", html: '<a href="https://c.example/3">Talks resume</a>' },
-          geometry: { coordinates: [2.35, 48.85] as [number, number] },
-        },
-        {
-          properties: { name: "Nowhere", html: '<a href="https://d.example/4">Shelling reported</a>' },
-          geometry: { coordinates: [Number.NaN, 10] as [number, number] },
-        },
-      ],
-    };
-
-    const events = mapConflictGeoJson(json);
+describe("traducción del GeoJSON del GKG", () => {
+  it("convierte cada lugar en un evento con coordenadas y enlace", () => {
+    const events = mapGkgConflictGeoJson({
+      features: [feature("Kyiv", 50.45, 30.52, "2026-11-07T19:00:00Z", -12)],
+    });
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ lat: 50.45, lon: 30.52, kind: "airstrike", url: "https://a.example/1" });
+    expect(events[0]).toMatchObject({
+      location: "Kyiv",
+      lat: 50.45,
+      lon: 30.52,
+      domain: "medio.example",
+      date: "2026-11-07T19:00:00Z",
+      kind: "other",
+      severity: "HIGH",
+    });
+    expect(events[0].url).toContain("Kyiv");
+    expect(events[0].title).toContain("Kyiv");
+  });
+
+  it("deja un solo punto por lugar y se queda la mención más reciente", () => {
+    const events = mapGkgConflictGeoJson({
+      features: [
+        feature("Kyiv", 50.45, 30.52, "2026-11-07T10:00:00Z"),
+        feature("Kyiv", 50.45, 30.52, "2026-11-07T20:00:00Z"),
+        feature("Kharkiv", 49.99, 36.23, "2026-11-07T12:00:00Z"),
+      ],
+    });
+    expect(events).toHaveLength(2);
+    expect(events.find((event) => event.location === "Kyiv")?.date).toBe("2026-11-07T20:00:00Z");
+  });
+
+  it("descarta coordenadas imposibles y lugares sin nombre", () => {
+    const events = mapGkgConflictGeoJson({
+      features: [
+        feature("", 10, 10, "2026-11-07T10:00:00Z"),
+        feature("Mar", 120, 10, "2026-11-07T10:00:00Z"),
+        feature("Tierra", 10, 300, "2026-11-07T10:00:00Z"),
+        { properties: { name: "Sin geometría" } },
+        feature("Kyiv", 50.45, 30.52, "2026-11-07T20:00:00Z"),
+      ],
+    });
+    expect(events.map((event) => event.location)).toEqual(["Kyiv"]);
   });
 
   it("pone primero lo más grave", () => {
-    const json = {
+    const events = mapGkgConflictGeoJson({
       features: [
-        { properties: { name: "A", html: "<a href='u1'>Clashes near the border</a>" }, geometry: { coordinates: [1, 1] as [number, number] } },
-        { properties: { name: "B", html: "<a href='u2'>Airstrike kills twelve civilians</a>" }, geometry: { coordinates: [2, 2] as [number, number] } },
+        feature("Calma", 1, 1, "2026-11-07T10:00:00Z", 1),
+        feature("Grave", 2, 2, "2026-11-07T10:00:00Z", -14),
+        feature("Media", 3, 3, "2026-11-07T10:00:00Z", -7),
       ],
-    };
-    expect(mapConflictGeoJson(json).map((event) => event.severity)).toEqual(["HIGH", "MEDIUM"]);
+    });
+    expect(events.map((event) => event.severity)).toEqual(["HIGH", "MEDIUM", "LOW"]);
+  });
+
+  it("un lugar sin tono no se disfraza de grave", () => {
+    expect(mapGkgConflictGeoJson({ features: [feature("Sin tono", 1, 1, "2026-11-07T10:00:00Z")] })[0].severity).toBe(
+      "MEDIUM",
+    );
   });
 
   it("acepta respuestas vacías sin romperse", () => {
-    expect(mapConflictGeoJson(null)).toEqual([]);
-    expect(mapConflictGeoJson({})).toEqual([]);
-    expect(mapConflictGeoJson({ features: [] })).toEqual([]);
+    expect(mapGkgConflictGeoJson(null)).toEqual([]);
+    expect(mapGkgConflictGeoJson({})).toEqual([]);
+    expect(mapGkgConflictGeoJson({ features: [] })).toEqual([]);
   });
+});
 
-  it("construye la consulta contra la API de GDELT", () => {
-    const url = new URL(conflictDocUrl(48, 80));
-    expect(url.origin + url.pathname).toBe("https://api.gdeltproject.org/api/v2/doc/doc");
-    expect(url.searchParams.get("format")).toBe("geojson");
-    expect(url.searchParams.get("timespan")).toBe("48h");
-    expect(url.searchParams.get("maxrecords")).toBe("80");
-    expect(url.searchParams.get("query")).toContain("airstrike");
+describe("gravedad por tono", () => {
+  it("usa los umbrales documentados", () => {
+    expect(severityFromTone(-10)).toBe("HIGH");
+    expect(severityFromTone(-5)).toBe("MEDIUM");
+    expect(severityFromTone(-4.9)).toBe("LOW");
+    expect(severityFromTone(null)).toBe("MEDIUM");
+  });
+});
+
+describe("destino de la petición", () => {
+  it("el navegador pide al proxy con el tema y la ventana", () => {
+    const proxy = new URL(conflictProxyUrl(12, 250), "https://aitor.alienflow.space");
+    expect(proxy.pathname).toBe("/api/gdelt");
+    expect(proxy.searchParams.get("theme")).toBe(CONFLICT_THEME);
+    expect(proxy.searchParams.get("hours")).toBe("12");
+    expect(proxy.searchParams.get("maxrows")).toBe("250");
   });
 });
