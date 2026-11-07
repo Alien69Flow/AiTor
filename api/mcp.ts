@@ -177,6 +177,32 @@ export const TOOLS: ToolDefinition[] = [
     },
   },
   {
+    name: "weather.aemet",
+    title: "Tiempo oficial en España (AEMET)",
+    description:
+      "Datos oficiales de AEMET OpenData: previsión diaria de un municipio por su código INE " +
+      "(28079 = Madrid) o la observación de las últimas 24 h de una estación por su idema " +
+      "(3195 = Retiro). Para el resto del mundo, `weather.outlook`. Necesita AEMET_API_KEY.",
+    minTier: "free",
+    inputSchema: {
+      type: "object",
+      properties: {
+        action: {
+          type: "string",
+          enum: ["municipio", "estacion"],
+          default: "municipio",
+          description: "`municipio` = previsión diaria; `estacion` = observación reciente.",
+        },
+        code: {
+          type: "string",
+          description:
+            "Código INE de 5 dígitos para `municipio` (28079) o idema para `estacion` (3195).",
+        },
+      },
+      required: ["code"],
+    },
+  },
+  {
     name: "media.image",
     title: "Generar una imagen",
     description:
@@ -1384,6 +1410,202 @@ async function runImage(args: Record<string, unknown>): Promise<ToolResult> {
   };
 }
 
+/* -------------------------------- AEMET --------------------------------- */
+
+/**
+ * AEMET OpenData, con su rareza de dos pasos.
+ *
+ * La API no devuelve los datos: devuelve un sobre (`estado`, `descripcion`,
+ * `datos`) donde `datos` es la URL del JSON de verdad. Ese segundo salto es el
+ * que rompe a quien la llama por primera vez, así que se resuelve aquí y el
+ * modelo sólo ve el resumen. La clave viaja en `api_key`, y AEMET limita fuerte:
+ * un 429 no se reintenta, se explica.
+ *
+ * Las capas de avisos (CAP) quedan fuera a propósito: llegan como tar.gz de XML
+ * y descomprimir un tar dentro de la función no compensa para responder una
+ * pregunta de tiempo.
+ */
+const AEMET_BASE = "https://opendata.aemet.es/opendata/api";
+
+/** Presencia de la clave. No se adivina su formato: sólo si hay algo. */
+export function aemetKeyState(value: string | undefined): "ok" | "missing" {
+  return value && value.trim().length > 0 ? "ok" : "missing";
+}
+
+const rawAemetKey = () => process.env.AEMET_API_KEY || "";
+
+export type AemetEnvelope =
+  | { state: "ok"; dataUrl: string }
+  | { state: "error"; status: number; message: string };
+
+/** Lee el sobre de AEMET: 200 con URL de datos, o el error tal cual lo cuenta. */
+export function parseAemetEnvelope(payload: {
+  estado?: number | string;
+  descripcion?: string;
+  datos?: string;
+}): AemetEnvelope {
+  const status = Number(payload?.estado ?? 0);
+  if (status === 200 && typeof payload.datos === "string" && /^https?:\/\//.test(payload.datos)) {
+    return { state: "ok", dataUrl: payload.datos };
+  }
+  return {
+    state: "error",
+    status: Number.isFinite(status) ? status : 0,
+    message: (payload?.descripcion || "AEMET no devolvió la URL de datos").slice(0, 180),
+  };
+}
+
+const aemetNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+export interface AemetDay {
+  fecha: string;
+  maxima: number | null;
+  minima: number | null;
+  lluvia: number | null;
+}
+
+/**
+ * Resumen de la previsión municipal.
+ *
+ * El JSON completo son cientos de nodos por día (viento por franjas, estado del
+ * cielo por horas). Al modelo le sirve el día, la máxima, la mínima y la
+ * probabilidad de lluvia; lo demás se quedaría en el presupuesto de contexto.
+ */
+export function summarizeAemetForecast(payload: unknown): {
+  municipio: string;
+  provincia: string;
+  dias: AemetDay[];
+} {
+  const first = Array.isArray(payload) ? (payload[0] as Record<string, unknown> | undefined) : undefined;
+  const prediccion = first?.prediccion as { dia?: unknown[] } | undefined;
+  const dias: AemetDay[] = (prediccion?.dia ?? []).slice(0, 4).map((raw) => {
+    const day = (raw ?? {}) as Record<string, unknown>;
+    const temperatura = (day.temperatura ?? {}) as Record<string, unknown>;
+    const prob = Array.isArray(day.probPrecipitacion)
+      ? (day.probPrecipitacion[0] as { value?: unknown } | undefined)?.value
+      : undefined;
+    return {
+      fecha: typeof day.fecha === "string" ? day.fecha.slice(0, 10) : "",
+      maxima: aemetNumber(temperatura.maxima),
+      minima: aemetNumber(temperatura.minima),
+      lluvia: aemetNumber(prob),
+    };
+  });
+  return {
+    municipio: typeof first?.municipio === "string" ? first.municipio : "",
+    provincia: typeof first?.provincia === "string" ? first.provincia : "",
+    dias,
+  };
+}
+
+/** Última observación de una estación, con la hora a la que se midió. */
+export function summarizeAemetObservation(payload: unknown): {
+  idema: string;
+  ubi: string;
+  muestras: number;
+  ultima: {
+    hora: string;
+    temperatura: number | null;
+    humedad: number | null;
+    viento: number | null;
+    presion: number | null;
+  } | null;
+} {
+  const rows = Array.isArray(payload) ? (payload as Record<string, unknown>[]) : [];
+  const last = rows[rows.length - 1];
+  return {
+    idema: typeof last?.idema === "string" ? last.idema : "",
+    ubi: typeof last?.ubi === "string" ? last.ubi : "",
+    muestras: rows.length,
+    ultima: last
+      ? {
+          hora: typeof last.fint === "string" ? last.fint : "",
+          temperatura: aemetNumber(last.ta),
+          humedad: aemetNumber(last.hr),
+          viento: aemetNumber(last.vv),
+          presion: aemetNumber(last.pres),
+        }
+      : null,
+  };
+}
+
+/** Pide un recurso de AEMET y devuelve el JSON de la segunda URL. */
+async function fetchAemet(resource: string): Promise<unknown> {
+  const key = rawAemetKey().trim();
+  if (!key) {
+    throw new Error(
+      "Falta AEMET_API_KEY en el despliegue. Se pide gratis en opendata.aemet.es y va en las variables de Vercel.",
+    );
+  }
+
+  const url = new URL(`${AEMET_BASE}${resource}`);
+  url.searchParams.set("api_key", key);
+  const response = await fetch(url, {
+    headers: { accept: "application/json" },
+    signal: AbortSignal.timeout(25_000),
+  });
+
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("AEMET rechazó la clave (401/403): revisa AEMET_API_KEY");
+  }
+  if (response.status === 429) {
+    throw new Error("AEMET está limitando las peticiones (429): espera un minuto antes de reintentar");
+  }
+  if (!response.ok) throw new Error(`AEMET respondió ${response.status}`);
+
+  const envelope = parseAemetEnvelope(
+    (await response.json()) as { estado?: number; descripcion?: string; datos?: string },
+  );
+  if (envelope.state === "error") {
+    throw new Error(`AEMET: ${envelope.message}${envelope.status ? ` (estado ${envelope.status})` : ""}`);
+  }
+
+  const data = await fetch(envelope.dataUrl, { signal: AbortSignal.timeout(25_000) });
+  if (!data.ok) throw new Error(`Los datos de AEMET respondieron ${data.status}`);
+  return await data.json();
+}
+
+async function runAemet(args: Record<string, unknown>): Promise<ToolResult> {
+  const action = args.action === "estacion" ? "estacion" : "municipio";
+  const code = String(args.code ?? "").trim();
+  if (!/^\d{4,5}$/.test(code)) {
+    throw new Error(
+      "`code` debe ser numérico: INE de 5 dígitos (28079) para previsión o idema (3195) para estación",
+    );
+  }
+
+  if (action === "municipio") {
+    const summary = summarizeAemetForecast(
+      await fetchAemet(`/prediccion/especifica/municipio/diaria/${code}`),
+    );
+    if (summary.dias.length === 0) {
+      throw new Error("AEMET no devolvió días de previsión para ese municipio");
+    }
+    return ok({
+      source: "AEMET",
+      action,
+      ...summary,
+      note: "Previsión oficial diaria de AEMET. Cita la fuente y la fecha del dato.",
+    });
+  }
+
+  const summary = summarizeAemetObservation(
+    await fetchAemet(`/observacion/convencional/datos/estacion/${code}`),
+  );
+  if (!summary.ultima) {
+    throw new Error("AEMET no devolvió observaciones para esa estación");
+  }
+  return ok({
+    source: "AEMET",
+    action,
+    ...summary,
+    note: "Observación oficial de las últimas 24 h. Cita AEMET y la hora de la medida.",
+  });
+}
+
 /* -------------------------------- vídeo --------------------------------- */
 
 /**
@@ -1658,6 +1880,7 @@ async function callTool(
     if (name === "media.music") return await runMusic(args);
     if (name === "media.speech") return await runSpeech(args);
     if (name === "media.video") return await runVideo(args);
+    if (name === "weather.aemet") return await runAemet(args);
     if (name === "github.repo") return await runGitRepo(args, caller);
     if (name === "github.propose") return await runGitPropose(args, caller);
     return await runDbSelect(args, caller);
@@ -2032,7 +2255,9 @@ const SYSTEM_PROMPT =
   "directo y sin narrar tu razonamiento ni enumerar los pasos que vas a dar. " +
   "Cuando la respuesta dependa de datos reales —el árbol o el contenido del " +
   "repositorio, telemetría orbital, base de datos, previsión meteorológica, " +
-  "eventos OSINT— usa la herramienta en vez de contestar de memoria. El " +
+  "eventos OSINT— usa la herramienta en vez de contestar de memoria. Para el " +
+  "tiempo oficial de España (`weather.aemet`) usa el código INE del municipio o el " +
+  "idema de la estación; para cualquier otro país, `weather.outlook`. El " +
   "repositorio del proyecto es Alien69Flow/AiTor: para hablar de su código usa " +
   "github.repo con action `tree`, `contents` o `get_file`. Cita siempre la fuente " +
   "y la hora del dato. Si una herramienta falla, di cuál es y qué error dio, con " +
@@ -2142,6 +2367,8 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
         service: "mcp",
         geminiConfigured: Boolean(geminiKey()),
         geminiKeyState: geminiKeyState(rawGeminiKey()),
+        // Clave aparte, con su propia fila en Conexiones: AEMET es opcional.
+        aemetKeyState: aemetKeyState(rawAemetKey()),
         envVarSeen: process.env.GEMINI_API_KEY
           ? "GEMINI_API_KEY"
           : process.env.GOOGLE_API_KEY

@@ -35,7 +35,7 @@ Los datos traen `license` por repo y `arsenalLicenses()` cuenta también los
 
 | Repo | Destino | Pieza que se trae | Qué hace falta |
 |---|---|---|---|
-| `aemet-client` | Atmósfera | Proveedor AEMET para estaciones de España, junto a Open-Meteo | `AEMET_API_KEY` |
+| ~~`aemet-client`~~ | Atmósfera | **Incorporado**: `weather.aemet` (previsión municipal y observación con el sobre de dos pasos) | sólo `AEMET_API_KEY` |
 | `xerj` / `codebase-memory-mcp` | Memoria | Índice de símbolos del repo para el agente, en vez de releer ficheros | nada |
 | `claude-mem` | Memoria | Resumen de turnos anteriores con presupuesto de tamaño | nada |
 | `ccxt` | Mercados | Nombres de exchange y símbolos normalizados para el proxy | nada (sólo el catálogo) |

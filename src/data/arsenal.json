@@ -730,7 +730,7 @@
           "homepage": "https://www.npmjs.com/package/aemet-client",
           "topics": [],
           "destination": "clima",
-          "status": "candidato"
+          "status": "incorporado"
         },
         {
           "name": "artemis",

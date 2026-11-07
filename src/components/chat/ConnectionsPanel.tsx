@@ -29,7 +29,12 @@ import { cn } from "@/lib/utils";
 const MCP_URL = (import.meta.env.VITE_MCP_ENDPOINT as string) || "/api/mcp";
 
 interface McpState {
-  payload: { tools?: number; toolNames?: string[]; geminiKeyState?: string } | null;
+  payload: {
+    tools?: number;
+    toolNames?: string[];
+    geminiKeyState?: string;
+    aemetKeyState?: string;
+  } | null;
   ms: number | null;
   error: string | null;
   loading: boolean;
@@ -170,6 +175,7 @@ export function ConnectionsPanel() {
     MCP_TOOLS.map((tool) => tool.definition),
     mcp.payload?.toolNames ?? null,
     mcp.payload?.geminiKeyState ?? "unknown",
+    mcp.payload?.aemetKeyState ?? "unknown",
   ).map((row) => ({
     ...row,
     loading: mcp.loading,

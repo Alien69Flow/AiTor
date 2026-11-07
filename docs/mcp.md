@@ -221,6 +221,28 @@ En el chat se cuelga de `Message.images` y se pinta bajo la respuesta. Esas
 data URLs no se guardan en `localStorage` (una imagen son uno o dos megas y la
 siguiente carga rompería el JSON): se conservan en la sesión viva.
 
+## Tiempo oficial de España: `weather.aemet`
+
+AEMET OpenData no devuelve los datos: devuelve un sobre (`estado`,
+`descripcion`, `datos`) donde `datos` es **la URL del JSON de verdad**. Esa
+segunda petición se resuelve en el servidor, así que al modelo sólo le llega el
+resumen.
+
+- `action: "municipio"` + `code` INE de 5 dígitos (`28079` Madrid) →
+  `/prediccion/especifica/municipio/diaria/{code}`, resumido a cuatro días con
+  máxima, mínima y probabilidad de lluvia.
+- `action: "estacion"` + `idema` (`3195` Retiro) →
+  `/observacion/convencional/datos/estacion/{code}`, con la **última** muestra de
+  las 24 h y la hora de la medida.
+
+La clave va en `api_key` y se lee de `AEMET_API_KEY` en cada petición; sin ella
+la herramienta se anuncia igual y devuelve un error que dice qué falta, en vez
+de fingir datos. 401/403 y 429 se distinguen (clave mala vs cuota) porque no se
+arreglan igual.
+
+Los avisos CAP quedan fuera a propósito: llegan como `.tar.gz` de XML y abrir un
+tar dentro de la función no compensa para responder una pregunta del tiempo.
+
 ## Música, voz y vídeo
 
 `media.music` (Lyria) y `media.speech` (TTS de Gemini) viajan por el canal
