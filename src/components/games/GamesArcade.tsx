@@ -1,15 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Brain, Crosshair, RotateCcw, Trophy, Zap } from "lucide-react";
 import {
 	IMPULSE_POINTS,
 	IMPULSE_TOLERANCE,
 	MEMORY_NODES,
 	MEMORY_WIN_LENGTH,
+	REACTOR_ROUNDS,
+	REACTOR_SECONDS,
 	extendSequence,
 	impulseBonus,
 	impulseVerdict,
 	memoryVerdict,
 	nextTarget,
+	reactorRound,
+	reactorScore,
+	reactorVerdict,
 	type GameId,
 	type ImpulseVerdict,
 } from "@/lib/mini-games";
@@ -362,4 +367,192 @@ export function MemoryGame({
 			</div>
 		</GameCard>
 	);
+}
+
+/**
+ * Reactor de pares: el tercer juego.
+ *
+ * Dos números de los cuatro que se ofrecen suman el objetivo. Cada ronda tiene
+ * exactamente una pareja válida (`reactorRound` lo garantiza y está probado),
+ * así que esto sólo lleva el reloj, la selección y la puntuación.
+ */
+export function ReactorGame({
+  seconds = REACTOR_SECONDS,
+  rounds = REACTOR_ROUNDS,
+  seed = Date.now() % 100_000,
+  best,
+  badge,
+  onRun,
+}: {
+  seconds?: number;
+  rounds?: number;
+  seed?: number;
+  best: number;
+  badge?: string;
+  onRun: (game: GameId, score: number) => void;
+}) {
+  const [roundIndex, setRoundIndex] = useState(0);
+  const [picked, setPicked] = useState<number[]>([]);
+  const [score, setScore] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [left, setLeft] = useState(seconds);
+  const [phase, setPhase] = useState<"idle" | "playing" | "done">("idle");
+  const [flash, setFlash] = useState<"correct" | "wrong" | null>(null);
+  const reported = useRef(false);
+
+  const round = useMemo(() => reactorRound(seed, roundIndex), [seed, roundIndex]);
+
+  const finish = useCallback(
+    (total: number) => {
+      setPhase("done");
+      if (!reported.current) {
+        reported.current = true;
+        onRun("reactor", total);
+      }
+    },
+    [onRun],
+  );
+
+  // Reloj de la ronda: al llegar a cero cuenta como fallo y pasa a la siguiente.
+  useEffect(() => {
+    if (phase !== "playing") return;
+    if (left <= 0) {
+      setFlash("wrong");
+      setCombo(0);
+      setPicked([]);
+      if (roundIndex + 1 >= rounds) {
+        finish(score);
+      } else {
+        setRoundIndex((index) => index + 1);
+        setLeft(seconds);
+      }
+      return;
+    }
+    const timer = window.setTimeout(() => setLeft((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [phase, left, roundIndex, rounds, score, seconds, finish]);
+
+  useEffect(() => {
+    if (!flash) return;
+    const timer = window.setTimeout(() => setFlash(null), 450);
+    return () => window.clearTimeout(timer);
+  }, [flash]);
+
+  const start = () => {
+    setRoundIndex(0);
+    setPicked([]);
+    setScore(0);
+    setCombo(0);
+    setLeft(seconds);
+    setFlash(null);
+    reported.current = false;
+    setPhase("playing");
+  };
+
+  const pick = (option: number) => {
+    if (phase !== "playing" || picked.includes(option)) return;
+    const next = [...picked, option];
+    if (next.length < 2) {
+      setPicked(next);
+      return;
+    }
+    const verdict = reactorVerdict(next, round.target);
+    if (verdict === "correct") {
+      setScore((value) => value + reactorScore(left, combo));
+      setCombo((value) => value + 1);
+      setFlash("correct");
+    } else {
+      setCombo(0);
+      setFlash("wrong");
+    }
+    setPicked([]);
+    if (roundIndex + 1 >= rounds) {
+      finish(verdict === "correct" ? score + reactorScore(left, combo) : score);
+    } else {
+      setRoundIndex((index) => index + 1);
+      setLeft(seconds);
+    }
+  };
+
+  return (
+    <GameCard
+      title="Reactor de pares"
+      hint="Dos números que suman el objetivo. Reloj por ronda y combo por acierto."
+      icon={<Zap className="h-3.5 w-3.5" />}
+      badge={badge}
+      best={best}
+    >
+      <div className="mb-3 flex items-center gap-3">
+        <div
+          className={`flex h-16 w-16 shrink-0 flex-col items-center justify-center rounded-full border-2 ${
+            flash === "correct"
+              ? "border-primary bg-primary/15"
+              : flash === "wrong"
+                ? "border-destructive bg-destructive/10"
+                : "border-accent/50 bg-accent/5"
+          }`}
+        >
+          <span className="font-mono text-[8px] uppercase tracking-widest text-muted-foreground/60">
+            Suma
+          </span>
+          <span className="font-heading text-xl text-accent">{round.target}</span>
+        </div>
+        <div className="grid flex-1 grid-cols-3 gap-2 font-mono text-[9px] text-muted-foreground/60">
+          <span>
+            Ronda{" "}
+            <strong className="block text-[11px] text-foreground">
+              {Math.min(roundIndex + 1, rounds)}/{rounds}
+            </strong>
+          </span>
+          <span>
+            Tiempo{" "}
+            <strong className="block text-[11px] text-foreground">{Math.max(0, left)} s</strong>
+          </span>
+          <span>
+            Puntos <strong className="block text-[11px] text-foreground">{score}</strong>
+          </span>
+        </div>
+      </div>
+
+      <div className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {round.options.map((option) => (
+          <button
+            key={option}
+            onClick={() => pick(option)}
+            disabled={phase !== "playing" || picked.includes(option)}
+            className={`rounded border px-2 py-3 font-heading text-lg transition-colors ${
+              picked.includes(option)
+                ? "border-secondary/60 bg-secondary/15 text-secondary"
+                : "border-border/50 bg-muted/10 text-foreground/85 hover:border-primary/40 hover:text-primary"
+            } disabled:opacity-60`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-auto flex flex-wrap items-center gap-2">
+        {phase !== "playing" ? (
+          <button
+            onClick={start}
+            className="rounded border border-primary/50 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+          >
+            {phase === "done" ? "Otra vez" : "Empezar"}
+          </button>
+        ) : (
+          <span className="font-mono text-[9px] text-muted-foreground/50">
+            Elige dos números · combo {combo}
+          </span>
+        )}
+        {phase === "done" && (
+          <span className="font-mono text-[9px] text-muted-foreground/55">
+            Partida enviada a la liga con {score} puntos
+          </span>
+        )}
+        <span className="ml-auto flex items-center gap-1 font-mono text-[9px] text-muted-foreground/45">
+          <Trophy className="h-2.5 w-2.5" /> marca {Math.max(best, score)}
+        </span>
+      </div>
+    </GameCard>
+  );
 }

@@ -4,6 +4,13 @@ import {
 	IMPULSE_STREAK_CAP,
 	MEMORY_NODES,
 	extendSequence,
+	REACTOR_OPTIONS,
+	REACTOR_ROUNDS,
+	REACTOR_SECONDS,
+	reactorMaxScore,
+	reactorRound,
+	reactorScore,
+	reactorVerdict,
 	impulseBonus,
 	impulseVerdict,
 	memoryVerdict,
@@ -85,4 +92,60 @@ describe("memoria de nodos", () => {
 		expect(memoryVerdict([1, 2, 3], [1, 9, 3])).toBe("wrong");
 		expect(memoryVerdict([1, 2, 3], [3])).toBe("wrong");
 	});
+});
+
+/**
+ * Reactor de pares: el tercer juego.
+ *
+ * Lo que se fija aquí es lo que hace que el juego signifique algo: cada ronda
+ * tiene exactamente una pareja válida, es reproducible desde la semilla y el
+ * tiempo nunca puede puntuar por encima del techo declarado.
+ */
+describe("reactor de pares", () => {
+  it("cada ronda tiene una única pareja válida", () => {
+    for (let seed = 0; seed < 200; seed++) {
+      const round = reactorRound(seed, seed % REACTOR_ROUNDS);
+      expect(round.options).toHaveLength(REACTOR_OPTIONS);
+      expect(round.answer[0] + round.answer[1]).toBe(round.target);
+      const validas = [];
+      for (let i = 0; i < round.options.length; i++) {
+        for (let j = i + 1; j < round.options.length; j++) {
+          if (round.options[i] + round.options[j] === round.target) validas.push([i, j]);
+        }
+      }
+      expect(validas).toHaveLength(1);
+    }
+  });
+
+  it("es determinista y distinto entre rondas", () => {
+    expect(reactorRound(1234, 3)).toEqual(reactorRound(1234, 3));
+    const rounds = [0, 1, 2, 3, 4].map((round) => reactorRound(1234, round).target);
+    expect(new Set(rounds).size).toBeGreaterThan(1);
+  });
+
+  it("las opciones no se repiten y son números positivos", () => {
+    const round = reactorRound(99, 1);
+    expect(new Set(round.options).size).toBe(round.options.length);
+    for (const option of round.options) expect(option).toBeGreaterThan(0);
+  });
+
+  it("sin dos números no hay veredicto", () => {
+    expect(reactorVerdict([], 10)).toBeNull();
+    expect(reactorVerdict([4], 10)).toBeNull();
+    expect(reactorVerdict([4, 6], 10)).toBe("correct");
+    expect(reactorVerdict([4, 7], 10)).toBe("wrong");
+  });
+
+  it("la puntuación premia tiempo y combo, y nunca pasa el techo", () => {
+    expect(reactorScore(0, 0)).toBe(100);
+    expect(reactorScore(REACTOR_SECONDS, 5)).toBeGreaterThan(reactorScore(0, 0));
+    // Valores fuera de rango se recortan en vez de inflar la marca.
+    expect(reactorScore(999, 99)).toBe(reactorScore(REACTOR_SECONDS, 5));
+    expect(reactorScore(-5, -1)).toBe(100);
+    // El techo tiene que caber en el límite que acepta el servidor
+    // (`MAX_SCORE.reactor`), o una partida perfecta se recortaría sola.
+    expect(reactorScore(REACTOR_SECONDS, 5) * REACTOR_ROUNDS).toBeLessThanOrEqual(2_000);
+    expect(reactorMaxScore()).toBeGreaterThanOrEqual(reactorScore(REACTOR_SECONDS, 5));
+    expect(reactorMaxScore(1)).toBe(reactorScore(REACTOR_SECONDS, 0));
+  });
 });

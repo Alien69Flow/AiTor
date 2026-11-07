@@ -11,7 +11,7 @@
  * los puntos como si fueran un saldo.
  */
 
-import { MEMORY_NODES, type GameId } from "./mini-games";
+import { MEMORY_NODES, REACTOR_ROUNDS, REACTOR_SECONDS, type GameId } from "./mini-games";
 
 export type HubGame = GameId;
 
@@ -21,6 +21,8 @@ export const HUB_POINTS_PER_GAME: Record<HubGame, (score: number) => number> = {
 	impulse: (score) => Math.max(0, Math.round(score)),
 	// La memoria puntúa en rondas (0–12); una ronda vale cuatro aciertos perfectos.
 	memory: (score) => Math.max(0, Math.round(score)) * 40,
+	// El reactor ya puntúa en puntos de liga (base + tiempo + combo): tal cual.
+	reactor: (score) => Math.max(0, Math.round(score)),
 };
 
 /** Nota honesta sobre qué son estos puntos. */
@@ -63,6 +65,10 @@ export interface DailyChallenge {
 	speed?: number;
 	/** Nodos dibujados, si el reto es de memoria. */
 	nodeCount?: number;
+	/** Segundos por ronda, si el reto es de reactor. */
+	seconds?: number;
+	/** Rondas, si el reto es de reactor. */
+	rounds?: number;
 }
 
 const IMPULSE_CHALLENGES: Omit<DailyChallenge, "id" | "game">[] = [
@@ -77,17 +83,28 @@ const MEMORY_CHALLENGES: Omit<DailyChallenge, "id" | "game">[] = [
 	{ label: "Memoria completa", detail: "Los seis nodos, sin ayudas.", nodeCount: MEMORY_NODES },
 ];
 
+const REACTOR_CHALLENGES: Omit<DailyChallenge, "id" | "game">[] = [
+	{ label: "Reactor rápido", detail: "Cinco segundos por ronda: la suma tiene que salir de vista.", seconds: 5 },
+	{ label: "Reactor largo", detail: "Diez rondas seguidas; el tiempo es el normal.", rounds: 10 },
+	{ label: "Reactor doble presión", detail: "Diez rondas de cinco segundos: no hay margen para contar con los dedos.", seconds: 5, rounds: 10 },
+];
+
 /**
  * Reto de un día concreto.
  *
  * Alterna juego por el bit bajo del hash y elige variante por el resto: el
  * mismo día da siempre el mismo reto y dos días seguidos no repiten juego.
  */
+const ROTATION: HubGame[] = ["impulse", "memory", "reactor"];
+
 export function dailyChallenge(date: Date = new Date()): DailyChallenge {
 	const id = dateKey(date);
 	const seed = dailySeed(id);
-	const game: HubGame = seed % 2 === 0 ? "impulse" : "memory";
-	const pool = game === "impulse" ? IMPULSE_CHALLENGES : MEMORY_CHALLENGES;
+	// Tres juegos, tres días, tres variantes: el reparto lo decide el hash del
+	// día, así que el mismo día da siempre el mismo reto en cualquier equipo.
+	const game: HubGame = ROTATION[seed % ROTATION.length];
+	const pool =
+		game === "impulse" ? IMPULSE_CHALLENGES : game === "memory" ? MEMORY_CHALLENGES : REACTOR_CHALLENGES;
 	const variant = pool[Math.floor(seed / 7) % pool.length];
 	return { id, game, ...variant };
 }
@@ -154,7 +171,7 @@ export interface HubProfile {
 export const EMPTY_PROFILE: HubProfile = {
 	points: 0,
 	runs: 0,
-	best: { impulse: 0, memory: 0 },
+	best: { impulse: 0, memory: 0, reactor: 0 },
 	streak: 0,
 	lastPlayed: null,
 	dailyDone: null,
@@ -236,6 +253,7 @@ export function readProfile(): HubProfile {
 			best: {
 				impulse: Number(parsed.best?.impulse) || 0,
 				memory: Number(parsed.best?.memory) || 0,
+				reactor: Number(parsed.best?.reactor) || 0,
 			},
 			streak: Number.isFinite(parsed.streak) ? Number(parsed.streak) : 0,
 			lastPlayed: typeof parsed.lastPlayed === "string" ? parsed.lastPlayed : null,
