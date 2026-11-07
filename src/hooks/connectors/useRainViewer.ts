@@ -42,7 +42,12 @@ export function useRainViewer(enabled: boolean, intervalMs = 300_000) {
   const tileUrl = useMemo(() => {
     if (!latestFrame) return null;
     // {z}/{x}/{y}/{size}/{color}/{smooth}_{snow}.png
-    return `${state.data.host}${latestFrame.path}/256/{z}/{x}/{y}/4/1_1.png`;
+    //
+    // 512 px y suavizado: la tesela de 256 con la red de radares real se veía a
+    // bloques al acercarse, sobre todo en el borde de cada célula. Al doblar el
+    // tamaño y pedir `smooth` (el 1 final de `1_1`) la mancha de lluvia queda
+    // continua, que es como se lee un radar de verdad.
+    return `${state.data.host}${latestFrame.path}/512/{z}/{x}/{y}/4/1_1.png`;
   }, [state.data.host, latestFrame]);
 
   return { ...state, latestFrame, tileUrl };

@@ -6,6 +6,7 @@ import {
 	CloudFog, Tornado, SunMedium, MoonStar, Contrast, Camera,
 	Leaf, Fish, Snowflake, Factory, CloudDrizzle, Cloudy, Atom,
 	ThermometerSun, Sprout, Orbit, RadioTower, Magnet, Video, Radiation,
+	Layers,
 	type LucideIcon,
 } from "lucide-react";
 
@@ -72,7 +73,23 @@ export type EnvLayerKey =
 	| "heliosphere"
 	| "iss"
 	// Cámaras del Alien situadas en el globo
-	| "liveCameras";
+	| "liveCameras"
+	// Envolturas de la atmósfera como cascarones, visibles desde fuera
+	| "atmosphericShells";
+
+/**
+ * Familia de un campo de teselas.
+ *
+ * Los mapas de calor del mismo planeta no se suman: se tapan. Con temperatura,
+ * humedad y precipitación encendidas a la vez el globo se convierte en una
+ * mancha translúcida donde no se distingue ninguna de las tres, así que dentro
+ * de una familia sólo puede haber una capa dibujada.
+ *
+ * `clouds` va aparte a propósito: las nubes son contexto translúcido y se
+ * entienden encima de cualquier campo, que es como lo hacen los mapas de
+ * meteo de verdad.
+ */
+export type RasterFamily = "weather" | "precipitation" | "clouds" | "surface" | "climate" | "ocean";
 
 export type Tier = "signal" | "node" | "synapse" | "oracle" | "quantum";
 
@@ -139,6 +156,12 @@ export interface globeLayerDef {
 			 */
 			timeless?: boolean;
 		};
+	/**
+	 * Familia del campo de teselas: encender una capa apaga a sus hermanas.
+	 * Se asigna en `RASTER_FAMILY_BY_KEY`, no capa por capa, para que el catálogo
+	 * no se pueda quedar con dos campos incompatibles encendidos.
+	 */
+	rasterFamily?: RasterFamily;
 	requiredTier: Tier;
 	/** Data source attribution */
 	source?: string;
@@ -284,17 +307,33 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		freshness: "15 min",
 		description: "Global surface temperature map"
 	},
-	{ 
-		key: "precipitation", 
-		label: "Precipitation", 
-		group: "Atmospheric & Weather", 
-		color: "#60a5fa", 
-		Icon: Droplets, 
-		owm: "precipitation_new", 
+	{
+		// Radar, no modelo: la tesela de OpenWeatherMap para precipitación es un
+		// campo de 8 bits a nivel 10 que al acercarse se ve como píxeles azules
+		// cuadrados sobre las nubes. RainViewer compone la red real de radares
+		// (suavizada, con nieve), que es lo que hace legible la lluvia de un
+		// mapa de meteo. Esta capa no pide teselas propias aquí: la dibuja el
+		// conector `useRainViewer` cuando trae el último fotograma.
+		key: "precipitation",
+		label: "Precipitation (radar)",
+		group: "Atmospheric & Weather",
+		color: "#60a5fa",
+		Icon: Droplets,
 		requiredTier: "signal",
-		source: "OpenWeatherMap",
-		freshness: "15 min",
-		description: "Rain, snow, and precipitation intensity"
+		source: "RainViewer · red global de radares",
+		freshness: "10 min",
+		description: "Lluvia y nieve observadas por radar, no un modelo: se ve la forma real de las células de precipitación"
+	},
+	{
+		key: "atmosphericShells",
+		label: "Envolturas atmosféricas",
+		group: "Atmospheric & Weather",
+		color: "#7dd3fc",
+		Icon: Layers,
+		requiredTier: "signal",
+		source: "Modelo estándar US 1976 (techos de cada capa)",
+		freshness: "Estático",
+		description: "Troposfera, estratosfera, mesosfera y termosfera como cascarones, visibles al mirar el planeta desde fuera"
 	},
 	{
 		key: "humidity",
@@ -970,11 +1009,55 @@ const LAYER_CATALOG: globeLayerDef[] = [
  */
 export const LAYER_TIER_CAP: Tier = "node";
 
-export const GLOBE_LAYERS: globeLayerDef[] = LAYER_CATALOG.map((layer) =>
-	TIER_RANK[layer.requiredTier] > TIER_RANK[LAYER_TIER_CAP]
-		? { ...layer, requiredTier: LAYER_TIER_CAP }
-		: layer,
-);
+/**
+ * Qué campo contradice a qué campo.
+ *
+ * Va en una tabla y no en cada entrada del catálogo para que sea imposible
+ * añadir un ráster nuevo sin familia (la prueba del catálogo lo exige) y para
+ * ver de un vistazo que no hay dos campos apilables en el mismo saco.
+ */
+const RASTER_FAMILY_BY_KEY: Partial<Record<EnvLayerKey, RasterFamily>> = {
+	// Campos atmosféricos: se sustituyen entre sí.
+	temperature: "weather",
+	humidity: "weather",
+	isobars: "weather",
+	wind: "weather",
+	airQuality: "weather",
+	dust: "weather",
+	uvIndex: "weather",
+	waterVapor: "weather",
+	ozone: "weather",
+	cloudTopHeight: "weather",
+	stratosphere: "weather",
+	airTemperature: "weather",
+	// Precipitación: radar observado o la malla diaria de IMERG, no las dos.
+	precipitationRate: "precipitation",
+	// Nubes: contexto translúcido, compatible con cualquier campo.
+	clouds: "clouds",
+	// Imagen del suelo.
+	satelliteImagery: "surface",
+	nightLights: "surface",
+	// Biosfera y clima.
+	landSurfaceTemp: "climate",
+	snowCover: "climate",
+	vegetation: "climate",
+	soilMoisture: "climate",
+	carbonDioxide: "climate",
+	seaIce: "climate",
+	// Océano.
+	seaTemperature: "ocean",
+	oceanChlorophyll: "ocean",
+	oceanCurrents: "ocean",
+	seaSalinity: "ocean",
+	iceSurfaceTemp: "ocean",
+};
+
+export const GLOBE_LAYERS: globeLayerDef[] = LAYER_CATALOG.map((layer) => ({
+	...layer,
+	requiredTier:
+		TIER_RANK[layer.requiredTier] > TIER_RANK[LAYER_TIER_CAP] ? LAYER_TIER_CAP : layer.requiredTier,
+	rasterFamily: layer.rasterFamily ?? RASTER_FAMILY_BY_KEY[layer.key],
+}));
 
 export const LAYER_GROUPS: LayerGroup[] = [
 	"Atmospheric & Weather",
@@ -986,17 +1069,23 @@ export const LAYER_GROUPS: LayerGroup[] = [
 	"Geopolitical",
 ];
 
+/**
+ * Lo que se ve al abrir el globo.
+ *
+ * Regla: un solo campo de teselas de la misma familia. Antes venían encendidas
+ * temperatura, humedad y precipitación a la vez y el planeta era una mancha
+ * translúcida; ahora la lectura la llevan las nubes (contexto suave), el radar
+ * de lluvia y los puntos de datos, y el resto de campos está a un clic.
+ */
 export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	"atmosphere",
+	"atmosphericShells",
 	"clouds",
-	"temperature",
-	"humidity",
 	"precipitation",
 	"wildfires",
 	"earthquakes",
 	"airTraffic",
 	"marketData",
-	"dayNight",
 	"iss",
 	"liveCameras",
 	// Las dos esferas que el panel destaca: vienen encendidas para que se vea de
@@ -1004,6 +1093,18 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	"vanAllen",
 	"heliosphere",
 ];
+
+/**
+ * Capas de la misma familia que una dada: encender una apaga a sus hermanas.
+ * No incluye la propia capa ni las que no comparten campo.
+ */
+export function rasterSiblings(key: EnvLayerKey): EnvLayerKey[] {
+	const family = GLOBE_LAYERS.find((layer) => layer.key === key)?.rasterFamily;
+	if (!family) return [];
+	return GLOBE_LAYERS.filter(
+		(layer) => layer.key !== key && layer.rasterFamily === family,
+	).map((layer) => layer.key);
+}
 
 export function layerDef(key: EnvLayerKey): globeLayerDef | undefined {
 	return GLOBE_LAYERS.find((l) => l.key === key);

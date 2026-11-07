@@ -26,6 +26,7 @@ import {
   TIER_LABEL,
   isRasterLayer,
   layerDef,
+  rasterSiblings,
   type EnvLayerKey,
 } from "@/lib/globe-layers";
 import { planRasterBulk } from "@/lib/raster-quota";
@@ -245,17 +246,31 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
     const evicted = order.slice(0, excess);
     rasterOrderRef.current = order.slice(excess);
 
+    // Un campo por familia: encender la humedad apaga la temperatura, igual
+    // que en un mapa de meteo de verdad. Dos mapas de calor del mismo planeta
+    // no se suman, se tapan, y el resultado era una mancha sin lectura.
+    const retiredSiblings = rasterSiblings(key).filter((sibling) => envLayers.has(sibling));
+
     setEnvLayers((previous) => {
       const next = new Set(previous);
       next.add(key);
       for (const retired of evicted) next.delete(retired);
+      for (const sibling of retiredSiblings) next.delete(sibling);
       return next;
     });
+    rasterOrderRef.current = rasterOrderRef.current.filter(
+      (active) => active !== key && !retiredSiblings.includes(active),
+    );
 
     if (evicted.length > 0) {
       const names = evicted.map((retired) => layerDef(retired)?.label ?? retired).join(", ");
       toast(`Máximo ${MAX_RASTER_LAYERS} capas de teselas a la vez`, {
         description: `He apagado ${names}: cada capa ráster ocupa su propia caché de texturas y con más el globo pierde el contexto WebGL.`,
+      });
+    } else if (retiredSiblings.length > 0) {
+      const names = retiredSiblings.map((sibling) => layerDef(sibling)?.label ?? sibling).join(", ");
+      toast(`Sustituye a ${names}`, {
+        description: "Dos campos del mismo tipo no se pueden leer a la vez: se apaga el anterior para que el nuevo se vea.",
       });
     }
   }, [envLayers, hasAccess]);
@@ -286,7 +301,17 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
       return;
     }
 
-    for (const key of allowed) next.add(key);
+    for (const key of allowed) {
+      // Mismo criterio que al encender de una en una: la última capa de cada
+      // familia manda, y las demás de esa familia se quedan fuera del lote.
+      const family = layerDef(key)?.rasterFamily;
+      if (family) {
+        for (const other of GLOBE_LAYERS) {
+          if (other.key !== key && other.rasterFamily === family) next.delete(other.key);
+        }
+      }
+      next.add(key);
+    }
 
     const catalogRasters = GLOBE_LAYERS.filter((definition) => isRasterLayer(definition)).map(
       (definition) => definition.key,
