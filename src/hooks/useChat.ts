@@ -30,6 +30,8 @@ export interface Message {
   images?: { url: string; alt: string }[];
   /** Música o voz generada en el turno, ya como data URLs. */
   audios?: { url: string; alt: string }[];
+  /** Clips de vídeo generados en el turno, ya como data URLs. */
+  videos?: { url: string; alt: string }[];
   /** Sources this turn consulted, so the transcript shows what the answer rests on. */
   skills?: MessageSkill[];
   /** Present only when the backend stream reports real provider usage. */
@@ -192,6 +194,7 @@ export function useChat() {
       let agentReasoning = "";
       const agentImages: { url: string; alt: string }[] = [];
       const agentAudios: { url: string; alt: string }[] = [];
+      const agentVideos: { url: string; alt: string }[] = [];
       /** Ya hay burbuja creada: puede ser por razonamiento, antes que el texto. */
       let agentCreated = false;
       /** Rellenado por el agente cuando no puede contestar. */
@@ -207,16 +210,19 @@ export function useChat() {
         thought?: string;
         image?: { url: string; alt: string };
         audio?: { url: string; alt: string };
+        video?: { url: string; alt: string };
       }) => {
         if (chunk.text) agentText += chunk.text;
         if (chunk.thought) agentReasoning += chunk.thought;
         if (chunk.image) agentImages.push(chunk.image);
         if (chunk.audio) agentAudios.push(chunk.audio);
+        if (chunk.video) agentVideos.push(chunk.video);
         const snapshot = {
           content: agentText,
           ...(agentReasoning && { reasoning: agentReasoning }),
           ...(agentImages.length > 0 && { images: [...agentImages] }),
           ...(agentAudios.length > 0 && { audios: [...agentAudios] }),
+          ...(agentVideos.length > 0 && { videos: [...agentVideos] }),
         };
         if (!agentCreated) {
           agentCreated = true;
@@ -240,6 +246,7 @@ export function useChat() {
           onThought: (thought) => patchAgent({ thought }),
           onImage: (image) => patchAgent({ image }),
           onAudio: (audio) => patchAgent({ audio }),
+          onVideo: (video) => patchAgent({ video }),
           onFailure: (failure) => {
             agentFailure = failure;
           },
@@ -266,6 +273,7 @@ export function useChat() {
                       agentTurn.reasoning && { reasoning: agentTurn.reasoning }),
                     ...(agentTurn.images.length > agentImages.length && { images: agentTurn.images }),
                     ...(agentTurn.audios.length > agentAudios.length && { audios: agentTurn.audios }),
+                    ...(agentTurn.videos.length > agentVideos.length && { videos: agentTurn.videos }),
                     ...(chips.length > 0 && { skills: chips }),
                   }
                 : message,
@@ -282,6 +290,7 @@ export function useChat() {
               ...(agentTurn.reasoning && { reasoning: agentTurn.reasoning }),
               ...(agentTurn.images.length > 0 && { images: agentTurn.images }),
               ...(agentTurn.audios.length > 0 && { audios: agentTurn.audios }),
+              ...(agentTurn.videos.length > 0 && { videos: agentTurn.videos }),
               ...(chips.length > 0 && { skills: chips }),
             },
           ]);

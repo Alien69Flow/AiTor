@@ -221,8 +221,29 @@ En el chat se cuelga de `Message.images` y se pinta bajo la respuesta. Esas
 data URLs no se guardan en `localStorage` (una imagen son uno o dos megas y la
 siguiente carga rompería el JSON): se conservan en la sesión viva.
 
-No hay herramientas de vídeo, música, sonido ni videojuegos, y el
-`systemInstruction` pide decirlo en vez de describir un resultado que no existe.
+## Música, voz y vídeo
+
+`media.music` (Lyria) y `media.speech` (TTS de Gemini) viajan por el canal
+`audio`, como data URL WAV o MP3; la voz llega en PCM crudo y el servidor le
+pone la cabecera WAV.
+
+`media.video` (plan pro) es distinto porque **tarda**: Veo genera en una
+operación larga de uno a tres minutos y la función se corta a los sesenta
+segundos. Por eso trabaja en dos pasos:
+
+1. `media.video` con `prompt` arranca la operación y devuelve su `operation`.
+   La nota al modelo dice que no está listo, para que no lo anuncie.
+2. `media.video` con `operation` consulta; si sigue corriendo lo dice, y si ya
+   terminó descarga el mp4 con la clave del servidor y lo manda por el canal
+   `video`.
+
+El clip se incrusta sólo si cabe: por encima de `MAX_INLINE_VIDEO_BASE64`
+(3 MB de base64) la respuesta diría cuánto ocupa y ofrecería un clip de 4 s, en
+vez de cortar el base64 y servir un vídeo roto. Las URIs de Veo no son públicas,
+así que nunca se enlazan desde el navegador.
+
+Las cuatro herramientas de medios necesitan `GEMINI_API_KEY`; sin ella el
+`systemInstruction` no las inventa y el chat lo dice.
 
 ## Configurar la clave en Vercel
 

@@ -62,6 +62,7 @@ describe("filas de herramientas MCP", () => {
       "media.image",
       "media.music",
       "media.speech",
+      "media.video",
     ]);
     expect(filas[2]).toMatchObject({ title: "Generar una imagen", state: "ok" });
   });
@@ -99,8 +100,8 @@ describe("fila de la clave del modelo", () => {
     expect(modelKeyRow({ geminiKeyState: "ok" }, 12)).toMatchObject({ state: "ok" });
   });
 
-  it("las herramientas de la clave son las tres de medios", () => {
-    expect(MODEL_KEY_TOOLS.sort()).toEqual(["media.image", "media.music", "media.speech"]);
+  it("las herramientas de la clave son las cuatro de medios", () => {
+    expect(MODEL_KEY_TOOLS.sort()).toEqual(["media.image", "media.music", "media.speech", "media.video"]);
     expect(Object.keys(SERVER_ONLY_TOOLS).sort()).toEqual(MODEL_KEY_TOOLS);
   });
 });

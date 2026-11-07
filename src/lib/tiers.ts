@@ -79,8 +79,8 @@ export const PLANS: PlanDef[] = [
     features: [
       "Todo lo de Synapse incluido",
       "Voto y gobernanza DAO",
-      "Ejecución automática en ADEX",
-      "Generación de vídeo y narrativas",
+      "Ejecución automática en ADEX (próximamente)",
+      "Generación de vídeo con Veo (próximamente)",
     ],
   },
   {
@@ -95,7 +95,7 @@ export const PLANS: PlanDef[] = [
     features: [
       "Todo ilimitado, sin cupos",
       "Edición de código por agentes",
-      "Relayer keys y soporte prioritario",
+      "Relayer keys (próximamente) y soporte prioritario",
       "Acceso anticipado a nuevos módulos",
     ],
   },

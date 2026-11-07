@@ -33,6 +33,7 @@ describe("turno del agente con herramientas", () => {
       reasoning: "",
       images: [],
       audios: [],
+      videos: [],
       tools: ["github.repo"],
       failed: [],
     });
@@ -40,7 +41,7 @@ describe("turno del agente con herramientas", () => {
     expect(String(askAgent.mock.calls[0][0])).toContain("¿cuántas rutas tiene el repositorio?");
   });
 
-  it("devuelve el audio generado en el turno", async () => {
+  it("devuelve el audio y el vídeo generados en el turno", async () => {
     askAgent.mockResolvedValue({
       answer: "Ahí tienes la pieza.",
       toolCalls: [{ name: "media.music", args: {}, isError: false }],
@@ -49,6 +50,18 @@ describe("turno del agente con herramientas", () => {
 
     const result = await runAgentTurn([], "ponme algo de piano");
     expect(result?.audios).toEqual([{ url: "data:audio/mpeg;base64,SUQz", alt: "piano suave" }]);
+    expect(result?.videos).toEqual([]);
+  });
+
+  it("devuelve el clip generado en el turno", async () => {
+    askAgent.mockResolvedValue({
+      answer: "Ahí tienes el clip.",
+      toolCalls: [{ name: "media.video", args: {}, isError: false }],
+      videos: [{ url: "data:video/mp4;base64,AAAA", alt: "Clip generado con Veo" }],
+    });
+
+    const result = await runAgentTurn([], "hazme un clip de la nebulosa");
+    expect(result?.videos).toEqual([{ url: "data:video/mp4;base64,AAAA", alt: "Clip generado con Veo" }]);
   });
 
   it("marca las herramientas que fallaron en vez de esconderlas", async () => {
@@ -101,6 +114,7 @@ describe("turno del agente con herramientas", () => {
       reasoning: "",
       images: [],
       audios: [],
+      videos: [],
       tools: ["github.repo"],
       failed: ["github.repo"],
     });

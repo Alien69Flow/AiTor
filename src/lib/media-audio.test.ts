@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { TOOLS, parseMusicAudio, parseTtsAudio, pcmToWav } from "../../api/mcp";
+import {
+  MAX_INLINE_VIDEO_BASE64,
+  TOOLS,
+  fitsInlineVideo,
+  parseMusicAudio,
+  parseTtsAudio,
+  parseVideoOperation,
+  pcmToWav,
+} from "../../api/mcp";
 
 /**
  * El audio no se puede probar de punta a punta sin clave de Gemini, así que se
@@ -12,15 +20,68 @@ import { TOOLS, parseMusicAudio, parseTtsAudio, pcmToWav } from "../../api/mcp";
 const silence = (samples = 100) => new Uint8Array(samples * 2);
 
 describe("catálogo de herramientas", () => {
-  it("ofrece las tres capacidades creativas", () => {
+  it("ofrece las cuatro capacidades creativas", () => {
     const names = TOOLS.map((tool) => tool.name);
     expect(names).toContain("media.image");
     expect(names).toContain("media.music");
     expect(names).toContain("media.speech");
+    expect(names).toContain("media.video");
   });
 
-  it("no promete vídeo", () => {
-    expect(TOOLS.map((tool) => tool.name).filter((name) => name.includes("video"))).toEqual([]);
+  it("el vídeo se recoge con `operation`, porque la generación es larga", () => {
+    const tool = TOOLS.find((entry) => entry.name === "media.video");
+    expect(tool?.minTier).toBe("pro");
+    const properties = Object.keys(
+      (tool?.inputSchema as { properties?: Record<string, unknown> })?.properties ?? {},
+    );
+    expect(properties).toContain("operation");
+    expect(properties).toContain("prompt");
+  });
+});
+
+describe("vídeo (Veo)", () => {
+  it("distingue corriendo, listo, vacío y fallido", () => {
+    expect(parseVideoOperation({ done: false })).toEqual({ state: "running" });
+    expect(parseVideoOperation({ done: true, response: {} })).toEqual({ state: "empty" });
+    expect(parseVideoOperation({ error: { message: "boom" } })).toEqual({
+      state: "failed",
+      error: "boom",
+    });
+  });
+
+  it("saca la URI y el tipo de la muestra", () => {
+    const parsed = parseVideoOperation({
+      done: true,
+      response: {
+        generateVideoResponse: {
+          generatedSamples: [{ video: { uri: "https://x/v", mimeType: "video/mp4" } }],
+        },
+      },
+    });
+    expect(parsed).toEqual({ state: "ready", uri: "https://x/v", mimeType: "video/mp4" });
+  });
+
+  it("asume mp4 cuando la muestra no declara tipo", () => {
+    const parsed = parseVideoOperation({
+      done: true,
+      response: { generateVideoResponse: { generatedSamples: [{ video: { uri: "https://x/v" } }] } },
+    });
+    expect(parsed.state === "ready" && parsed.mimeType).toBe("video/mp4");
+  });
+
+  it("un fallo gana a un `done` con respuesta", () => {
+    const parsed = parseVideoOperation({
+      done: true,
+      error: { message: "filtro" },
+      response: { generateVideoResponse: { generatedSamples: [{ video: { uri: "https://x/v" } }] } },
+    });
+    expect(parsed.state).toBe("failed");
+  });
+
+  it("no incrusta un clip que no cabe en la respuesta", () => {
+    expect(fitsInlineVideo("AAAA")).toBe(true);
+    expect(fitsInlineVideo("")).toBe(false);
+    expect(fitsInlineVideo("A".repeat(MAX_INLINE_VIDEO_BASE64 + 1))).toBe(false);
   });
 });
 

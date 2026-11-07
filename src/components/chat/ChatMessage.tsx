@@ -181,6 +181,32 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             </div>
           )}
 
+          {message.videos && message.videos.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {message.videos.map((video, index) => (
+                <div
+                  key={`${index}-${video.url.slice(-16)}`}
+                  className="overflow-hidden rounded-lg border border-border/60 bg-muted/20"
+                >
+                  {/* Clip de Veo como data URL: se reproduce aquí mismo, sin
+                      enlace temporal que caduque ni host externo. */}
+                  <video
+                    src={video.url}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="mx-auto max-h-[420px] w-full bg-black"
+                  >
+                    <track kind="captions" label={video.alt} />
+                  </video>
+                  <p className="truncate px-2 py-1 text-[10px] font-mono text-muted-foreground/60">
+                    {video.alt}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {!isUser && message.content && (
             <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button
