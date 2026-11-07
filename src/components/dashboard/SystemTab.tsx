@@ -16,7 +16,15 @@ import {
   Wallet,
   LogOut,
   CircleAlert,
+  Boxes,
 } from "lucide-react";
+import {
+  ARSENAL,
+  ARSENAL_STATUS_ORDER,
+  arsenalCounts,
+  arsenalLicenses,
+  arsenalRepos,
+} from "@/lib/arsenal";
 import { toast } from "sonner";
 import { useAppKit } from "@reown/appkit/react";
 import { useAccount, useDisconnect } from "wagmi";
@@ -68,6 +76,11 @@ const INTEGRATIONS: { name: string; detail: string; live: boolean }[] = [
   { name: "GitHub proxy", detail: "Requiere GITHUB_PAT para leer repos privados", live: false },
   { name: "Firecrawl deep search", detail: "Requiere FIRECRAWL_API_KEY", live: false },
 ];
+
+/* Se calcula una vez: el arsenal es estático y no depende de la sesión. */
+const ARSENAL_REPOS = arsenalRepos();
+const ARSENAL_COUNTS = arsenalCounts(ARSENAL_REPOS);
+const ARSENAL_LICENSES = arsenalLicenses(ARSENAL_REPOS);
 
 function Section({
   id,
@@ -460,6 +473,118 @@ export function SystemTab() {
                 </a>
               ))}
             </div>
+          </Section>
+
+          {/* Arsenal: los repos del dueño, con destino y estado de adopción. */}
+          <Section
+            id="control-arsenal"
+            title="Arsenal"
+            subtitle={`${ARSENAL.curated} repos con destino · de ${ARSENAL.totalReposInAccount} de la cuenta`}
+            icon={<Boxes className="h-3.5 w-3.5 text-primary/70" />}
+          >
+            <Card className="space-y-3 p-3.5">
+              <p className="font-mono text-[9px] leading-relaxed text-muted-foreground/55">
+                {ARSENAL.forksInAccount} de {ARSENAL.totalReposInAccount} repos son forks de proyectos
+                externos: se leen y se decide qué pieza vale, no se fusionan a ciegas. Cada ficha
+                declara su pestaña y qué se va a hacer con ella.
+              </p>
+
+              <div className="flex flex-wrap items-center gap-1.5">
+                {ARSENAL_STATUS_ORDER.map((status) => (
+                  <span
+                    key={status}
+                    className={`rounded border px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider ${
+                      status === "incorporado"
+                        ? "border-primary/40 bg-primary/10 text-primary"
+                        : status === "candidato"
+                          ? "border-secondary/40 bg-secondary/10 text-secondary"
+                          : "border-border/40 text-muted-foreground/55"
+                    }`}
+                  >
+                    {status} {ARSENAL_COUNTS[status]}
+                  </span>
+                ))}
+                <span className="ml-auto font-mono text-[8px] text-muted-foreground/40">
+                  {ARSENAL_LICENSES.slice(0, 3)
+                    .map((entry) => `${entry.license} ${entry.count}`)
+                    .join(" · ")}
+                </span>
+              </div>
+
+              {ARSENAL.destinations.map((group) => {
+                const counts = arsenalCounts(group.repos);
+                return (
+                  <details
+                    key={group.id}
+                    className="rounded-lg border border-border/25 bg-muted/10"
+                  >
+                    <summary className="flex cursor-pointer flex-wrap items-center gap-2 px-2.5 py-2 text-[10px] text-foreground/85">
+                      {group.label}
+                      <span className="font-mono text-[8px] text-muted-foreground/45">
+                        {group.repos.length}
+                      </span>
+                      {ARSENAL_STATUS_ORDER.filter((status) => counts[status] > 0).map((status) => (
+                        <span
+                          key={status}
+                          className={`rounded px-1 font-mono text-[8px] uppercase ${
+                            status === "incorporado"
+                              ? "bg-primary/15 text-primary"
+                              : status === "candidato"
+                                ? "bg-secondary/15 text-secondary"
+                                : "bg-border/30 text-muted-foreground/60"
+                          }`}
+                        >
+                          {counts[status]}{" "}
+                          {status === "incorporado"
+                            ? "inc."
+                            : status === "candidato"
+                              ? "cand."
+                              : "ref."}
+                        </span>
+                      ))}
+                    </summary>
+                    <ul className="space-y-1 px-2.5 pb-2.5">
+                      {group.repos.map((repo) => (
+                        <li key={repo.name} className="flex items-baseline gap-2">
+                          <a
+                            href={repo.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="shrink-0 font-mono text-[10px] text-secondary transition-colors hover:text-primary"
+                          >
+                            {repo.name}
+                          </a>
+                          <span
+                            className={`shrink-0 font-mono text-[8px] uppercase ${
+                              repo.status === "incorporado"
+                                ? "text-primary/80"
+                                : repo.status === "candidato"
+                                  ? "text-secondary/80"
+                                  : "text-muted-foreground/40"
+                            }`}
+                          >
+                            {repo.status === "incorporado"
+                              ? "inc."
+                              : repo.status === "candidato"
+                                ? "cand."
+                                : "ref."}
+                          </span>
+                          <span
+                            className="min-w-0 flex-1 truncate text-[9px] text-muted-foreground/50"
+                            title={repo.description || repo.name}
+                          >
+                            {repo.description || "sin descripción"}
+                          </span>
+                          <span className="shrink-0 font-mono text-[8px] text-muted-foreground/30">
+                            {repo.license ?? "—"}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </details>
+                );
+              })}
+            </Card>
           </Section>
 
           {/* Integrations */}
