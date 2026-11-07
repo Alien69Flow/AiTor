@@ -161,6 +161,26 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             </div>
           )}
 
+          {message.audios && message.audios.length > 0 && (
+            <div className="mt-3 space-y-2">
+              {message.audios.map((audio, index) => (
+                <div
+                  key={`${index}-${audio.url.slice(-16)}`}
+                  className="rounded-lg border border-border/60 bg-muted/20 p-2"
+                >
+                  {/* Reproductor nativo: el audio llega como data URL, así que no
+                      hay descarga externa ni enlace que pueda caducar. */}
+                  <audio src={audio.url} controls preload="metadata" className="w-full">
+                    <track kind="captions" label={audio.alt} />
+                  </audio>
+                  <p className="mt-1 truncate text-[10px] font-mono text-muted-foreground/60">
+                    {audio.alt}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+
           {!isUser && message.content && (
             <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
               <button

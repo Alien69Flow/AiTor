@@ -32,11 +32,23 @@ describe("turno del agente con herramientas", () => {
       content: "El árbol tiene 586 rutas y 512 ficheros.",
       reasoning: "",
       images: [],
+      audios: [],
       tools: ["github.repo"],
       failed: [],
     });
     expect(askAgent).toHaveBeenCalledTimes(1);
     expect(String(askAgent.mock.calls[0][0])).toContain("¿cuántas rutas tiene el repositorio?");
+  });
+
+  it("devuelve el audio generado en el turno", async () => {
+    askAgent.mockResolvedValue({
+      answer: "Ahí tienes la pieza.",
+      toolCalls: [{ name: "media.music", args: {}, isError: false }],
+      audios: [{ url: "data:audio/mpeg;base64,SUQz", alt: "piano suave" }],
+    });
+
+    const result = await runAgentTurn([], "ponme algo de piano");
+    expect(result?.audios).toEqual([{ url: "data:audio/mpeg;base64,SUQz", alt: "piano suave" }]);
   });
 
   it("marca las herramientas que fallaron en vez de esconderlas", async () => {
@@ -88,6 +100,7 @@ describe("turno del agente con herramientas", () => {
       content: "El árbol tiene 586 rutas.",
       reasoning: "",
       images: [],
+      audios: [],
       tools: ["github.repo"],
       failed: ["github.repo"],
     });
