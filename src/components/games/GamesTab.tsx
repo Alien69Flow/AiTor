@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
 	CandlestickChart,
 	Coins,
@@ -10,7 +10,8 @@ import {
 	Target,
 	Trophy,
 } from "lucide-react";
-import { DAOS, DOMAINS, NFT_PROFILES, PRODUCTS } from "@/lib/ecosystem";
+import { DAOS, DOMAINS, GAMEFI_TRACKS, NFT_PROFILES, PRODUCTS } from "@/lib/ecosystem";
+import { authClient } from "@/integrations/supabase/client";
 import {
 	HISTORY_LIMIT,
 	REWARDS_NOTE,
@@ -25,12 +26,29 @@ import {
 	type HubGame,
 } from "@/lib/games-hub";
 import type { GameId } from "@/lib/mini-games";
-import { ImpulseGame, MemoryGame } from "./GamesArcade";
+import { ImpulseGame, MemoryGame, ReactorGame } from "./GamesArcade";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
 	memory: "Memoria de nodos",
+	reactor: "Reactor de pares",
 };
+
+/** Una fila de la tabla del servidor (`GET /api/league`). */
+interface ServerRow {
+	rank: number;
+	handle: string;
+	points: number;
+	runs: number;
+	best: number;
+}
+
+type LeagueState =
+	| { status: "loading" }
+	| { status: "ready"; season: string; rows: ServerRow[]; me: ServerRow | null }
+	| { status: "missing" }
+	| { status: "anon" }
+	| { status: "error" };
 
 type Section = "arcade" | "reto" | "liga" | "gamefi";
 
@@ -76,6 +94,72 @@ export function GamesTab() {
 	// Los dos juegos pueden alimentar el reto: sólo el que toca recibe el ajuste.
 	const hasDaily = dailyMode && !dailyDone;
 
+	/**
+	 * Liga real en servidor.
+	 *
+	 * La tabla la calcula `GET /api/league` (Postgres, una fila por partida);
+	 * el perfil local sigue mandando en el navegador para poder jugar sin sesión.
+	 * Si la migración no está aplicada, la ruta responde 503 y aquí se dice tal
+	 * cual en vez de fingir una clasificación vacía.
+	 */
+	const [league, setLeague] = useState<LeagueState>({ status: "loading" });
+
+	const loadLeague = useCallback(async () => {
+		const season = seasonOf(new Date());
+		try {
+			const { data } = await authClient.auth.getSession();
+			const token = data.session?.access_token;
+			const response = await fetch(`/api/league?season=${season}`, {
+				headers: token ? { authorization: `Bearer ${token}` } : {},
+			});
+			if (response.status === 503) {
+				setLeague({ status: "missing" });
+				return;
+			}
+			if (!response.ok) {
+				setLeague({ status: "error" });
+				return;
+			}
+			const payload = (await response.json()) as {
+				season: string;
+				rows: ServerRow[];
+				me: ServerRow | null;
+				signedIn: boolean;
+			};
+			if (!payload.signedIn) {
+				setLeague({ status: "anon" });
+				return;
+			}
+			setLeague({ status: "ready", season: payload.season, rows: payload.rows, me: payload.me });
+		} catch {
+			setLeague({ status: "error" });
+		}
+	}, []);
+
+	useEffect(() => {
+		void loadLeague();
+	}, [loadLeague]);
+
+	/** Envía la partida al servidor sin romper la partida si no hay red o sesión. */
+	const pushRun = useCallback(
+		async (game: GameId, score: number, daily?: string) => {
+			try {
+				const { data } = await authClient.auth.getSession();
+				const token = data.session?.access_token;
+				if (!token) return;
+				const response = await fetch("/api/league", {
+					method: "POST",
+					headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+					body: JSON.stringify({ game, score, daily }),
+				});
+				if (response.ok) void loadLeague();
+			} catch {
+				// La clasificación es un extra: si falla, la partida ya está guardada.
+			}
+		},
+		[loadLeague],
+	);
+
 	const handleRun = (game: GameId, score: number) => {
 		const countsForDaily = hasDaily && game === challenge.game;
 		setProfile(
@@ -88,6 +172,7 @@ export function GamesTab() {
 			),
 		);
 		if (countsForDaily) setDailyMode(false);
+		void pushRun(game, score, countsForDaily ? challenge.id : undefined);
 	};
 
 	const playDaily = () => {
@@ -122,8 +207,8 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: dos juegos que corren enteros en el navegador, un reto diario
-					reproducible y la liga local de la temporada. Sin servidor ni clave.
+					Arcade del ecosistema: tres juegos que corren enteros en el navegador, un reto
+					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
 				<div className="mt-3 flex flex-wrap items-center gap-2">
@@ -176,6 +261,13 @@ export function GamesTab() {
 							badge={hasDaily && challenge.game === "memory" ? "reto del día" : undefined}
 							onRun={handleRun}
 						/>
+						<ReactorGame
+							seconds={hasDaily && challenge.game === "reactor" ? challenge.seconds : undefined}
+							rounds={hasDaily && challenge.game === "reactor" ? challenge.rounds : undefined}
+							best={profile.best.reactor}
+							badge={hasDaily && challenge.game === "reactor" ? "reto del día" : undefined}
+							onRun={handleRun}
+						/>
 					</div>
 				)}
 
@@ -224,6 +316,7 @@ export function GamesTab() {
 							<ul className="mt-2 space-y-1 font-mono text-[9px] leading-relaxed text-muted-foreground/60">
 								<li>· Un pulso perfecto son 100 puntos, uno bueno 40, y cada acierto seguido suma 10 más (hasta 8).</li>
 								<li>· En memoria, cada ronda completada son 40 puntos de liga.</li>
+								<li>· En reactor, 100 por pareja acertada más 10 por segundo restante y 10 por combo.</li>
 								<li>· La racha cuenta días seguidos con al menos una partida, no partidas.</li>
 							</ul>
 						</div>
@@ -238,6 +331,74 @@ export function GamesTab() {
 							<Chip label="Puntos" value={String(profile.points)} />
 							<Chip label="Últimas" value={`${ladder.length}/${HISTORY_LIMIT}`} />
 						</div>
+
+						{/* Clasificación real: la calcula el servidor, no el navegador. */}
+						<div className="rounded-xl border border-primary/30 bg-primary/5">
+							<header className="flex items-center gap-2 border-b border-primary/20 px-3 py-2">
+								<Swords className="h-3 w-3 text-primary" />
+								<h3 className="font-heading text-[10px] uppercase tracking-widest text-primary">
+									Clasificación · {league.status === "ready" ? league.season : seasonOf(today)}
+								</h3>
+								<span className="ml-auto font-mono text-[8px] uppercase tracking-wider text-muted-foreground/50">
+									servidor · {league.status}
+								</span>
+							</header>
+							{league.status === "loading" && (
+								<p className="px-3 py-4 font-mono text-[10px] text-muted-foreground/55">
+									Leyendo la tabla de la temporada…
+								</p>
+							)}
+							{league.status === "missing" && (
+								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-accent">
+									La tabla existe en código pero no en la base: falta aplicar
+									<code className="mx-1 rounded bg-muted/40 px-1">
+										supabase/migrations/20261107210000_game_league.sql
+									</code>
+									. Mientras tanto se juega igual y manda la liga local de abajo.
+								</p>
+							)}
+							{league.status === "anon" && (
+								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-muted-foreground/60">
+									La clasificación es pública; para puntuar hace falta sesión iniciada.
+								</p>
+							)}
+							{league.status === "error" && (
+								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-destructive">
+									No se pudo leer la clasificación del servidor. Tu historial local sigue intacto.
+								</p>
+							)}
+							{league.status === "ready" &&
+								(league.rows.length === 0 ? (
+									<p className="px-3 py-4 font-mono text-[10px] text-muted-foreground/55">
+										Nadie ha puntuado esta temporada: la primera partida abre la tabla.
+									</p>
+								) : (
+									<ol className="divide-y divide-primary/10">
+										{league.rows.map((row) => (
+											<li
+												key={`${row.rank}-${row.handle}`}
+												className="flex items-center gap-2 px-3 py-1.5 font-mono text-[10px]"
+											>
+												<span className="w-5 text-muted-foreground/40">{row.rank}</span>
+												<span className="min-w-0 flex-1 truncate text-foreground/85">
+													{row.handle}
+												</span>
+												<span className="text-muted-foreground/45">{row.runs} p</span>
+												<span className="w-14 text-right text-primary">{row.points} pts</span>
+											</li>
+										))}
+									</ol>
+								))}
+							{league.status === "ready" && league.me && (
+								<p className="border-t border-primary/20 px-3 py-1.5 font-mono text-[9px] text-secondary">
+									Tú: puesto {league.me.rank} · {league.me.points} pts · mejor marca {league.me.best}
+								</p>
+							)}
+						</div>
+
+						<h3 className="font-heading text-[10px] uppercase tracking-widest text-muted-foreground/60">
+							Tu historial local
+						</h3>
 
 						{ladder.length === 0 ? (
 							<div className="rounded-xl border border-dashed border-border/50 p-6 text-center">
@@ -268,8 +429,9 @@ export function GamesTab() {
 						)}
 
 						<p className="font-mono text-[9px] leading-relaxed text-muted-foreground/45">
-							Liga local del navegador: no hay servidor de clasificación todavía. La competición
-							real del ecosistema vive en {playHub?.name ?? "ADEX"}.
+							Arriba manda la tabla del servidor (Postgres, una fila por partida). Abajo queda
+							tu historial del navegador, que funciona sin sesión. La competición del ecosistema
+							vive en {playHub?.name ?? "ADEX"}.
 						</p>
 					</div>
 				)}
@@ -320,6 +482,29 @@ export function GamesTab() {
 									</p>
 									<p className="mt-1 font-mono text-[8px] text-muted-foreground/40">
 										{entry?.host ?? "alienflow.space"}
+									</p>
+								</a>
+							))}
+						</div>
+
+						<div className="grid gap-2 sm:grid-cols-2">
+							{GAMEFI_TRACKS.map((track) => (
+								<a
+									key={track.id}
+									href={track.url}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="group rounded-xl border border-border/40 bg-card/40 p-2.5 transition-colors hover:border-primary/40"
+								>
+									<h3 className="flex items-center gap-1.5 font-heading text-[10px] uppercase tracking-widest text-foreground/85">
+										{track.name}
+										<ExternalLink className="ml-auto h-2.5 w-2.5 text-muted-foreground/40 group-hover:text-primary" />
+									</h3>
+									<p className="mt-0.5 font-mono text-[8px] uppercase tracking-wider text-secondary/80">
+										{track.role} · {track.host}
+									</p>
+									<p className="mt-1 font-mono text-[9px] leading-relaxed text-muted-foreground/55">
+										{track.detail}
 									</p>
 								</a>
 							))}

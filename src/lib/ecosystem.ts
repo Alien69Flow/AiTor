@@ -140,6 +140,58 @@ export const DAOS: DaoOrg[] = [
   },
 ];
 
+/**
+ * Circuito de juego y esports del ecosistema.
+ *
+ * Sólo URLs comprobadas: los productos reales (ADEX Play HUB, ACE, la DAO con
+ * sus direcciones de Aragon, el perfil de OpenSea). La liga de esta pestaña es
+ * escalera de temporada; los premios y la gobernanza viven en la DAO, y los
+ * juegos de ACE corren en su propio motor.
+ */
+export interface GamefiTrack {
+  id: string;
+  name: string;
+  url: string;
+  host: string;
+  role: string;
+  detail: string;
+}
+
+export const GAMEFI_TRACKS: GamefiTrack[] = [
+  {
+    id: "playhub",
+    name: "ADEX · Play HUB",
+    url: "https://adex.alienflow.space",
+    host: "adex.alienflow.space",
+    role: "Economía de juego",
+    detail: "Intercambio, liquidez y economía de juego del ecosistema.",
+  },
+  {
+    id: "ace",
+    name: "ACE · Autonomous Cognitive Engine",
+    url: "https://ace.alienflow.space",
+    host: "ace.alienflow.space",
+    role: "Motor de juego",
+    detail: "A CashFlow Energy · motor cognitivo autónomo de los juegos.",
+  },
+  {
+    id: "dao",
+    name: "AlienFlow DAO",
+    url: "https://www.alienflow.space",
+    host: "alienflow.space",
+    role: "Sede y gobernanza",
+    detail: "Clubs, competiciones y propuestas: donde se decide el premio.",
+  },
+  {
+    id: "aragon",
+    name: "Aragon · AlienFlowSpace",
+    url: "https://app.aragon.org/dao/polygon-mainnet/0xCA497d631DB260ebFFF4bA71AEAc3201ae972a77/dashboard",
+    host: "app.aragon.org",
+    role: "Tesorería",
+    detail: "Polygon mainnet · las decisiones de premios salen de aquí.",
+  },
+];
+
 export interface NftProfile {
   id: string;
   name: string;

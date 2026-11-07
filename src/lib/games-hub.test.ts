@@ -35,15 +35,14 @@ describe("reto del día", () => {
 		expect(dailySeed("2026-11-07")).not.toBe(dailySeed("2026-11-08"));
 	});
 
-	it("dos días seguidos no repiten juego", () => {
-		const games = [
-			dailyChallenge(day("2026-11-07")).game,
-			dailyChallenge(day("2026-11-08")).game,
-			dailyChallenge(day("2026-11-09")).game,
-		];
-		for (let i = 1; i < games.length; i++) {
-			expect(games[i]).not.toBe(games[i - 1]);
-		}
+	it("los tres juegos se turnan en el reto", () => {
+		// Con tres juegos no se puede exigir «dos días seguidos nunca repiten»
+		// (el hash del día manda), pero sí que la rotación llegue a los tres en
+		// una semana y que cada reto sea jugable con el suyo.
+		const games = new Set(
+			Array.from({ length: 12 }, (_, i) => dailyChallenge(new Date(Date.UTC(2026, 10, 1 + i))).game),
+		);
+		expect(games).toEqual(new Set(["impulse", "memory", "reactor"]));
 	});
 
 	it("cada reto trae su modificador coherente con el juego", () => {
@@ -56,11 +55,16 @@ describe("reto del día", () => {
 			if (challenge.game === "impulse") {
 				expect(challenge.nodeCount).toBeUndefined();
 				expect(challenge.tolerance ?? challenge.speed).toBeTruthy();
-			} else {
+			} else if (challenge.game === "memory") {
 				expect(challenge.tolerance).toBeUndefined();
 				expect(challenge.speed).toBeUndefined();
 				expect(challenge.nodeCount).toBeGreaterThanOrEqual(4);
 				expect(challenge.nodeCount).toBeLessThanOrEqual(6);
+			} else {
+				// Reactor: el modificador es tiempo y/o número de rondas.
+				expect(challenge.nodeCount).toBeUndefined();
+				expect(challenge.tolerance).toBeUndefined();
+				expect(challenge.seconds ?? challenge.rounds).toBeTruthy();
 			}
 		}
 	});
@@ -71,6 +75,8 @@ describe("puntos de hub", () => {
 		expect(HUB_POINTS_PER_GAME.impulse(340)).toBe(340);
 		expect(HUB_POINTS_PER_GAME.memory(3)).toBe(120);
 		expect(HUB_POINTS_PER_GAME.memory(0)).toBe(0);
+		expect(HUB_POINTS_PER_GAME.reactor(780)).toBe(780);
+		expect(HUB_POINTS_PER_GAME.reactor(-3)).toBe(0);
 	});
 
 	it("no hay puntos negativos ni fracciones", () => {
@@ -109,7 +115,7 @@ describe("progreso", () => {
 
 	it("suma puntos, partidas y mejor marca", () => {
 		expect(first).toMatchObject({ points: 240, runs: 1, streak: 1, lastPlayed: "2026-11-07" });
-		expect(first.best).toEqual({ impulse: 240, memory: 0 });
+		expect(first.best).toEqual({ impulse: 240, memory: 0, reactor: 0 });
 		expect(first.dailyDone).toBe("2026-11-07");
 	});
 
