@@ -52,9 +52,12 @@ export type EnvLayerKey =
 	| "waterVapor"
 	| "ozone"
 	| "landSurfaceTemp"
+	| "airTemperature"
+	| "snowCover"
 	| "soilMoisture"
 	| "vegetation"
 	| "oceanChlorophyll"
+	| "oceanCurrents"
 	| "seaIce"
 	| "carbonDioxide"
 	// Herramientas del día a día (Open-Meteo, sin clave)
@@ -359,10 +362,14 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#d6d3d1",
 		Icon: Tornado,
 		requiredTier: "signal",
-		source: "NASA GIBS · AIRS",
-		freshness: "1 día",
-		description: "Puntajes de polvo en suspensión (Sahara, tormentas de arena)",
-		gibs: { layer: "AIRS_L2_Dust_Score_Day", level: 6, alpha: 0.7 },
+		source: "NASA GIBS · MERRA-2 (reanálisis)",
+		freshness: "Media mensual",
+		description: "Masa de polvo en superficie (Sahara, tormentas de arena) según el reanálisis MERRA-2",
+		// El producto diario de AIRS es un barrido L2: sobre el Sahara devolvía
+		// teselas con un 0,2 % de píxeles y parecía que la capa no existía.
+		// MERRA-2 es una malla completa (100 % de píxeles) y, eso sí, media
+		// mensual: el panel lo dice en «frescura».
+		gibs: { layer: "MERRA2_Dust_Surface_Mass_Concentration_Monthly", level: 6, alpha: 0.7, timeless: true },
 	},
 	{
 		key: "seaTemperature",
@@ -473,6 +480,34 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		description: "Temperatura del suelo y de la cubierta vegetal, de día",
 		gibs: { layer: "MODIS_Terra_Land_Surface_Temp_Day", level: 7, alpha: 0.75, dateOffsetHours: 36 },
 	},
+	{
+		key: "airTemperature",
+		label: "Temperatura del aire",
+		group: "Atmospheric & Weather",
+		color: "#f97316",
+		Icon: ThermometerSun,
+		requiredTier: "signal",
+		source: "NASA GIBS · AIRS (satélite)",
+		freshness: "1 día",
+		description: "Temperatura del aire a 2 m medida por AIRS: no depende del modelo de OpenWeather",
+		gibs: { layer: "AIRS_L2_Surface_Air_Temperature_Day", level: 6, alpha: 0.75, dateOffsetHours: 36 },
+	},
+	{
+		key: "snowCover",
+		label: "Nieve (NDSI)",
+		group: "Atmospheric & Weather",
+		color: "#e0f2fe",
+		Icon: Snowflake,
+		requiredTier: "signal",
+		source: "NASA GIBS · MODIS NDSI",
+		freshness: "1 día",
+		description: "Cobertura de nieve por índice NDSI: dónde hay manto y dónde se ha fundido",
+		// El compuesto diario va uno o dos días por detrás: pedir la fecha de hoy
+		// devuelve 404. Sin segmento TIME GIBS no falla, pero sirve un mosaico
+		// vacío (921 B frente a los 6 409 B de una pasada real), así que se pide
+		// la fecha de hace 48 h en vez de dejarlo «sin fecha».
+		gibs: { layer: "MODIS_Terra_NDSI_Snow_Cover", level: 8, alpha: 0.85, dateOffsetHours: 48 },
+	},
 
 	// === Biosphere & Climate ================================================
 	{
@@ -495,12 +530,35 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		Icon: Fish,
 		requiredTier: "signal",
 		source: "NASA GIBS · VIIRS",
-		freshness: "compuesto de 8 días",
+		freshness: "~4 días de retraso",
 		description: "Fitoplancton: la base de la cadena trófica y el bombeo de carbono",
-		// Compuesto periódico: pedir la fecha de ayer devuelve 404 casi todos los
-		// días (comprobado contra el servidor). Sin segmento TIME, GIBS sirve el
-		// último compuesto disponible, que es lo que la capa dice enseñar.
+		// El producto publica con ~4 días de retraso (TIME por defecto = último día
+		// disponible). Con `dateOffsetHours: 36` la URL pedía una fecha que aún no
+		// existe y GIBS respondía 404: la capa estaba en la leyenda y no pintaba
+		// nada. Sin segmento TIME, GIBS sirve ese último día.
 		gibs: { layer: "VIIRS_SNPP_L2_Chlorophyll_A", level: 7, alpha: 0.8, timeless: true },
+	},
+	{
+		key: "oceanCurrents",
+		label: "Corrientes oceánicas",
+		group: "Biosphere & Climate",
+		color: "#2dd4bf",
+		Icon: Waves,
+		requiredTier: "signal",
+		// OSCAR es el único vector de corrientes que GIBS sirve como tesela. La
+		// serie se interrumpió en julio de 2024: se fija la fecha para que la
+		// capa diga lo que es —la última pasada— en vez de pedir un día actual
+		// que devuelve 404.
+		source: "NASA GIBS · OSCAR (última pasada, jul 2024)",
+		freshness: "Serie detenida en 2024-07-17",
+		description: "Corriente superficial este-oeste (componente zonal) de la última pasada de OSCAR",
+		gibs: {
+			layer: "OSCAR_Sea_Surface_Currents_Zonal",
+			level: 6,
+			alpha: 0.8,
+			date: "2024-07-17",
+			maxUpsample: 0,
+		},
 	},
 	{
 		key: "soilMoisture",
@@ -967,7 +1025,9 @@ export function isRasterLayer(def: globeLayerDef): boolean {
  * pierde el contexto WebGL: el globo se queda negro o con bandas de colores
  * (reproducido en local con 37 capas, `THREE.WebGLRenderer: Context Lost`).
  * No es un límite de estilo: es lo mismo que hacen Windy o earth.nullschool,
- * donde se comparan dos o tres capas, no veinte. Seis deja sitio para comparar
- * atmósfera + océano + biosfera sin tocar el techo.
+ * donde se comparan dos o tres capas, no veinte. Ocho deja sitio para comparar
+ * atmósfera (nubes + temperatura + lluvia + viento) con océano y biosfera sin
+ * tocar el techo; con seis, encender «Todas» apagaba justo las que el usuario
+ * acababa de pedir.
  */
-export const MAX_RASTER_LAYERS = 6;
+export const MAX_RASTER_LAYERS = 8;

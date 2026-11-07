@@ -44,6 +44,7 @@
     "prebuild": "tsx scripts/generate-sitemap.ts && node scripts/sync-nuforc.mjs && node scripts/sync-war-gov.mjs",
     "sync:nuforc": "node scripts/sync-nuforc.mjs",
     "sync:war-gov": "node scripts/sync-war-gov.mjs",
+    "models:transport": "node scripts/build-transport-models.mjs",
     "verify:live": "tsx scripts/verify-live-signals.ts",
     "verify:predictions": "node scripts/verify-predictions-proxy.mjs",
     "auth:providers": "node scripts/check-auth-providers.mjs",
@@ -57,7 +58,12 @@
     "preview": "vite preview",
     "edge:check": "node scripts/check-edge-functions.mjs",
     "functions:retire": "node scripts/retire-functions.mjs",
-    "edge:deploy": "supabase functions deploy --project-ref pnyigikagdxqaogbiift"
+    "edge:deploy": "supabase functions deploy --project-ref pnyigikagdxqaogbiift",
+    "chat:deploy": "node scripts/deploy-chat.mjs",
+    "chat:health": "node scripts/deploy-chat.mjs --verify",
+    "mcp:key": "node scripts/vercel-gemini-key.mjs --set",
+    "mcp:key:check": "node scripts/vercel-gemini-key.mjs --check",
+    "mcp:key:verify": "node scripts/vercel-gemini-key.mjs --verify"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

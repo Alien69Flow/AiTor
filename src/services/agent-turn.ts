@@ -1,4 +1,4 @@
-import { askAgent, streamAgentAnswer } from "./mcpClient";
+import { askAgent, streamAgentAnswer, type AgentImage } from "./mcpClient";
 import { buildAgentPrompt, type AgentTurn } from "@/lib/agent-prompt";
 
 /**
@@ -12,6 +12,10 @@ import { buildAgentPrompt, type AgentTurn } from "@/lib/agent-prompt";
  */
 export interface AgentTurnResult {
   content: string;
+  /** Razonamiento previo del modelo, para el panel plegable del chat. */
+  reasoning: string;
+  /** Imágenes generadas por herramientas en este turno. */
+  images: AgentImage[];
   /** Herramientas que el modelo ejecutó, en orden. */
   tools: string[];
   /** Herramientas que fallaron: se marcan en el mensaje, no se ocultan. */
@@ -29,6 +33,10 @@ export interface AgentTurnOptions {
    * llega; sin él se espera a la respuesta entera (más simple de probar).
    */
   onDelta?: (text: string) => void;
+  /** Razonamiento en flujo, antes de la respuesta; puede llegar a trozos. */
+  onThought?: (text: string) => void;
+  /** Imagen lista: el hook la cuelga del mensaje sin esperar al final. */
+  onImage?: (image: AgentImage) => void;
   /** Aviso de herramienta ejecutada, mientras el flujo sigue abierto. */
   onTool?: (name: string, isError: boolean) => void;
   /**
@@ -81,7 +89,12 @@ export async function runAgentTurn(
   try {
     const prompt = buildAgentPrompt(history, question);
     const answer = options.onDelta
-      ? await streamAgentAnswer(prompt, { onDelta: options.onDelta, onTool: options.onTool })
+      ? await streamAgentAnswer(prompt, {
+          onDelta: options.onDelta,
+          onThought: options.onThought,
+          onImage: options.onImage,
+          onTool: options.onTool,
+        })
       : await askAgent(prompt);
     const content = answer?.answer?.trim();
     if (!content) return null;
@@ -89,6 +102,8 @@ export async function runAgentTurn(
     const calls = answer.toolCalls ?? [];
     return {
       content,
+      reasoning: answer.reasoning ?? "",
+      images: answer.images ?? [],
       tools: calls.map((call) => call.name),
       failed: calls.filter((call) => call.isError).map((call) => call.name),
     };

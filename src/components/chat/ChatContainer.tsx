@@ -96,6 +96,20 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
     }];
   }, [messages]);
 
+  /**
+   * El último mensaje mientras se escribe: sólo él lleva el panel de
+   * razonamiento en vivo, para que los anteriores se queden plegados.
+   */
+  const streamingId = isLoading ? messages[messages.length - 1]?.id : undefined;
+
+  /**
+   * Mientras el modelo sólo ha emitido razonamiento, la burbuja con el panel ya
+   * está en pantalla: los puntos suspensivos del indicador sobrarían debajo.
+   */
+  const reasoningInFlight = isLoading && Boolean(
+    messages[messages.length - 1]?.reasoning && !messages[messages.length - 1]?.content.trim()
+  );
+
   const assistantReplies = useMemo(
     () => messages.filter((message) => message.role === "assistant" && message.content),
     [messages]
@@ -191,9 +205,13 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
         ) : (
           <div className="flex flex-col">
             {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
+              <ChatMessage
+                key={message.id}
+                message={message}
+                streaming={message.id === streamingId}
+              />
             ))}
-            {isLoading && <ThinkingIndicator />}
+            {isLoading && !reasoningInFlight && <ThinkingIndicator />}
           </div>
         )}
       </ScrollArea>

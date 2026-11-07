@@ -1,6 +1,14 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { timingSafeEqual } from 'crypto';
 
+/**
+ * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
+ * límite corto por defecto, una respuesta lenta devolvía 504 a Telegram, que
+ * reintentaba la entrega y el usuario podía acabar con el mensaje duplicado o
+ * con nada. Mismo tope que `/api/mcp`.
+ */
+export const maxDuration = 60;
+
 // Constant-time string comparison so a secret can't be guessed byte-by-byte.
 function safeEqual(a: string, b: string): boolean {
   const bufA = Buffer.from(a);
@@ -154,11 +162,68 @@ const BRIDGE_KEYBOARD: TelegramReplyMarkup = {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Convierte el markdown que escribe el modelo al HTML que Telegram acepta.
+ *
+ * El bot enviaba con `parse_mode: "Markdown"` (el legacy), que sólo entiende
+ * `*negrita*`, `_cursiva_` y `` `código` ``. El modelo contesta con ``` bloques
+ * de código y `**negrita**` de Markdown normal: Telegram rechazaba el mensaje
+ * con 400 «can't parse entities» y el reintento en texto plano dejaba los
+ * asteriscos y las triples comillas invertidas a la vista. Eso es lo que se veía
+ * como «responde raro».
+ *
+ * HTML es más predecible que MarkdownV2 porque aquí se escapa a mano y no hay
+ * 18 caracteres que escapar según el contexto. Un bloque sin cerrar se cierra
+ * al final: el texto llega troceado y el corte puede caer dentro de uno.
+ */
+export function toTelegramHtml(markdown: string): string {
+  let out = markdown
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  out = out.replace(
+    /```[a-zA-Z0-9_+-]*\n?([\s\S]*?)(?:```|$)/g,
+    (_match, code: string) => `<pre>${code.replace(/\n$/, "")}</pre>`,
+  );
+  out = out.replace(/`([^`\n]+)`/g, "<code>$1</code>");
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>");
+  out = out.replace(/__([^_\n]+)__/g, "<b>$1</b>");
+  // Cursiva sólo cuando el asterisco abre palabra: así no se come el de `2*3*4`.
+  out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, "$1<i>$2</i>");
+  out = out.replace(/(^|[\s(])_([^_\n]+)_/g, "$1<i>$2</i>");
+  out = out.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>');
+  out = out.replace(/^#{1,6}\s+(.+)$/gm, "<b>$1</b>");
+  return out;
+}
+
+/**
+ * Trozos de como mucho `maxLen`, cortando por párrafos y no por caracteres.
+ *
+ * Telegram rechaza más de 4096 por mensaje. Cortar a lo bruto partía bloques
+ * de código por la mitad y dejaba un `<pre>` abierto en un trozo y cerrado en
+ * el siguiente.
+ */
+export function splitForTelegram(text: string, maxLen = 3800): string[] {
+  if (text.length <= maxLen) return [text];
+  const parts: string[] = [];
+  let rest = text;
+  while (rest.length > maxLen) {
+    const window = rest.slice(0, maxLen);
+    const candidates = [window.lastIndexOf("\n\n"), window.lastIndexOf("\n"), window.lastIndexOf(" ")];
+    const cut = candidates.find((index) => index > maxLen * 0.4) ?? maxLen;
+    parts.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) parts.push(rest);
+  return parts;
+}
+
 function postTelegramMessage(
   chatId: number,
   text: string,
   replyMarkup?: TelegramReplyMarkup,
-  parseMode?: "Markdown",
+  parseMode?: "HTML",
 ) {
   return fetch(`${TELEGRAM_API}/sendMessage`, {
     method: "POST",
@@ -172,25 +237,31 @@ function postTelegramMessage(
   });
 }
 
-async function sendTelegramMessage(chatId: number, text: string, replyMarkup?: TelegramReplyMarkup) {
-  // Telegram has a 4096-character limit per message: split the original text
-  // into 4000-char chunks so long AiTor answers arrive whole, not truncated.
-  // Los botones inline solo se adjuntan al primer trozo.
-  const maxLen = 4000;
-  const parts = text.match(new RegExp(`.{1,${maxLen}}`, "gs")) || [text];
+async function sendTelegramMessage(
+  chatId: number,
+  text: string,
+  replyMarkup?: TelegramReplyMarkup,
+  /** `true` cuando el texto ya trae etiquetas HTML de la casa (comandos fijos). */
+  format: { html?: boolean } = {},
+) {
+  // Telegram admite 4096 por mensaje: se trocea el texto original antes de
+  // convertirlo, para no partir una etiqueta HTML por la mitad. Los botones
+  // inline solo se adjuntan al primer trozo.
+  const parts = splitForTelegram(text, 3800);
   for (const [index, part] of parts.entries()) {
     const markup = replyMarkup && index === 0 ? replyMarkup : undefined;
-    // The answer used to be fire-and-forget: when Telegram rejected the text
-    // (legacy Markdown chokes on unbalanced _ * ` [ in model output, 400
-    // "can't parse entities"), the user got nothing and the logs stayed clean.
-    let response = await postTelegramMessage(chatId, part, markup, "Markdown");
+    // El envío no es fire-and-forget: si Telegram rechaza el texto, el usuario
+    // se queda sin respuesta y los logs limpios. Por eso se mira la respuesta.
+    const formatted = format.html ? part : toTelegramHtml(part);
+    let response = await postTelegramMessage(chatId, formatted, markup, "HTML");
     if (!response.ok) {
       const detail = await response.text().catch(() => "");
       console.error("[telegram] sendMessage rechazado", response.status, detail.slice(0, 300));
       if (response.status === 400) {
-        // Resend the same chunk as plain text: losing formatting is better than
-        // losing the answer.
-        response = await postTelegramMessage(chatId, part, markup);
+        // Reintento sin formato: perder el estilo es mejor que perder la
+        // respuesta. Se quitan las etiquetas para no enseñarlas como texto.
+        const plain = formatted.replace(/<[^>]+>/g, "");
+        response = await postTelegramMessage(chatId, plain, markup);
         if (!response.ok) {
           const retryDetail = await response.text().catch(() => "");
           console.error(
@@ -432,26 +503,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (command === "/start") {
       await sendTelegramMessage(
         chatId,
-        `🛸 *¡Saludos, entidad!*\n\nSoy *Ai Tor.v69*, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n*Comandos disponibles:*\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
+        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n<b>Comandos disponibles:</b>\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
         BRIDGE_KEYBOARD,
+        { html: true },
       );
     } else if (command === "/web") {
       await sendTelegramMessage(
         chatId,
-        "🌐 *Terminal web*\n\nContinúa en aitor.alienflow.space. El puente mantiene el contexto entre superficies: desde la web puedes retomar aquí y desde aquí vuelves allí.",
+        "🌐 <b>Terminal web</b>\n\nContinúa en aitor.alienflow.space. El puente mantiene el contexto entre superficies: desde la web puedes retomar aquí y desde aquí vuelves allí.",
         BRIDGE_KEYBOARD,
+        { html: true },
       );
     } else if (command === "/app") {
       await sendTelegramMessage(chatId, '🎮 Accede a la Mini App:\nhttps://t.me/Alien69Bot/app');
     } else if (command === "/dao") {
       await sendTelegramMessage(
         chatId,
-        `🌌 *AlienFlow DAO*\n\nOrganización autónoma descentralizada dedicada a la exploración de nuevas fronteras en tecnología y consciencia.\n\n"> "El universo no es solo lo que ves, es lo que eres capaz de procesar y transmutar."\n\n*Campos:* Web3 · Web4 · Web5 · Alquimia · Física Cuántica\n*Frecuencia:* 3-6-9 Hz\n*Colectivo:* ΔlieπFlΦw DAO Synapse`
+        `🌌 <b>AlienFlow DAO</b>\n\nOrganización autónoma descentralizada dedicada a la exploración de nuevas fronteras en tecnología y consciencia.\n\n<i>«El universo no es solo lo que ves, es lo que eres capaz de procesar y transmutar.»</i>\n\n<b>Campos:</b> Web3 · Web4 · Web5 · Alquimia · Física Cuántica\n<b>Frecuencia:</b> 3-6-9 Hz\n<b>Colectivo:</b> ΔlieπFlΦw DAO Synapse`,
+        undefined,
+        { html: true },
       );
     } else if (command === "/help") {
       await sendTelegramMessage(
         chatId,
-        "*Comandos disponibles:*\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje."
+        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        undefined,
+        { html: true },
       );
     }
     // === MANUS COMMANDS ===
@@ -469,7 +546,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         console.error("[telegram] /manus sin MANUS_API_KEY configurada");
         await sendTelegramMessage(
           chatId,
-          "🛠 *Manus AI no está configurado*\n\nFalta `MANUS_API_KEY` en las variables de Vercel. Puedo responder aquí mientras tanto: escríbeme sin comando.",
+          "🛠 <b>Manus AI no está configurado</b>\n\nFalta <code>MANUS_API_KEY</code> en las variables de Vercel. Puedo responder aquí mientras tanto: escríbeme sin comando.",
+          undefined,
+          { html: true },
         );
         return res.status(200).send("OK");
       }
@@ -478,7 +557,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (result.ok) {
         await sendTelegramMessage(
           chatId,
-          `⚡ *Tarea enviada a Manus AI*\n\nEstoy procesando tu solicitud. Recibirás los resultados aquí cuando estén listos (puede tardar unos minutos).\n\n📋 Task: \`${result.taskId}\``
+          `⚡ <b>Tarea enviada a Manus AI</b>\n\nEstoy procesando tu solicitud. Recibirás los resultados aquí cuando estén listos (puede tardar unos minutos).\n\n📋 Task: <code>${result.taskId}</code>`,
+          undefined,
+          { html: true },
         );
       } else {
         await sendTelegramMessage(chatId, "❌ Error al crear la tarea en Manus. Inténtalo de nuevo.");

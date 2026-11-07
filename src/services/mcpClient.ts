@@ -184,8 +184,18 @@ export async function callSessionTool(
   });
 }
 
+export interface AgentImage {
+  /** Data URL ya lista para un `<img>`: el base64 no se reescribe en el chat. */
+  url: string;
+  alt: string;
+}
+
 export interface AgentAnswer {
   answer: string;
+  /** Monólogo del modelo antes de responder; vacío si no lo publicó. */
+  reasoning?: string;
+  /** Imágenes que generaron las herramientas durante el turno. */
+  images?: AgentImage[];
   toolCalls: Array<{ name: string; args: Record<string, unknown>; isError: boolean }>;
 }
 
@@ -197,6 +207,13 @@ export interface AgentAnswer {
  */
 export interface AgentStreamHandlers {
   onDelta?: (text: string) => void;
+  /**
+   * Razonamiento del modelo, en su propio canal: llega antes que la respuesta
+   * y nunca se mezcla con ella. El chat lo pinta plegado.
+   */
+  onThought?: (text: string) => void;
+  /** Imagen recién generada por una herramienta, en cuanto está lista. */
+  onImage?: (image: AgentImage) => void;
   onTool?: (name: string, isError: boolean) => void;
 }
 
@@ -206,6 +223,11 @@ interface AgentStreamEvent {
   name?: string;
   isError?: boolean;
   answer?: string;
+  reasoning?: string;
+  /** Evento `image`: base64 aparte para no tocar el texto de la respuesta. */
+  mimeType?: string;
+  data?: string;
+  alt?: string;
   message?: string;
   toolCalls?: AgentAnswer["toolCalls"];
 }
@@ -247,6 +269,8 @@ export async function streamAgentAnswer(
   const decoder = new TextDecoder();
   const toolCalls: AgentAnswer["toolCalls"] = [];
   let answer = "";
+  let reasoning = "";
+  const images: AgentImage[] = [];
   let buffer = "";
   let failure: string | null = null;
 
@@ -260,7 +284,17 @@ export async function streamAgentAnswer(
       return;
     }
 
-    if (event.type === "delta" && event.text) {
+    if (event.type === "thought" && event.text) {
+      reasoning += event.text;
+      handlers.onThought?.(event.text);
+    } else if (event.type === "image" && event.data) {
+      const image = {
+        url: `data:${event.mimeType || "image/png"};base64,${event.data}`,
+        alt: event.alt || "Imagen generada",
+      };
+      images.push(image);
+      handlers.onImage?.(image);
+    } else if (event.type === "delta" && event.text) {
       answer += event.text;
       handlers.onDelta?.(event.text);
     } else if (event.type === "tool" && event.name) {
@@ -271,6 +305,7 @@ export async function streamAgentAnswer(
       handlers.onTool?.(event.name, event.isError === true);
     } else if (event.type === "done") {
       if (event.answer) answer = event.answer;
+      if (event.reasoning) reasoning = event.reasoning;
     } else if (event.type === "error") {
       failure = event.message || "El agente falló a mitad de la respuesta";
     }
@@ -290,7 +325,10 @@ export async function streamAgentAnswer(
   }
 
   if (failure && !answer.trim()) throw new Error(failure);
-  return { answer: answer.trim(), toolCalls };
+  // El razonamiento no se reenvía aquí como delta: si el `done` trae la versión
+  // final y el flujo ya la emitió por trozos, devolverla completa sirve para
+  // guardarla en el mensaje sin duplicar lo que ya está en pantalla.
+  return { answer: answer.trim(), reasoning: reasoning.trim(), images, toolCalls };
 }
 
 /** Pregunta al modelo a través del servidor: la clave nunca llega al navegador. */
