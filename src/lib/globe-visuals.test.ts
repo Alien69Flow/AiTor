@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	DEFAULT_RADAR_PRESET,
 	DEFAULT_SHELL_PRESET,
@@ -108,5 +108,27 @@ describe("selección de variante", () => {
 	it("el filtro en CSS es el mismo que aplica Cesium", () => {
 		const preset = readRadarPreset("contraste");
 		expect(radarFilterCss(preset)).toBe("saturate(1.45) brightness(0.95)");
+	});
+
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		vi.resetModules();
+	});
+
+	it("la URL elige la variante sin tocar el componente", async () => {
+		// Es la vía para comparar en el despliegue: ?shells=tenue&radar=contraste
+		vi.resetModules();
+		vi.stubGlobal("window", { location: { search: "?tab=globe&shells=tenue&radar=contraste" } });
+		const mod = await import("./globe-visuals");
+		expect(mod.DEFAULT_SHELL_PRESET.id).toBe("tenue");
+		expect(mod.DEFAULT_RADAR_PRESET.id).toBe("contraste");
+	});
+
+	it("un parámetro inventado no cambia nada", async () => {
+		vi.resetModules();
+		vi.stubGlobal("window", { location: { search: "?shells=brutal&radar=loquesea" } });
+		const mod = await import("./globe-visuals");
+		expect(mod.DEFAULT_SHELL_PRESET.id).toBe("equilibrado");
+		expect(mod.DEFAULT_RADAR_PRESET.id).toBe("equilibrado");
 	});
 });
