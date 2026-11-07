@@ -146,13 +146,15 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
                   target="_blank"
                   rel="noopener noreferrer"
                   title={image.alt}
-                  className="overflow-hidden rounded-lg border border-border/60 bg-background transition-colors hover:border-secondary/50"
+                  className="block overflow-hidden rounded-lg border border-border/60 bg-muted/20 transition-colors hover:border-secondary/50"
                 >
+                  {/* `object-contain`: recortar con `cover` escondía media imagen
+                      en las verticales (Gemini devuelve 9:16). */}
                   <img
                     src={image.url}
                     alt={image.alt}
                     loading="lazy"
-                    className="max-h-[320px] w-full object-cover"
+                    className="mx-auto max-h-[320px] w-full object-contain"
                   />
                 </a>
               ))}
