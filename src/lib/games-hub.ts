@@ -23,6 +23,8 @@ export const HUB_POINTS_PER_GAME: Record<HubGame, (score: number) => number> = {
 	memory: (score) => Math.max(0, Math.round(score)) * 40,
 	// El reactor ya puntúa en puntos de liga (base + tiempo + combo): tal cual.
 	reactor: (score) => Math.max(0, Math.round(score)),
+	// Las manos de veintiuna ya vienen en puntos de liga.
+	veintiuna: (score) => Math.max(0, Math.round(score)),
 };
 
 /** Nota honesta sobre qué son estos puntos. */
@@ -171,7 +173,7 @@ export interface HubProfile {
 export const EMPTY_PROFILE: HubProfile = {
 	points: 0,
 	runs: 0,
-	best: { impulse: 0, memory: 0, reactor: 0 },
+	best: { impulse: 0, memory: 0, reactor: 0, veintiuna: 0 },
 	streak: 0,
 	lastPlayed: null,
 	dailyDone: null,
@@ -254,6 +256,7 @@ export function readProfile(): HubProfile {
 				impulse: Number(parsed.best?.impulse) || 0,
 				memory: Number(parsed.best?.memory) || 0,
 				reactor: Number(parsed.best?.reactor) || 0,
+				veintiuna: Number(parsed.best?.veintiuna) || 0,
 			},
 			streak: Number.isFinite(parsed.streak) ? Number(parsed.streak) : 0,
 			lastPlayed: typeof parsed.lastPlayed === "string" ? parsed.lastPlayed : null,

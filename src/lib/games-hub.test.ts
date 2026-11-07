@@ -115,7 +115,7 @@ describe("progreso", () => {
 
 	it("suma puntos, partidas y mejor marca", () => {
 		expect(first).toMatchObject({ points: 240, runs: 1, streak: 1, lastPlayed: "2026-11-07" });
-		expect(first.best).toEqual({ impulse: 240, memory: 0, reactor: 0 });
+		expect(first.best).toEqual({ impulse: 240, memory: 0, reactor: 0, veintiuna: 0 });
 		expect(first.dailyDone).toBe("2026-11-07");
 	});
 
