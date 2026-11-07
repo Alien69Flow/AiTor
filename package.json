@@ -59,6 +59,7 @@
     "edge:check": "node scripts/check-edge-functions.mjs",
     "functions:retire": "node scripts/retire-functions.mjs",
     "edge:deploy": "supabase functions deploy --project-ref pnyigikagdxqaogbiift",
+    "arsenal:sync": "node scripts/sync-arsenal.mjs",
     "chat:deploy": "node scripts/deploy-chat.mjs",
     "chat:health": "node scripts/deploy-chat.mjs --verify",
     "mcp:key": "node scripts/vercel-gemini-key.mjs --set",
