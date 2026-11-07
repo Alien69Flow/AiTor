@@ -314,7 +314,7 @@ export const TOOLS: ToolDefinition[] = [
 
 const READABLE_TABLES: Record<string, string[]> = {
   profiles: ["id", "display_name", "tier", "created_at", "updated_at"],
-  user_credits: ["user_id", "paid_tier", "used", "updated_at"],
+  user_credits: ["user_id", "paid_tier", "paid_until", "used", "updated_at"],
 };
 
 /**

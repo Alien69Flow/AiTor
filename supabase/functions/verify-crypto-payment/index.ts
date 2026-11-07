@@ -1,6 +1,7 @@
 // Verifies an on-chain stablecoin payment and activates the Synapse tier.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
 import { resolveRecipient } from "../_shared/uns.ts";
+import { PERIOD_DAYS, extendPaidUntil } from "../_shared/paid-until.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -78,10 +79,28 @@ Deno.serve(async (req) => {
     );
     if (!paid) return json({ error: `No se encontró un pago de ${price} ${token} a ${recipient.domain}` }, 400);
 
+    // El plan caduca: se lee lo que quedaba para que renovar antes de tiempo
+    // sume el periodo en vez de tirar los días que ya estaban pagados.
+    const { data: current } = await admin
+      .from("user_credits")
+      .select("paid_until")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    const paidUntil = extendPaidUntil(
+      (current as { paid_until?: string | null } | null)?.paid_until,
+      PERIOD_DAYS[cycle],
+    );
+
     const { error: creditError } = await admin
       .from("user_credits")
       .upsert(
-        { user_id: user.id, paid_tier: "basic", used: 0, updated_at: new Date().toISOString() },
+        {
+          user_id: user.id,
+          paid_tier: "basic",
+          paid_until: paidUntil,
+          used: 0,
+          updated_at: new Date().toISOString(),
+        },
         { onConflict: "user_id" },
       );
     if (creditError) throw creditError;
@@ -96,7 +115,14 @@ Deno.serve(async (req) => {
       recipient: `${recipient.domain} (${recipient.address})`,
     });
 
-    return json({ success: true, tier: "synapse", cycle, token, explorer: chainInfo.explorer + txHash });
+    return json({
+      success: true,
+      tier: "synapse",
+      cycle,
+      token,
+      paidUntil,
+      explorer: chainInfo.explorer + txHash,
+    });
   } catch (error) {
     console.error("verify-crypto-payment", error);
     return json({ error: error instanceof Error ? error.message : "Error verificando el pago" }, 500);

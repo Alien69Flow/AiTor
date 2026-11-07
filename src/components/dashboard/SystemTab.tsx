@@ -26,6 +26,7 @@ import { DaoTreasury } from "./DaoTreasury";
 import { AuthProvidersPanel } from "@/components/auth/AuthProvidersPanel";
 import { CommandConsole } from "./CommandConsole";
 import { PricingModal } from "./PricingModal";
+import { PlanRenewalNotice } from "@/components/billing/PlanRenewalNotice";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
@@ -354,6 +355,8 @@ export function SystemTab() {
                 </button>
               )}
             </Card>
+
+            <PlanRenewalNotice onRenew={() => openPricing()} />
 
             <div className="mt-3 flex items-baseline gap-2 px-1">
               <h4 className="font-heading text-[10px] uppercase tracking-widest text-muted-foreground/55">
