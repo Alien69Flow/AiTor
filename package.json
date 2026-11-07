@@ -63,7 +63,9 @@
     "chat:health": "node scripts/deploy-chat.mjs --verify",
     "mcp:key": "node scripts/vercel-gemini-key.mjs --set",
     "mcp:key:check": "node scripts/vercel-gemini-key.mjs --check",
-    "mcp:key:verify": "node scripts/vercel-gemini-key.mjs --verify"
+    "mcp:key:verify": "node scripts/vercel-gemini-key.mjs --verify",
+    "deploy:all": "node scripts/deploy-all.mjs",
+    "deploy:verify": "node scripts/deploy-all.mjs --verify"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
