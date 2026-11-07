@@ -6,7 +6,15 @@ import { useSearchParams } from "react-router-dom";
  * Kept outside `pages/Index` so navigation, the palette and the deep-link hook
  * can share the type without importing the page (and its lazy chunks).
  */
-export const WORKSPACE_TABS = ["agents", "alien", "cosmos", "globe", "markets", "system"] as const;
+export const WORKSPACE_TABS = [
+	"agents",
+	"alien",
+	"cosmos",
+	"globe",
+	"markets",
+	"games",
+	"system",
+] as const;
 
 export type TabId = (typeof WORKSPACE_TABS)[number];
 
