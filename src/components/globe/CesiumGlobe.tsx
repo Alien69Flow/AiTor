@@ -94,6 +94,11 @@ import {
   SHELLS_VISIBLE_ABOVE_M,
   shellRadiusM,
 } from "@/lib/atmosphere-shells";
+import {
+  DEFAULT_RADAR_PRESET,
+  DEFAULT_SHELL_PRESET,
+  shellFill,
+} from "@/lib/globe-visuals";
 import { resolveGlobeDetail } from "@/lib/globe-detail";
 import { SUPABASE_URL } from "@/integrations/supabase/client";
 
@@ -2021,21 +2026,14 @@ export function CesiumGlobe({
         credit: "RainViewer",
       });
       const layer = viewer.imageryLayers.addImageryProvider(provider);
-      layer.alpha = 0.85;
-      // El radar llega suavizado y con poco croma: la saturación separa la
-      // lluvia fuerte del chirimiri sin tocar el resto del mapa.
-      //
-      // El brillo se dejó en 1.0 **midiendo la tesela**, no a ojo: con 1.1 el
-      // 34 % de los píxeles de eco saturaban a blanco (el doble que la tesela
-      // cruda, 18 %) y todas las intensidades se leían como la misma mancha
-      // blanca. Con saturación 1.3 y brillo 0.98 el recorte vuelve al de la
-      // fuente (18,8 %), los píxeles lavados bajan del 21,5 % al 9,9 % y el
-      // croma medio sube (0,656 → 0,681) sobre el mismo fotograma.
-      // Subir el alfa no arreglaba nada: a 0,85 y a 0,90 el 89,2 % de los
-      // ecos ya se distinguen sobre una nube clara, así que se queda en 0,85
-      // para no tapar el satélite.
-      layer.saturation = 1.3;
-      layer.brightness = 0.98;
+      // Los números viven en `globe-visuals.ts` con variantes (`suave`,
+      // `equilibrado`, `contraste`): aquí sólo se aplican, para poder afinarlos
+      // sin volver a tocar este efecto. El brillo nunca sube de 1 porque quema
+      // los ecos a blanco (medido sobre tesela: 34 % de píxeles saturados con
+      // 1,1 frente al 18 % de la fuente).
+      layer.alpha = DEFAULT_RADAR_PRESET.alpha;
+      layer.saturation = DEFAULT_RADAR_PRESET.saturation;
+      layer.brightness = DEFAULT_RADAR_PRESET.brightness;
       if (rainLayerRef.current) {
         try { viewer.imageryLayers.remove(rainLayerRef.current, true); } catch { /* noop */ }
       }
@@ -2068,7 +2066,7 @@ export function CesiumGlobe({
 
     if (!(envLayers ?? new Set<EnvLayerKey>()).has("atmosphericShells")) return;
 
-    for (const shell of ATMOSPHERE_SHELLS) {
+    ATMOSPHERE_SHELLS.forEach((shell, index) => {
       const radius = shellRadiusM(shell);
       const id = `atmosphere-shell-${shell.id}`;
       const base = Color.fromCssColorString(shell.color);
@@ -2079,10 +2077,11 @@ export function CesiumGlobe({
         show: (viewer.camera.positionCartographic?.height ?? 0) > SHELLS_VISIBLE_ABOVE_M,
         ellipsoid: {
           radii: new Cartesian3(radius, radius, radius),
-          material: base.withAlpha(shell.alpha),
+          // Intensidad por variante; los alfas se componen entre cascarones.
+          material: base.withAlpha(shellFill(DEFAULT_SHELL_PRESET, index)),
           fill: true,
           outline: true,
-          outlineColor: base.withAlpha(0.35),
+          outlineColor: base.withAlpha(DEFAULT_SHELL_PRESET.outlineAlpha),
           // Malla gruesa: un cascarón liso a esta escala no necesita más y así
           // no cuesta vértices que la GPU necesita para las teselas.
           slicePartitions: 32,
@@ -2091,7 +2090,7 @@ export function CesiumGlobe({
       });
       shellEntityIdsRef.current.push(id);
       shellEntitiesRef.current.push(entity as unknown as { show: boolean });
-    }
+    });
   }, [envLayers]);
 
   // Connector-driven vector layers: aurora mesh, FIRMS fires, submarine cables,

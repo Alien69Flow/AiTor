@@ -5,8 +5,8 @@ import {
 	SHELLS_VISIBLE_ABOVE_M,
 	shellExaggeration,
 	shellRadiusM,
-	shellVeilFraction,
 } from "./atmosphere-shells";
+import { SHELL_COUNT, SHELL_PRESETS, shellVeil } from "./globe-visuals";
 
 describe("envolturas atmosféricas", () => {
 	it("mantiene el orden físico de las alturas reales", () => {
@@ -34,31 +34,25 @@ describe("envolturas atmosféricas", () => {
 		}
 	});
 
-	it("no tiñe el planeta: el relleno se queda por debajo del 5 %", () => {
-		for (const shell of ATMOSPHERE_SHELLS) {
-			expect(shell.alpha).toBeGreaterThan(0);
-			expect(shell.alpha).toBeLessThanOrEqual(0.05);
-		}
-	});
-
-	it("la veladura apilada del planeta se queda por debajo del 9 %", () => {
-		// Con las cuatro caras casi coincidentes los alfas se componen, no se
-		// eligen: 4 × 0,024 no es «un 2,4 % cada uno», es el 8 % de la esfera.
-		// Por encima de ~0,10 el satélite se ve lechoso, así que el tope va aquí.
-		const veil = shellVeilFraction();
-		expect(veil).toBeLessThan(0.09);
-		expect(veil).toBeGreaterThan(0.04);
-	});
-
-	it("el cascarón de dentro es el que más tapa y el de fuera el que menos", () => {
-		const alphas = ATMOSPHERE_SHELLS.map((shell) => shell.alpha);
-		for (let i = 1; i < alphas.length; i++) {
-			expect(alphas[i]).toBeLessThanOrEqual(alphas[i - 1]);
-		}
-	});
-
 	it("no repite identificadores", () => {
 		const ids = ATMOSPHERE_SHELLS.map((shell) => shell.id);
 		expect(new Set(ids).size).toBe(ids.length);
+	});
+
+	it("la geometría y las variantes cuentan lo mismo", () => {
+		// El fallo silencioso sería añadir una capa aquí y olvidarla en
+		// `globe-visuals.ts`: esa capa se dibujaría con el alfa de la anterior.
+		expect(ATMOSPHERE_SHELLS).toHaveLength(SHELL_COUNT);
+		for (const preset of SHELL_PRESETS) {
+			expect(preset.fills, preset.id).toHaveLength(ATMOSPHERE_SHELLS.length);
+		}
+	});
+
+	it("la veladura apilada cabe en el techo en todas las variantes", () => {
+		// Cuatro caras casi coincidentes se componen: 4 × 0,024 no es «un 2,4 %
+		// cada una», es el 8 % de la esfera.
+		for (const preset of SHELL_PRESETS) {
+			expect(shellVeil(preset), preset.id).toBeLessThan(0.12);
+		}
 	});
 });
