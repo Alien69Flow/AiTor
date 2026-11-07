@@ -2022,10 +2022,20 @@ export function CesiumGlobe({
       });
       const layer = viewer.imageryLayers.addImageryProvider(provider);
       layer.alpha = 0.85;
-      // El radar llega suavizado pero apagado: un poco de saturación separa la
+      // El radar llega suavizado y con poco croma: la saturación separa la
       // lluvia fuerte del chirimiri sin tocar el resto del mapa.
-      layer.saturation = 1.15;
-      layer.brightness = 1.1;
+      //
+      // El brillo se dejó en 1.0 **midiendo la tesela**, no a ojo: con 1.1 el
+      // 34 % de los píxeles de eco saturaban a blanco (el doble que la tesela
+      // cruda, 18 %) y todas las intensidades se leían como la misma mancha
+      // blanca. Con saturación 1.3 y brillo 0.98 el recorte vuelve al de la
+      // fuente (18,8 %), los píxeles lavados bajan del 21,5 % al 9,9 % y el
+      // croma medio sube (0,656 → 0,681) sobre el mismo fotograma.
+      // Subir el alfa no arreglaba nada: a 0,85 y a 0,90 el 89,2 % de los
+      // ecos ya se distinguen sobre una nube clara, así que se queda en 0,85
+      // para no tapar el satélite.
+      layer.saturation = 1.3;
+      layer.brightness = 0.98;
       if (rainLayerRef.current) {
         try { viewer.imageryLayers.remove(rainLayerRef.current, true); } catch { /* noop */ }
       }
