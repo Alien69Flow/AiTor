@@ -65,7 +65,9 @@ export function ReasoningBlock({ text, active }: ReasoningBlockProps) {
         {active ? (
           <Loader2 className="h-2.5 w-2.5 animate-spin text-muted-foreground/50" aria-label="Pensando" />
         ) : (
-          <span className="text-[9px] font-mono text-muted-foreground/40">ver</span>
+          <span className="text-[9px] font-mono text-muted-foreground/40">
+            {open ? "ocultar" : "ver"}
+          </span>
         )}
         <ChevronDown
           className={cn("ml-auto h-3 w-3 shrink-0 text-muted-foreground/50 transition-transform", open && "rotate-180")}
