@@ -12,7 +12,7 @@ import { toolResult, type McpDatabase, type McpTool } from "../registry";
 /** Tablas legibles y sus columnas permitidas. */
 export const READABLE_TABLES = {
   profiles: ["id", "display_name", "tier", "created_at", "updated_at"],
-  user_credits: ["user_id", "paid_tier", "used", "updated_at"],
+  user_credits: ["user_id", "paid_tier", "paid_until", "used", "updated_at"],
 } as const;
 
 export type ReadableTable = keyof typeof READABLE_TABLES;
