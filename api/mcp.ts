@@ -82,6 +82,13 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const DEFAULT_OWNER = "Alien69Flow";
 const DEFAULT_REPO = "AiTor";
 
+/**
+ * Voces del modelo TTS. Vive arriba, con las constantes, porque el esquema de
+ * `media.speech` la referencia al construirse el catálogo: declarada más abajo,
+ * el módulo entero reventaba por acceso antes de inicializar.
+ */
+const TTS_VOICES = ["Kore", "Puck", "Charon", "Fenrir", "Aoede"];
+
 type Tier = "free" | "pro" | "dao";
 const TIER_RANK: Record<Tier, number> = { free: 0, pro: 1, dao: 2 };
 
@@ -106,9 +113,15 @@ interface ToolResult {
    * `image` y al modelo sólo le llega que ya se mostró.
    */
   image?: { mimeType: string; data: string; alt: string };
+  /**
+   * Audio generado (música o voz). Igual que la imagen: viaja al navegador por
+   * su propio canal y el modelo sólo ve un `note` de que ya está en pantalla.
+   */
+  audio?: { mimeType: string; data: string; alt: string };
 }
 
-const TOOLS: ToolDefinition[] = [
+/** Catálogo en orden. Se exporta para que las pruebas lo comprueben sin red. */
+export const TOOLS: ToolDefinition[] = [
   {
     name: "telemetry.satellites",
     title: "Posiciones de satélites",
@@ -163,7 +176,7 @@ const TOOLS: ToolDefinition[] = [
     description:
       "Crea una imagen a partir de una descripción con el modelo de imagen de Gemini y la muestra " +
       "en el chat. Cuesta créditos por imagen: úsala cuando pidan una imagen, no para ilustrar " +
-      "cualquier respuesta. No hay herramientas de vídeo, música ni sonido.",
+      "cualquier respuesta. Para música está `media.music` y para voz, `media.speech`; vídeo no hay.",
     minTier: "pro",
     inputSchema: {
       type: "object",
@@ -180,6 +193,57 @@ const TOOLS: ToolDefinition[] = [
         },
       },
       required: ["prompt"],
+    },
+  },
+  {
+    name: "media.music",
+    title: "Componer música",
+    description:
+      "Genera una pieza musical a partir de una descripción con Lyria y la reproduce en el chat. " +
+      "`duration: «clip»` produce 30 s (rápido, para probar la idea); `duration: «song»` produce " +
+      "un tema completo con partes. Cuesta créditos: úsala cuando pidan música o una canción.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description:
+            "Qué música. Cuanto más concreto, mejor: instrumentos, tempo, tonalidad, ambiente y " +
+            "estructura. Si quieres voz, pide la letra o dilo (en el idioma en que la quieras).",
+        },
+        duration: {
+          type: "string",
+          enum: ["clip", "song"],
+          default: "clip",
+          description: "`clip` = 30 s; `song` = tema completo.",
+        },
+      },
+      required: ["prompt"],
+    },
+  },
+  {
+    name: "media.speech",
+    title: "Poner voz a un texto",
+    description:
+      "Convierte un texto en voz con el modelo TTS de Gemini y la reproduce en el chat. " +
+      "Sirve para locuciones y para leer en voz alta; no es clonación de voz.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "Lo que debe decir, tal cual. Hasta 2.000 caracteres por llamada.",
+        },
+        voice: {
+          type: "string",
+          enum: TTS_VOICES,
+          default: "Kore",
+          description: "Timbre de la voz.",
+        },
+      },
+      required: ["text"],
     },
   },
   {
@@ -923,6 +987,103 @@ async function runWeather(args: Record<string, unknown>): Promise<ToolResult> {
  * último: `imagen-4` está apagado desde 2026 y los IDs de imagen cambian a
  * menudo, así que una lista corta con reintento sobrevive mejor que un ID fijo.
  */
+/* ------------------------------- audio ---------------------------------- */
+
+/**
+ * Música y voz con la misma clave de Gemini que las imágenes.
+ *
+ * Lyria responde por la API de interacciones (no por `generateContent`) y la
+ * voz por el modelo TTS con `responseModalities: ["AUDIO"]`. Ambos devuelven
+ * base64; la voz viene en PCM crudo (`audio/L16`), que ningún navegador
+ * reproduce, así que aquí se le pone la cabecera WAV.
+ */
+const TTS_MODEL = "gemini-2.5-flash-preview-tts";
+const MUSIC_CLIP_MODEL = "lyria-3-clip-preview";
+const MUSIC_SONG_MODEL = "lyria-3.5";
+
+/** Cabecera WAV (PCM lineal) de 44 bytes para un bloque de audio crudo. */
+export function pcmToWav(
+  pcm: Uint8Array,
+  sampleRate = 24_000,
+  channels = 1,
+  bitsPerSample = 16,
+): Uint8Array {
+  const header = new Uint8Array(44);
+  const view = new DataView(header.buffer);
+  const byteRate = (sampleRate * channels * bitsPerSample) / 8;
+  const blockAlign = (channels * bitsPerSample) / 8;
+  const write = (offset: number, text: string) => {
+    for (let i = 0; i < text.length; i++) header[offset + i] = text.charCodeAt(i);
+  };
+  write(0, "RIFF");
+  view.setUint32(4, 36 + pcm.byteLength, true);
+  write(8, "WAVE");
+  write(12, "fmt ");
+  view.setUint32(16, 16, true); // tamaño del bloque fmt
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+  write(36, "data");
+  view.setUint32(40, pcm.byteLength, true);
+
+  const wav = new Uint8Array(44 + pcm.byteLength);
+  wav.set(header, 0);
+  wav.set(pcm, 44);
+  return wav;
+}
+
+/**
+ * Saca el audio de una respuesta TTS.
+ *
+ * `mimeType` llega como `audio/L16;codec=pcm;rate=24000`: la frecuencia es
+ * parte de la respuesta, no una constante, y equivocarla reproduce la voz a
+ * otra velocidad.
+ */
+export function parseTtsAudio(payload: {
+  candidates?: { content?: { parts?: { inlineData?: { mimeType?: string; data?: string } }[] } }[];
+}): { data: string; mimeType: string } | null {
+  const part = (payload.candidates?.[0]?.content?.parts ?? []).find(
+    (candidate) => candidate.inlineData?.data,
+  );
+  if (!part?.inlineData?.data) return null;
+
+  const mime = part.inlineData.mimeType ?? "audio/L16;rate=24000";
+  if (!/L16|pcm|wav/i.test(mime)) return { data: part.inlineData.data, mimeType: mime };
+
+  const rate = Number(/(?:rate|samplerate)=?(\d{4,6})/i.exec(mime)?.[1] ?? 24_000);
+  const pcm = Uint8Array.from(Buffer.from(part.inlineData.data, "base64"));
+  const wav = pcmToWav(pcm, Number.isFinite(rate) && rate > 0 ? rate : 24_000);
+  return { data: Buffer.from(wav).toString("base64"), mimeType: "audio/wav" };
+}
+
+/**
+ * Saca la pista de una interacción de Lyria.
+ *
+ * La respuesta es una secuencia de pasos: los `model_output` llevan bloques de
+ * contenido, y el de `type: "audio"` es la canción. Los bloques de texto son
+ * la letra o la estructura, que se devuelven aparte.
+ */
+export function parseMusicAudio(payload: {
+  steps?: { type?: string; content?: { type?: string; data?: string; text?: string; mimeType?: string }[] }[];
+}): { data: string; mimeType: string; lyrics: string } | null {
+  let audio: { data: string; mimeType: string } | null = null;
+  const text: string[] = [];
+  for (const step of payload.steps ?? []) {
+    if (step.type !== "model_output") continue;
+    for (const block of step.content ?? []) {
+      if (block.type === "audio" && block.data) {
+        audio = { data: block.data, mimeType: block.mimeType || "audio/mpeg" };
+      } else if (block.type === "text" && block.text) {
+        text.push(block.text);
+      }
+    }
+  }
+  return audio ? { ...audio, lyrics: text.join("\n").trim() } : null;
+}
+
 const IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-2.5-flash-image"];
 const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
 
@@ -980,6 +1141,101 @@ async function generateImage(prompt: string, aspect: string): Promise<GeneratedI
   }
 
   throw new Error(lastError);
+}
+
+/**
+ * Música con Lyria. La API de interacciones devuelve una secuencia de pasos, y
+ * el tema va en base64 dentro del bloque de audio: no hay URL que descargar.
+ */
+async function generateMusic(
+  prompt: string,
+  duration: "clip" | "song",
+): Promise<{ model: string; mimeType: string; data: string; lyrics: string }> {
+  const model = duration === "song" ? MUSIC_SONG_MODEL : MUSIC_CLIP_MODEL;
+  const response = await fetch(`${GEMINI_BASE}/interactions`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
+    body: JSON.stringify({ model, input: prompt }),
+    // Un tema completo tarda más que un clip; el tope de la función manda.
+    signal: AbortSignal.timeout(duration === "song" ? 55_000 : 45_000),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`Lyria respondió ${response.status}: ${detail.slice(0, 200)}`);
+  }
+
+  const parsed = parseMusicAudio((await response.json()) as Parameters<typeof parseMusicAudio>[0]);
+  if (!parsed) throw new Error("Lyria no devolvió audio (puede haber bloqueado el contenido)");
+  return { model, ...parsed };
+}
+
+/** Voz con el modelo TTS: devuelve PCM crudo, así que se envuelve en WAV. */
+async function generateSpeech(
+  text: string,
+  voice: string,
+): Promise<{ model: string; mimeType: string; data: string }> {
+  const response = await fetch(`${GEMINI_BASE}/models/${TTS_MODEL}:generateContent`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text }] }],
+      generationConfig: {
+        responseModalities: ["AUDIO"],
+        speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+      },
+    }),
+    signal: AbortSignal.timeout(50_000),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`TTS respondió ${response.status}: ${detail.slice(0, 200)}`);
+  }
+
+  const parsed = parseTtsAudio((await response.json()) as Parameters<typeof parseTtsAudio>[0]);
+  if (!parsed) throw new Error("El modelo de voz no devolvió audio");
+  return { model: TTS_MODEL, ...parsed };
+}
+
+async function runMusic(args: Record<string, unknown>): Promise<ToolResult> {
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim().slice(0, 1_000) : "";
+  if (prompt.length < 3) throw new Error("`prompt` es obligatorio para componer música");
+  const duration = args.duration === "song" ? "song" : "clip";
+
+  const track = await generateMusic(prompt, duration);
+  const note = track.lyrics
+    ? "La pieza ya se está reproduciendo en el chat; su letra va en `lyrics`. No la describas como enlace."
+    : "La pieza ya se está reproduciendo en el chat. No la describas como enlace.";
+  return {
+    content: [{ type: "text", text: JSON.stringify({ ok: true, model: track.model, mimeType: track.mimeType }) }],
+    structuredContent: {
+      ok: true,
+      model: track.model,
+      mimeType: track.mimeType,
+      ...(track.lyrics && { lyrics: track.lyrics.slice(0, 2_000) }),
+      note,
+    },
+    audio: { mimeType: track.mimeType, data: track.data, alt: prompt },
+  };
+}
+
+async function runSpeech(args: Record<string, unknown>): Promise<ToolResult> {
+  const text = typeof args.text === "string" ? args.text.trim().slice(0, 2_000) : "";
+  if (text.length < 2) throw new Error("`text` es obligatorio para generar la voz");
+  const voice = TTS_VOICES.includes(String(args.voice)) ? String(args.voice) : "Kore";
+
+  const speech = await generateSpeech(text, voice);
+  return {
+    content: [{ type: "text", text: JSON.stringify({ ok: true, model: speech.model, mimeType: speech.mimeType }) }],
+    structuredContent: {
+      ok: true,
+      model: speech.model,
+      voice,
+      note: "La locución ya se está reproduciendo en el chat. No la describas como enlace.",
+    },
+    audio: { mimeType: speech.mimeType, data: speech.data, alt: text.slice(0, 120) },
+  };
 }
 
 async function runImage(args: Record<string, unknown>): Promise<ToolResult> {
@@ -1052,6 +1308,8 @@ async function callTool(
     if (name === "osint.events") return await runOsint(args);
     if (name === "weather.outlook") return await runWeather(args);
     if (name === "media.image") return await runImage(args);
+    if (name === "media.music") return await runMusic(args);
+    if (name === "media.speech") return await runSpeech(args);
     if (name === "github.repo") return await runGitRepo(args, caller);
     if (name === "github.propose") return await runGitPropose(args, caller);
     return await runDbSelect(args, caller);
@@ -1359,6 +1617,15 @@ async function runAgentStream(
           alt: result.image.alt,
         });
       }
+      // El audio viaja igual: el modelo no ve el base64, sólo sabe que suena.
+      if (result.audio) {
+        emit({
+          type: "audio",
+          mimeType: result.audio.mimeType,
+          data: result.audio.data,
+          alt: result.audio.alt,
+        });
+      }
       responses.push({
         functionResponse: {
           name,
@@ -1411,9 +1678,10 @@ const SYSTEM_PROMPT =
   "palabras normales; jamás inventes códigos de interfaz ni mensajes como " +
   "INTERFACE_NOT_BOUND. Si no tienes herramienta para lo que te piden, dilo y " +
   "ofrece lo que sí puedes consultar. Para imágenes («dibuja», «genera una " +
-  "imagen de…») usa `media.image`. No tienes herramientas de vídeo, música, " +
-  "sonido ni videojuegos: si te los piden, di que no están disponibles todavía " +
-  "en vez de describirlos como si los hubieras creado.";
+  "imagen de…») usa `media.image`; para música o canciones, `media.music`; para " +
+  "locuciones o leer algo en voz alta, `media.speech`. Las tres cuestan créditos: " +
+  "úsalas cuando las piden, no para ilustrar. No tienes vídeo: si te lo piden, dilo " +
+  "en claro y ofrece imagen o música, en vez de describir un vídeo que no existe.";
 
 async function runAgent(prompt: string, caller: Caller) {
   const model = await resolveModel();

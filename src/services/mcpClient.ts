@@ -190,12 +190,23 @@ export interface AgentImage {
   alt: string;
 }
 
+/**
+ * Audio generado en el turno (música o voz), también como data URL para que el
+ * reproductor no dependa de ningún host externo ni de un enlace caducado.
+ */
+export interface AgentAudio {
+  url: string;
+  alt: string;
+}
+
 export interface AgentAnswer {
   answer: string;
   /** Monólogo del modelo antes de responder; vacío si no lo publicó. */
   reasoning?: string;
   /** Imágenes que generaron las herramientas durante el turno. */
   images?: AgentImage[];
+  /** Música o voz generada durante el turno. */
+  audios?: AgentAudio[];
   toolCalls: Array<{ name: string; args: Record<string, unknown>; isError: boolean }>;
 }
 
@@ -214,6 +225,8 @@ export interface AgentStreamHandlers {
   onThought?: (text: string) => void;
   /** Imagen recién generada por una herramienta, en cuanto está lista. */
   onImage?: (image: AgentImage) => void;
+  /** Audio recién generado (música o voz). */
+  onAudio?: (audio: AgentAudio) => void;
   onTool?: (name: string, isError: boolean) => void;
 }
 
@@ -271,6 +284,7 @@ export async function streamAgentAnswer(
   let answer = "";
   let reasoning = "";
   const images: AgentImage[] = [];
+  const audios: AgentAudio[] = [];
   let buffer = "";
   let failure: string | null = null;
 
@@ -294,6 +308,13 @@ export async function streamAgentAnswer(
       };
       images.push(image);
       handlers.onImage?.(image);
+    } else if (event.type === "audio" && event.data) {
+      const audio = {
+        url: `data:${event.mimeType || "audio/mpeg"};base64,${event.data}`,
+        alt: event.alt || "Audio generado",
+      };
+      audios.push(audio);
+      handlers.onAudio?.(audio);
     } else if (event.type === "delta" && event.text) {
       answer += event.text;
       handlers.onDelta?.(event.text);
@@ -328,7 +349,7 @@ export async function streamAgentAnswer(
   // El razonamiento no se reenvía aquí como delta: si el `done` trae la versión
   // final y el flujo ya la emitió por trozos, devolverla completa sirve para
   // guardarla en el mensaje sin duplicar lo que ya está en pantalla.
-  return { answer: answer.trim(), reasoning: reasoning.trim(), images, toolCalls };
+  return { answer: answer.trim(), reasoning: reasoning.trim(), images, audios, toolCalls };
 }
 
 /** Pregunta al modelo a través del servidor: la clave nunca llega al navegador. */

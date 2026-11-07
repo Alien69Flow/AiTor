@@ -1,4 +1,4 @@
-import { askAgent, streamAgentAnswer, type AgentImage } from "./mcpClient";
+import { askAgent, streamAgentAnswer, type AgentAudio, type AgentImage } from "./mcpClient";
 import { buildAgentPrompt, type AgentTurn } from "@/lib/agent-prompt";
 
 /**
@@ -16,6 +16,8 @@ export interface AgentTurnResult {
   reasoning: string;
   /** Imágenes generadas por herramientas en este turno. */
   images: AgentImage[];
+  /** Música o voz generada en este turno. */
+  audios: AgentAudio[];
   /** Herramientas que el modelo ejecutó, en orden. */
   tools: string[];
   /** Herramientas que fallaron: se marcan en el mensaje, no se ocultan. */
@@ -37,6 +39,8 @@ export interface AgentTurnOptions {
   onThought?: (text: string) => void;
   /** Imagen lista: el hook la cuelga del mensaje sin esperar al final. */
   onImage?: (image: AgentImage) => void;
+  /** Audio listo (música o voz), por el mismo camino. */
+  onAudio?: (audio: AgentAudio) => void;
   /** Aviso de herramienta ejecutada, mientras el flujo sigue abierto. */
   onTool?: (name: string, isError: boolean) => void;
   /**
@@ -93,6 +97,7 @@ export async function runAgentTurn(
           onDelta: options.onDelta,
           onThought: options.onThought,
           onImage: options.onImage,
+          onAudio: options.onAudio,
           onTool: options.onTool,
         })
       : await askAgent(prompt);
@@ -104,6 +109,7 @@ export async function runAgentTurn(
       content,
       reasoning: answer.reasoning ?? "",
       images: answer.images ?? [],
+      audios: answer.audios ?? [],
       tools: calls.map((call) => call.name),
       failed: calls.filter((call) => call.isError).map((call) => call.name),
     };
