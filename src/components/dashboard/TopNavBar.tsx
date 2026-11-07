@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Bot, Radio, Orbit, Globe, BarChart3, Settings, LogOut, LogIn, Crown, Search } from "lucide-react";
+import { Bot, Radio, Orbit, Globe, BarChart3, Gamepad2, Settings, LogOut, LogIn, Crown, Search } from "lucide-react";
 import { ConnectWalletButton } from "@/components/web3/ConnectWalletButton";
 import { PricingModal } from "./PricingModal";
 import { useTier } from "@/hooks/useTier";
@@ -16,6 +16,7 @@ const SECTIONS: { id: TabId; label: string; icon: typeof Bot }[] = [
   { id: "cosmos", label: "Cosmos", icon: Orbit },
   { id: "globe", label: "Globe", icon: Globe },
   { id: "markets", label: "Markets", icon: BarChart3 },
+  { id: "games", label: "Games", icon: Gamepad2 },
   { id: "system", label: "System", icon: Settings },
 ];
 

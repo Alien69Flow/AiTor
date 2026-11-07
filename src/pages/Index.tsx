@@ -34,6 +34,9 @@ const MarketsSection = lazyWithRetry(() =>
 const SystemTab = lazyWithRetry(() =>
   import("@/components/dashboard/SystemTab").then((m) => ({ default: m.SystemTab })),
 );
+const GamesTab = lazyWithRetry(() =>
+  import("@/components/games/GamesTab").then((m) => ({ default: m.GamesTab })),
+);
 
 function WorkspaceFallback() {
   return (
@@ -53,6 +56,7 @@ const TAB_LABELS: Record<TabId, string> = {
   cosmos: "Cosmos",
   globe: "Globo",
   markets: "Mercados",
+  games: "Juegos",
   system: "Sistema",
 };
 
@@ -70,6 +74,7 @@ const Index = () => {
     cosmos: "Cosmos — sistema solar y objetos cercanos",
     globe: "Globo táctico — capas OSINT y meteorología en tiempo real",
     markets: "Mercados — cripto, predicción y señales",
+    games: "Juegos — arcade de ACE, ADEX, AlienTrip y la DAO",
     system: "Sistema — perfil, gobernanza y ajustes",
   };
 
@@ -80,6 +85,7 @@ const Index = () => {
       case "cosmos": return <SolarSystemTab />;
       case "globe": return <GlobeDashboard onOpenCamera={openCamera} />;
       case "markets": return <MarketsSection />;
+      case "games": return <GamesTab />;
       case "system": return <SystemTab />;
       default: return null;
     }
