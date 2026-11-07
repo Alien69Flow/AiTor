@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { routeSkills, SKILLS, type SkillId } from "@/lib/ai-skills";
 import {
+  AEMET_KEY_TOOLS,
+  KEYED_TOOLS,
   mcpSummary,
   mcpToolRows,
   modelKeyRow,
@@ -102,7 +104,18 @@ describe("fila de la clave del modelo", () => {
 
   it("las herramientas de la clave son las cuatro de medios", () => {
     expect(MODEL_KEY_TOOLS.sort()).toEqual(["media.image", "media.music", "media.speech", "media.video"]);
-    expect(Object.keys(SERVER_ONLY_TOOLS).sort()).toEqual(MODEL_KEY_TOOLS);
+    expect(Object.keys(SERVER_ONLY_TOOLS).sort()).toEqual([...KEYED_TOOLS].sort());
+  });
+
+  it("AEMET tiene su clave y no la tapa la del modelo", () => {
+    const filas = mcpToolRows([], ["weather.aemet"], "missing", "ok");
+    expect(filas[0]).toMatchObject({ id: "weather.aemet", state: "ok" });
+    const sinClave = mcpToolRows([], ["weather.aemet"], "ok", "missing");
+    expect(sinClave[0]).toMatchObject({
+      state: "fail",
+      error: "publicada, pero sin AEMET_API_KEY no puede ejecutarse",
+    });
+    expect(AEMET_KEY_TOOLS.sort()).toEqual(["weather.aemet"]);
   });
 });
 

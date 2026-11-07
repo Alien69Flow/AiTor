@@ -56,10 +56,24 @@ export const SERVER_ONLY_TOOLS: Record<string, { title: string; detail: string }
   "media.music": { title: "Componer música", detail: "Lyria · 30 s o tema completo · plan pro" },
   "media.speech": { title: "Poner voz a un texto", detail: "Gemini TTS · locución · plan pro" },
   "media.video": { title: "Generar un vídeo", detail: "Veo · clip de 4-8 s por operación · plan pro" },
+  "weather.aemet": {
+    title: "Tiempo oficial en España",
+    detail: "AEMET OpenData · previsión y observación · plan free",
+  },
 };
 
-/** Herramientas cuyo trabajo no existe sin la clave del proveedor. */
-export const MODEL_KEY_TOOLS = Object.keys(SERVER_ONLY_TOOLS);
+/**
+ * Cada grupo de herramientas con su clave. No es una lista única porque las
+ * claves son independientes: sin GEMINI_API_KEY no hay imagen, música ni vídeo,
+ * y sin AEMET_API_KEY no hay AEMET — pero una no tapa a la otra.
+ */
+export const MODEL_KEY_TOOLS = ["media.image", "media.music", "media.speech", "media.video"];
+
+/** Herramientas que dependen de la clave de AEMET OpenData. */
+export const AEMET_KEY_TOOLS = ["weather.aemet"];
+
+/** Todas las que necesitan alguna clave, para contarlas de una vez. */
+export const KEYED_TOOLS = [...MODEL_KEY_TOOLS, ...AEMET_KEY_TOOLS];
 
 /**
  * Filas de las herramientas MCP.
@@ -77,6 +91,7 @@ export function mcpToolRows(
   tools: readonly McpToolLike[],
   listed: readonly string[] | null,
   keyState: string = "unknown",
+  aemetKeyState: string = "unknown",
 ): ConnectionRow[] {
   const known = new Set(tools.map((tool) => tool.name));
   const extras = (listed ?? [])
@@ -106,6 +121,14 @@ export function mcpToolRows(
         detail,
         state: "fail",
         error: "publicada, pero sin GEMINI_API_KEY no puede ejecutarse",
+      };
+    }
+    if (AEMET_KEY_TOOLS.includes(tool.name) && aemetKeyState !== "ok") {
+      return {
+        ...base,
+        detail,
+        state: "fail",
+        error: "publicada, pero sin AEMET_API_KEY no puede ejecutarse",
       };
     }
     return { ...base, detail, state: "ok" };
