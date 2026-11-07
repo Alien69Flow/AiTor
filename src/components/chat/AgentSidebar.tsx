@@ -4,7 +4,7 @@ import {
   Brain, Atom, Image, Code2, Globe, Link2,
   Activity, Building2,
   Share2, Loader2, Network, LogOut, Zap, MessageSquare, X, Route as RouteIcon,
-  Database, Layers3, Cpu, Wallet, ArrowRight, ShieldCheck, ExternalLink, UserRound,
+  Database, Layers3, Cpu, Wallet, ArrowRight, ShieldCheck, ExternalLink, UserRound, Cable,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,7 @@ const WORKSPACES: { id: ChatWorkspace; label: string; icon: typeof MessageSquare
   { id: "chat", label: "Chat", icon: MessageSquare },
   { id: "neural", label: "Núcleo", icon: Brain },
   { id: "city", label: "Ciudad", icon: Building2 },
+  { id: "connections", label: "Conexiones", icon: Cable },
 ];
 
 interface SessionStats {
