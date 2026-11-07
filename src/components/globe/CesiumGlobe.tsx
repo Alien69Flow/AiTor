@@ -51,6 +51,7 @@ import {
   TRANSPORT_MODELS,
   flightModelKind,
   modelHeadingRadians,
+  normalizedTrack,
   shipModelKind,
 } from "@/lib/transport-models";
 import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
@@ -1371,7 +1372,7 @@ export function CesiumGlobe({
           // 32 px y con el desvanecido más tardío: a 26 px y con el factor 0,3
           // el avión se quedaba en un punto de 8 px en cuanto alejabas la cámara.
           image: aircraftMarkerIcon(flight.aircraftCategory, band.color, role), width: 32, height: 32,
-          rotation: -CesiumMath.toRadians(flight.heading || 0),
+          rotation: -CesiumMath.toRadians(normalizedTrack(flight.heading)),
           scaleByDistance: new NearFarScalar(5e5, 1.35, 1.2e7, 0.55),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           // El icono se retira cuando entra el modelo 3D (ver más abajo).
@@ -1507,7 +1508,7 @@ export function CesiumGlobe({
         position: Cartesian3.fromDegrees(ship.longitude, ship.latitude, 0),
         billboard: {
           image: markerIcon("ship", "#FFD700"), width: 23, height: 23,
-          rotation: -CesiumMath.toRadians(ship.heading || 0),
+          rotation: -CesiumMath.toRadians(normalizedTrack(ship.heading)),
           scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
           distanceDisplayCondition: new DistanceDisplayCondition(SHIP_MODEL_RANGE_M, Number.POSITIVE_INFINITY),

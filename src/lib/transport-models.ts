@@ -30,6 +30,20 @@ export const TRANSPORT_MODELS = {
 export type TransportModelKind = keyof typeof TRANSPORT_MODELS;
 
 /**
+ * Rumbo saneado, en grados desde el norte.
+ *
+ * AIS reserva el 511 para «rumbo no disponible» y algunas fuentes mandan ceros
+ * de relleno o valores fuera de rango. Pasarlo tal cual dejaba el barco girado
+ * 61° o el avión 34° sin motivo: cuando no hay rumbo se asume norte, que es lo
+ * que hace un mapa náutico con un contacto sin gobierno.
+ */
+export function normalizedTrack(track?: number | null): number {
+  return typeof track === "number" && Number.isFinite(track) && track >= 0 && track < 360
+    ? track
+    : 0;
+}
+
+/**
  * Rumbo en radianes para `Transforms.headingPitchRollQuaternion`.
  *
  * Ojo al convenio: en Cesium `heading = 0` mira al **este** (el +X local es el
@@ -38,8 +52,7 @@ export type TransportModelKind = keyof typeof TRANSPORT_MODELS;
  * 90°: volando «de lado». Aquí se resta el cuarto de vuelta y se normaliza.
  */
 export function modelHeadingRadians(trackDegrees?: number | null): number {
-  const track = typeof trackDegrees === "number" && Number.isFinite(trackDegrees) ? trackDegrees : 0;
-  const normalized = ((track - 90) % 360 + 360) % 360;
+  const normalized = ((normalizedTrack(trackDegrees) - 90) % 360 + 360) % 360;
   return (normalized * Math.PI) / 180;
 }
 

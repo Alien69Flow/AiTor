@@ -104,7 +104,11 @@ async function fetchVesselFinder(key: string, bounds: string): Promise<Ship[]> {
       latitude: v.LAT as number,
       longitude: v.LON as number,
       speed: Math.round((v.SPEED ?? 0) * 10) / 10,
-      heading: Math.round(v.HEADING ?? 0),
+      // AIS reserva 511 para «rumbo no disponible»: si se cuela, el icono y
+      // el modelo salen girados un ángulo inventado. Sin rumbo, norte.
+      heading: Math.round(
+        typeof v.HEADING === "number" && v.HEADING >= 0 && v.HEADING < 360 ? v.HEADING : 0,
+      ),
       destination: v.DESTINATION || null,
       timestamp: now,
     }));
