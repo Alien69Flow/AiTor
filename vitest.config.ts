@@ -20,7 +20,14 @@ export default defineConfig({
     // `scripts/` is included for the checks that are plain Node modules (the CI
     // gates): they cannot live in src because the Node 22 runner imports them
     // directly, so their tests follow them out here.
-    include: ["src/**/*.test.{ts,tsx}", "api/**/*.test.{ts,tsx}", "scripts/**/*.test.mjs"],
+    include: [
+      "src/**/*.test.{ts,tsx}",
+      "api/**/*.test.{ts,tsx}",
+      "scripts/**/*.test.mjs",
+      // `_shared/` de las edge functions es TypeScript sin APIs de Deno a
+      // propósito, así que se puede probar aquí (la sonda de oráculos vive ahí).
+      "supabase/functions/_shared/**/*.test.ts",
+    ],
     // React Testing Library solo registra su limpieza automática (afterEach →
     // cleanup) si hay globales de Vitest; sin esto los renders se acumulan y
     // los tests se encuentran con elementos de los anteriores.
