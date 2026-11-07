@@ -1082,8 +1082,11 @@ export const LAYER_GROUPS: LayerGroup[] = [
  * de lluvia y los puntos de datos, y el resto de campos está a un clic.
  */
 export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
+	// La atmósfera que se ve al abrir es la de Cesium (cielo y halo reales, con
+	// dispersión del Sol). Los cascarones dibujados —troposfera, estratosfera,
+	// mesosfera y termosfera como elipsoides translúcidos— quedan como capa
+	// opcional: son una explicación de la escalera atmosférica, no el aire.
 	"atmosphere",
-	"atmosphericShells",
 	"clouds",
 	"precipitation",
 	"wildfires",

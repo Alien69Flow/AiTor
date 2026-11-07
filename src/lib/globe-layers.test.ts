@@ -315,9 +315,14 @@ describe("un campo por familia", () => {
 });
 
 describe("envolturas atmosféricas", () => {
-  it("la capa existe y viene encendida", () => {
+  /**
+   * Los cascarones son opcionales desde que el globo usa la atmósfera real de
+   * Cesium: dos representaciones del mismo aire encendidas a la vez se suman
+   * en el limbo del planeta y lo dejan turbio. De serie manda la de Cesium.
+   */
+  it("la capa existe, es opcional y no viene encendida", () => {
     expect(layerDef("atmosphericShells")?.group).toBe("Atmospheric & Weather");
-    expect(DEFAULT_ACTIVE_LAYERS).toContain("atmosphericShells");
+    expect(DEFAULT_ACTIVE_LAYERS).not.toContain("atmosphericShells");
   });
 });
 

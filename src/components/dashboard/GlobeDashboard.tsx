@@ -376,7 +376,8 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             onReady={(navigate) => { globeNavRef.current = navigate; }} externalMarkers={intel.eventMarkers}
             kpIndex={intel.spaceWeather?.kpIndex ?? 0} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents}
             sightings={sightings} flights={allFlights} ships={ships} satellites={intel.satellites}
-            rainTileUrl={intel.rainTileUrl} surfaceWeather={intel.surfaceWeather} fires={intel.fires}
+            rainTileUrl={intel.rainTileUrl} radarFrames={intel.rainFrames}
+            surfaceWeather={intel.surfaceWeather} fires={intel.fires}
             auroraCells={intel.auroraMesh.cells} cables={intel.cables} bitcoinNodes={intel.bitcoinNodes}
             gdeltEvents={intel.gdeltEvents} conflictEvents={intel.conflictEvents}
             iss={intel.iss} ionosphere={intel.ionosphere}

@@ -47,6 +47,8 @@ export interface HybridGlobeProps {
   ships?: Ship[];
   satellites?: { id: string; name: string; lat: number; lon: number; altKm: number }[];
   rainTileUrl?: string | null;
+  /** Fotogramas del radar de las últimas dos horas (animación del globo). */
+  radarFrames?: { time: number; url: string }[];
   surfaceWeather?: SurfaceWeatherPoint[];
   fires?: FireDetection[];
   auroraCells?: { lat: number; lon: number; probability: number }[];
@@ -89,6 +91,7 @@ export function HybridGlobe({
   ships = [],
   satellites: satellitesProp,
   rainTileUrl = null,
+  radarFrames = [],
   surfaceWeather = [],
   fires = [],
   auroraCells = [],
@@ -142,6 +145,7 @@ export function HybridGlobe({
           satellites={layers.has("satellites") ? satellites : []}
           outages={layers.has("internetOutages") ? outages : []}
           rainTileUrl={rainTileUrl}
+          radarFrames={radarFrames}
           surfaceWeather={surfaceWeather}
           fires={fires}
           auroraCells={auroraCells}
