@@ -8,7 +8,9 @@ import {
   GLOBE_LAYERS,
   LAYER_GROUPS,
   TIER_RANK,
+  isRasterLayer,
   layerDef,
+  rasterSiblings,
   type EnvLayerKey,
   type Tier,
 } from "./globe-layers";
@@ -272,5 +274,49 @@ describe("capas que faltaban o no pintaban", () => {
     const currents = layerDef("oceanCurrents")?.gibs;
     expect(currents?.date).toBe("2024-07-17");
     expect(currents?.timeless).toBeUndefined();
+  });
+});
+
+/**
+ * Dos campos del mismo tipo encendidos a la vez no se suman: se tapan. El
+ * globo abría con temperatura, humedad y precipitación puestas y el planeta era
+ * una mancha translúcida, así que la exclusividad se defiende aquí y no en un
+ * comentario.
+ */
+describe("un campo por familia", () => {
+  it("todo ráster declara familia", () => {
+    const sinFamilia = GLOBE_LAYERS.filter((layer) => isRasterLayer(layer) && !layer.rasterFamily);
+    expect(sinFamilia.map((layer) => layer.key)).toEqual([]);
+  });
+
+  it("las capas de serie no se pisan entre sí", () => {
+    const families = DEFAULT_ACTIVE_LAYERS.map((key) => layerDef(key)?.rasterFamily).filter(Boolean);
+    expect(new Set(families).size).toBe(families.length);
+  });
+
+  it("apagar a las hermanas no apaga a la capa pedida", () => {
+    const siblings = rasterSiblings("humidity");
+    expect(siblings).not.toContain("humidity");
+    expect(siblings).toContain("temperature");
+    expect(siblings).toContain("wind");
+    // Las nubes son contexto y sobreviven al cambio de campo.
+    expect(siblings).not.toContain("clouds");
+  });
+
+  it("una capa sin familia no arrastra a nadie", () => {
+    expect(rasterSiblings("earthquakes")).toEqual([]);
+    expect(rasterSiblings("precipitation")).toEqual([]);
+  });
+
+  it("la precipitación de serie es el radar, no el modelo de OpenWeatherMap", () => {
+    expect(layerDef("precipitation")?.owm).toBeUndefined();
+    expect(layerDef("precipitation")?.source).toContain("RainViewer");
+  });
+});
+
+describe("envolturas atmosféricas", () => {
+  it("la capa existe y viene encendida", () => {
+    expect(layerDef("atmosphericShells")?.group).toBe("Atmospheric & Weather");
+    expect(DEFAULT_ACTIVE_LAYERS).toContain("atmosphericShells");
   });
 });

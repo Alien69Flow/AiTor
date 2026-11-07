@@ -89,6 +89,12 @@ import {
 import { GAMMA_IRRADIATORS } from "@/lib/gamma-irradiators";
 import { isRasterLayer } from "@/lib/globe-layers";
 import { tileOverscan } from "@/lib/tile-zoom";
+import {
+  ATMOSPHERE_SHELLS,
+  SHELLS_VISIBLE_ABOVE_M,
+  shellRadiusM,
+} from "@/lib/atmosphere-shells";
+import { resolveGlobeDetail } from "@/lib/globe-detail";
 import { SUPABASE_URL } from "@/integrations/supabase/client";
 
 /**
@@ -119,12 +125,19 @@ const MAX_UPSAMPLE_LEVELS = 2;
 const OWM_TILE_URL = (layerId: string) =>
   `${SUPABASE_URL}/functions/v1/openweather?tile=${layerId}&z={z}&x={x}&y={y}`;
 
+/**
+ * Opacidad de cada campo de OpenWeatherMap.
+ *
+ * Las nubes bajan mucho respecto al 0,75 anterior: a esa opacidad tapaban el
+ * radar de lluvia y el propio satélite, y el globo se veía como una mancha
+ * blanca. Como contexto se leen igual de bien al 35 %.
+ */
 const OWM_ALPHA: Record<string, number> = {
-  clouds_new: 0.75,
+  clouds_new: 0.35,
   precipitation_new: 0.8,
-  pressure_new: 0.7,
-  wind_new: 0.65,
-  temp_new: 0.7,
+  pressure_new: 0.6,
+  wind_new: 0.55,
+  temp_new: 0.6,
 };
 
 /**
@@ -401,6 +414,13 @@ export function CesiumGlobe({
   const applyRasterLimitRef = useRef<(() => void) | null>(null);
   const rainLayerRef = useRef<ImageryLayer | null>(null);
   const rainUrlRef = useRef<string | null>(null);
+  const shellEntityIdsRef = useRef<string[]>([]);
+  // Referencias vivas a los cascarones para encenderlos y apagarlos desde el
+  // manejador de cámara (Entity.show no admite una propiedad animada en Cesium).
+  const shellEntitiesRef = useRef<Array<{ show: boolean }>>([]);
+  // Ajuste de detalle reutilizable: lo llama el manejador de cámara y también
+  // la carga asíncrona de la capa de referencia, que llega después.
+  const syncWorldDetailRef = useRef<() => void>(() => {});
   const sightingEntityIdsRef = useRef<string[]>([]);
   const marketEntityIdsRef = useRef<string[]>([]);
   const arcEntityIdsRef = useRef<string[]>([]);
@@ -466,20 +486,37 @@ export function CesiumGlobe({
     viewer.scene.backgroundColor = Color.BLACK;
     viewer.scene.globe.enableLighting = true;
     viewer.scene.globe.atmosphereLightIntensity = 8.0;
-    viewer.resolutionScale = Math.min(window.devicePixelRatio || 1, 1.5);
+    // Nitidez: a densidad nativa (hasta 2×) el borde del planeta y las costas
+    // dejan de verse blandos al acercarse. El 1,5 anterior ahorraba GPU a costa
+    // de que todo saliera medio píxel borroso en pantallas retina.
+    viewer.resolutionScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+    // Antialiasing por post-proceso: sin esto, las fronteras, los cables y el
+    // limbo terrestre se dibujaban con escalones de un píxel.
+    try {
+      viewer.scene.postProcessStages.fxaa.enabled = true;
+    } catch (e) {
+      console.warn("[CesiumGlobe] FXAA no disponible:", e);
+    }
+    // Atmósfera pegada al suelo: es lo que da profundidad al satélite en las
+    // distancias largas y hace que el planeta parezca un planeta.
+    viewer.scene.globe.showGroundAtmosphere = true;
 
     // Relieve real: teselas Terrarium abiertas (sin token de Ion) en vez del
     // elipsoide liso. Si el proveedor no se puede construir, el visor sigue con
     // el elipsoide: el globo nunca se queda en blanco por el terreno.
+    // Más teselas vivas y menos error de pantalla = se pide el nivel real de
+    // detalle al acercarse (Google Earth) en vez de estirar la última. Va fuera
+    // del `if (terrain)` porque la nitidez no debe depender de que el proveedor
+    // de relieve esté disponible; el valor fino lo ajusta `syncWorldDetail`
+    // según la altura de la cámara.
+    viewer.scene.globe.tileCacheSize = 1500;
+    viewer.scene.globe.maximumScreenSpaceError = 1.6;
+    viewer.scene.globe.preloadSiblings = true;
+
     const terrain = createTerrariumTerrainProvider();
     if (terrain) {
       viewer.terrainProvider = terrain;
       viewer.scene.globe.depthTestAgainstTerrain = false;
-      // Más teselas vivas y menos error de pantalla = se pide el nivel real de
-      // detalle al acercarse (Google Earth) en vez de estirar la última.
-      viewer.scene.globe.tileCacheSize = 1000;
-      viewer.scene.globe.maximumScreenSpaceError = 1.5;
-      viewer.scene.globe.preloadSiblings = true;
     }
 
     // Enable sky atmosphere (the glow halo around the Earth)
@@ -514,13 +551,24 @@ export function CesiumGlobe({
 
     viewerRef.current = viewer;
 
+    // Solo en desarrollo: deja el visor accesible desde la consola para poder
+    // comprobar capas, cámara y teselas reales sin adivinar por la pantalla.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __cesiumViewer?: unknown }).__cesiumViewer = viewer;
+    }
+
     // Deterministic async init: base → night lights → (env layers effect runs separately).
     // No parallel .then() chains — everything is awaited in order so removeAll() never
     // wipes overlays that a faster-resolving promise might have already added.
     (async () => {
       try {
-        // 1. Clear any default layers ONCE at the start.
-        viewer.imageryLayers.removeAll();
+        // 1. La base entra al fondo de la pila, sin vaciar lo que ya haya.
+        //
+        // Antes esto era un `removeAll()` y era una carrera: el proveedor se
+        // resuelve de forma asíncrona, así que las capas que entretanto habían
+        // añadido los efectos (el radar de lluvia, la primera entre todas)
+        // desaparecían al llegar la base. Ahora la base se limita a bajar al
+        // fondo, que es lo único que hacía falta.
 
         // 2. Base satellite imagery FIRST (bottom of stack).
         const baseProvider = await ArcGisMapServerImageryProvider.fromUrl(
@@ -539,7 +587,14 @@ export function CesiumGlobe({
           if (viewer.isDestroyed()) return;
           const places = viewer.imageryLayers.addImageryProvider(placesProvider);
           places.alpha = 0.9;
+          // Se enciende desde `syncWorldDetail`: a escala de planeta los
+          // topónimos de todos los países a la vez son ruido, y además pedían
+          // teselas de nivel 23 para dibujar una línea.
+          places.show = false;
           placesLayerRef.current = places;
+          // La referencia se resolvió tarde: se vuelve a aplicar el criterio de
+          // altura para no dejar los topónimos apagados hasta el primer zoom.
+          syncWorldDetailRef.current();
         } catch (e) {
           console.warn("Places/boundaries layer failed:", e);
         }
@@ -633,7 +688,35 @@ export function CesiumGlobe({
     // Los marcadores fijos se agrupan por altura: la cámara avisa y el efecto
     // de las capas decide si el zoom cruzó un escalón (y sólo entonces
     // reconstruye sus entidades).
+    /**
+     * Nitidez y etiquetas según la altura de la cámara.
+     *
+     * Es la diferencia entre «foto estirada» y mapa: de lejos se pide un error
+     * de pantalla holgado (menos teselas, más fluidez) y de cerca se aprieta
+     * hasta 0,9 px, que es el nivel al que el satélite de Esri se ve nítido. Las
+     * fronteras y los topónimos sólo aparecen cuando hay una región que
+     * nombrar.
+     */
+    const syncWorldDetail = () => {
+      if (viewer.isDestroyed()) return;
+      const altitude = viewer.camera.positionCartographic?.height ?? 0;
+      const detail = resolveGlobeDetail(altitude);
+      if (viewer.scene.globe.maximumScreenSpaceError !== detail.maximumScreenSpaceError) {
+        viewer.scene.globe.maximumScreenSpaceError = detail.maximumScreenSpaceError;
+      }
+      if (placesLayerRef.current) {
+        placesLayerRef.current.show = detail.showPlaces;
+      }
+      // Las envolturas sólo existen mirando el planeta desde fuera.
+      const shellsVisible = altitude > SHELLS_VISIBLE_ABOVE_M;
+      for (const shell of shellEntitiesRef.current) shell.show = shellsVisible;
+    };
+    // Un primer ajuste ya, sin esperar a que alguien mueva la cámara.
+    syncWorldDetailRef.current = syncWorldDetail;
+    syncWorldDetail();
+
     const onCameraLod = () => {
+      syncWorldDetail();
       repaintStaticRef.current?.();
       // Los marcadores vivos (vuelos, barcos, incendios, cámaras…) viven en
       // efectos aparte. Guardamos el escalón en estado para que sólo se
@@ -1938,7 +2021,11 @@ export function CesiumGlobe({
         credit: "RainViewer",
       });
       const layer = viewer.imageryLayers.addImageryProvider(provider);
-      layer.alpha = 0.8;
+      layer.alpha = 0.85;
+      // El radar llega suavizado pero apagado: un poco de saturación separa la
+      // lluvia fuerte del chirimiri sin tocar el resto del mapa.
+      layer.saturation = 1.15;
+      layer.brightness = 1.1;
       if (rainLayerRef.current) {
         try { viewer.imageryLayers.remove(rainLayerRef.current, true); } catch { /* noop */ }
       }
@@ -1948,6 +2035,54 @@ export function CesiumGlobe({
       console.warn("[CesiumGlobe] RainViewer layer failed:", e);
     }
   }, [rainTileUrl, envLayers]);
+
+  /**
+   * Envolturas de la atmósfera: cuatro cascarones translúcidos que sólo existen
+   * cuando se mira el planeta desde fuera.
+   *
+   * Son geometría, no teselas, así que no gastan caché de texturas ni compiten
+   * con los rásters. Las alturas van exageradas (ver `atmosphere-shells.ts`) y
+   * el relleno es tan tenue que no tiñe el satélite: lo que se ve es el anillo
+   * de cada capa en el limbo del planeta, la escalera de la atmósfera.
+   */
+  useEffect(() => {
+    const viewer = viewerRef.current;
+    if (!viewer || viewer.isDestroyed()) return;
+
+    shellEntityIdsRef.current.forEach((id) => {
+      const entity = viewer.entities.getById(id);
+      if (entity) viewer.entities.remove(entity);
+    });
+    shellEntityIdsRef.current = [];
+    shellEntitiesRef.current = [];
+
+    if (!(envLayers ?? new Set<EnvLayerKey>()).has("atmosphericShells")) return;
+
+    for (const shell of ATMOSPHERE_SHELLS) {
+      const radius = shellRadiusM(shell);
+      const id = `atmosphere-shell-${shell.id}`;
+      const base = Color.fromCssColorString(shell.color);
+      // Sólo desde fuera: de cerca se comen la imagen sin aportar nada. El
+      // encendido lo gobierna `syncWorldDetail` al moverse la cámara.
+      const entity = viewer.entities.add({
+        id,
+        show: (viewer.camera.positionCartographic?.height ?? 0) > SHELLS_VISIBLE_ABOVE_M,
+        ellipsoid: {
+          radii: new Cartesian3(radius, radius, radius),
+          material: base.withAlpha(shell.alpha),
+          fill: true,
+          outline: true,
+          outlineColor: base.withAlpha(0.35),
+          // Malla gruesa: un cascarón liso a esta escala no necesita más y así
+          // no cuesta vértices que la GPU necesita para las teselas.
+          slicePartitions: 32,
+          stackPartitions: 18,
+        },
+      });
+      shellEntityIdsRef.current.push(id);
+      shellEntitiesRef.current.push(entity as unknown as { show: boolean });
+    }
+  }, [envLayers]);
 
   // Connector-driven vector layers: aurora mesh, FIRMS fires, submarine cables,
   // Bitcoin nodes, GDELT events and Open-Meteo surface vectors.
