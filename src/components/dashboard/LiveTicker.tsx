@@ -5,26 +5,36 @@ import type { SpaceWeather } from "@/hooks/useSpaceWeather";
 import { spaceWeatherAlert } from "@/lib/space-weather-alert";
 import type { Earthquake } from "@/hooks/useEarthquakes";
 import type { NasaEvent } from "@/hooks/useNasaEvents";
+import type { TideObservation } from "@/hooks/connectors/useTides";
+import type { IssPosition } from "@/hooks/connectors/useIssPosition";
+import { Button } from "@/components/ui/button";
 
 interface TickerItem {
   text: string;
   severity: "CRITICAL" | "HIGH" | "LOW";
   time: string;
+  kind?: "OBS" | "ÓRBITA";
+  source?: string;
+  lat?: number;
+  lon?: number;
 }
 
 const severityStyle: Record<string, string> = {
-  CRITICAL: "bg-red-500/20 text-red-300 border-red-500/30",
-  HIGH: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-  LOW: "bg-slate-500/20 text-slate-400 border-slate-600/30",
+  CRITICAL: "bg-destructive/20 text-destructive border-destructive/30",
+  HIGH: "bg-secondary/20 text-secondary border-secondary/30",
+  LOW: "bg-muted/20 text-muted-foreground border-border",
 };
 
 interface LiveTickerProps {
   spaceWeather?: SpaceWeather;
   earthquakes?: Earthquake[];
   nasaEvents?: NasaEvent[];
+  tides?: TideObservation[];
+  iss?: IssPosition | null;
+  onLocate?: (lat: number, lon: number) => void;
 }
 
-export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: LiveTickerProps) {
+export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [], tides = [], iss, onLocate }: LiveTickerProps) {
   const [lastUpdate, setLastUpdate] = useState(0);
   const prevStormRef = useRef(false);
 
@@ -44,6 +54,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
       text: `M${q.magnitude.toFixed(1)} earthquake — ${q.place}`,
       severity: q.magnitude >= 5 ? "CRITICAL" : q.magnitude >= 4 ? "HIGH" : "LOW",
       time: new Date(q.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      source: "USGS / EMSC",
     });
   });
 
@@ -55,12 +66,15 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
     });
   });
 
-  if (tickerItems.length === 0) {
-    tickerItems.push(
-      { text: "Connecting to OSINT feeds...", severity: "LOW", time: "..." },
-      { text: "Waiting for USGS seismic data...", severity: "LOW", time: "..." },
-    );
-  }
+  tides.filter(t => Date.now() - Date.parse(t.time) < 3600000).forEach(t => tickerItems.push({
+    text: `Marea · ${t.name}: ${t.heightM.toFixed(2)} m MLLW${t.provisional ? " · provisional" : ""}`,
+    severity: "LOW", kind: "OBS", source: t.source,
+    time: new Date(t.time).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC", lat: t.lat, lon: t.lon,
+  }));
+  if (iss && Number.isFinite(iss.lat) && Number.isFinite(iss.lon) && iss.measuredAt > 0 && Date.now() - iss.measuredAt * 1000 < 60000) tickerItems.push({
+    text: `ISS · ${iss.altKm.toFixed(0)} km · ${iss.lat.toFixed(1)}°, ${iss.lon.toFixed(1)}°`, severity: "LOW", kind: "ÓRBITA", source: "WhereTheISS.at · posición propagada",
+    time: new Date(iss.measuredAt * 1000).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC", lat: iss.lat, lon: iss.lon,
+  });
 
   useEffect(() => {
     const interval = setInterval(() => setLastUpdate((p) => p + 1), 1000);
@@ -93,27 +107,28 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [] }: 
     <div className="w-full h-9 flex items-center gap-3 bg-destructive/5 backdrop-blur-xl border-t border-destructive/25 text-[9px] overflow-hidden">
       <div className="h-full flex items-center gap-2 shrink-0 px-3 md:px-4 bg-destructive/10 border-r border-destructive/25">
         <Activity className="w-3.5 h-3.5 text-destructive" />
-        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" style={{ boxShadow: '0 0 8px #ef444480' }} />
+        <span className="w-1.5 h-1.5 rounded-full bg-destructive animate-pulse" />
         <span className="text-destructive tracking-wider uppercase font-bold text-[9px]">LIVE ALERTS</span>
       </div>
 
       <div className="flex-1 overflow-hidden relative">
+        {tickerItems.length === 0 && <span className="text-muted-foreground">Sin alertas verificadas</span>}
         <div className="flex items-center gap-5 animate-ticker whitespace-nowrap">
           {[...tickerItems, ...tickerItems].map((item, i) => (
             <div key={i} className="flex items-center gap-1.5 shrink-0">
               <Badge variant="outline" className={`text-[7px] px-1 py-0 h-3.5 rounded-md ${severityStyle[item.severity]}`}>
-                {item.severity}
+                {item.kind ?? item.severity}
               </Badge>
-              <span className="text-slate-400 max-w-[280px] truncate">{item.text}</span>
-              <span className="text-slate-600 font-mono text-[8px]">{item.time}</span>
+              {item.lat !== undefined && item.lon !== undefined ? <Button variant="ghost" size="sm" className="h-6 max-w-[280px] truncate px-1 text-[9px] text-muted-foreground" title={item.source} onClick={() => { if (item.lat !== undefined && item.lon !== undefined) onLocate?.(item.lat, item.lon); }}>{item.text}</Button> : <span title={item.source} className="text-muted-foreground max-w-[280px] truncate">{item.text}</span>}
+              <span className="text-muted-foreground font-mono text-[8px]">{item.time}</span>
             </div>
           ))}
         </div>
       </div>
 
       <div className="flex items-center gap-3 shrink-0">
-        <span className="text-sky-400 font-bold text-[10px] font-mono">{tickerItems.length} SIG</span>
-        <span className="text-slate-500 font-mono text-[10px]">{lastUpdate}s</span>
+        <span className="text-primary font-bold text-[10px] font-mono">{tickerItems.length} SIG</span>
+        <span className="text-muted-foreground font-mono text-[10px]">{lastUpdate}s</span>
       </div>
     </div>
   );
