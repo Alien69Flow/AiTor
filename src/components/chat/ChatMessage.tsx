@@ -3,18 +3,28 @@ import type { Message } from "@/hooks/useChat";
 import { User, Copy, Check, Cpu, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
+import { ReasoningBlock } from "./ReasoningBlock";
 
 interface ChatMessageProps {
   message: Message;
+  /**
+   * Este mensaje se está escribiendo ahora mismo. Con esto el panel de
+   * razonamiento sabe si el modelo sigue pensando (abierto, en vivo) o si ya
+   * empezó a contestar (se pliega solo).
+   */
+  streaming?: boolean;
 }
 
 function formatTime(date: Date): string {
   return new Date(date).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function ChatMessage({ message }: ChatMessageProps) {
+export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
   const isUser = message.role === "user";
   const [copied, setCopied] = useState(false);
+  // El razonamiento está en curso mientras no haya ni una letra de respuesta:
+  // en cuanto llega el primer delta, el panel se cierra y queda el resumen.
+  const thinking = streaming && !message.content.trim();
 
   const handleCopy = () => {
     navigator.clipboard.writeText(message.content);
@@ -75,6 +85,10 @@ export function ChatMessage({ message }: ChatMessageProps) {
             </div>
           )}
 
+          {!isUser && message.reasoning && (
+            <ReasoningBlock text={message.reasoning} active={thinking} />
+          )}
+
           {message.imageData && (
             <div className="mb-3 overflow-hidden rounded-lg border border-border max-w-xs">
               <img src={message.imageData} alt="Uploaded" className="max-h-[200px] w-auto object-contain" />
@@ -122,6 +136,30 @@ export function ChatMessage({ message }: ChatMessageProps) {
               </ReactMarkdown>
             )}
           </div>
+
+          {message.images && message.images.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {message.images.map((image, index) => (
+                <a
+                  key={`${index}-${image.url.slice(-16)}`}
+                  href={image.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={image.alt}
+                  className="block overflow-hidden rounded-lg border border-border/60 bg-muted/20 transition-colors hover:border-secondary/50"
+                >
+                  {/* `object-contain`: recortar con `cover` escondía media imagen
+                      en las verticales (Gemini devuelve 9:16). */}
+                  <img
+                    src={image.url}
+                    alt={image.alt}
+                    loading="lazy"
+                    className="mx-auto max-h-[320px] w-full object-contain"
+                  />
+                </a>
+              ))}
+            </div>
+          )}
 
           {!isUser && message.content && (
             <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity">

@@ -52,6 +52,20 @@ describe("catálogo de capas del globo", () => {
     }
   });
 
+  /**
+   * La clorofila es un compuesto: con un `TIME` diario el servidor responde 404
+   * casi todos los días (comprobado contra GIBS), así que la capa se quedaría
+   * en blanco con un 404 por tesela. Sin fecha sirve el último compuesto.
+   */
+  it("las capas de compuesto periódico piden el último producto, sin fecha", () => {
+    const compuestos: EnvLayerKey[] = ["oceanChlorophyll", "vegetation", "carbonDioxide", "seaSalinity"];
+    for (const key of compuestos) {
+      const cfg = layerDef(key)!.gibs!;
+      expect(cfg.timeless, key).toBe(true);
+      expect(cfg.dateOffsetHours, key).toBeUndefined();
+    }
+  });
+
   it("las capas por conector existen en el catálogo y no traen raster propio", () => {
     for (const key of CONNECTOR_LAYER_KEYS) {
       const def = layerDef(key);
@@ -227,5 +241,36 @@ describe("cada capa del catálogo tiene quien la pinte", () => {
     // duplicaría otra capa y taparía el globo.
     expect(layerDef("solarActivity")?.gibs).toBeUndefined();
     expect(layerDef("nightLights")?.gibs?.layer).toBe("VIIRS_Black_Marble");
+  });
+});
+
+/**
+ * Las capas que ya existían en la leyenda pero no pintaban: clorofila pedía una
+ * fecha que el producto aún no publica (GIBS 404), y nieve, temperatura del aire
+ * y corrientes no estaban declaradas. Estas pruebas fijan el arreglo y las tres
+ * altas para que no vuelvan a desaparecer en silencio.
+ */
+describe("capas que faltaban o no pintaban", () => {
+  it("la clorofila pide la última pasada en vez de una fecha futura", () => {
+    const chloro = layerDef("oceanChlorophyll")?.gibs;
+    expect(chloro?.layer).toBe("VIIRS_SNPP_L2_Chlorophyll_A");
+    expect(chloro?.timeless).toBe(true);
+    expect(chloro?.dateOffsetHours).toBeUndefined();
+  });
+
+  it("declara nieve, temperatura del aire y corrientes como rásters propios", () => {
+    expect(layerDef("snowCover")?.gibs?.layer).toBe("MODIS_Terra_NDSI_Snow_Cover");
+    // Sin fecha, GIBS sirve un mosaico vacío para el NDSI: la capa encendida
+    // parecía rota. Con 48 h de retraso se pide la pasada que sí tiene datos.
+    expect(layerDef("snowCover")?.gibs?.dateOffsetHours).toBe(48);
+    expect(layerDef("snowCover")?.gibs?.timeless).toBeUndefined();
+    expect(layerDef("airTemperature")?.gibs?.layer).toBe("AIRS_L2_Surface_Air_Temperature_Day");
+    expect(layerDef("oceanCurrents")?.gibs?.layer).toBe("OSCAR_Sea_Surface_Currents_Zonal");
+  });
+
+  it("las corrientes llevan fecha fija porque la serie de OSCAR está detenida", () => {
+    const currents = layerDef("oceanCurrents")?.gibs;
+    expect(currents?.date).toBe("2024-07-17");
+    expect(currents?.timeless).toBeUndefined();
   });
 });

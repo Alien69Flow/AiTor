@@ -46,7 +46,7 @@ describe("decodificación de teselas Terrarium", () => {
   });
 
   it("la rejilla que se le entrega a Cesium es 65×65 y el tope es el último nivel real de la fuente", () => {
-    expect(TERRAIN_GRID).toBe(65);
+    expect(TERRAIN_GRID).toBe(129);
     // La fuente publica hasta z15; por encima de eso se remuestrea el antecesor.
     expect(TERRAIN_MAX_LEVEL).toBe(15);
   });

@@ -29,6 +29,13 @@ import {
   type EnvLayerKey,
 } from "@/lib/globe-layers";
 import { planRasterBulk } from "@/lib/raster-quota";
+import {
+  AURORA_LAYERS,
+  auroraLayersToRelease,
+  hasStormPassed,
+  isGeomagneticStorm,
+  kpToStormScale,
+} from "@/lib/aurora-storm";
 import { toast } from "sonner";
 import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, PanelRightClose, PanelLeftClose, PanelLeftOpen, TriangleAlert } from "lucide-react";
 import { GlobeCommandBar } from "./GlobeCommandBar";
@@ -90,6 +97,71 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
       return changed ? next : previous;
     });
   }, [tierLoading, hasAccess]);
+  /**
+   * Aurora automática.
+   *
+   * Una tormenta geomagnética no se avisa con la capa apagada: si el Kp llega a
+   * 5 (G1) el globo enciende por su cuenta el óvalo de OVATION y los anillos de
+   * actividad solar, y los suelta cuando el Kp baja de 4. El aviso es la propia
+   * capa: no hay nada que buscar en el panel.
+   *
+   * `envLayersRef` existe porque este efecto no debe depender de `envLayers`:
+   * si dependiera, apagar a mano la aurora la volvería a encender en el mismo
+   * render. Así sólo se re-evalúa cuando cambia el Kp o termina de resolverse
+   * el plan del visitante.
+   */
+  const kpIndexNow = intel.spaceWeather?.kpIndex ?? 0;
+  const auroraAutoRef = useRef(false);
+  const auroraReleaseRef = useRef<EnvLayerKey[]>([]);
+  const envLayersRef = useRef(envLayers);
+  useEffect(() => {
+    envLayersRef.current = envLayers;
+  }, [envLayers]);
+
+  useEffect(() => {
+    // Con el plan sin resolver no se sabe si la capa se puede dibujar; se
+    // espera para no encender y apagar en el mismo segundo.
+    if (tierLoading) return;
+
+    if (isGeomagneticStorm(kpIndexNow)) {
+      const missing = AURORA_LAYERS.filter((key) => !envLayersRef.current.has(key));
+      if (missing.length === 0) {
+        auroraAutoRef.current = true;
+        return;
+      }
+      // Sólo se guarda lo que hay que devolver: si el visitante ya tenía la
+      // magnetosfera puesta, al terminar la tormenta no se le apaga.
+      if (!auroraAutoRef.current) auroraReleaseRef.current = auroraLayersToRelease(envLayersRef.current);
+      auroraAutoRef.current = true;
+      setEnvLayers((previous) => {
+        const next = new Set(previous);
+        for (const key of AURORA_LAYERS) next.add(key);
+        return next;
+      });
+      if (missing.length > 0 && auroraReleaseRef.current.length > 0) {
+        toast(`Aurora encendida · Kp ${kpIndexNow.toFixed(1)} · ${kpToStormScale(kpIndexNow)}`, {
+          description:
+            "Tormenta geomagnética en curso: el óvalo auroral de OVATION se dibuja en ambos polos. Se apagará sola cuando el Kp baje de 4.",
+        });
+      }
+      return;
+    }
+
+    if (!auroraAutoRef.current || !hasStormPassed(kpIndexNow)) return;
+    auroraAutoRef.current = false;
+    const release = auroraReleaseRef.current;
+    auroraReleaseRef.current = [];
+    if (release.length === 0) return;
+    setEnvLayers((previous) => {
+      const next = new Set(previous);
+      for (const key of release) next.delete(key);
+      return next;
+    });
+    toast("Aurora desactivada · la tormenta geomagnética ha terminado", {
+      description: `Kp ${kpIndexNow.toFixed(1)}. La capa queda apagada hasta la próxima tormenta.`,
+    });
+  }, [kpIndexNow, tierLoading]);
+
   // Inventario fijo (la lista de cámaras está curada en el repositorio): se
   // calcula una vez y se reutiliza, porque cada entrada de aquí acaba siendo
   // una entidad del globo cuando la capa está encendida.

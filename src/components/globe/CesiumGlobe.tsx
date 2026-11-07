@@ -24,6 +24,10 @@ import {
   ImageryLayer,
   ProviderViewModel,
   ArcType,
+  LabelStyle,
+  Transforms,
+  HeadingPitchRoll,
+  DistanceDisplayCondition,
 } from "cesium";
 import "cesium/Build/Cesium/Widgets/widgets.css";
 import type { HotspotData } from "./GlobeScene";
@@ -36,6 +40,20 @@ import { GLOBE_LAYERS, type EnvLayerKey, type globeLayerDef } from "@/lib/globe-
 import { aircraftMarkerIcon } from "@/lib/aircraft-marker";
 import { ROLE_LABELS, aircraftRole, altitudeBand } from "@/lib/aircraft-class";
 import { clusterCellDegrees, clusterMapLabels, type MapLabelPoint } from "@/lib/label-clusters";
+import { clusterGeoMarkers } from "@/lib/marker-clusters";
+import {
+  FLIGHT_MODEL_LIMIT,
+  FLIGHT_MODEL_MAX_SCALE,
+  FLIGHT_MODEL_RANGE_M,
+  SHIP_MODEL_LIMIT,
+  SHIP_MODEL_MAX_SCALE,
+  SHIP_MODEL_RANGE_M,
+  TRANSPORT_MODELS,
+  flightModelKind,
+  modelHeadingRadians,
+  normalizedTrack,
+  shipModelKind,
+} from "@/lib/transport-models";
 import { CONFLICT_KIND_LABEL, type ConflictEvent } from "@/lib/conflict-events";
 import { COSMIC_TRIGGER_ALTITUDE_M } from "@/lib/cosmic-scale";
 import { createTerrariumTerrainProvider } from "@/lib/terrarium-terrain";
@@ -85,13 +103,17 @@ const PLACES_TILE_URL =
   "https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer";
 
 /**
- * Cuánto se puede estirar una capa antes de ocultarla: el doble (un nivel de
- * zoom). Más allá de eso la tesela cubre continentes enteros y lo que se ve
- * sobre tu ciudad son los píxeles de otra región del planeta: parece que la
- * lluvia de la India ha aparecido en España. Con esto la capa se apaga en vez
- * de mentir.
+ * Cuánto se puede estirar una capa antes de ocultarla.
+ *
+ * Los productos GIBS son mallas de 0,1° a 1°: su último nivel de tesela está
+ * entre 6 y 9, y al acercar la cámara no hay más detalle que pedir. Ocultarlas
+ * en el primer nivel de ampliación —lo que hacía antes— dejaba la leyenda llena
+ * de capas que desaparecían justo al mirar una ciudad, y el usuario creía que
+ * estaban rotas. Ahora se toleran dos niveles con opacidad decreciente, y sólo
+ * a partir del tercero se apaga: ahí la tesela ya cubre un continente y lo que
+ * se ve sobre tu ciudad son píxeles de otra región del planeta.
  */
-const MAX_UPSAMPLE_LEVELS = 1;
+const MAX_UPSAMPLE_LEVELS = 2;
 
 /** OWM tiles are proxied server-side so the API key never reaches the bundle. */
 const OWM_TILE_URL = (layerId: string) =>
@@ -219,6 +241,74 @@ function markerIcon(type: string, color: string): string {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+/**
+ * Marcador de grupo: un único icono con la cuenta de lo que hay debajo.
+ *
+ * Al alejar, cientos de iconos del mismo tipo caen en la misma celda y la
+ * Tierra se vuelve una alfombra de puntos. En vez de eso se pinta un icono por
+ * celda con `×N`, y al acercarse el escalón baja y vuelven los marcadores
+ * individuales. El tamaño crece con la cuenta (logarítmico, para que 400 no
+ * tape media Europa) y el payload lleva los sitios agrupados para que el
+ * panel de detalle siga contando algo.
+ */
+function clusterMarkerOptions(opts: {
+  id: string;
+  lat: number;
+  lon: number;
+  count: number;
+  color: string;
+  type: string;
+  payload: {
+    type: string;
+    source: string;
+    category: string;
+    description?: string;
+    severity?: string;
+  };
+}) {
+  const { id, lat, lon, count, color, type, payload } = opts;
+  const size = Math.min(34, 20 + Math.log2(count) * 3);
+  return {
+    id,
+    position: Cartesian3.fromDegrees(lon, lat, 0),
+    billboard: {
+      image: markerIcon(type, color),
+      width: size,
+      height: size,
+      scaleByDistance: new NearFarScalar(1e6, 1.15, 1e8, 0.45),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    label: {
+      text: `×${count}`,
+      font: "700 12px monospace",
+      fillColor: hexToColor(color),
+      outlineColor: Color.BLACK,
+      outlineWidth: 3,
+      style: LabelStyle.FILL_AND_OUTLINE,
+      verticalOrigin: VerticalOrigin.BOTTOM,
+      horizontalOrigin: HorizontalOrigin.CENTER,
+      pixelOffset: new Cartesian2(0, -size * 0.55),
+      scaleByDistance: new NearFarScalar(1e6, 1, 1e8, 0.4),
+      disableDepthTestDistance: Number.POSITIVE_INFINITY,
+    },
+    properties: {
+      sightingData: JSON.stringify({
+        lat,
+        lon,
+        location: `${count} marcadores agrupados`,
+        description:
+          payload.description ??
+          `${count} marcadores de tipo ${payload.type} en esta celda. Acerca la cámara para verlos por separado.`,
+        type: payload.type,
+        severity: payload.severity ?? "low",
+        source: payload.source,
+        category: payload.category,
+        date_reported: "LIVE",
+      }),
+    } satisfies PlainEntityProperties,
+  };
+}
+
 /** Propiedades planas de entidad: Cesium las envuelve en ConstantProperty. */
 type PlainEntityProperties = Record<string, string | number | boolean>;
 
@@ -325,6 +415,8 @@ export function CesiumGlobe({
    * agrupación. El efecto que los construye vive aparte del que crea el
    * visor, así que la cámara lo llama a través de esta referencia.
    */
+  /** Escalón de zoom vigente: 0 = sin agrupar, >0 = lado de celda en grados. */
+  const [lodCell, setLodCell] = useState(0);
   const repaintStaticRef = useRef<(() => void) | null>(null);
   const satEntityIdsRef = useRef<string[]>([]);
   const outageEntityIdsRef = useRef<string[]>([]);
@@ -541,9 +633,17 @@ export function CesiumGlobe({
     // Los marcadores fijos se agrupan por altura: la cámara avisa y el efecto
     // de las capas decide si el zoom cruzó un escalón (y sólo entonces
     // reconstruye sus entidades).
-    const onCameraLod = () => repaintStaticRef.current?.();
+    const onCameraLod = () => {
+      repaintStaticRef.current?.();
+      // Los marcadores vivos (vuelos, barcos, incendios, cámaras…) viven en
+      // efectos aparte. Guardamos el escalón en estado para que sólo se
+      // reconstruyan al cruzarlo, no en cada frame de la cámara.
+      const cell = clusterCellDegrees(viewer.camera.positionCartographic?.height ?? 0);
+      setLodCell((prev) => (prev === cell ? prev : cell));
+    };
     viewer.camera.changed.addEventListener(onCameraLod);
     viewer.camera.moveEnd.addEventListener(onCameraLod);
+    onCameraLod();
 
     // Límites de acercamiento reales. Sin suelo, la rueda seguía metiendo la
     // cámara dentro del elipsoide (pantalla negra sin detalle); sin techo, el
@@ -665,7 +765,9 @@ export function CesiumGlobe({
           continue;
         }
         layer.show = true;
-        layer.alpha = levels === 1 ? baseAlpha * 0.5 : baseAlpha;
+        // Nivel nativo, doble de píxel y cuádruple: se atenúa con la ampliación
+        // para que la capa siga localizada sin tapar el mapa de debajo.
+        layer.alpha = levels === 0 ? baseAlpha : baseAlpha * (levels === 1 ? 0.5 : 0.3);
       }
 
       // Las luces nocturnas son un compuesto de 2012 con techo en z7: a partir
@@ -864,7 +966,48 @@ export function CesiumGlobe({
 
     const significant = earthquakes.filter(q => q.magnitude >= 2.5).slice(0, 100);
 
-    significant.forEach((q, i) => {
+    // A escala global, cien sismos se solapan en las mismas fallas. Se agrupan
+    // por celda y el grupo hereda la magnitud del mayor, que es el que importa.
+    const quakeGroups = clusterGeoMarkers(
+      significant.map((quake, index) => ({
+        id: `quake-${index}`,
+        index,
+        lat: quake.lat,
+        lon: quake.lon,
+        quake,
+      })),
+      lodCell,
+    );
+
+    quakeGroups.forEach((group) => {
+      if (group.kind === "cluster") {
+        const strongest = group.items.reduce((best, item) =>
+          item.quake.magnitude > best.quake.magnitude ? item : best,
+        );
+        const entityId = `quake-cluster-${group.id}`;
+        viewer.entities.add(clusterMarkerOptions({
+          id: entityId,
+          lat: group.lat,
+          lon: group.lon,
+          count: group.items.length,
+          color: "#FF4444",
+          type: "quake",
+          payload: {
+            type: "quake",
+            source: strongest.quake.id.startsWith("emsc-") ? "EMSC" : "USGS",
+            category: "quake",
+            severity: strongest.quake.magnitude >= 6 ? "critical" : strongest.quake.magnitude >= 5 ? "high" : "medium",
+            description:
+              `${group.items.length} sismos en esta zona · el mayor M${strongest.quake.magnitude.toFixed(1)}` +
+              (strongest.quake.place ? ` · ${strongest.quake.place}` : ""),
+          },
+        }));
+        quakeEntityIdsRef.current.push(entityId);
+        return;
+      }
+
+      const q = group.item.quake;
+      const i = group.item.index;
       const entityId = `quake-${i}`;
       const baseRadius = Math.max(20000, q.magnitude * 30000);
       const startTime = Date.now();
@@ -912,7 +1055,7 @@ export function CesiumGlobe({
       });
       quakeEntityIdsRef.current.push(entityId);
     });
-  }, [earthquakes, envLayers]);
+  }, [earthquakes, envLayers, lodCell]);
 
   // NASA EONET events — yellow warning points
   useEffect(() => {
@@ -925,7 +1068,46 @@ export function CesiumGlobe({
     });
     nasaEntityIdsRef.current = [];
 
-    nasaEvents.forEach((evt, i) => {
+    const eventGroups = clusterGeoMarkers(
+      nasaEvents.map((evt, index) => ({
+        id: `nasa-${index}`,
+        index,
+        lat: evt.lat,
+        lon: evt.lon,
+        evt,
+      })),
+      lodCell,
+    );
+
+    eventGroups.forEach((group) => {
+      if (group.kind === "cluster") {
+        const entityId = `nasa-cluster-${group.id}`;
+        const wildfires = group.items.filter((item) =>
+          item.evt.category.toLowerCase().includes("fire"),
+        ).length;
+        viewer.entities.add(clusterMarkerOptions({
+          id: entityId,
+          lat: group.lat,
+          lon: group.lon,
+          count: group.items.length,
+          color: wildfires ? "#FF8844" : "#FFDD00",
+          type: wildfires ? "fire" : "news",
+          payload: {
+            type: "hazard",
+            source: "NASA EONET",
+            category: "nasa",
+            severity: "medium",
+            description:
+              `${group.items.length} eventos de EONET en esta zona` +
+              (wildfires ? ` · ${wildfires} de tipo incendio` : ""),
+          },
+        }));
+        nasaEntityIdsRef.current.push(entityId);
+        return;
+      }
+
+      const evt = group.item.evt;
+      const i = group.item.index;
       const entityId = `nasa-${i}`;
       const isWildfire = evt.category.toLowerCase().includes("wildfire") || evt.category.toLowerCase().includes("fire");
       const color = isWildfire ? "#FF8844" : "#FFDD00";
@@ -961,7 +1143,7 @@ export function CesiumGlobe({
       });
       nasaEntityIdsRef.current.push(entityId);
     });
-  }, [nasaEvents]);
+  }, [nasaEvents, lodCell]);
 
   // Market hotspots layer
   useEffect(() => {
@@ -1131,14 +1313,58 @@ export function CesiumGlobe({
     // tipo de vuelo inferido. El halo claro del SVG sigue haciendo legible
     // cualquiera de las dos sobre el mapamundi.
     // Add flight markers
-    flights.forEach((flight, i) => {
-      // `!latitude` descartaba los aviones en el ecuador y en el meridiano de
-      // Greenwich: un vuelo sobre el golfo de Guinea desaparecía del mapa.
-      if (!Number.isFinite(flight.latitude) || !Number.isFinite(flight.longitude)) return;
+    // `!latitude` descartaba los aviones en el ecuador y en el meridiano de
+    // Greenwich: un vuelo sobre el golfo de Guinea desaparecía del mapa.
+    const flightGroups = clusterGeoMarkers(
+      flights
+        .map((flight, index) => ({
+          id: `flight-${index}`,
+          index,
+          lat: flight.latitude,
+          lon: flight.longitude,
+          flight,
+        }))
+        .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
+      lodCell,
+    );
 
+    let flightModelsUsed = 0;
+    flightGroups.forEach((group) => {
+      if (group.kind === "cluster") {
+        const entityId = `flight-cluster-${group.id}`;
+        const averageAltitude =
+          group.items.reduce((total, item) => total + item.flight.altitude, 0) / group.items.length;
+        viewer.entities.add(clusterMarkerOptions({
+          id: entityId,
+          lat: group.lat,
+          lon: group.lon,
+          count: group.items.length,
+          color: "#38BDF8",
+          type: "flight",
+          payload: {
+            type: "aircraft",
+            source: "ADSB.lol",
+            category: "aircraft",
+            description:
+              `${group.items.length} aeronaves en esta zona · altitud media ${Math.round(averageAltitude)} m` +
+              ` · ${group.items[0].flight.callsign || group.items[0].flight.icao24} y otros`,
+          },
+        }));
+        flightEntityIdsRef.current.push(entityId);
+        return;
+      }
+
+      const flight = group.item.flight;
+      const i = group.item.index;
       const band = altitudeBand(flight.altitude);
       const role = aircraftRole(flight);
       const entityId = `flight-${i}`;
+      const payload = eventPayload({
+        lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
+        description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${band.label} · ${ROLE_LABELS[role]} · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
+        type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
+        date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
+      });
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(flight.longitude, flight.latitude, flight.altitude),
@@ -1146,16 +1372,13 @@ export function CesiumGlobe({
           // 32 px y con el desvanecido más tardío: a 26 px y con el factor 0,3
           // el avión se quedaba en un punto de 8 px en cuanto alejabas la cámara.
           image: aircraftMarkerIcon(flight.aircraftCategory, band.color, role), width: 32, height: 32,
-          rotation: -CesiumMath.toRadians(flight.heading || 0),
+          rotation: -CesiumMath.toRadians(normalizedTrack(flight.heading)),
           scaleByDistance: new NearFarScalar(5e5, 1.35, 1.2e7, 0.55),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          // El icono se retira cuando entra el modelo 3D (ver más abajo).
+          distanceDisplayCondition: new DistanceDisplayCondition(FLIGHT_MODEL_RANGE_M, Number.POSITIVE_INFINITY),
         },
-        properties: eventPayload({
-          lat: flight.latitude, lon: flight.longitude, location: flight.callsign || flight.icao24,
-          description: `${flight.aircraftType ? `${flight.aircraftType} · ` : ""}${Math.round(flight.altitude)} m · ${band.label} · ${ROLE_LABELS[role]} · ${Math.round(flight.velocity)} m/s · heading ${Math.round(flight.heading)}°`,
-          type: "aircraft", severity: "low", source: "ADSB.lol", category: "aircraft",
-          date_reported: flight.timestamp || "LIVE", reliability: "ADS-B telemetry",
-        }),
+        properties: payload,
         label: {
           // El indicativo vacío dejaba una etiqueta en blanco; el hex es lo que
           // el transpondedor siempre manda.
@@ -1175,8 +1398,42 @@ export function CesiumGlobe({
         },
       });
       flightEntityIdsRef.current.push(entityId);
+
+      // De cerca, geometría real en vez de pegatina. Las dos entidades existen
+      // siempre y se relevan por distancia (`distanceDisplayCondition`), así que
+      // hacer zoom no reconstruye la capa. El tope protege la GPU: el resto de
+      // contactos se queda con el icono.
+      if (flightModelsUsed < FLIGHT_MODEL_LIMIT) {
+        const modelId = `flight-model-${i}`;
+        const modelPosition = Cartesian3.fromDegrees(
+          flight.longitude,
+          flight.latitude,
+          Math.max(0, flight.altitude),
+        );
+        viewer.entities.add({
+          id: modelId,
+          position: modelPosition,
+          // El morro del glTF es +Z y Cesium lo gira a +X (este), así que el
+          // rumbo del ADS-B —que se mide desde el norte— entra por
+          // `modelHeadingRadians`, que ya resta el cuarto de vuelta.
+          orientation: Transforms.headingPitchRollQuaternion(
+            modelPosition,
+            new HeadingPitchRoll(modelHeadingRadians(flight.heading), 0, 0),
+          ),
+          model: {
+            uri: TRANSPORT_MODELS[flightModelKind(flight)].url,
+            minimumPixelSize: 20,
+            maximumScale: FLIGHT_MODEL_MAX_SCALE,
+            scale: 1,
+            distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),
+          },
+          properties: { ...payload },
+        });
+        flightEntityIdsRef.current.push(modelId);
+        flightModelsUsed += 1;
+      }
     });
-  }, [flights, envLayers]);
+  }, [flights, envLayers, lodCell]);
 
   // Marine Traffic layer — ship markers from VesselFinder
   useEffect(() => {
@@ -1202,25 +1459,61 @@ export function CesiumGlobe({
     shipEntityIdsRef.current = [];
 
     // Add ship markers
-    ships.forEach((ship, i) => {
-      if (!ship.latitude || !ship.longitude) return;
-      
+    let shipModelsUsed = 0;
+    const shipGroups = clusterGeoMarkers(
+      ships
+        .map((ship, index) => ({
+          id: `ship-${index}`,
+          index,
+          lat: ship.latitude,
+          lon: ship.longitude,
+          ship,
+        }))
+        .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
+      lodCell,
+    );
+
+    shipGroups.forEach((group) => {
+      if (group.kind === "cluster") {
+        const entityId = `ship-cluster-${group.id}`;
+        viewer.entities.add(clusterMarkerOptions({
+          id: entityId,
+          lat: group.lat,
+          lon: group.lon,
+          count: group.items.length,
+          color: "#FFD700",
+          type: "ship",
+          payload: {
+            type: "ship",
+            source: "VesselFinder / AIS",
+            category: "logistics",
+            description: `${group.items.length} buques en esta zona · ${group.items[0].ship.name || group.items[0].ship.type} y otros`,
+          },
+        }));
+        shipEntityIdsRef.current.push(entityId);
+        return;
+      }
+
+      const ship = group.item.ship;
+      const i = group.item.index;
       const entityId = `ship-${i}`;
+      const payload = eventPayload({
+        lat: ship.latitude, lon: ship.longitude, location: ship.name || ship.mmsi,
+        description: `${ship.type} · ${ship.speed} kn · destination ${ship.destination || "unknown"}`,
+        type: "ship", severity: "low", source: "VesselFinder / AIS", category: "logistics",
+        date_reported: ship.timestamp || "LIVE", reliability: "AIS telemetry",
+      });
       viewer.entities.add({
         id: entityId,
         position: Cartesian3.fromDegrees(ship.longitude, ship.latitude, 0),
         billboard: {
           image: markerIcon("ship", "#FFD700"), width: 23, height: 23,
-          rotation: -CesiumMath.toRadians(ship.heading || 0),
+          rotation: -CesiumMath.toRadians(normalizedTrack(ship.heading)),
           scaleByDistance: new NearFarScalar(1e6, 1.5, 1e8, 0.3),
           disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          distanceDisplayCondition: new DistanceDisplayCondition(SHIP_MODEL_RANGE_M, Number.POSITIVE_INFINITY),
         },
-        properties: eventPayload({
-          lat: ship.latitude, lon: ship.longitude, location: ship.name || ship.mmsi,
-          description: `${ship.type} · ${ship.speed} kn · destination ${ship.destination || "unknown"}`,
-          type: "ship", severity: "low", source: "VesselFinder / AIS", category: "logistics",
-          date_reported: ship.timestamp || "LIVE", reliability: "AIS telemetry",
-        }),
+        properties: payload,
         label: {
           text: `${ship.name || ship.type}`,
           font: "8px monospace",
@@ -1236,8 +1529,34 @@ export function CesiumGlobe({
         },
       });
       shipEntityIdsRef.current.push(entityId);
+
+      // Igual que en los vuelos: el casco 3D entra cuando la cámara baja de
+      // SHIP_MODEL_RANGE_M y el icono se retira. Con tope, porque un puerto con
+      // cien buques son cien modelos encima de la misma tesela.
+      if (shipModelsUsed < SHIP_MODEL_LIMIT) {
+        const modelId = `ship-model-${i}`;
+        const modelPosition = Cartesian3.fromDegrees(ship.longitude, ship.latitude, 0);
+        viewer.entities.add({
+          id: modelId,
+          position: modelPosition,
+          orientation: Transforms.headingPitchRollQuaternion(
+            modelPosition,
+            new HeadingPitchRoll(modelHeadingRadians(ship.heading), 0, 0),
+          ),
+          model: {
+            uri: TRANSPORT_MODELS[shipModelKind(ship)].url,
+            minimumPixelSize: 18,
+            maximumScale: SHIP_MODEL_MAX_SCALE,
+            scale: 1,
+            distanceDisplayCondition: new DistanceDisplayCondition(0, SHIP_MODEL_RANGE_M),
+          },
+          properties: { ...payload },
+        });
+        shipEntityIdsRef.current.push(modelId);
+        shipModelsUsed += 1;
+      }
     });
-  }, [ships, envLayers]);
+  }, [ships, envLayers, lodCell]);
 
   // Booleano, no el array: `cables` por defecto es `[]` nuevo en cada render,
   // así que usarlo como dependencia reconstruiría los ~250 marcadores
@@ -1668,7 +1987,35 @@ export function CesiumGlobe({
 
     // --- NASA FIRMS thermal detections ---
     if (active.has("wildfires")) {
-      fires.slice(0, 500).forEach((f) => {
+      // Medio millar de focos es lo que más ensuciaba la vista global: se
+      // agrupan por celda y el grupo resume la confianza media de la celda.
+      const fireGroups = clusterGeoMarkers(fires.slice(0, 500), lodCell);
+      fireGroups.forEach((group) => {
+        if (group.kind === "cluster") {
+          const id = `firms-cluster-${group.id}`;
+          const average = Math.round(
+            group.items.reduce((total, item) => total + item.brightness, 0) / group.items.length,
+          );
+          viewer.entities.add(clusterMarkerOptions({
+            id,
+            lat: group.lat,
+            lon: group.lon,
+            count: group.items.length,
+            color: "#FF8844",
+            type: "fire",
+            payload: {
+              type: "fire",
+              source: group.items[0].source ?? "NASA FIRMS (VIIRS)",
+              category: "conflict",
+              severity: "high",
+              description: `${group.items.length} focos térmicos en esta zona · brillo medio ${average} K`,
+            },
+          }));
+          track(id);
+          return;
+        }
+
+        const f = group.item;
         const id = `firms-${f.id}`;
         viewer.entities.add({
           id,
@@ -1739,7 +2086,30 @@ export function CesiumGlobe({
 
     // --- GDELT geolocated news ---
     if (active.has("conflictZones") || active.has("internetOutages")) {
-      gdeltEvents.slice(0, 100).forEach((g) => {
+      const gdeltGroups = clusterGeoMarkers(gdeltEvents.slice(0, 100), lodCell);
+      gdeltGroups.forEach((group) => {
+        if (group.kind === "cluster") {
+          const id = `gdelt-cluster-${group.id}`;
+          viewer.entities.add(clusterMarkerOptions({
+            id,
+            lat: group.lat,
+            lon: group.lon,
+            count: group.items.length,
+            color: "#69AF00",
+            type: "news",
+            payload: {
+              type: "news",
+              source: "GDELT",
+              category: "intel",
+              severity: "medium",
+              description: `${group.items.length} noticias geolocalizadas en esta zona · ${group.items[0].domain} y otros medios`,
+            },
+          }));
+          track(id);
+          return;
+        }
+
+        const g = group.item;
         const id = `gdelt-${g.id}`;
         viewer.entities.add({
           id,
@@ -1855,7 +2225,7 @@ export function CesiumGlobe({
         track(labelId);
       });
     }
-  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, conflictEvents, surfaceWeather]);
+  }, [envLayers, auroraCells, fires, cables, bitcoinNodes, gdeltEvents, conflictEvents, surfaceWeather, lodCell]);
 
   /**
    * Rejilla ambiental: secado de la ropa, polen, estado del mar y nieve.
@@ -2109,7 +2479,38 @@ export function CesiumGlobe({
     const active = envLayers ?? new Set<EnvLayerKey>();
     if (!active.has("liveCameras")) return;
 
-    cameras.forEach((camera) => {
+    // Agrupadas por el escalón de zoom vigente: de lejos, una cámara por
+    // celda con la cuenta; de cerca, cada cámara con su nombre.
+    const cameraGroups = clusterGeoMarkers(
+      cameras.map((camera) => ({ id: camera.id, lat: camera.lat, lon: camera.lon, camera })),
+      lodCell,
+    );
+
+    cameraGroups.forEach((group) => {
+      if (group.kind === "cluster") {
+        const names = group.items.slice(0, 6).map((member) => member.camera.label);
+        viewer.entities.add(clusterMarkerOptions({
+          id: `camera-cluster-${group.id}`,
+          lat: group.lat,
+          lon: group.lon,
+          count: group.items.length,
+          color: "#f472b6",
+          type: "camera",
+          payload: {
+            type: "camera",
+            source: "Cámaras en directo",
+            category: "intel",
+            description:
+              `${group.items.length} cámaras en esta zona: ${names.join(" · ")}` +
+              (group.items.length > names.length ? " …" : "") +
+              " · acerca la cámara para abrirlas una a una",
+          },
+        }));
+        cameraEntityIdsRef.current.push(`camera-cluster-${group.id}`);
+        return;
+      }
+
+      const camera = group.item.camera;
       const id = `camera-${camera.id}`;
       viewer.entities.add({
         id,
@@ -2148,7 +2549,7 @@ export function CesiumGlobe({
       });
       cameraEntityIdsRef.current.push(id);
     });
-  }, [cameras, envLayers]);
+  }, [cameras, envLayers, lodCell]);
 
   // Cinturones de Van Allen — los dos toroides de partículas atrapadas por el
   // dipolo. La geometría es la real (sección de cada cinturón en el plano del

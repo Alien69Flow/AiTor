@@ -45,7 +45,37 @@ const AUTH_KEY =
  * Vercel (o una prueba que la inyecta) surte efecto sin redespliegue, y el
  * arranque en frío no se queda con un valor vacío de la primera carga.
  */
-const geminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+const rawGeminiKey = () =>
+  process.env.GEMINI_API_KEY ||
+  process.env.GOOGLE_API_KEY ||
+  process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+  "";
+
+/**
+ * Estado de la clave, no sólo «existe».
+ *
+ * Un `GEMINI_API_KEY=tu_clave_aqui` pegado en el panel de Vercel hacía que
+ * `/api/mcp` dijera `geminiConfigured: true` y luego cada turno muriera con 400
+ * del proveedor. Distinguir «falta» de «es un marcador» es la diferencia entre
+ * buscar en el sitio correcto y dar vueltas.
+ */
+export type GeminiKeyState = "ok" | "placeholder" | "missing";
+
+export function geminiKeyState(value: string | undefined): GeminiKeyState {
+  const key = (value ?? "").trim();
+  if (!key) return "missing";
+  // Las claves de Google AI Studio son `AIza…` de ~39 caracteres. Se marca como
+  // marcador cualquier cosa corta, con espacios o con las palabras que se usan
+  // al documentar.
+  if (key.length < 20 || /\s/.test(key)) return "placeholder";
+  if (/^(xxx+|changeme|tu[_-]|your[_-]|pon[_-]|aqui|aquí|placeholder|<)/i.test(key)) {
+    return "placeholder";
+  }
+  return "ok";
+}
+
+/** Clave utilizable, o cadena vacía: nunca una clave de mentira al proveedor. */
+const geminiKey = () => (geminiKeyState(rawGeminiKey()) === "ok" ? rawGeminiKey().trim() : "");
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
 /** Repositorio por defecto de las herramientas de GitHub. */
@@ -67,6 +97,15 @@ interface ToolResult {
   content: { type: "text"; text: string }[];
   isError?: boolean;
   structuredContent?: Record<string, unknown>;
+  /**
+   * Imagen recién generada, para el cliente.
+   *
+   * Va fuera de `structuredContent` a propósito: si entrara ahí, el base64
+   * volvería al modelo como `functionResponse` (megas de texto que no puede
+   * leer) y engordaría cada ronda. `runAgentStream` la emite como evento
+   * `image` y al modelo sólo le llega que ya se mostró.
+   */
+  image?: { mimeType: string; data: string; alt: string };
 }
 
 const TOOLS: ToolDefinition[] = [
@@ -116,6 +155,31 @@ const TOOLS: ToolDefinition[] = [
         lat: { type: "number", description: "Latitud, si ya la conoces." },
         lon: { type: "number", description: "Longitud, si ya la conoces." },
       },
+    },
+  },
+  {
+    name: "media.image",
+    title: "Generar una imagen",
+    description:
+      "Crea una imagen a partir de una descripción con el modelo de imagen de Gemini y la muestra " +
+      "en el chat. Cuesta créditos por imagen: úsala cuando pidan una imagen, no para ilustrar " +
+      "cualquier respuesta. No hay herramientas de vídeo, música ni sonido.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Descripción de la imagen. Si lleva texto, escribe ese texto entre comillas.",
+        },
+        aspect: {
+          type: "string",
+          enum: ["1:1", "16:9", "9:16", "4:3", "3:4"],
+          default: "1:1",
+          description: "Proporción del lienzo.",
+        },
+      },
+      required: ["prompt"],
     },
   },
   {
@@ -850,6 +914,97 @@ async function runWeather(args: Record<string, unknown>): Promise<ToolResult> {
   });
 }
 
+/* -------------------------------- imágenes -------------------------------- */
+
+/**
+ * Modelos de imagen, del más nuevo al más antiguo.
+ *
+ * Se prueban en orden porque una cuenta concreta puede no tener acceso al
+ * último: `imagen-4` está apagado desde 2026 y los IDs de imagen cambian a
+ * menudo, así que una lista corta con reintento sobrevive mejor que un ID fijo.
+ */
+const IMAGE_MODELS = ["gemini-3.1-flash-image", "gemini-3-pro-image", "gemini-2.5-flash-image"];
+const IMAGE_ASPECTS = ["1:1", "16:9", "9:16", "4:3", "3:4"];
+
+interface GeneratedImage {
+  model: string;
+  mimeType: string;
+  data: string;
+}
+
+/**
+ * Pide una imagen al modelo de imagen de Gemini.
+ *
+ * `responseModalities: ["IMAGE"]` es lo que convierte el endpoint de chat en
+ * generador: sin eso devuelve texto describiendo la imagen que no ha creado.
+ * Si un modelo contesta 404 (no disponible para esta clave) se prueba el
+ * siguiente; un 429 corta, porque es la cuota compartida y reintentar sólo
+ * gasta más.
+ */
+async function generateImage(prompt: string, aspect: string): Promise<GeneratedImage> {
+  let lastError = "Ningún modelo de imagen disponible para esta clave";
+
+  for (const model of IMAGE_MODELS) {
+    const response = await fetch(`${GEMINI_BASE}/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: { responseModalities: ["IMAGE"], imageConfig: { aspectRatio: aspect } },
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      lastError = `${model} respondió ${response.status}: ${detail.slice(0, 160)}`;
+      if (response.status === 429) break;
+      continue;
+    }
+
+    const payload = (await response.json()) as {
+      candidates?: { content?: { parts?: GeminiPart[] } }[];
+    };
+    const part = (payload.candidates?.[0]?.content?.parts ?? []).find(
+      (candidate) => candidate.inlineData?.data,
+    );
+    if (part?.inlineData?.data) {
+      return {
+        model,
+        mimeType: part.inlineData.mimeType || "image/png",
+        data: part.inlineData.data,
+      };
+    }
+    // 200 sin imagen = filtro de seguridad o respuesta sólo de texto.
+    lastError = `${model} no devolvió imagen (puede haber bloqueado el contenido)`.trim();
+  }
+
+  throw new Error(lastError);
+}
+
+async function runImage(args: Record<string, unknown>): Promise<ToolResult> {
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim().slice(0, 1_200) : "";
+  if (prompt.length < 3) throw new Error("`prompt` es obligatorio para generar una imagen");
+  const aspect = IMAGE_ASPECTS.includes(String(args.aspect)) ? String(args.aspect) : "1:1";
+
+  const generated = await generateImage(prompt, aspect);
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({ ok: true, model: generated.model, mimeType: generated.mimeType }),
+      },
+    ],
+    structuredContent: {
+      ok: true,
+      model: generated.model,
+      mimeType: generated.mimeType,
+      note: "La imagen ya se ha mostrado al usuario en el chat. No la describas como enlace ni repitas el prompt entero.",
+    },
+    image: { mimeType: generated.mimeType, data: generated.data, alt: prompt },
+  };
+}
+
 async function runDbSelect(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
   const table = String(args.table ?? "");
   const allowed = READABLE_TABLES[table];
@@ -896,6 +1051,7 @@ async function callTool(
     if (name === "telemetry.satellites") return await runSatellites(args);
     if (name === "osint.events") return await runOsint(args);
     if (name === "weather.outlook") return await runWeather(args);
+    if (name === "media.image") return await runImage(args);
     if (name === "github.repo") return await runGitRepo(args, caller);
     if (name === "github.propose") return await runGitPropose(args, caller);
     return await runDbSelect(args, caller);
@@ -1041,10 +1197,12 @@ async function resolveModel(): Promise<string> {
 
 interface GeminiPart {
   text?: string;
-  /** Razonamiento interno del modelo: se descarta, no se le enseña al usuario. */
+  /** Marca de razonamiento: va al panel plegable, nunca a la respuesta. */
   thought?: boolean;
   functionCall?: { name?: string; args?: Record<string, unknown> };
   functionResponse?: { name: string; response: Record<string, unknown> };
+  /** Bytes de una imagen generada (base64) o adjunta. */
+  inlineData?: { mimeType?: string; data?: string };
 }
 
 async function generate(model: string, body: Record<string, unknown>) {
@@ -1079,10 +1237,13 @@ const MAX_ROUNDS = 4;
 
 /**
  * Gemini en modo flujo. `streamGenerateContent?alt=sse` emite un sobre SSE por
- * trozo; de cada uno se quedan las partes de texto y las llamadas a función.
+ * trozo; de cada uno salen las partes con texto (incluido el razonamiento) y
+ * las llamadas a función. Quien consume decide qué es respuesta y qué es
+ * pensamiento: aquí ya no se tira nada, porque el chat lo enseña plegado.
  *
- * Las partes marcadas `thought: true` **no** salen: son el razonamiento interno
- * del modelo y hasta ahora se colaban en el chat como si fueran la respuesta.
+ * Las partes `thought: true` **nunca** se suman a la respuesta ni se devuelven
+ * al modelo en la ronda siguiente: son su monólogo interno, y reinyectarlas
+ * hacía que el turno siguiente las tomara por texto propio.
  */
 async function* streamGenerate(model: string, body: Record<string, unknown>): AsyncGenerator<GeminiPart> {
   const response = await fetch(`${GEMINI_BASE}/models/${model}:streamGenerateContent?alt=sse`, {
@@ -1123,7 +1284,6 @@ async function* streamGenerate(model: string, body: Record<string, unknown>): As
       }
 
       for (const part of payload.candidates?.[0]?.content?.parts ?? []) {
-        if (part.thought) continue;
         if (part.text || part.functionCall?.name) yield part;
       }
     }
@@ -1144,16 +1304,27 @@ async function runAgentStream(
   const contents: { role: string; parts: GeminiPart[] }[] = [{ role: "user", parts: [{ text: prompt }] }];
   const toolCalls: { name: string; args: Record<string, unknown>; isError: boolean }[] = [];
   let answer = "";
+  let reasoning = "";
 
   for (let round = 0; round < MAX_ROUNDS; round++) {
     const body: Record<string, unknown> = {
       contents,
       tools: geminiTools(visible),
       systemInstruction: { parts: [{ text: SYSTEM_PROMPT }] },
+      ...thinkingConfig(model),
     };
 
     const roundParts: GeminiPart[] = [];
     for await (const part of streamGenerate(model, body)) {
+      if (part.thought) {
+        // El razonamiento va por su propio canal: se emite como `thought` y no
+        // se guarda en `roundParts`, así que no vuelve a entrar en `contents`.
+        if (part.text) {
+          reasoning += part.text;
+          emit({ type: "thought", text: part.text });
+        }
+        continue;
+      }
       roundParts.push(part);
       if (part.text) {
         answer += part.text;
@@ -1163,8 +1334,8 @@ async function runAgentStream(
 
     const calls = roundParts.filter((part) => part.functionCall?.name);
     if (calls.length === 0) {
-      emit({ type: "done", answer: answer.trim(), toolCalls, model });
-      return { answer: answer.trim(), toolCalls, model };
+      emit({ type: "done", answer: answer.trim(), reasoning: reasoning.trim(), toolCalls, model });
+      return { answer: answer.trim(), reasoning: reasoning.trim(), toolCalls, model };
     }
 
     contents.push({ role: "model", parts: roundParts });
@@ -1178,6 +1349,16 @@ async function runAgentStream(
       const isError = result.isError === true;
       toolCalls.push({ name, args, isError });
       emit({ type: "tool-result", name, isError });
+      // La imagen va al navegador por su propio canal: el modelo nunca ve el
+      // base64, sólo el `note` de que ya está en pantalla.
+      if (result.image) {
+        emit({
+          type: "image",
+          mimeType: result.image.mimeType,
+          data: result.image.data,
+          alt: result.image.alt,
+        });
+      }
       responses.push({
         functionResponse: {
           name,
@@ -1190,8 +1371,20 @@ async function runAgentStream(
   }
 
   const fallback = "Se agotaron las rondas de herramientas sin respuesta final.";
-  emit({ type: "done", answer: answer.trim() || fallback, toolCalls, model });
-  return { answer: answer.trim() || fallback, toolCalls, model };
+  emit({ type: "done", answer: answer.trim() || fallback, reasoning: reasoning.trim(), toolCalls, model });
+  return { answer: answer.trim() || fallback, reasoning: reasoning.trim(), toolCalls, model };
+}
+
+/**
+ * Pide el razonamiento visible, pero sólo a los modelos que lo tienen.
+ *
+ * `thinkingConfig` no existe en los modelos anteriores a 2.5: mandarlo a un
+ * 1.5 devuelve 400 y tumbaría el turno entero. Sin este `generationConfig` el
+ * modelo piensa igual, pero no publica el monólogo y el panel se queda vacío.
+ */
+function thinkingConfig(model: string): Record<string, unknown> {
+  if (!/gemini-(2\.5|3|4)|thinking/i.test(model)) return {};
+  return { generationConfig: { thinkingConfig: { includeThoughts: true } } };
 }
 
 /**
@@ -1217,7 +1410,10 @@ const SYSTEM_PROMPT =
   "y la hora del dato. Si una herramienta falla, di cuál es y qué error dio, con " +
   "palabras normales; jamás inventes códigos de interfaz ni mensajes como " +
   "INTERFACE_NOT_BOUND. Si no tienes herramienta para lo que te piden, dilo y " +
-  "ofrece lo que sí puedes consultar.";
+  "ofrece lo que sí puedes consultar. Para imágenes («dibuja», «genera una " +
+  "imagen de…») usa `media.image`. No tienes herramientas de vídeo, música, " +
+  "sonido ni videojuegos: si te los piden, di que no están disponibles todavía " +
+  "en vez de describirlos como si los hubieras creado.";
 
 async function runAgent(prompt: string, caller: Caller) {
   const model = await resolveModel();
@@ -1238,6 +1434,7 @@ async function runAgent(prompt: string, caller: Caller) {
     if (calls.length === 0) {
       return {
         answer: parts.map((part) => part.text ?? "").join("").trim(),
+        reasoning: "",
         toolCalls,
         model,
       };
@@ -1262,7 +1459,12 @@ async function runAgent(prompt: string, caller: Caller) {
     contents.push({ role: "user", parts: responses });
   }
 
-  return { answer: "Se agotaron las rondas de herramientas sin respuesta final.", toolCalls, model };
+  return {
+    answer: "Se agotaron las rondas de herramientas sin respuesta final.",
+    reasoning: "",
+    toolCalls,
+    model,
+  };
 }
 
 /* ------------------------- cuota por usuario ------------------------- */
@@ -1307,11 +1509,22 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
         ok: true,
         service: "mcp",
         geminiConfigured: Boolean(geminiKey()),
+        geminiKeyState: geminiKeyState(rawGeminiKey()),
+        envVarSeen: process.env.GEMINI_API_KEY
+          ? "GEMINI_API_KEY"
+          : process.env.GOOGLE_API_KEY
+            ? "GOOGLE_API_KEY"
+            : process.env.GOOGLE_GENERATIVE_AI_API_KEY
+              ? "GOOGLE_GENERATIVE_AI_API_KEY"
+              : null,
         tools: TOOLS.length,
+        toolNames: TOOLS.map((tool) => tool.name),
         maxRounds: MAX_ROUNDS,
         hint: geminiKey()
           ? "El agente puede ejecutar herramientas; pide sesión iniciada en el chat."
-          : "Falta GEMINI_API_KEY en las variables del despliegue: el chat responderá sin herramientas.",
+          : geminiKeyState(rawGeminiKey()) === "placeholder"
+            ? "La variable existe pero no parece una clave real (marcador de posición): el chat responderá sin herramientas."
+            : "Falta GEMINI_API_KEY en las variables del despliegue: el chat responderá sin herramientas.",
       }),
     );
   }
@@ -1344,7 +1557,19 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
       return send(json({ error: "Inicia sesión para usar el agente MCP" }, 401));
     }
     if (!geminiKey()) {
-      return send(json({ error: "GEMINI_API_KEY no está configurada en el despliegue" }, 501));
+      const state = geminiKeyState(rawGeminiKey());
+      return send(
+        json(
+          {
+            error:
+              state === "placeholder"
+                ? "GEMINI_API_KEY existe pero es un marcador de posición, no una clave real"
+                : "GEMINI_API_KEY no está configurada en el despliegue",
+            geminiKeyState: state,
+          },
+          501,
+        ),
+      );
     }
     if (!withinQuota(caller.userId)) {
       return send(json({ error: "Demasiadas peticiones por minuto; reintenta en unos segundos" }, 429));

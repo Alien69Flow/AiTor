@@ -16,7 +16,10 @@ import { readFileSync } from "node:fs";
 const APP_ORIGIN = "https://aitor.alienflow.space";
 
 const src = readFileSync("src/lib/globe-layers.ts", "utf8");
-const blocks = src.split(/\n\t\{\s*\n/).slice(1);
+// Objetos separados por salto de línea, más los que se declaran en la misma
+// línea (`},\t{`): con el patrón anterior, `wind` caía dentro del bloque de
+// `isobars` y la auditoría nunca llegaba a probarlo.
+const blocks = src.split(/\n\t\{|\},\t\{/).slice(1);
 
 const gibs = [];
 const owm = [];
@@ -43,13 +46,21 @@ for (const block of blocks) {
 const day = (hours) => new Date(Date.now() - hours * 3600 * 1000).toISOString().slice(0, 10);
 
 async function head(url, headers) {
-  try {
-    const r = await fetch(url, { headers, signal: AbortSignal.timeout(25_000) });
-    const buf = await r.arrayBuffer();
-    return { status: r.status, type: r.headers.get("content-type"), bytes: buf.byteLength };
-  } catch (error) {
-    return { status: 0, type: null, bytes: 0, error: String(error) };
+  // GIBS devuelve 500 sueltos (una tesela de cada tantas, sobre todo en los
+  // niveles bajos). Un solo 500 no significa que la capa esté rota, así que se
+  // reintenta una vez antes de darla por caída.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const r = await fetch(url, { headers, signal: AbortSignal.timeout(25_000) });
+      const buf = await r.arrayBuffer();
+      const result = { status: r.status, type: r.headers.get("content-type"), bytes: buf.byteLength };
+      if (result.status < 500 || attempt === 1) return result;
+    } catch (error) {
+      if (attempt === 1) return { status: 0, type: null, bytes: 0, error: String(error) };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 900));
   }
+  return { status: 0, type: null, bytes: 0 };
 }
 
 /** El proxy vive en el mismo Supabase que sirve los datos del globo. */

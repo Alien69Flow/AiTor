@@ -183,10 +183,12 @@ describe("MCP en /api/mcp", () => {
     expect(JSON.parse(body).error).toMatch(/Inicia sesión/);
   });
 
-  it("el flujo reenvía el texto según llega y descarta el razonamiento", async () => {
-    // Un modelo con «thinking» manda primero sus partes `thought`: si se
-    // reenvían, el chat enseña el monólogo en vez de la respuesta.
-    vi.stubEnv("GEMINI_API_KEY", "clave-de-prueba");
+  it("el flujo separa el razonamiento de la respuesta", async () => {
+    // Un modelo con «thinking» manda primero sus partes `thought`. Antes se
+    // tiraban (el chat no tenía dónde enseñarlas); ahora viajan en su propio
+    // evento `thought` y nunca dentro de un `delta`, que es lo que se pinta
+    // como respuesta.
+    vi.stubEnv("GEMINI_API_KEY", `AIza${"x".repeat(32)}`);
     const stream = [
       sseChunk([{ text: "Estoy pensando", thought: true }]),
       sseChunk([{ text: "Madrid" }]),
@@ -237,8 +239,17 @@ describe("MCP en /api/mcp", () => {
         "Madrid",
         ", 21 °C",
       ]);
-      expect(result.body).not.toContain("Estoy pensando");
-      expect(events.at(-1)).toMatchObject({ type: "done", answer: "Madrid, 21 °C" });
+      expect(events.filter((event) => event.type === "thought").map((event) => event.text)).toEqual([
+        "Estoy pensando",
+      ]);
+      // El monólogo no se cuela en la respuesta ni se suma al texto final.
+      expect(events.filter((event) => event.type === "delta").map((event) => event.text).join(""))
+        .not.toContain("Estoy pensando");
+      expect(events.at(-1)).toMatchObject({
+        type: "done",
+        answer: "Madrid, 21 °C",
+        reasoning: "Estoy pensando",
+      });
     } finally {
       vi.unstubAllEnvs();
       vi.unstubAllGlobals();
@@ -277,14 +288,45 @@ describe("MCP en /api/mcp", () => {
     try {
       const { status, body } = await call(null, {}, "GET");
       expect(status).toBe(200);
-      const health = JSON.parse(body) as { geminiConfigured: boolean; tools: number; hint: string };
+      const health = JSON.parse(body) as {
+        geminiConfigured: boolean;
+        geminiKeyState: string;
+        tools: number;
+        toolNames: string[];
+        hint: string;
+      };
       expect(health.geminiConfigured).toBe(false);
+      expect(health.geminiKeyState).toBe("missing");
       expect(health.tools).toBeGreaterThan(5);
+      expect(health.toolNames).toContain("media.image");
       expect(health.hint).toMatch(/GEMINI_API_KEY/);
 
-      vi.stubEnv("GEMINI_API_KEY", "clave-de-prueba");
+      vi.stubEnv("GEMINI_API_KEY", `AIza${"x".repeat(32)}`);
       const withKey = await call(null, {}, "GET");
-      expect((JSON.parse(withKey.body) as { geminiConfigured: boolean }).geminiConfigured).toBe(true);
+      const okHealth = JSON.parse(withKey.body) as { geminiConfigured: boolean; geminiKeyState: string };
+      expect(okHealth.geminiConfigured).toBe(true);
+      expect(okHealth.geminiKeyState).toBe("ok");
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("una variable con marcador de posición no cuenta como clave real", async () => {
+    // Un `GEMINI_API_KEY=tu_clave_aqui` pegado en el panel decía «configurada»
+    // y luego cada turno moría con 400 del proveedor. El diagnóstico tiene que
+    // distinguir «existe» de «sirve».
+    vi.stubEnv("GEMINI_API_KEY", "tu_clave_aqui");
+    vi.stubEnv("GOOGLE_API_KEY", "");
+    try {
+      const { body } = await call(null, {}, "GET");
+      const health = JSON.parse(body) as {
+        geminiConfigured: boolean;
+        geminiKeyState: string;
+        hint: string;
+      };
+      expect(health.geminiConfigured).toBe(false);
+      expect(health.geminiKeyState).toBe("placeholder");
+      expect(health.hint).toMatch(/marcador de posición/);
     } finally {
       vi.unstubAllEnvs();
     }

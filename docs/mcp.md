@@ -1,7 +1,8 @@
 # MCP en AI-TOR (arquitectura y cableado)
 
-Servidor MCP local con tres herramientas, control de acceso por plan en la base
-de datos y un bucle de *function calling* contra Gemini. Todo el código está en
+Servidor MCP con seis herramientas (más `media.image`, que sólo existe en el
+montaje de servidor porque necesita la clave del modelo), control de acceso por
+plan en la base de datos y un bucle de *function calling* contra Gemini. Todo el código está en
 `src/lib/mcp/` y `src/services/mcpClient.ts`; no hay SDK nuevo ni dependencia
 añadida.
 
@@ -49,6 +50,7 @@ la **API REST** directamente, por el mismo motivo.
 | `github.repo` | `free` | Proxy de GitHub (lectura) |
 | `db.select` | `pro` | Supabase, con RLS |
 | `github.propose` | `pro` | Proxy de GitHub (rama + PR en borrador) |
+| `media.image` | `pro` | Gemini Image (`/api/mcp` sólo, necesita la clave) |
 
 El plan se comprueba **dos veces**: al listar y al ejecutar. Listar no basta,
 porque un cliente puede pedir una herramienta que nunca llegó a listar.
@@ -180,16 +182,24 @@ tiene bucle de herramientas, y al pedirle el repositorio contestaba
 
 | `type` | Cuándo | Contenido |
 | --- | --- | --- |
+| `thought` | Mientras el modelo piensa | `text` (razonamiento, nunca respuesta) |
 | `delta` | Cada trozo de la respuesta | `text` |
+| `image` | Al terminar `media.image` | `mimeType`, `data` (base64), `alt` |
 | `tool` | Justo antes de ejecutar | `name` |
 | `tool-result` | Al terminar la herramienta | `name`, `isError` |
-| `done` | Fin normal | `answer`, `toolCalls`, `model` |
+| `done` | Fin normal | `answer`, `reasoning`, `toolCalls`, `model` |
 | `error` | Fallo a mitad | `message` |
 
-El servidor usa `streamGenerateContent?alt=sse` y **descarta las partes con
-`thought: true`**: el razonamiento del modelo no es la respuesta y hasta ahora
-se colaba en el chat como si lo fuera. El `systemInstruction` también pide
-responder directamente, sin narrar el plan.
+El servidor usa `streamGenerateContent?alt=sse` con
+`generationConfig.thinkingConfig.includeThoughts` (sólo para modelos 2.5 o
+posteriores; en 1.5 ese campo devuelve 400) y separa las partes con
+`thought: true` en el canal `thought`. No se suman a la respuesta ni se
+devuelven al modelo en la siguiente ronda: son su monólogo, no texto propio.
+
+En la interfaz, `src/components/chat/ReasoningBlock.tsx` pinta ese canal en un
+panel abierto mientras llega y **plegado en cuanto empieza la respuesta**, con
+la duración. El razonamiento no acaba en el markdown, en el portapapeles ni en
+la exportación: vive en `Message.reasoning`.
 
 En el navegador, `streamAgentAnswer` (`src/services/mcpClient.ts`) lee ese flujo
 con `getReader()` —`EventSource` no permite POST ni cabecera `Authorization`— y
@@ -197,6 +207,59 @@ con `getReader()` —`EventSource` no permite POST ni cabecera `Authorization`�
 entera. Si el flujo se corta después de haber pintado texto, lo mostrado se
 conserva (llegó del modelo) y se avisa; si falla antes del primer trozo, se cae
 al chat de Supabase como antes.
+
+## Imágenes
+
+`media.image` (plan pro) genera una imagen con el modelo de imagen de Gemini
+(`gemini-3.1-flash-image`, con descenso a `gemini-3-pro-image` y
+`gemini-2.5-flash-image` si la clave no tiene acceso al primero) y la envía por
+el canal `image`. El base64 **no** entra en `structuredContent`: al modelo sólo
+le llega `note` de que ya está en pantalla, porque megas de base64 como
+`functionResponse` no los puede leer y engordarían cada ronda.
+
+En el chat se cuelga de `Message.images` y se pinta bajo la respuesta. Esas
+data URLs no se guardan en `localStorage` (una imagen son uno o dos megas y la
+siguiente carga rompería el JSON): se conservan en la sesión viva.
+
+No hay herramientas de vídeo, música, sonido ni videojuegos, y el
+`systemInstruction` pide decirlo en vez de describir un resultado que no existe.
+
+## Configurar la clave en Vercel
+
+El bucle lee `GEMINI_API_KEY` **en cada petición**, así que no hay que compilar
+nada: la variable tiene que estar en el proyecto de Vercel y en un despliegue
+posterior a su creación (Vercel no reinyecta variables en despliegues viejos).
+
+```bash
+npm run mcp:key:check    # valida la clave local contra la API de Gemini
+npm run mcp:key          # la registra en Production y consulta el endpoint
+npm run mcp:key:verify   # estado del bucle desplegado, sin sesión
+```
+
+`GET /api/mcp` distingue tres estados de la clave —`missing`, `placeholder`
+(una variable puesta pero con pinta de «tu_clave_aqui») y `ok`— y publica los
+nombres de las herramientas y las rondas máximas. Un `geminiConfigured: true`
+con `geminiKeyState: "placeholder"` es imposible por construcción, que es el
+fallo que se veía antes: el panel decía «configurada» y cada turno moría con 400.
+
+El script nunca imprime el valor: sólo su forma y el veredicto del proveedor.
+
+## Informe de salud de la función `chat`
+
+La función de Supabase que atiende a los oráculos sin herramientas publica su
+estado en `GET /functions/v1/chat?health=1` (también `POST { health: true }`):
+
+```bash
+npm run chat:health   # sólo verifica el despliegue actual
+npm run chat:deploy   # despliega chat en wkdtvrxavkhbifjtvvdw y verifica
+```
+
+El informe lista, por proveedor, qué variable de entorno usa, si su clave es
+real y cuántos modelos expone; y por modelo, si puede responder y por qué no.
+Nunca devuelve el valor de una clave. Hasta el 7 de noviembre de 2026 el
+despliegue era anterior a este código y `?health=1` contestaba
+`400 {"error":"Invalid JSON in request body"}`: el script falla con ese mismo
+mensaje en vez de dar el despliegue por bueno.
 
 ## Botón en el chat
 
