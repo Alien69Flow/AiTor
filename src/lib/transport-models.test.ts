@@ -10,6 +10,7 @@ import {
   flightModelKind,
   isHelicopterType,
   modelHeadingRadians,
+  normalizedTrack,
   shipModelKind,
 } from "./transport-models";
 
@@ -106,7 +107,19 @@ describe("modelos 3D de transporte", () => {
     expect(deg(modelHeadingRadians(null))).toBeCloseTo(270, 6);
     expect(Number.isFinite(modelHeadingRadians(Number.NaN))).toBe(true);
     expect(modelHeadingRadians(-90)).toBeGreaterThanOrEqual(0);
-    expect(modelHeadingRadians(450)).toBeCloseTo(modelHeadingRadians(90), 6);
+  });
+
+  it("descarta el 511 de AIS y los rumbos fuera de rango", () => {
+    // `HEADING = 511` es «no disponible» en AIS; con el valor crudo el barco
+    // salía girado 61° (y el icono, 34°) sin que hubiera rumbo que enseñar.
+    expect(normalizedTrack(511)).toBe(0);
+    expect(normalizedTrack(-1)).toBe(0);
+    expect(normalizedTrack(450)).toBe(0);
+    expect(normalizedTrack(Number.NaN)).toBe(0);
+    expect(normalizedTrack(null)).toBe(0);
+    expect(normalizedTrack(0)).toBe(0);
+    expect(normalizedTrack(359.9)).toBe(359.9);
+    expect(modelHeadingRadians(511)).toBeCloseTo(modelHeadingRadians(0), 6);
   });
 
   it("la escala máxima deja ver el modelo justo cuando desaparece el icono", () => {
