@@ -11,6 +11,7 @@ import { ChatFeedPanel } from "./ChatFeedPanel";
 import { PricingModal } from "./PricingModal";
 import { GlobeDiagnostics } from "./GlobeDiagnostics";
 import { useUnifiedIntel } from "@/hooks/useUnifiedIntel";
+import { useTides } from "@/hooks/connectors/useTides";
 import { cameraCoverage, placedCameras } from "@/lib/live-camera-places";
 import { useUAPSightings } from "@/hooks/useUAPSightings";
 import { useTier } from "@/hooks/useTier";
@@ -58,6 +59,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const [envLayers, setEnvLayers] = useState<Set<EnvLayerKey>>(new Set(DEFAULT_ACTIVE_LAYERS));
 
   const intel = useUnifiedIntel(envLayers);
+  const tides = useTides();
   const { sightings } = useUAPSightings();
   const { tier, hasAccess, loading: tierLoading } = useTier();
   const airTraffic = useAirTraffic();
@@ -366,7 +368,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
       {/* LIVE ALERTS / events (fires, earthquakes, news) — must stay at the BOTTOM.
           Keep it separate from the LIVE MARKETS bar above. */}
       <div className="z-30 shrink-0">
-        <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} />
+        <LiveTicker spaceWeather={intel.spaceWeather} earthquakes={intel.earthquakes} nasaEvents={intel.nasaEvents} tides={tides.data} iss={intel.iss} onLocate={(lat, lon) => globeNavRef.current?.(lat, lon, 0.8)} />
         <div className="flex h-6 items-center justify-between border-t border-border/60 bg-card/90 px-3 text-[8px] uppercase text-muted-foreground md:px-5">
           <div className="flex items-center gap-3"><Wifi className="h-3 w-3 text-primary" /><span className="hidden sm:inline">Aerospace OSINT interface</span><span>{envLayers.size} layers</span>
             {/* Cuántas cámaras del Alien están en el mapa: las de órbita, Marte o

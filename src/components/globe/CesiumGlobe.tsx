@@ -1,3 +1,4 @@
+import { surfaceReadingLines } from "@/lib/surface-weather";
 import { useEffect, useRef, useCallback, useState } from "react";
 import {
   Ion,
@@ -264,8 +265,9 @@ interface CesiumGlobeProps {
   /** Open-Meteo surface wind / pressure vectors. */
   surfaceWeather?: {
     id: string; name: string; lat: number; lon: number;
-    pressureHpa: number; windSpeedMs: number; windDirectionDeg: number;
-    temperatureC: number; humidityPercent: number;
+    pressureHpa: number | null; windSpeedMs: number | null; windDirectionDeg: number | null;
+    temperatureC: number | null; humidityPercent: number | null;
+    time: string;
   }[];
   /** ISS en su posición real (WhereTheISS.at). `null` mientras no hay medida. */
   iss?: IssPosition | null;
@@ -1814,11 +1816,11 @@ export function CesiumGlobe({
     if (active.has("wind") || active.has("isobars") || active.has("temperature") || active.has("humidity")) {
       surfaceWeather.forEach((p) => {
         const id = `surface-${p.id}`;
-        const rad = (p.windDirectionDeg * Math.PI) / 180;
-        const len = 2 + Math.min(6, p.windSpeedMs / 4);
+        const rad = ((p.windDirectionDeg ?? 0) * Math.PI) / 180;
+        const len = 2 + Math.min(6, (p.windSpeedMs ?? 0) / 4);
         const endLat = p.lat + Math.cos(rad) * len * -0.5;
         const endLon = p.lon + Math.sin(rad) * len * -0.5;
-        viewer.entities.add({
+        if (active.has("wind") && p.windSpeedMs !== null && p.windDirectionDeg !== null) viewer.entities.add({
           id,
           polyline: {
             positions: [
@@ -1838,13 +1840,7 @@ export function CesiumGlobe({
           id: labelId,
           position: Cartesian3.fromDegrees(p.lon, p.lat, 30000),
           label: {
-            text: active.has("isobars")
-              ? `${Math.round(p.pressureHpa)} hPa`
-              : active.has("humidity")
-                ? `${Math.round(p.humidityPercent)}% RH`
-                : active.has("temperature")
-                  ? `${p.temperatureC.toFixed(1)}°C`
-                  : `${p.windSpeedMs.toFixed(0)} m/s · ${Math.round(p.windDirectionDeg)}°`,
+            text: `${p.name}\n${surfaceReadingLines(p, active).join(" · ")}\nOpen-Meteo · ${p.time} UTC`,
             font: "9px monospace",
             fillColor: hexToColor("#A5B4FC", 0.9),
             outlineColor: Color.BLACK,

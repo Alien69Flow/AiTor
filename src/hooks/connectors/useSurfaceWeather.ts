@@ -1,3 +1,4 @@
+import { finiteReading } from "@/lib/surface-weather";
 import { safeFetchJson, usePolledConnector } from "@/lib/connectors";
 
 export interface SurfaceWeatherPoint {
@@ -5,11 +6,11 @@ export interface SurfaceWeatherPoint {
   name: string;
   lat: number;
   lon: number;
-  pressureHpa: number;
-  windSpeedMs: number;
-  windDirectionDeg: number;
-  temperatureC: number;
-  humidityPercent: number;
+  pressureHpa: number | null;
+  windSpeedMs: number | null;
+  windDirectionDeg: number | null;
+  temperatureC: number | null;
+  humidityPercent: number | null;
   time: string;
 }
 
@@ -37,6 +38,25 @@ const GRID: { id: string; name: string; lat: number; lon: number }[] = [
   { id: "tyo", name: "Tokyo", lat: 35.68, lon: 139.69 },
   { id: "syd", name: "Sydney", lat: -33.87, lon: 151.21 },
   { id: "rio", name: "Rio de Janeiro", lat: -22.91, lon: -43.17 },
+  { id: "sao", name: "São Paulo", lat: -23.55, lon: -46.63 },
+  { id: "lag", name: "Lagos", lat: 6.52, lon: 3.38 },
+  { id: "cai", name: "Cairo", lat: 30.04, lon: 31.24 },
+  { id: "kin", name: "Kinshasa", lat: -4.33, lon: 15.31 },
+  { id: "mum", name: "Mumbai", lat: 19.08, lon: 72.88 },
+  { id: "dha", name: "Dhaka", lat: 23.81, lon: 90.41 },
+  { id: "kar", name: "Karachi", lat: 24.86, lon: 67.01 },
+  { id: "sha", name: "Shanghai", lat: 31.23, lon: 121.47 },
+  { id: "jak", name: "Jakarta", lat: -6.21, lon: 106.85 },
+  { id: "man", name: "Manila", lat: 14.6, lon: 120.98 },
+  { id: "seo", name: "Seoul", lat: 37.57, lon: 126.98 },
+  { id: "osa", name: "Osaka", lat: 34.69, lon: 135.5 },
+  { id: "ban", name: "Bangkok", lat: 13.76, lon: 100.5 },
+  { id: "la", name: "Los Angeles", lat: 34.05, lon: -118.24 },
+  { id: "tor", name: "Toronto", lat: 43.65, lon: -79.38 },
+  { id: "lim", name: "Lima", lat: -12.05, lon: -77.04 },
+  { id: "mel", name: "Melbourne", lat: -37.81, lon: 144.96 },
+  { id: "auk", name: "Auckland", lat: -36.85, lon: 174.76 },
+
 ];
 
 const OPEN_METEO = "https://api.open-meteo.com/v1/forecast";
@@ -63,7 +83,7 @@ export function useSurfaceWeather(enabled: boolean, intervalMs = 900_000) {
     async (signal) => {
       const lat = GRID.map((g) => g.lat).join(",");
       const lon = GRID.map((g) => g.lon).join(",");
-      const url = `${OPEN_METEO}?latitude=${lat}&longitude=${lon}&current=surface_pressure,wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m`;
+      const url = `${OPEN_METEO}?latitude=${lat}&longitude=${lon}&timezone=UTC&wind_speed_unit=ms&current=surface_pressure,wind_speed_10m,wind_direction_10m,temperature_2m,relative_humidity_2m`;
       const json = await safeFetchJson<OpenMeteoResponse | OpenMeteoResponse[]>(url, {
         signal,
         timeoutMs: 9000,
@@ -78,11 +98,11 @@ export function useSurfaceWeather(enabled: boolean, intervalMs = 900_000) {
             name: meta.name,
             lat: meta.lat,
             lon: meta.lon,
-            pressureHpa: row.current.surface_pressure ?? 0,
-            windSpeedMs: row.current.wind_speed_10m ?? 0,
-            windDirectionDeg: row.current.wind_direction_10m ?? 0,
-            temperatureC: row.current.temperature_2m ?? 0,
-            humidityPercent: row.current.relative_humidity_2m ?? 0,
+            pressureHpa: finiteReading(row.current.surface_pressure),
+            windSpeedMs: finiteReading(row.current.wind_speed_10m),
+            windDirectionDeg: finiteReading(row.current.wind_direction_10m),
+            temperatureC: finiteReading(row.current.temperature_2m),
+            humidityPercent: finiteReading(row.current.relative_humidity_2m),
             time: row.current.time ?? "",
           } satisfies SurfaceWeatherPoint;
         })

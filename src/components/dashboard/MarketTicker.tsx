@@ -1,7 +1,11 @@
 import { TrendingUp } from "lucide-react";
 import type { CryptoPrice } from "@/hooks/useCryptoPrices";
+import { quoteIsStale } from "@/lib/live-quotes";
+import { useEffect, useState } from "react";
 
 export function MarketTicker({ prices }: { prices: CryptoPrice[] }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer); }, []);
   const rows = prices.length ? prices : [];
   return (
     <div className="h-9 w-full flex items-center overflow-hidden border-t border-accent/30 bg-background/95 backdrop-blur-xl font-mono">
@@ -11,14 +15,16 @@ export function MarketTicker({ prices }: { prices: CryptoPrice[] }) {
         <span className="hidden sm:inline text-[8px] text-muted-foreground">{rows.length} ASSETS</span>
       </div>
       <div className="relative min-w-0 flex-1 overflow-hidden group">
+        {rows.length === 0 && <span className="px-4 text-[10px] text-muted-foreground">Sin cotizaciones verificadas · CoinGecko</span>}
         <div className="flex w-max items-center gap-7 px-5 whitespace-nowrap animate-ticker group-hover:[animation-play-state:paused]">
           {[...rows, ...rows].map((coin, index) => (
-            <div key={`${coin.id}-${index}`} className="flex shrink-0 items-baseline gap-2 text-[10px]">
+            <div key={`${coin.id}-${index}`} title={`CoinGecko · ${coin.updatedAt ? new Date(coin.updatedAt).toISOString() : "hora no disponible"}`} className="flex shrink-0 items-baseline gap-2 text-[10px]">
               <span className="font-bold text-accent">{coin.symbol}</span>
               <span className="text-foreground/80">${coin.price.toLocaleString(undefined, { maximumFractionDigits: coin.price < 1 ? 4 : 2 })}</span>
               <span className={coin.change24h >= 0 ? "text-primary" : "text-destructive"}>
                 {coin.change24h >= 0 ? "+" : ""}{coin.change24h.toFixed(2)}%
               </span>
+              <span className="text-[8px] text-muted-foreground">{quoteIsStale(coin, now) ? "ATRASADO" : new Date(coin.updatedAt ?? now).toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", timeZone: "UTC" }) + " UTC"}</span>
             </div>
           ))}
         </div>
