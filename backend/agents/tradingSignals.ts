@@ -3,16 +3,27 @@
  * Generación de señales de trading automatizadas
  */
 
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
+import { createGeminiModel } from "./llm";
 
-const llm = new ChatGoogleGenerativeAI({
-  modelName: "gemini-2.5-flash",
-  temperature: 0.4,
-});
+const getLlm = createGeminiModel({ modelName: "gemini-2.5-flash", temperature: 0.4 });
 
 export type SignalType = 'entry' | 'exit' | 'alert' | 'update';
 export type SignalStrength = 'strong' | 'moderate' | 'weak';
+
+/** Señal propuesta por el modelo, antes de completarla con id y fechas. */
+interface LlmSignalDraft {
+  symbol?: string;
+  timeframe?: string;
+  direction?: string;
+  type?: string;
+  strength?: string;
+  entryPrice?: number;
+  targetPrice?: number;
+  stopLoss?: number;
+  reason?: string;
+  riskReward?: number;
+}
 
 export interface TradingSignal {
   id: string;
@@ -165,9 +176,9 @@ export class TradingSignals {
   /**
    * Genera nuevas señales de trading
    */
-  static async generateSignals(prices: any[], technicalData: any[]): Promise<TradingSignal[]> {
+  static async generateSignals(prices: unknown[], technicalData: unknown[]): Promise<TradingSignal[]> {
     try {
-      const chain = signalGenerationPrompt.pipe(llm);
+      const chain = signalGenerationPrompt.pipe(getLlm());
       const response = await chain.invoke({
         priceData: JSON.stringify(prices.slice(0, 10)),
         technicalData: JSON.stringify(technicalData.slice(0, 10)),
@@ -178,11 +189,11 @@ export class TradingSignals {
 
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
-        const signals: TradingSignal[] = (parsed.signals || []).map((s: any) => ({
+        const signals: TradingSignal[] = (parsed.signals || []).map((s: LlmSignalDraft) => ({
           ...s,
           id: `sig_${s.symbol}_${Date.now()}`,
           timestamp: new Date(),
-          expiresAt: new Date(Date.now() + this.getExpiryTime(s.timeframe)),
+          expiresAt: new Date(Date.now() + this.getExpiryTime(s.timeframe ?? '1d')),
           status: 'active' as const,
         }));
 

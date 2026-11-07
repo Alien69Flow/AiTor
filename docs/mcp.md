@@ -1,0 +1,281 @@
+# MCP en AI-TOR (arquitectura y cableado)
+
+Servidor MCP local con tres herramientas, control de acceso por plan en la base
+de datos y un bucle de *function calling* contra Gemini. Todo el código está en
+`src/lib/mcp/` y `src/services/mcpClient.ts`; no hay SDK nuevo ni dependencia
+añadida.
+
+## Por qué sin SDK
+
+El protocolo son cuatro métodos JSON-RPC (`initialize`, `ping`, `tools/list`,
+`tools/call`). Implementarlos aquí evita acoplarse a la versión de un paquete y
+permite que el mismo servidor corra en el navegador (herramientas públicas, RLS
+del usuario) y en servidor (donde vive la clave del modelo). Para Gemini se usa
+la **API REST** directamente, por el mismo motivo.
+
+> Un detalle que ya costó un incidente: `api/predictions.ts` documenta que el
+> runtime de Vercel no resolvió un import hermano (`./_venues`) y devolvía 500.
+> Por eso el handler es agnóstico (`src/lib/mcp/http.ts`) y se monta donde
+> resuelvan los imports. Hoy hay **dos** montajes del mismo handler:
+> `backend/mcp.ts` (Express) y `api/mcp.ts` (función de Vercel), porque el
+> cliente del chat llamaba a `/api/mcp` desde el principio y esa ruta no existía:
+> en producción el botón de herramientas daba 404. Si el runtime de Vercel vuelve
+> a fallar al resolver los imports de `src/lib/mcp/…`, el montaje de referencia
+> sigue siendo el backend Node.
+
+## Piezas
+
+| Fichero | Qué hace |
+| --- | --- |
+| `src/lib/mcp/types.ts` | Tipos MCP/JSON-RPC, planes (`free`/`pro`/`dao`) y códigos de error |
+| `src/lib/mcp/registry.ts` | Registro: filtro por plan, `tools/list`, `tools/call`, despacho JSON-RPC |
+| `src/lib/mcp/tools/satellites.ts` | `telemetry.satellites` — posiciones reales desde CelesTrak |
+| `src/lib/mcp/tools/osint.ts` | `osint.events` — titulares de GDELT con fuente, enlace y tono |
+| `src/lib/mcp/tools/weather.ts` | `weather.outlook` — previsión, secado, mar, nieve y polen de Open-Meteo |
+| `src/lib/environment-metrics.ts` | Secado, bandera de baño y nivel de polen: sin React, los usan el globo y MCP |
+| `src/lib/mcp/tools/database.ts` | `db.select` — tablas y columnas en lista blanca, RLS del llamante |
+| `src/lib/mcp/gemini.ts` | Declaraciones de funciones, descubrimiento de modelo, límites y bucle |
+| `src/lib/mcp/http.ts` | Handler `Request`/`Response`: JSON-RPC o `{ prompt }` |
+| `src/services/mcpClient.ts` | Cliente de navegador: sesión, plan, herramientas y agente |
+| `scripts/mcp-ask.ts` | CLI para probar el circuito completo |
+
+## Herramientas y planes
+
+| Herramienta | Plan mínimo | Fuente |
+| --- | --- | --- |
+| `telemetry.satellites` | `free` | CelesTrak TLE + `satellite.js` |
+| `osint.events` | `free` | GDELT DOC 2.0 |
+| `weather.outlook` | `free` | Open-Meteo (previsión, marine, air quality, geocoding) |
+| `github.repo` | `free` | Proxy de GitHub (lectura) |
+| `db.select` | `pro` | Supabase, con RLS |
+| `github.propose` | `pro` | Proxy de GitHub (rama + PR en borrador) |
+
+El plan se comprueba **dos veces**: al listar y al ejecutar. Listar no basta,
+porque un cliente puede pedir una herramienta que nunca llegó a listar.
+
+## Control de acceso en la base de datos
+
+`supabase/migrations/20261029130000_profiles_tier.sql`:
+
+- `profiles.tier` con `check (tier in ('free','pro','dao'))` y `free` por defecto.
+- RLS: cada cuenta ve y edita sólo su fila.
+- **El usuario no puede ascenderse**: se revoca `UPDATE` de tabla y se concede
+  por columnas (`display_name`, `avatar_url`, `updated_at`). Un
+  `PATCH /profiles {"tier":"dao"}` responde 403, no cambia nada.
+- Trigger en `auth.users`: toda cuenta nueva nace con perfil `free`, sin
+  depender de que el frontend se acuerde.
+
+Los planes de pago los escribe el servidor (`service_role`) cuando el pago o el
+holding se verifican, como ya hacen `verify-crypto-payment` y
+`verify-dao-holdings`.
+
+## Gemini
+
+- Clave: `GEMINI_API_KEY`, **sólo en servidor**. Nunca con prefijo `VITE_`, o
+  Vite la mete en el bundle.
+- Modelo: **`gemini-1.5-flash` está retirado** (la API responde
+  `404 models/gemini-1.5-flash is not found`). Si no se fija `GEMINI_MODEL`, el
+  cliente consulta `/models` y elige el Flash más reciente que admita
+  `generateContent`, descartando embeddings, imagen, TTS y previews.
+- Límites del free tier: 10 peticiones/minuto y 1500/día
+  (`FREE_TIER_LIMITS`). Es una defensa en memoria por proceso; la cuota real la
+  impone Google.
+- El bucle está acotado a 3 rondas (`maxRounds`): un modelo empeñado en llamar
+  herramientas no puede gastar la cuota de un turno en llamadas.
+
+## Probar sin desplegar
+
+```bash
+GEMINI_API_KEY=... npx tsx scripts/mcp-ask.ts "¿dónde está la ISS ahora?"
+MCP_TIER=pro GEMINI_MODEL=gemini-3.8-flash npx tsx scripts/mcp-ask.ts "dame mi plan"
+```
+
+El CLI imprime las herramientas visibles para el plan, las que usó el modelo y
+la respuesta. Sin sesión no hay `db.select`, así que ese caso sólo se prueba con
+el servidor montado.
+
+## Montar el handler
+
+```ts
+import { createMcpHttpHandler } from "../src/lib/mcp/http";
+import { createAiTorMcpServer } from "../src/lib/mcp/index";
+import { createGeminiClient, createRateLimiter, runToolLoop } from "../src/lib/mcp/gemini";
+
+const server = createAiTorMcpServer({ db: /* puerto REST con el JWT del llamante */ });
+
+const handler = createMcpHttpHandler({
+  server,
+  resolveCaller: async (request) => {
+    const user = await verifyUser(request.headers.get("authorization") ?? undefined);
+    if (!user) return null;
+    return { tier: await tierOf(user), db };
+  },
+  agent: async (prompt, caller) => {
+    const result = await runToolLoop({
+      client: createGeminiClient({ apiKey: process.env.GEMINI_API_KEY! }),
+      server,
+      context: { tier: caller.tier, db: caller.db, fetch },
+      prompt,
+      limiter,
+    });
+    return { answer: result.text, toolCalls: result.toolCalls };
+  },
+});
+```
+
+`backend/server.ts` ya verifica JWT (`verifyUser`) y ya tiene `GEMINI_API_KEY`,
+así que es el sitio natural: el handler es un `(Request) => Response` y se puede
+adaptar a Express leyendo el cuerpo y devolviendo `res.status(...).send(...)`.
+
+## Montado en el backend Node
+
+`backend/mcp.ts` es el punto de montaje real, montado en `backend/server.ts`:
+
+| Ruta | Qué hace |
+| --- | --- |
+| `POST /mcp` | JSON-RPC (`initialize`, `ping`, `tools/list`, `tools/call`) |
+| `POST /mcp` con `{ prompt }` | Bucle de Gemini con las herramientas del plan |
+| `GET /mcp/tools` | Herramientas visibles para quien llama, con su plan |
+
+Lo que aplica el router y no se puede delegar al cliente:
+
+- El plan se lee de `profiles.tier` con el JWT del llamante; el cuerpo nunca lo trae.
+- `db.select` consulta con **ese** JWT, así que el RLS decide las filas.
+- Cada usuario tiene su propio cubo de cuota del free tier.
+- `GEMINI_API_KEY` no sale del proceso.
+
+```bash
+cd backend && npm install --legacy-peer-deps   # el paquete tiene su propio lock
+GEMINI_API_KEY=... SUPABASE_URL=... SUPABASE_ANON_KEY=... npm run dev
+curl -s localhost:4000/mcp/tools -H "Authorization: Bearer $JWT"
+```
+
+`npm run install` normal falla por un conflicto de peers **preexistente**
+(`langchain@0.3` con el SDK de Google); `--legacy-peer-deps` lo resuelve sin tocar
+el `package.json`. El paquete tampoco compilaba antes de este cambio: sus agentes
+importan `@langchain/google-genai`, que no está declarado, y usan imports sin
+extensión bajo `NodeNext`. `backend/mcp.ts` sí compila aislado y tiene una prueba
+de humo (`npx tsx mcp.smoke.ts`) que comprueba los 401 sin salir a la red.
+
+## El chat usa el agente
+
+El chat pregunta **primero al agente con herramientas**. `src/services/agent-turn.ts`
+compone el prompt con los últimos turnos (`src/lib/agent-prompt.ts`, recortado a
+3 500 caracteres para que el endpoint no corte la pregunta al recortar a 4 000) y
+llama a `askAgent` → `POST /api/mcp` con el JWT de la sesión.
+
+Antes no era así: `useChat` publicaba en la función `chat` de Supabase, que no
+tiene bucle de herramientas, y al pedirle el repositorio contestaba
+`INTERFACE_NOT_BOUND`. Ahora:
+
+- hay sesión → contesta el agente y el mensaje lleva chips con las herramientas
+  que ejecutó (y cuáles fallaron);
+- no hay sesión, hay imagen o el endpoint falla → se cae al chat de siempre, sin
+  herramientas, en vez de dejar al usuario sin respuesta.
+
+## Streaming
+
+`POST /api/mcp` acepta `{ "prompt": "…", "stream": true }` y contesta
+`text/event-stream`. Cada `data:` es un evento:
+
+| `type` | Cuándo | Contenido |
+| --- | --- | --- |
+| `delta` | Cada trozo de la respuesta | `text` |
+| `tool` | Justo antes de ejecutar | `name` |
+| `tool-result` | Al terminar la herramienta | `name`, `isError` |
+| `done` | Fin normal | `answer`, `toolCalls`, `model` |
+| `error` | Fallo a mitad | `message` |
+
+El servidor usa `streamGenerateContent?alt=sse` y **descarta las partes con
+`thought: true`**: el razonamiento del modelo no es la respuesta y hasta ahora
+se colaba en el chat como si lo fuera. El `systemInstruction` también pide
+responder directamente, sin narrar el plan.
+
+En el navegador, `streamAgentAnswer` (`src/services/mcpClient.ts`) lee ese flujo
+con `getReader()` —`EventSource` no permite POST ni cabecera `Authorization`— y
+`useChat` crea el mensaje con el primer `delta` en vez de esperar la respuesta
+entera. Si el flujo se corta después de haber pintado texto, lo mostrado se
+conserva (llegó del modelo) y se avisa; si falla antes del primer trozo, se cae
+al chat de Supabase como antes.
+
+## Botón en el chat
+
+`src/components/chat/McpToolsButton.tsx` lista las herramientas del plan real y
+ejecuta una con valores por defecto. El filtrado lo hace el servidor; el botón
+sólo pinta lo que recibe.
+
+## GitHub: leer el repo y proponer mejoras
+
+`src/lib/mcp/tools/github.ts` da a AI Tor dos capacidades sobre su propio
+repositorio:
+
+- `github.repo` lee árbol, ficheros, commits, PRs abiertos y checks de CI. Es la
+  lectura con la que detecta qué está roto y qué merece una mejora.
+- `github.propose` crea una rama, escribe un fichero y abre un **PR en
+  borrador**. Nunca escribe en `main`: la mejora queda propuesta.
+
+Ninguna herramienta lleva credenciales, y las dos hablan por un puerto
+(`context.github`) que en el navegador es `githubPort`
+(`src/services/mcpClient.ts`). Ese puerto tiene **dos caminos**, y la diferencia
+importa:
+
+- **Lectura → `POST /api/github`** (`api/github.ts`). El repositorio es
+  público, así que la función de Vercel pide la API abierta de GitHub **sin
+  token y sin sesión**. Es lo que devuelve la lectura a la vida cuando el
+  proxy no está desplegado o el usuario no ha iniciado sesión. La cuota
+  anónima de GitHub es de 60 peticiones/hora por IP: por eso la respuesta se
+  cachea (`s-maxage=300`) y, si algún día se configura `GITHUB_TOKEN` en el
+  entorno, se usa sólo para ampliar esa cuota. Nunca es obligatorio.
+- **Escritura → `github-proxy`** (`supabase/functions/github-proxy`). Aquí vive
+  el token de servicio y la allowlist de repositorio, y exige identidad
+  verificada en todas las acciones más rol `admin` en `create_branch`,
+  `create_or_update_file` y `create_pull_request`. `/api/github` responde 501 a
+  esas tres: no es que no existan, es que no se hacen sin permiso.
+
+El proxy se despliega en el **proyecto de identidad**, porque es el único que
+puede validar ese JWT. Si no está allí, `github.propose` lo dice en vez de
+devolver un 401 mudo; `github.repo` ya no depende de él.
+
+Las dos están también en el montaje de Vercel. `/api/mcp` es una copia
+ejecutable autocontenida —no importa `src/lib/mcp/…`, por el fallo de
+resolución que documenta `api/predictions.ts`—, así que lleva su propio
+`githubRead` contra la API pública (mismo criterio que `/api/github`, sin
+imports hermanos) y su propio `githubCall` contra el proxy para escribir. El
+agente del servidor ve las mismas herramientas que el del navegador;
+`github.repo` es gratuita, `github.propose` exige plan `pro` y, además, rol
+`admin` en el proxy.
+
+## Quién puede llamar a `/api/mcp`
+
+| Llamante | `tools/list` | Herramientas públicas | `github.*` | `db.select` | `{ prompt }` |
+| --- | --- | --- | --- | --- | --- |
+| Sin cabecera `Authorization` | sí (plan `free`) | sí | no se listan | no | 401 |
+| `Bearer` válido, plan `free` | sí | sí | `github.repo` | no | sí |
+| `Bearer` válido, plan `pro`/`dao` | sí | sí | las dos | sí | sí |
+| `Bearer` inválido o caducado | 401 | 401 | 401 | 401 | 401 |
+
+Dos decisiones que no son obvias:
+
+- **El invitado ve las herramientas públicas.** Antes todo respondía 401 y una
+  visita sin cuenta no podía ni listar, aunque el globo y sus fuentes sean
+  públicas. Ahora el anónimo tiene su propio cubo de cuota por IP.
+- **Una sesión rota no se degrada a invitado.** Si llega un `Bearer` y no
+  valida, es 401: convertir ese caso en «gratuito» escondería el fallo de
+  autenticación justo cuando hay que verlo.
+
+El bucle del modelo sigue exigiendo identidad: gasta la cuota de una clave
+compartida y hay que saber a quién cobrársela.
+
+Los fallos de una herramienta —plan insuficiente, nombre desconocido, error del
+proxy— vuelven como error JSON-RPC. Ese `catch` faltaba: la comprobación de plan
+se lanzaba antes del `try` de `callTool`, la promesa quedaba rechazada sin
+manejar y el handler moría en un 500 sin JSON de vuelta.
+
+## Lo que queda fuera a propósito
+
+- Escrituras: la base de datos sigue siendo sólo lectura (`db.select`, con lista
+  blanca de tablas y columnas). La única escritura posible es `github.propose`,
+  que va a una rama y a un PR en borrador, y el proxy la limita a `admin`.
+- Recursos y prompts MCP: sólo se implementan herramientas.
+- Persistencia de la cuota: el limitador es por proceso; para cuotas exactas hay
+  que contar en la base de datos.

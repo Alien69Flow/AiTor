@@ -13,7 +13,8 @@ export interface PublishResult {
   publishedAt?: Date;
   externalId?: string;
   error?: string;
-  response?: any;
+  /** Payload crudo que devuelve la plataforma (o el mock). */
+  response?: unknown;
 }
 
 export class SocialPublisher {

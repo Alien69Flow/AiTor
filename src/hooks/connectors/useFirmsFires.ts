@@ -1,4 +1,5 @@
 import { safeFetchJson, usePolledConnector } from "@/lib/connectors";
+import { SUPABASE_URL } from "@/integrations/supabase/client";
 
 export interface FireDetection {
   id: string;
@@ -8,11 +9,13 @@ export interface FireDetection {
   confidence: string;
   acquired: string;
   satellite: string;
+  /**
+   * De dónde sale la detección. FIRMS cuando hay clave de mapa; si no la hay,
+   * el respaldo son los incendios abiertos de EONET, y el globo lo dice en vez
+   * de atribuir a FIRMS un punto que no ha medido.
+   */
+  source?: string;
 }
-
-const SUPABASE_URL =
-  (import.meta.env.VITE_SUPABASE_URL as string) ||
-  "https://wkdtvrxavkhbifjtvvdw.supabase.co";
 
 /**
  * NASA FIRMS (VIIRS) active fire detections, proxied server-side so the

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio, BrainCircuit } from "lucide-react";
+import { TrendingUp, Code as Code2, Globe, Shield, Atom, Link2, Search, ArrowRight, Github, Radio } from "lucide-react";
+import { AiTorMark } from "@/components/AiTorMark";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 const CAPABILITIES = [
@@ -111,8 +112,14 @@ export function EmptyState({ onPromptClick }: EmptyStateProps) {
               <div className="absolute w-28 h-28 rounded-full bg-primary/5 blur-3xl animate-pulse pointer-events-none" />
             </>
           )}
-          <div className={`relative z-10 flex items-center justify-center border border-primary/30 bg-primary/10 shadow-[0_0_40px_hsl(var(--primary)/0.28)] ${isCompact ? "h-12 w-12" : "h-20 w-20"}`}>
-            <BrainCircuit className={isCompact ? "h-7 w-7 text-primary" : "h-11 w-11 text-primary"} aria-label="AI Tor" />
+          <div className="relative z-10 flex items-center justify-center">
+            <AiTorMark
+              className={`${
+                isCompact
+                  ? "h-16 w-16"
+                  : "h-24 w-24 drop-shadow-[0_0_28px_hsl(var(--primary)/0.35)]"
+              }`}
+            />
           </div>
         </div>
         <div className="text-center">

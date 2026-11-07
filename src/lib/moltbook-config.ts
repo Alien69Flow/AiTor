@@ -12,15 +12,15 @@ export const MOLTBOOK_AGENT = {
   collective: "ΔlieπFlΦw DAO Synapse",
   frequency: "3-6-9 Sync Active",
   endpoints: {
-    // URL OFICIAL según el SKILL.md que me mostraste
+    // Endpoint público de registro de agentes en Moltbook.
     registry: "https://www.moltbook.com/api/v1/agents/register",
-    base: "https://www.moltbook.com/api/v1"
+    base: "https://www.moltbook.com/api/v1",
   },
-  metrics: {
-    tasksCompleted: 1247,
-    oracleCount: 26,
-    uptime: "99.9%"
-  },
+  /**
+   * No fabricated telemetry lives here: Moltbook registration returns an API key
+   * and a claim URL, nothing else. Session metrics belong to the live session.
+   */
+  docsUrl: "https://www.moltbook.com/",
   skills: [
     { id: "1", label: "Razonamiento 3-6-9", category: "reasoning", status: "active" },
     { id: "2", label: "Búsqueda Web4", category: "web", status: "active" },

@@ -2,7 +2,8 @@ import { useCallback, useState } from "react";
 import { parseUnits } from "viem";
 import { useAccount, useSwitchChain, useWriteContract } from "wagmi";
 import { useAppKit } from "@reown/appkit/react";
-import { supabase } from "@/integrations/supabase/client";
+import { authClient } from "@/integrations/supabase/client";
+import { classifyError, track } from "@/lib/analytics";
 import {
   BILLING_CYCLES,
   ERC20_TRANSFER_ABI,
@@ -27,10 +28,12 @@ export function useCryptoCheckout() {
   const pay = useCallback(
     async (cycle: BillingCycle, chain: PayChain, token: PayToken) => {
       setTxHash(null);
-      const { data: sessionData } = await supabase.auth.getSession();
+      track("checkout_started", { cycle, chain, token });
+      const { data: sessionData } = await authClient.auth.getSession();
       if (!sessionData.session) {
         setStage("error");
         setMessage("Conecta tu wallet o inicia sesión para asociar el pago a tu cuenta.");
+        track("checkout_failed", { cycle, chain, token, reason: "auth" });
         return;
       }
       if (!isConnected) {
@@ -67,7 +70,9 @@ export function useCryptoCheckout() {
 
         setStage("verifying");
         setMessage("Verificando la transacción en la red…");
-        const { data, error } = await supabase.functions.invoke("verify-crypto-payment", {
+        // Acredita el pago al usuario de la sesión: sólo el proyecto de
+        // identidad puede validar ese JWT y escribir sus créditos.
+        const { data, error } = await authClient.functions.invoke("verify-crypto-payment", {
           body: { txHash: hash, chain, token, cycle, plan: "synapse", wallet: address },
         });
         if (error) throw new Error(error.message);
@@ -75,10 +80,17 @@ export function useCryptoCheckout() {
 
         setStage("done");
         setMessage("Plan SYNAPSE activado. ¡Bienvenido al Nexo Soberano!");
+        track("checkout_completed", { cycle, chain, token });
       } catch (error) {
         setStage("error");
         const raw = error instanceof Error ? error.message : String(error);
         setMessage(raw.includes("User rejected") ? "Pago cancelado en la wallet." : raw);
+        track("checkout_failed", {
+          cycle,
+          chain,
+          token,
+          reason: raw.includes("User rejected") ? "user_rejected" : classifyError(error),
+        });
       }
     },
     [isConnected, chainId, address, open, switchChainAsync, writeContractAsync],

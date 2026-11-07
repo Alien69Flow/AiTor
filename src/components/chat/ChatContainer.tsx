@@ -1,6 +1,9 @@
-import { useState, useRef, useEffect } from "react";
-import { useChat } from "@/hooks/useChat";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useChat, type Conversation } from "@/hooks/useChat";
 import { AI_MODELS } from "@/lib/ai-models";
+import { resolveOracles, useChatHealth } from "@/lib/ai-health";
+import { readPreferredModel, writePreferredModel, type ChatWorkspace } from "@/lib/chat-prefs";
+import { track } from "@/lib/analytics";
 import { ChatHeader } from "./ChatHeader";
 import { ChatMessage } from "./ChatMessage";
 import { ChatInput } from "./ChatInput";
@@ -8,13 +11,22 @@ import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { AgentSidebar } from "./AgentSidebar";
 import { DaoCity } from "./city/DaoCity";
+import { NeuralCore } from "./neural/NeuralCore";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
-export function ChatContainer() {
-  const [selectedModel, setSelectedModel] = useState("google/gemini-2.5-flash");
+type WorkspaceTab = "agents" | "alien" | "cosmos" | "globe" | "markets" | "system";
+
+interface ChatContainerProps {
+  /** Open another workspace from the DAO City districts. */
+  onOpenTab?: (tab: WorkspaceTab) => void;
+}
+
+export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
+  const [selectedModel, setSelectedModel] = useState(readPreferredModel);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [workspace, setWorkspace] = useState<"chat" | "neural">("chat");
-  const { messages, isLoading, error, sendMessage, clearChat } = useChat();
+  const [workspace, setWorkspace] = useState<ChatWorkspace>("chat");
+  const { messages, isLoading, agentNotice, sendMessage, clearChat } = useChat();
+  const { health } = useChatHealth();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentModel = AI_MODELS.find(m => m.id === selectedModel);
@@ -27,6 +39,85 @@ export function ChatContainer() {
   const handleNewChat = () => {
     clearChat();
   };
+
+  const handleModelChange = useCallback((model: string) => {
+    setSelectedModel(model);
+    writePreferredModel(model);
+  }, []);
+
+  // The stored preference can point at an oracle whose key was removed since.
+  // Once the health report arrives, move the selection to one that can answer,
+  // so the header never claims a model the backend cannot reach.
+  useEffect(() => {
+    if (!health) return;
+    const oracles = resolveOracles(AI_MODELS, health);
+    const current = oracles.find((oracle) => oracle.model.id === selectedModel);
+    if (!current || current.available) return;
+    const replacement = oracles.find((oracle) => oracle.available);
+    if (replacement) handleModelChange(replacement.model.id);
+  }, [health, selectedModel, handleModelChange]);
+
+  // Skill / utility / district actions all run a real turn in the chat.
+  const runPrompt = useCallback(
+    (prompt: string) => {
+      setWorkspace("chat");
+      void sendMessage(prompt, selectedModel);
+    },
+    [selectedModel, sendMessage]
+  );
+
+  // One toggle drives the header button and the panel's own close controls,
+  // so the drawer can always be opened and closed from either side.
+  const toggleSidebar = useCallback(() => setSidebarOpen(open => !open), []);
+  const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  const handleWorkspaceChange = useCallback((next: ChatWorkspace) => {
+    setWorkspace(next);
+    if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false);
+  }, []);
+
+  const scrollToLatest = useCallback(() => {
+    const viewport = scrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    viewport?.scrollTo({ top: viewport.scrollHeight, behavior: "smooth" });
+  }, []);
+
+  // The app keeps a single persisted thread, so the history list mirrors the
+  // session that is actually live instead of showing an empty placeholder.
+  const conversations = useMemo<Conversation[]>(() => {
+    if (!messages.length) return [];
+    const firstUser = messages.find(message => message.role === "user");
+    const title = (firstUser?.content ?? messages[0].content).replace(/\s+/g, " ").trim().slice(0, 52);
+    return [{
+      id: "current-session",
+      title: title || "Sesión actual",
+      messages,
+      createdAt: messages[0].timestamp,
+      updatedAt: messages[messages.length - 1].timestamp.getTime(),
+    }];
+  }, [messages]);
+
+  const assistantReplies = useMemo(
+    () => messages.filter((message) => message.role === "assistant" && message.content),
+    [messages]
+  );
+  const tokensExact = assistantReplies.length > 0 && assistantReplies.every((message) => message.usage);
+  const tokensUsed = messages.reduce(
+    (total, message) => total + (message.usage?.totalTokens ?? Math.ceil(message.content.length / 4)),
+    0
+  );
+
+  // Conversion: the chat is the core engagement surface.
+  useEffect(() => {
+    track("chat_opened");
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSidebarOpen(false);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -41,27 +132,59 @@ export function ChatContainer() {
     <div className="relative flex min-h-0 flex-1 overflow-hidden bg-background">
       <AgentSidebar
         isOpen={sidebarOpen}
-        onToggle={() => setSidebarOpen(false)}
-        conversations={[]}
-        currentConversationId={null}
-        onSelectConversation={() => undefined}
-        onDeleteConversation={() => undefined}
+        onToggle={toggleSidebar}
+        onClose={closeSidebar}
+        conversations={conversations}
+        currentConversationId={messages.length ? "current-session" : null}
+        onSelectConversation={() => {
+          scrollToLatest();
+          if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false);
+        }}
+        onDeleteConversation={clearChat}
         onNewConversation={handleNewChat}
+        workspace={workspace}
+        onWorkspaceChange={handleWorkspaceChange}
+        onPrompt={runPrompt}
+        sessionStats={{
+          queries: messages.filter(message => message.role === "user").length,
+          replies: assistantReplies.length,
+          tokens: tokensUsed,
+          tokensExact,
+          thinking: isLoading,
+        }}
       />
       <div className="flex min-w-0 flex-1 flex-col">
       <ChatHeader
         selectedModel={selectedModel}
-        onModelChange={setSelectedModel}
+        onModelChange={handleModelChange}
         onClear={clearChat}
         onNewChat={handleNewChat}
         hasMessages={messages.length > 0}
-        onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+        onToggleSidebar={toggleSidebar}
         sidebarOpen={sidebarOpen}
         workspace={workspace}
-        onWorkspaceChange={setWorkspace}
+        onWorkspaceChange={handleWorkspaceChange}
+        messages={messages}
       />
 
-      {workspace === "neural" ? <DaoCity messages={messages} isLoading={isLoading} error={error} onSend={(prompt) => sendMessage(prompt, selectedModel)} onChat={() => setWorkspace("chat")} /> : <>
+      {workspace === "neural" ? (
+        <NeuralCore
+          messages={messages}
+          isLoading={isLoading}
+          modelId={selectedModel}
+          onChat={() => handleWorkspaceChange("chat")}
+          onCity={() => handleWorkspaceChange("city")}
+          onPrompt={runPrompt}
+        />
+      ) : workspace === "city" ? (
+        <DaoCity
+          messages={messages}
+          isLoading={isLoading}
+          onSend={(prompt) => sendMessage(prompt, selectedModel)}
+          onChat={() => handleWorkspaceChange("chat")}
+          onOpenTab={onOpenTab}
+        />
+      ) : <>
       <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
         {messages.length === 0 ? (
           <EmptyState onPromptClick={(prompt) => handleSend(prompt)} />
@@ -75,8 +198,20 @@ export function ChatContainer() {
         )}
       </ScrollArea>
 
+      {/* Aviso persistente: si el turno va sin herramientas, el motivo se queda
+          a la vista. Un toast de cuatro segundos deja al usuario con una
+          respuesta sin datos y ninguna pista. */}
+      {agentNotice && (
+        <div
+          role="status"
+          className="flex items-start gap-2 border-t border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[10px] leading-snug text-amber-200"
+        >
+          <span aria-hidden="true" className="mt-[1px] shrink-0 font-mono">!</span>
+          <span className="min-w-0 flex-1">{agentNotice}</span>
+        </div>
+      )}
+
       <div className="border-t border-border bg-background/80 backdrop-blur-sm">
-        {error && <p role="alert" className="px-4 pt-2 text-xs text-destructive">{error}</p>}
         <ChatInput onSend={handleSend} isLoading={isLoading} supportsVision={supportsVision} />
       </div>
       </>}

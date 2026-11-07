@@ -70,7 +70,7 @@ Deno.serve(async (req) => {
     const expected = BigInt(Math.round(price * 10 ** tokenInfo.decimals));
     const toTopic = "0x" + recipient.address.toLowerCase().replace("0x", "").padStart(64, "0");
 
-    const paid = (receipt.logs ?? []).some((log: any) =>
+    const paid = (receipt.logs ?? []).some((log: { address?: string; topics?: string[]; data?: string }) =>
       log.address?.toLowerCase() === tokenInfo.address &&
       log.topics?.[0]?.toLowerCase() === TRANSFER_TOPIC &&
       log.topics?.[2]?.toLowerCase() === toTopic &&
