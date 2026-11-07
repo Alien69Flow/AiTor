@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	CLOSE_DETAIL_M,
-	MEDIUM_DETAIL_M,
-	PLACES_MAX_M,
-	resolveGlobeDetail,
-} from "./globe-detail";
+import { CLOSE_DETAIL_M, MEDIUM_DETAIL_M, resolveGlobeDetail } from "./globe-detail";
 
 describe("detalle del globo por altura", () => {
 	it("aprieta el error de pantalla al acercarse", () => {
@@ -17,11 +12,18 @@ describe("detalle del globo por altura", () => {
 		expect(resolveGlobeDetail(20_000_000).maximumScreenSpaceError).toBe(1.6);
 	});
 
-	it("enseña topónimos sólo cuando hay una región que nombrar", () => {
-		expect(resolveGlobeDetail(400_000).showPlaces).toBe(true);
-		expect(resolveGlobeDetail(PLACES_MAX_M - 1).showPlaces).toBe(true);
-		expect(resolveGlobeDetail(PLACES_MAX_M).showPlaces).toBe(false);
-		expect(resolveGlobeDetail(20_000_000).showPlaces).toBe(false);
+	/**
+	 * El mapa político no depende del zoom.
+	 *
+	 * Llegó a apagarse por encima de 2.500 km y el globo se abría sin un solo
+	 * país dibujado: la vista de planeta se quedaba sin lo único que la hace
+	 * legible. Esri ya elige qué rotula en cada nivel de tesela, así que aquí no
+	 * hay nada que ahorrar apagando la capa entera.
+	 */
+	it("fronteras y topónimos están siempre encendidos", () => {
+		for (const altitude of [400_000, 2_500_000, 6_000_000, 20_000_000, 40_000_000]) {
+			expect(resolveGlobeDetail(altitude).showPlaces, String(altitude)).toBe(true);
+		}
 	});
 
 	it("nunca devuelve valores imposibles", () => {

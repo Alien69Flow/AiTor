@@ -807,7 +807,10 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		group: "OSINT & Hazards", 
 		color: "#38bdf8", 
 		Icon: Ship, 
-		requiredTier: "node",
+		// Signal: el AIS abierto ya lo sirve `/api/traffic?kind=marine` sin coste
+		// por petición. Pedir cuenta para ver barcos dejaba la capa bloqueada en
+		// el panel mientras el globo de al lado ya la tenía descargada.
+		requiredTier: "signal",
 		source: "VesselFinder / AIS",
 		freshness: "3 min",
 		description: "Ship tracking via VesselFinder AIS"
@@ -833,7 +836,8 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		group: "Geopolitical", 
 		color: "#dc2626", 
 		Icon: Crosshair, 
-		requiredTier: "node",
+		// GDELT y UCDP son abiertos: sin coste que proteger.
+		requiredTier: "signal",
 		source: "UCDP / WorldMonitor",
 		freshness: "Daily",
 		description: "Active armed conflict zones and events"
@@ -1085,6 +1089,12 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	"wildfires",
 	"earthquakes",
 	"airTraffic",
+	// El globo se abría con aviones pero sin barcos ni conflictos: dos de las
+	// tres capas de tráfico/sucesos existían en el catálogo y había que
+	// descubrirlas en el panel. Encendidas de serie, la vista de planeta cuenta
+	// lo que de verdad está pasando.
+	"marineTraffic",
+	"conflictZones",
 	"marketData",
 	"iss",
 	"liveCameras",

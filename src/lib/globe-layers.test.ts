@@ -320,3 +320,35 @@ describe("envolturas atmosféricas", () => {
     expect(DEFAULT_ACTIVE_LAYERS).toContain("atmosphericShells");
   });
 });
+
+/**
+ * Tráfico y conflictos encendidos de serie.
+ *
+ * El globo abría con aviones pero sin barcos ni zonas de conflicto: las dos
+ * capas estaban en el catálogo, apagadas y además con etiqueta de plan, así que
+ * había que adivinar que existían. Sus fuentes (AIS abierto y GDELT/UCDP) no
+ * cuestan nada por petición, así que no hay motivo para esconderlas.
+ */
+describe("capas de serie para tráfico y conflictos", () => {
+  const deSerie: EnvLayerKey[] = ["airTraffic", "marineTraffic", "conflictZones"];
+
+  it("las tres vienen encendidas", () => {
+    for (const key of deSerie) {
+      expect(DEFAULT_ACTIVE_LAYERS, key).toContain(key);
+    }
+  });
+
+  it("ninguna exige cuenta para dibujarse", () => {
+    for (const key of deSerie) {
+      const def = layerDef(key);
+      expect(def, key).toBeDefined();
+      expect(TIER_RANK[def!.requiredTier], key).toBeLessThanOrEqual(TIER_RANK.signal);
+    }
+  });
+
+  it("barcos y conflictos no son ráster: no compiten por el techo de teselas", () => {
+    for (const key of ["marineTraffic", "conflictZones"] as EnvLayerKey[]) {
+      expect(isRasterLayer(layerDef(key)!), key).toBe(false);
+    }
+  });
+});
