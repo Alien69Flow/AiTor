@@ -45,31 +45,90 @@ export interface McpToolLike {
 }
 
 /**
+ * Herramientas que sólo existen en el despliegue.
+ *
+ * `media.*` se define en `api/mcp.ts`, que es código de servidor: el catálogo
+ * del navegador (`MCP_TOOLS`) no las tiene y por eso el panel enseñaba 6 de las
+ * 9. Se etiquetan aquí, sin importar el módulo del servidor al bundle.
+ */
+export const SERVER_ONLY_TOOLS: Record<string, { title: string; detail: string }> = {
+  "media.image": { title: "Generar una imagen", detail: "Gemini · imagen en el chat · plan pro" },
+  "media.music": { title: "Componer música", detail: "Lyria · 30 s o tema completo · plan pro" },
+  "media.speech": { title: "Poner voz a un texto", detail: "Gemini TTS · locución · plan pro" },
+};
+
+/** Herramientas cuyo trabajo no existe sin la clave del proveedor. */
+export const MODEL_KEY_TOOLS = Object.keys(SERVER_ONLY_TOOLS);
+
+/**
  * Filas de las herramientas MCP.
  *
- * `listed` es lo que el despliegue dice que tiene (`toolNames` de `/api/mcp`).
- * `null` = todavía no se ha preguntado: ni verde ni rojo, gris.
+ * `listed` es lo que el despliegue dice que publica (`toolNames` de
+ * `/api/mcp`), y manda: una herramienta que el servidor anuncia se lista aunque
+ * el navegador no la conozca, y una del catálogo que no llega se marca en rojo.
+ * `null` = todavía no se ha preguntado: gris, ni verde ni rojo.
+ *
+ * `keyState` decide el estado real de las herramientas que gastan clave: con la
+ * clave ausente la fila no puede estar verde aunque la herramienta esté
+ * publicada, porque llamarla falla.
  */
 export function mcpToolRows(
   tools: readonly McpToolLike[],
   listed: readonly string[] | null,
+  keyState: string = "unknown",
 ): ConnectionRow[] {
-  return tools.map((tool) => {
-    const row: ConnectionRow = {
+  const known = new Set(tools.map((tool) => tool.name));
+  const extras = (listed ?? [])
+    .filter((name) => !known.has(name))
+    .map((name) => ({ name } as McpToolLike));
+  const catalog = [...tools, ...extras];
+
+  return catalog.map((tool) => {
+    const serverOnly = SERVER_ONLY_TOOLS[tool.name];
+    const base: ConnectionRow = {
       id: tool.name,
-      title: tool.title || tool.name,
-      detail: tool.description || tool.name,
+      title: tool.title || serverOnly?.title || tool.name,
+      detail: tool.description || serverOnly?.detail || tool.name,
       state: "idle",
     };
-    if (listed === null) return row;
+    if (listed === null) return base;
+
     const present = listed.includes(tool.name);
-    return {
-      ...row,
-      state: present ? "ok" : "fail",
-      error: present ? undefined : "no está en este despliegue",
-      detail: tool.minTier ? `${row.detail} · plan ${tool.minTier}` : row.detail,
-    };
+    if (!present) {
+      return { ...base, state: "fail", error: "no está en este despliegue" };
+    }
+
+    const detail = tool.minTier ? `${base.detail} · plan ${tool.minTier}` : base.detail;
+    if (MODEL_KEY_TOOLS.includes(tool.name) && keyState !== "ok") {
+      return {
+        ...base,
+        detail,
+        state: "fail",
+        error: "publicada, pero sin GEMINI_API_KEY no puede ejecutarse",
+      };
+    }
+    return { ...base, detail, state: "ok" };
   });
+}
+
+/** Cómo se lee la clave del modelo, que es lo que decide si hay imagen y audio. */
+export function modelKeyRow(
+  payload: { geminiKeyState?: string } | null,
+  ms: number | null,
+): ConnectionRow {
+  const state = payload?.geminiKeyState;
+  const base: ConnectionRow = {
+    id: "model-key",
+    title: "Clave del modelo (GEMINI_API_KEY)",
+    detail: "Imagen, música y voz dependen de esta clave",
+    state: "idle",
+    ms: ms ?? undefined,
+  };
+  if (payload === null) return base;
+  if (state === "ok") return { ...base, state: "ok", detail: "presente: imagen, música y voz disponibles" };
+  if (state === "placeholder")
+    return { ...base, state: "fail", error: "marcador de posición, no una clave real" };
+  return { ...base, state: "fail", error: "ausente: la cuenta no genera imagen ni audio" };
 }
 
 /** Cómo se lee el estado de la clave del modelo en una línea. */

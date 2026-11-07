@@ -4,6 +4,7 @@ import { SKILLS, type SkillId } from "@/lib/ai-skills";
 import {
   mcpSummary,
   mcpToolRows,
+  modelKeyRow,
   SKILL_PROBE_TEXT,
   summarize,
   type ConnectionRow,
@@ -163,9 +164,12 @@ export function ConnectionsPanel() {
   }, []);
 
   // `McpTool` envuelve la definición: el panel trabaja con ella, no con `run`.
+  // La clave del modelo entra en la decisión: `media.*` está publicada pero no
+  // puede ejecutarse sin ella, y eso es lo que el panel tiene que decir.
   const tools = mcpToolRows(
     MCP_TOOLS.map((tool) => tool.definition),
     mcp.payload?.toolNames ?? null,
+    mcp.payload?.geminiKeyState ?? "unknown",
   ).map((row) => ({
     ...row,
     loading: mcp.loading,
@@ -186,7 +190,10 @@ export function ConnectionsPanel() {
   });
 
   const resumen = mcpSummary(mcp.loading ? null : mcp.payload, mcp.ms);
-  const conteo = summarize([...tools, ...skillRows]);
+  // La clave va como fila propia: es la razón por la que la imagen y el audio
+  // no aparecen, y estaba escondida en el resumen de la cabecera.
+  const keyRow = modelKeyRow(mcp.loading ? null : mcp.payload, mcp.ms);
+  const conteo = summarize([keyRow, ...tools, ...skillRows]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
@@ -227,6 +234,7 @@ export function ConnectionsPanel() {
             <span className={cn("font-mono text-[9px]", ESTADO_ESTILO[resumen.state])}>{resumen.detail}</span>
           </div>
           <ul>
+            <Row key={keyRow.id} {...keyRow} loading={mcp.loading} />
             {tools.map((row) => (
               <Row key={row.id} {...row} />
             ))}

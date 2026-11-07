@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { routeSkills, SKILLS, type SkillId } from "@/lib/ai-skills";
-import { mcpSummary, mcpToolRows, SKILL_PROBE_TEXT, summarize } from "./connections";
+import {
+  mcpSummary,
+  mcpToolRows,
+  modelKeyRow,
+  MODEL_KEY_TOOLS,
+  SERVER_ONLY_TOOLS,
+  SKILL_PROBE_TEXT,
+  summarize,
+} from "./connections";
 
 /**
  * El panel de conexiones sólo vale si dice la verdad: cada sonda tiene que
@@ -41,6 +49,59 @@ describe("filas de herramientas MCP", () => {
 
   it("el plan declarado se ve en la fila", () => {
     expect(mcpToolRows(tools, ["github.repo"])[0].detail).toContain("plan free");
+  });
+
+  it("lista las herramientas del servidor que el navegador no conoce", () => {
+    // El fallo real: `media.*` sólo existe en `api/mcp.ts`, así que el panel
+    // enseñaba 6 de las 9 y la imagen/audio no aparecían por ningún lado.
+    const listed = ["github.repo", "db.select", ...MODEL_KEY_TOOLS];
+    const filas = mcpToolRows(tools, listed, "ok");
+    expect(filas.map((fila) => fila.id)).toEqual([
+      "github.repo",
+      "db.select",
+      "media.image",
+      "media.music",
+      "media.speech",
+    ]);
+    expect(filas[2]).toMatchObject({ title: "Generar una imagen", state: "ok" });
+  });
+
+  it("una herramienta de la clave no está verde si falta la clave", () => {
+    const filas = mcpToolRows(tools, ["github.repo", ...MODEL_KEY_TOOLS], "missing");
+    const imagen = filas.find((fila) => fila.id === "media.image");
+    expect(imagen).toMatchObject({
+      state: "fail",
+      error: "publicada, pero sin GEMINI_API_KEY no puede ejecutarse",
+    });
+    // El resto sigue en verde: el fallo es de la clave, no del despliegue.
+    expect(filas[0].state).toBe("ok");
+  });
+});
+
+describe("fila de la clave del modelo", () => {
+  it("sin respuesta todavía está gris", () => {
+    expect(modelKeyRow(null, null)).toMatchObject({ state: "idle", ms: undefined });
+  });
+
+  it("ausente y con marcador son fallo, y lo dicen distinto", () => {
+    expect(modelKeyRow({ geminiKeyState: "missing" }, 42)).toMatchObject({
+      state: "fail",
+      error: "ausente: la cuenta no genera imagen ni audio",
+      ms: 42,
+    });
+    expect(modelKeyRow({ geminiKeyState: "placeholder" }, 42)).toMatchObject({
+      state: "fail",
+      error: "marcador de posición, no una clave real",
+    });
+  });
+
+  it("con clave real la fila queda en verde", () => {
+    expect(modelKeyRow({ geminiKeyState: "ok" }, 12)).toMatchObject({ state: "ok" });
+  });
+
+  it("las herramientas de la clave son las tres de medios", () => {
+    expect(MODEL_KEY_TOOLS.sort()).toEqual(["media.image", "media.music", "media.speech"]);
+    expect(Object.keys(SERVER_ONLY_TOOLS).sort()).toEqual(MODEL_KEY_TOOLS);
   });
 });
 
