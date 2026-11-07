@@ -20,6 +20,14 @@ export interface Message {
   content: string;
   timestamp: Date;
   imageData?: string;
+  /**
+   * Razonamiento del modelo antes de la respuesta, tal cual lo publicó.
+   * Se guarda aparte del contenido a propósito: es un panel plegable, no texto
+   * de la respuesta, y no debe acabar en el markdown ni en el portapapeles.
+   */
+  reasoning?: string;
+  /** Imágenes generadas en el turno, ya como data URLs. */
+  images?: { url: string; alt: string }[];
   /** Sources this turn consulted, so the transcript shows what the answer rests on. */
   skills?: MessageSkill[];
   /** Present only when the backend stream reports real provider usage. */
@@ -113,7 +121,15 @@ export function useChat() {
   const [agentNotice, setAgentNotice] = useState<string | null>(null);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(messages));
+    // Las imágenes van como data URLs de uno o dos megas: guardarlas llena el
+    // almacenamiento del navegador y la siguiente carga revienta al parsear un
+    // JSON a medias. Se conservan en la sesión viva y no en disco.
+    const persistable = messages.map(({ images: _images, ...rest }) => rest);
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persistable));
+    } catch {
+      // Cuota llena: se conserva el historial en memoria antes que romper el chat.
+    }
   }, [messages]);
 
   const sendMessage = useCallback(
@@ -171,24 +187,38 @@ export function useChat() {
       // el texto de golpe.
       const agentId = crypto.randomUUID();
       let agentText = "";
-      let agentStarted = false;
+      let agentReasoning = "";
+      const agentImages: { url: string; alt: string }[] = [];
+      /** Ya hay burbuja creada: puede ser por razonamiento, antes que el texto. */
+      let agentCreated = false;
       /** Rellenado por el agente cuando no puede contestar. */
       let agentFailure: AgentTurnFailure | null = null;
 
-      const appendAgentDelta = (delta: string) => {
-        agentText += delta;
-        setMessages((prev) => {
-          if (!agentStarted) {
-            agentStarted = true;
-            return [
-              ...prev,
-              { id: agentId, role: "assistant" as const, content: agentText, timestamp: new Date() },
-            ];
-          }
-          return prev.map((message) =>
-            message.id === agentId ? { ...message, content: agentText } : message,
-          );
-        });
+      /**
+       * Añade texto o razonamiento al mismo mensaje, creándolo en el primer
+       * trozo de cualquiera de los dos. El razonamiento llega antes, así que la
+       * burbuja aparece con el panel plegable y el texto se rellena debajo.
+       */
+      const patchAgent = (chunk: { text?: string; thought?: string; image?: { url: string; alt: string } }) => {
+        if (chunk.text) agentText += chunk.text;
+        if (chunk.thought) agentReasoning += chunk.thought;
+        if (chunk.image) agentImages.push(chunk.image);
+        const snapshot = {
+          content: agentText,
+          ...(agentReasoning && { reasoning: agentReasoning }),
+          ...(agentImages.length > 0 && { images: [...agentImages] }),
+        };
+        if (!agentCreated) {
+          agentCreated = true;
+          setMessages((prev) => [
+            ...prev,
+            { id: agentId, role: "assistant" as const, ...snapshot, timestamp: new Date() },
+          ]);
+          return;
+        }
+        setMessages((prev) =>
+          prev.map((message) => (message.id === agentId ? { ...message, ...snapshot } : message)),
+        );
       };
 
       const agentTurn = await runAgentTurn(
@@ -196,7 +226,9 @@ export function useChat() {
         content,
         {
           hasImage: Boolean(imageData),
-          onDelta: appendAgentDelta,
+          onDelta: (delta) => patchAgent({ text: delta }),
+          onThought: (thought) => patchAgent({ thought }),
+          onImage: (image) => patchAgent({ image }),
           onFailure: (failure) => {
             agentFailure = failure;
           },
@@ -209,15 +241,19 @@ export function useChat() {
           label: name,
           ok: !agentTurn.failed.includes(name),
         }));
-        if (agentStarted) {
+        if (agentCreated) {
           // El texto ya está en pantalla: sólo se cierran las fichas de
-          // herramientas, sin reescribir lo que el usuario está leyendo.
+          // herramientas, sin reescribir lo que el usuario está leyendo. El
+          // razonamiento final sólo sustituye al parcial si trae más.
           setMessages((prev) =>
             prev.map((message) =>
               message.id === agentId
                 ? {
                     ...message,
                     content: agentTurn.content.length >= agentText.length ? agentTurn.content : message.content,
+                    ...(agentTurn.reasoning.length >= agentReasoning.length &&
+                      agentTurn.reasoning && { reasoning: agentTurn.reasoning }),
+                    ...(agentTurn.images.length > agentImages.length && { images: agentTurn.images }),
                     ...(chips.length > 0 && { skills: chips }),
                   }
                 : message,
@@ -231,6 +267,8 @@ export function useChat() {
               role: "assistant",
               content: agentTurn.content,
               timestamp: new Date(),
+              ...(agentTurn.reasoning && { reasoning: agentTurn.reasoning }),
+              ...(agentTurn.images.length > 0 && { images: agentTurn.images }),
               ...(chips.length > 0 && { skills: chips }),
             },
           ]);
@@ -257,7 +295,7 @@ export function useChat() {
 
       // El flujo se cortó después de empezar: lo leído es real, no se borra ni
       // se pide otra respuesta encima (eso duplicaba el mensaje).
-      if (agentStarted) {
+      if (agentCreated) {
         toast.warning("El agente se cortó a mitad de la respuesta; lo mostrado sí llegó del modelo.");
         setIsLoading(false);
         try {

@@ -3,7 +3,7 @@
  *
  * `LIVE_SIGNALS` guarda la sede como texto libre («Oulu, Finlandia»), no como
  * coordenadas: es lo que se lee en la ficha y lo que publica el canal. Esta
- * tabla traduce ese texto a un punto para el globo, sin tocar las 323 fichas.
+ * tabla traduce ese texto a un punto para el globo, sin tocar las fichas.
  *
  * Dos reglas, para no fingir precisión que no existe:
  *
@@ -225,6 +225,63 @@ export const CAMERA_PLACES: Record<string, CameraPlace> = {
   "Texas, EE. UU.": { lat: 31.0, lon: -99.0, approximate: true },
   "Victoria, Australia": { lat: -36.5, lon: 144.0, approximate: true },
   "Zimbabue": { lat: -19.0, lon: 29.8, approximate: true },
+
+  // --- Medios 24 h ---------------------------------------------------------
+  // La sede es la redacción que produce la señal, no el lugar de la noticia:
+  // el marcador dice desde dónde emite la cadena.
+  "Atlanta, EE. UU.": { lat: 33.749, lon: -84.388 },
+  "30 Rockefeller Plaza, Nueva York": { lat: 40.7593, lon: -73.9794 },
+  "Upper West Side, Nueva York": { lat: 40.7736, lon: -73.9827 },
+  "CBS Broadcast Center, Nueva York": { lat: 40.7675, lon: -73.988 },
+  "Bloomberg Tower, Nueva York": { lat: 40.762, lon: -73.968 },
+  "Associated Press, Nueva York": { lat: 40.7527, lon: -73.9932 },
+  "Doha, Catar": { lat: 25.2854, lon: 51.531 },
+  "Londres, Reino Unido": { lat: 51.5074, lon: -0.1278 },
+  "Canary Wharf, Londres": { lat: 51.5055, lon: -0.0235 },
+  "Bonn, Alemania": { lat: 50.7374, lon: 7.0982 },
+  "Lyon, Francia": { lat: 45.764, lon: 4.8357 },
+  "París, Francia": { lat: 48.8566, lon: 2.3522 },
+  "Pointe-Noire, Congo": { lat: -4.7692, lon: 11.8664 },
+  "Sídney, Australia": { lat: -33.8688, lon: 151.2093 },
+
+  // --- Puertos, canales y aeropuertos --------------------------------------
+  "Puerto de Miami, Florida": { lat: 25.7743, lon: -80.17 },
+  "Puerto de Sídney, Australia": { lat: -33.856, lon: 151.215 },
+  "Duluth, Minnesota": { lat: 46.766, lon: -92.092 },
+  "Port Colborne, Ontario": { lat: 42.886, lon: -79.25 },
+  "Sault Ste. Marie, Míchigan": { lat: 46.505, lon: -84.357 },
+  "Keokuk, Iowa": { lat: 40.397, lon: -91.385 },
+  "Mackinaw City, Míchigan": { lat: 45.777, lon: -84.727 },
+  "Aeropuerto de Los Ángeles, California": { lat: 33.9416, lon: -118.4085 },
+  "Aeropuerto de Heathrow, Londres": { lat: 51.47, lon: -0.4543 },
+  "LaGuardia, Nueva York": { lat: 40.7769, lon: -73.874 },
+  "Chicago Midway, Illinois": { lat: 41.7868, lon: -87.7522 },
+  "Aeropuerto de Lanzarote, Canarias": { lat: 28.9455, lon: -13.6052 },
+  "Maho Beach, Sint Maarten": { lat: 18.041, lon: -63.1089 },
+  "Aeropuerto de Las Vegas, Nevada": { lat: 36.084, lon: -115.1537 },
+
+  // --- Ciudades ------------------------------------------------------------
+  "Bahía de Tokio, Japón": { lat: 35.62, lon: 139.78 },
+  "Shinjuku, Tokio": { lat: 35.6935, lon: 139.7006 },
+  "Estación de Shinjuku, Tokio": { lat: 35.6896, lon: 139.7006 },
+  "Venice Beach, Los Ángeles": { lat: 33.985, lon: -118.4695 },
+  "Port Isaac, Cornualles": { lat: 50.594, lon: -4.831 },
+  "Estación central de Praga": { lat: 50.083, lon: 14.435 },
+  "Hannover, Alemania": { lat: 52.376, lon: 9.741 },
+  "Revelstoke, Columbia Británica": { lat: 50.9981, lon: -118.1957 },
+  "Flagstaff, Arizona": { lat: 35.1983, lon: -111.6513 },
+
+  // --- Naturaleza ----------------------------------------------------------
+  "Monterey Bay, California": { lat: 36.6182, lon: -121.9018 },
+  "Acuario de Vancouver, Columbia Británica": { lat: 49.3005, lon: -123.1309 },
+  "Sabi Sand, Sudáfrica": { lat: -24.6, lon: 31.4, approximate: true },
+  "Chobe, Botsuana": { lat: -17.8167, lon: 25.15, approximate: true },
+  "Cataratas Victoria, Zimbabue": { lat: -17.933, lon: 25.833 },
+  "Hwange, Zimbabue": { lat: -18.63, lon: 26.55, approximate: true },
+  "Onguma, Namibia": { lat: -18.85, lon: 16.6, approximate: true },
+  "Okaukuejo, Etosha": { lat: -19.18, lon: 15.91 },
+  "NamibRand, Namibia": { lat: -25.0, lon: 16.0, approximate: true },
+  "Utila, Honduras": { lat: 16.1, lon: -86.9, approximate: true },
 };
 
 const UNPLACEABLE = new Set(UNPLACEABLE_LOCATIONS);

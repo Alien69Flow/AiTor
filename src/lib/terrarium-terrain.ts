@@ -21,8 +21,16 @@
  */
 import { CustomHeightmapTerrainProvider, WebMercatorTilingScheme } from "cesium";
 
-/** Resolución de la rejilla que se le entrega a Cesium por tesela. */
-export const TERRAIN_GRID = 65;
+/**
+ * Resolución de la rejilla que se le entrega a Cesium por tesela.
+ *
+ * 129 y no 65: con 65 la tesela se resolvía con 64 quads y las crestas salían
+ * en escalera al acercarse a los Alpes o al Himalaya. El coste es una rejilla
+ * de 129² muestras (66 KB por tesela, la imagen de origen ya es 256²), y a
+ * cambio el relieve tiene el doble de detalle y normales más finas con la luz
+ * del día.
+ */
+export const TERRAIN_GRID = 129;
 
 /**
  * Último nivel con datos propios de la fuente (z15 ≈ 19 m por muestra con la

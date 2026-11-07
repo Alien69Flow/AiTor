@@ -30,6 +30,8 @@ describe("turno del agente con herramientas", () => {
 
     expect(result).toEqual({
       content: "El árbol tiene 586 rutas y 512 ficheros.",
+      reasoning: "",
+      images: [],
       tools: ["github.repo"],
       failed: [],
     });
@@ -82,9 +84,45 @@ describe("turno del agente con herramientas", () => {
     const result = await runAgentTurn([], "lee el árbol", { onDelta: (text) => deltas.push(text) });
 
     expect(deltas).toEqual(["El árbol", " tiene 586 rutas."]);
-    expect(result).toEqual({ content: "El árbol tiene 586 rutas.", tools: ["github.repo"], failed: ["github.repo"] });
+    expect(result).toEqual({
+      content: "El árbol tiene 586 rutas.",
+      reasoning: "",
+      images: [],
+      tools: ["github.repo"],
+      failed: ["github.repo"],
+    });
     // Sin callback se usa la vía de una sola pieza, no el flujo.
     expect(askAgent).not.toHaveBeenCalled();
+  });
+
+  it("el razonamiento viaja en su propio canal y no se cuela en la respuesta", async () => {
+    const thoughts: string[] = [];
+    const deltas: string[] = [];
+    streamAgentAnswer.mockImplementation(
+      async (
+        _prompt: string,
+        handlers: { onDelta?: (t: string) => void; onThought?: (t: string) => void },
+      ) => {
+        handlers.onThought?.("Primero miro el árbol. ");
+        handlers.onThought?.("Luego respondo.");
+        handlers.onDelta?.("Hay 586 rutas.");
+        return {
+          answer: "Hay 586 rutas.",
+          reasoning: "Primero miro el árbol. Luego respondo.",
+          toolCalls: [],
+        };
+      },
+    );
+
+    const result = await runAgentTurn([], "lee el árbol", {
+      onDelta: (text) => deltas.push(text),
+      onThought: (text) => thoughts.push(text),
+    });
+
+    expect(thoughts).toEqual(["Primero miro el árbol. ", "Luego respondo."]);
+    expect(deltas).toEqual(["Hay 586 rutas."]);
+    expect(result?.content).toBe("Hay 586 rutas.");
+    expect(result?.reasoning).toBe("Primero miro el árbol. Luego respondo.");
   });
 
   it("explica por qué no hubo agente: sin clave no es lo mismo que sin sesión", async () => {

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { splitForTelegram, toTelegramHtml } from "./telegram-webhook";
 
 /**
  * El bot dejó de responder por la puerta de la firma, no por Telegram ni por el
@@ -88,7 +89,10 @@ const TELEGRAM_OK = (result: unknown) =>
   });
 
 /** Telegram responde ok a sendMessage; la función de chat responde un SSE. */
-function stubNetwork(webhookUrl = "https://aitor.alienflow.space/api/telegram-webhook") {
+function stubNetwork(
+  webhookUrl = "https://aitor.alienflow.space/api/telegram-webhook",
+  sse = SSE,
+) {
   const fetchMock = vi.fn(async (url: string) => {
     if (typeof url === "string" && url.includes("/getMe")) {
       return TELEGRAM_OK({ id: 7_000_001, username: "Alien69Bot", first_name: "AI Tor" });
@@ -108,7 +112,7 @@ function stubNetwork(webhookUrl = "https://aitor.alienflow.space/api/telegram-we
     if (typeof url === "string" && url.includes("/sendChatAction")) {
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
-    return new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } });
+    return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
   });
   vi.stubGlobal("fetch", fetchMock);
   return fetchMock;
@@ -119,7 +123,54 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+describe("formato de los mensajes", () => {
+  it("convierte el markdown del modelo al HTML que Telegram acepta", () => {
+    // El modelo contesta con Markdown normal y bloques ```; el bot enviaba con
+    // `parse_mode: "Markdown"` (legacy), que no entiende ninguno de los dos y
+    // devolvía 400.
+    expect(toTelegramHtml("**Hola** y `code`")).toBe("<b>Hola</b> y <code>code</code>");
+    expect(toTelegramHtml("```text\nHOLA\n```")).toBe("<pre>HOLA</pre>");
+    expect(toTelegramHtml("```\nSIN CERRAR")).toBe("<pre>SIN CERRAR</pre>");
+    expect(toTelegramHtml("# Título")).toBe("<b>Título</b>");
+  });
+
+  it("escapa el HTML que venga del modelo en vez de inyectarlo", () => {
+    expect(toTelegramHtml("<script>alert(1)</script>")).toBe("&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(toTelegramHtml("a & b")).toBe("a &amp; b");
+  });
+
+  it("trocea por párrafos sin perderse texto", () => {
+    const text = ["uno".repeat(400), "dos".repeat(400), "tres".repeat(400)].join("\n\n");
+    const parts = splitForTelegram(text, 3800);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((part) => part.length <= 3800)).toBe(true);
+    expect(parts.join(" ").replace(/\s+/g, "")).toBe(text.replace(/\s+/g, ""));
+  });
+});
+
 describe("webhook de Telegram", () => {
+  it("la respuesta del modelo sale como HTML, no como Markdown legacy", async () => {
+    const sse = [
+      `data: ${JSON.stringify({ choices: [{ delta: { content: "```text\nHOLA\n```\n**negrita**" } }] })}`,
+      "",
+      "data: [DONE]",
+      "",
+    ].join("\n");
+    const fetchMock = stubNetwork(undefined, sse);
+    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
+
+    await invoke(handler, update("hola"));
+
+    const sent = fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
+    const [, init] = sent[0] as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.parse_mode).toBe("HTML");
+    expect(payload.text).toContain("<pre>HOLA</pre>");
+    expect(payload.text).toContain("<b>negrita</b>");
+    expect(payload.text).not.toContain("```");
+    expect(payload.text).not.toContain("**");
+  });
+
   it("sin secreto configurado el bot sigue respondiendo", async () => {
     const fetchMock = stubNetwork();
     const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
