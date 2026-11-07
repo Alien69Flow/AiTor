@@ -365,6 +365,16 @@ SystemTab.tsx
 
 ## 📝 NOTES
 
+### Globo LIVE, emisiones y cobros (plan aprobado)
+- [ ] Clima: ampliar ciudades, coexistencia de lecturas, unidades y datos ausentes.
+- [ ] Mercados: quitar respaldo inventado y mostrar frescura; ampliar fuentes verificables.
+- [ ] Alertas: mareas costeras y datos orbitales con fuente y fecha.
+- [ ] Cámaras: ampliar catálogo oficial sin falsos LIVE ni ubicación ficticia.
+- [ ] Recuperar avances GitHub/Vercel, modelos de aviones y escalas cósmicas.
+- [ ] DAO City: ampliar espacios, agentes, Skills, RAG y Workflows con acciones verificables.
+- [ ] Migración a backend propio: verificar acceso al destino y traslado seguro de funciones y secretos, sin borrar Cloud.
+- [ ] Synapse: verificar destinos y alta comercial antes de habilitar BTC/tarjeta y nuevas redes.
+
 ### DAO City
 - [x] Sustituir Neural por ciudad holográfica 3D con distritos seleccionables.
 - [x] Conectar AI Tor y encargos por distrito al chat existente con entregables reales.
