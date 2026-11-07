@@ -44,7 +44,9 @@ loadDotEnv(".env.local");
 
 const onlyVerify = new Set(process.argv.slice(2)).has("--verify");
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || "wkdtvrxavkhbifjtvvdw";
-const HEALTH_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/chat?health=1`;
+// `probe=1` hace que el informe llame de verdad a cada oráculo con una palabra:
+// una clave revocada o un proveedor caído sólo se ven así, no mirando la clave.
+const HEALTH_URL = `https://${PROJECT_REF}.supabase.co/functions/v1/chat?health=1&probe=1`;
 
 /** Estado por proveedor y por modelo, sin secretos. */
 async function readHealth() {
@@ -100,15 +102,35 @@ function printHealth(payload) {
 
   console.log("\nOráculos");
   for (const model of models) {
-    const mark = model.available ? "✅" : "⛔";
+    const probe = model.probe;
+    // Con sonda manda la llamada real; sin ella, lo que diga la clave.
+    const mark = probe ? (probe.ok ? "✅" : "❌") : model.available ? "✅" : "⛔";
+    const detalle = probe
+      ? probe.ok
+        ? `respondió ${probe.ms} ms`
+        : `falló ${probe.status === null ? "sin respuesta" : `HTTP ${probe.status}`}${probe.error ? ` · ${probe.error}` : ""}`
+      : (model.reason ?? "");
     console.log(
-      `  ${mark} ${String(model.id).padEnd(34)} ${String(model.provider ?? "").padEnd(12)} ${model.reason ?? ""}`,
+      `  ${mark} ${String(model.id).padEnd(34)} ${String(model.provider ?? "").padEnd(12)} ${detalle}`,
     );
   }
 
   const listed = providers.length;
   const ready = providers.filter((provider) => provider.configured).length;
   console.log(`\n${ready}/${listed} proveedores con clave real.`);
+
+  if (payload.probe) {
+    const fallan = models.filter((model) => model.probe && !model.probe.ok);
+    console.log(
+      `Sonda real : ${payload.probe.ok}/${payload.probe.total} oráculos respondieron ` +
+        `(${payload.probe.at}).`,
+    );
+    if (fallan.length > 0) {
+      console.log(`  Sin respuesta: ${fallan.map((model) => model.id).join(", ")}`);
+    }
+  } else {
+    console.log("Sonda real : no incluida en la respuesta (el despliegue es anterior a `probe=1`).");
+  }
   return payload;
 }
 

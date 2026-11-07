@@ -1,10 +1,13 @@
 // Edge function for AI chat routing
 
 import {
+  attachProbes,
   buildChatHealth,
   DEFAULT_MODEL,
   FALLBACK_MODEL,
   modelsForProvider,
+  PROBE_MESSAGE,
+  probeOracles,
   ROUTED_MODELS,
 } from "../_shared/ai-providers.ts";
 
@@ -444,12 +447,55 @@ function classifyProviderError(status: number, errorText: string) {
 }
 
 /**
+ * Llamada mínima a un oráculo por la misma ruta que atiende el chat.
+ *
+ * Se pide una palabra y se corta el flujo en cuanto llegan las cabeceras: lo
+ * que interesa es el código de estado (clave revocada, proveedor caído, modelo
+ * retirado), no el texto. Sin esto, una clave revocada seguía saliendo `ok` en
+ * el informe porque el chequeo sólo miraba que hubiera algo con pinta de clave.
+ */
+async function probeCall(model: string): Promise<{ ok: boolean; status: number }> {
+  const messages = [{ role: "user", content: PROBE_MESSAGE }];
+  const system = "Responde sólo: ok";
+  const response = GROK_MODELS.includes(model)
+    ? await routeToGrok(model, messages, system)
+    : ANTHROPIC_MODELS.includes(model)
+      ? await routeToAnthropic(model, messages, system)
+      : DEEPSEEK_MODELS.includes(model)
+        ? await routeToDeepSeek(model, messages, system)
+        : await routeToLovable(model, messages, system);
+  // Se cancela el cuerpo: no hace falta gastar la respuesta entera.
+  await response.body?.cancel().catch(() => undefined);
+  return { ok: response.ok, status: response.status };
+}
+
+/** Última sonda, para que un monitor que pregunta cada minuto no gaste cuota. */
+let probeCache: { at: number; probes: Awaited<ReturnType<typeof probeOracles>> } | null = null;
+const PROBE_CACHE_MS = 60_000;
+
+/**
  * Public health report: which providers have a real key and which models can
  * answer. It never returns a secret — only whether one exists and whether it
  * looks like a key instead of a pasted placeholder.
+ *
+ * Con `?probe=1` además llama de verdad a cada oráculo con una palabra y dice
+ * si respondió, en cuánto tiempo y con qué estado.
  */
-function healthResponse(): Response {
-  return new Response(JSON.stringify(buildChatHealth((name) => Deno.env.get(name))), {
+async function healthResponse(url: URL): Promise<Response> {
+  const env = (name: string) => Deno.env.get(name);
+  let health = buildChatHealth(env);
+
+  if (url.searchParams.get("probe") === "1") {
+    const fresh = probeCache && Date.now() - probeCache.at < PROBE_CACHE_MS;
+    const probes =
+      fresh && probeCache
+        ? probeCache.probes
+        : await probeOracles(env, probeCall, { timeoutMs: 10_000 });
+    if (!fresh) probeCache = { at: Date.now(), probes };
+    health = attachProbes(health, probes);
+  }
+
+  return new Response(JSON.stringify(health), {
     status: 200,
     headers: {
       ...corsHeaders,
@@ -469,7 +515,7 @@ Deno.serve(async (req) => {
   // it, so a monitor can use whichever URL it already knows.
   const url = new URL(req.url);
   if (req.method === "GET" || url.pathname.endsWith("/health") || url.searchParams.has("health")) {
-    return healthResponse();
+    return await healthResponse(url);
   }
 
   try {
@@ -490,7 +536,7 @@ Deno.serve(async (req) => {
       ((requestBody as Record<string, unknown>).health === true ||
         (requestBody as Record<string, unknown>).action === "health")
     ) {
-      return healthResponse();
+      return await healthResponse(url);
     }
     
     const validation = validateRequest(requestBody);

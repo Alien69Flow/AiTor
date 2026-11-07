@@ -138,6 +138,8 @@ export interface ModelHealth {
   provider: ProviderId;
   available: boolean;
   reason: ModelSignal;
+  /** Sólo en el informe con `probe=1`: lo que pasó al llamar de verdad. */
+  probe?: OracleProbe;
 }
 
 export interface ChatHealth {
@@ -148,6 +150,8 @@ export interface ChatHealth {
   models: ModelHealth[];
   defaultModel: string;
   fallbackModel: string;
+  /** Presente sólo con `probe=1`: llamada mínima real a cada oráculo. */
+  probe?: { at: string; ok: number; total: number };
 }
 
 /**
@@ -203,5 +207,116 @@ export function buildChatHealth(
     models,
     defaultModel: DEFAULT_MODEL,
     fallbackModel: FALLBACK_MODEL,
+  };
+}
+
+/**
+ * Resultado de llamar de verdad a un oráculo con el mensaje más corto posible.
+ *
+ * Mirar la clave sólo dice que hay algo parecido a una clave: una clave
+ * revocada, un proveedor caído o un modelo retirado pasaban el chequeo y
+ * fallaban en la primera pregunta real. Esta sonda usa la **misma ruta** que
+ * atiende el chat, así que comprueba el camino completo.
+ */
+export interface OracleProbe {
+  model: string;
+  provider: ProviderId;
+  ok: boolean;
+  /** Código HTTP, o `null` si ni hubo respuesta (red, tiempo agotado). */
+  status: number | null;
+  ms: number;
+  /** Motivo recortado y sin credenciales. */
+  error?: string;
+}
+
+/** Lo que el handler inyecta: la llamada real, para poder probar sin red. */
+export type OracleProbeCall = (model: string) => Promise<{ ok: boolean; status: number }>;
+
+/** Texto de la llamada mínima: una palabra, para no gastar cuota. */
+export const PROBE_MESSAGE = "ping";
+
+/**
+ * Quita del mensaje de error cualquier cosa con pinta de credencial: una URL
+ * con `?key=` o un `Bearer` acabarían en los logs del monitor.
+ */
+function safeError(error: unknown, status: number | null): string {
+  const raw = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const sinClaves = raw
+    .replace(/([?&](?:key|api_key|token)=)[^&\s]+/gi, "$1***")
+    .replace(/Bearer\s+[A-Za-z0-9._-]+/gi, "Bearer ***");
+  if (sinClaves) return sinClaves.slice(0, 120);
+  return status === null ? "sin respuesta" : `HTTP ${status}`;
+}
+
+/**
+ * Sondea cada modelo de cada proveedor con clave válida.
+ *
+ * Va en paralelo y con tope de tiempo por llamada: un proveedor colgado no
+ * puede dejar el informe sin respuesta.
+ */
+export async function probeOracles(
+  env: (name: string) => string | undefined,
+  call: OracleProbeCall,
+  options: { timeoutMs?: number; now?: () => number; models?: readonly string[] } = {},
+): Promise<OracleProbe[]> {
+  const timeoutMs = options.timeoutMs ?? 12_000;
+  const now = options.now ?? (() => Date.now());
+  const wanted = options.models ? new Set(options.models) : null;
+
+  const targets = PROVIDERS.filter((provider) => keyState(env(provider.envVar)) === "ok").flatMap(
+    (provider) =>
+      provider.models
+        .filter((model) => !wanted || wanted.has(model))
+        .map((model) => ({ provider: provider.id, model })),
+  );
+
+  return Promise.all(
+    targets.map(async ({ provider, model }) => {
+      const started = now();
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        const result = await Promise.race([
+          call(model),
+          new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new Error(`tiempo agotado (${timeoutMs} ms)`)), timeoutMs);
+          }),
+        ]);
+        return {
+          model,
+          provider,
+          ok: result.ok,
+          status: result.status,
+          ms: now() - started,
+          ...(result.ok ? {} : { error: safeError(null, result.status) }),
+        };
+      } catch (error) {
+        return {
+          model,
+          provider,
+          ok: false,
+          status: null,
+          ms: now() - started,
+          error: safeError(error, null),
+        };
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+      }
+    }),
+  );
+}
+
+/**
+ * Mete el resultado de las sondas en el informe: cada modelo lleva la suya y
+ * el resumen dice cuántos respondieron.
+ */
+export function attachProbes(health: ChatHealth, probes: OracleProbe[], now: Date = new Date()): ChatHealth {
+  const byModel = new Map(probes.map((probe) => [probe.model, probe]));
+  return {
+    ...health,
+    models: health.models.map((model) => {
+      const probe = byModel.get(model.id);
+      return probe ? { ...model, probe } : model;
+    }),
+    probe: { at: now.toISOString(), ok: probes.filter((probe) => probe.ok).length, total: probes.length },
   };
 }
