@@ -495,9 +495,12 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		Icon: Fish,
 		requiredTier: "signal",
 		source: "NASA GIBS · VIIRS",
-		freshness: "1 día",
+		freshness: "compuesto de 8 días",
 		description: "Fitoplancton: la base de la cadena trófica y el bombeo de carbono",
-		gibs: { layer: "VIIRS_SNPP_L2_Chlorophyll_A", level: 7, alpha: 0.8, dateOffsetHours: 36 },
+		// Compuesto periódico: pedir la fecha de ayer devuelve 404 casi todos los
+		// días (comprobado contra el servidor). Sin segmento TIME, GIBS sirve el
+		// último compuesto disponible, que es lo que la capa dice enseñar.
+		gibs: { layer: "VIIRS_SNPP_L2_Chlorophyll_A", level: 7, alpha: 0.8, timeless: true },
 	},
 	{
 		key: "soilMoisture",

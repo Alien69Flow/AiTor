@@ -52,6 +52,20 @@ describe("catálogo de capas del globo", () => {
     }
   });
 
+  /**
+   * La clorofila es un compuesto: con un `TIME` diario el servidor responde 404
+   * casi todos los días (comprobado contra GIBS), así que la capa se quedaría
+   * en blanco con un 404 por tesela. Sin fecha sirve el último compuesto.
+   */
+  it("las capas de compuesto periódico piden el último producto, sin fecha", () => {
+    const compuestos: EnvLayerKey[] = ["oceanChlorophyll", "vegetation", "carbonDioxide", "seaSalinity"];
+    for (const key of compuestos) {
+      const cfg = layerDef(key)!.gibs!;
+      expect(cfg.timeless, key).toBe(true);
+      expect(cfg.dateOffsetHours, key).toBeUndefined();
+    }
+  });
+
   it("las capas por conector existen en el catálogo y no traen raster propio", () => {
     for (const key of CONNECTOR_LAYER_KEYS) {
       const def = layerDef(key);
