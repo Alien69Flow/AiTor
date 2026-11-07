@@ -1001,6 +1001,88 @@ const TTS_MODEL = "gemini-2.5-flash-preview-tts";
 const MUSIC_CLIP_MODEL = "lyria-3-clip-preview";
 const MUSIC_SONG_MODEL = "lyria-3.5";
 
+/* --------------------- presupuesto de resultados --------------------- */
+
+/**
+ * Presupuesto de lo que vuelve al modelo desde una herramienta.
+ *
+ * Idea tomada de `headroom` (compresión de contexto para agentes): el bucle
+ * hace hasta cuatro rondas y reenvía cada resultado completo, así que un árbol
+ * de repositorio o una consulta larga llenan el contexto en la primera ronda.
+ *
+ * La regla que se copia es la importante: **no se recorta a ciegas**. Se
+ * conserva el principio y el final —donde vive la conclusión— y del trozo
+ * descartado se rescatan las líneas de error, porque perder un `FATAL` en medio
+ * es peor que no comprimir.
+ *
+ * Vive aquí y no en `src/lib` a propósito: los imports relativos entre
+ * funciones serverless rompen el despliegue de Vercel (ver `api/_venues.ts`).
+ */
+export const TOOL_RESULT_CHARS = 6_000;
+
+const RESCUE_LINE =
+  /\b(error|failed|failure|fatal|exception|denied|timeout|no se pudo|fall[oó]|inv[aá]lid[oa])\b/i;
+
+/** Recorta un texto largo conservando principio, final y líneas de error. */
+export function compressToolResult(text: string, maxChars = TOOL_RESULT_CHARS): string {
+  if (text.length <= maxChars) return text;
+  if (maxChars < 200) return text.slice(0, Math.max(0, maxChars));
+
+  const headChars = Math.floor(maxChars * 0.55);
+  const tailChars = Math.floor(maxChars * 0.35);
+  const headRaw = text.slice(0, headChars);
+  const tailRaw = text.slice(text.length - tailChars);
+  const dropped = text.slice(headChars, text.length - tailChars);
+
+  // Se corta por líneas completas cuando se puede: media línea confunde más.
+  const headCut = headRaw.lastIndexOf("\n");
+  const head = headCut > 0 ? headRaw.slice(0, headCut + 1) : headRaw;
+  const tailCut = tailRaw.indexOf("\n");
+  const tail = tailCut === -1 ? tailRaw : tailRaw.slice(tailCut + 1);
+
+  const rescued = dropped
+    .split("\n")
+    .filter((line) => RESCUE_LINE.test(line))
+    .slice(0, 8);
+
+  const marker = `\n… [${dropped.length} caracteres omitidos de ${text.length}] …\n`;
+  const conRescate = `${head}${marker}${rescued.length ? `${rescued.join("\n")}\n` : ""}${tail}`;
+  // El rescate puede pasarse del presupuesto; si pasa, manda el presupuesto.
+  return conRescate.length <= maxChars * 1.15 ? conRescate : `${head}${marker}${tail}`;
+}
+
+/**
+ * Aplica el presupuesto respetando la forma: sólo se comprimen las cadenas.
+ * Si aun así queda enorme (miles de claves cortas), se degrada a `{ text }`.
+ */
+export function budgetToolResponse(
+  response: Record<string, unknown>,
+  maxChars = TOOL_RESULT_CHARS,
+): Record<string, unknown> {
+  const walk = (value: unknown, depth: number): unknown => {
+    if (typeof value === "string") return compressToolResult(value, maxChars);
+    if (Array.isArray(value)) {
+      return depth > 6
+        ? compressToolResult(JSON.stringify(value), maxChars)
+        : value.map((item) => walk(item, depth + 1));
+    }
+    if (value && typeof value === "object") {
+      if (depth > 6) return value;
+      const out: Record<string, unknown> = {};
+      for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+        out[key] = walk(item, depth + 1);
+      }
+      return out;
+    }
+    return value;
+  };
+
+  const budgeted = walk(response, 0) as Record<string, unknown>;
+  const serialized = JSON.stringify(budgeted);
+  if (serialized.length <= maxChars * 3) return budgeted;
+  return { text: compressToolResult(serialized, maxChars) };
+}
+
 /** Cabecera WAV (PCM lineal) de 44 bytes para un bloque de audio crudo. */
 export function pcmToWav(
   pcm: Uint8Array,
@@ -1629,7 +1711,11 @@ async function runAgentStream(
       responses.push({
         functionResponse: {
           name,
-          response: result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+          // El resultado vuelve al modelo con presupuesto: un árbol de
+          // repositorio entero llena el contexto en una ronda.
+          response: budgetToolResponse(
+            result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+          ),
         },
       });
     }
@@ -1719,7 +1805,9 @@ async function runAgent(prompt: string, caller: Caller) {
       responses.push({
         functionResponse: {
           name,
-          response: result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+          response: budgetToolResponse(
+            result.structuredContent ?? { text: result.content[0]?.text ?? "" },
+          ),
         },
       });
     }
@@ -1788,6 +1876,9 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
         tools: TOOLS.length,
         toolNames: TOOLS.map((tool) => tool.name),
         maxRounds: MAX_ROUNDS,
+        // Presupuesto con el que un resultado vuelve al modelo (ver
+        // `compressToolResult`): el operador puede verlo sin leerse el código.
+        toolResultChars: TOOL_RESULT_CHARS,
         hint: geminiKey()
           ? "El agente puede ejecutar herramientas; pide sesión iniciada en el chat."
           : geminiKeyState(rawGeminiKey()) === "placeholder"
