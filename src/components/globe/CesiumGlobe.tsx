@@ -126,6 +126,15 @@ const PLACES_TILE_URL =
  */
 const MAX_UPSAMPLE_LEVELS = 2;
 
+/**
+ * Cadencia de la animación del radar.
+ *
+ * Los fotogramas están a 10 minutos entre sí; 700 ms por fotograma da una
+ * vuelta a las dos horas en ~8 s, que es el ritmo al que se lee el movimiento
+ * de una tormenta sin que parezca una diapositiva.
+ */
+const RADAR_FRAME_MS = 700;
+
 /** OWM tiles are proxied server-side so the API key never reaches the bundle. */
 const OWM_TILE_URL = (layerId: string) =>
   `${SUPABASE_URL}/functions/v1/openweather?tile=${layerId}&z={z}&x={x}&y={y}`;
@@ -358,6 +367,14 @@ interface CesiumGlobeProps {
   outages?: OutageEvent[];
   /** RainViewer radar tile template (null while unavailable). */
   rainTileUrl?: string | null;
+  /**
+   * Fotogramas del radar de las dos últimas horas, del más viejo al actual.
+   *
+   * Con más de uno, el globo los reproduce en bucle: una capa por fotograma y
+   * sólo una visible, que es como funciona cualquier radar animado (el
+   * compuesto de los últimos minutos leído en el tiempo, no una única imagen).
+   */
+  radarFrames?: { time: number; url: string }[];
   /** NOAA Ovation aurora mesh cells. */
   auroraCells?: { lat: number; lon: number; probability: number }[];
   /** NASA FIRMS active fire detections. */
@@ -399,7 +416,7 @@ export function CesiumGlobe({
   onHotspotClick, onZoomFar, onViewScale, onZoomControls, sightings = [], visibleLayers, envLayers, flyTo, kpIndex = 0,
   earthquakes = [], nasaEvents = [], flights = [], ships = [],
   satellites = [], outages = [],
-  rainTileUrl = null, auroraCells = [], fires = [], cables = [],
+  rainTileUrl = null, radarFrames = [], auroraCells = [], fires = [], cables = [],
   bitcoinNodes = [], gdeltEvents = [], conflictEvents = [], surfaceWeather = [],
   iss = null, ionosphere = null, cameras = [],
   vanAllen = null, solarWind = null, environment = null,
@@ -419,6 +436,13 @@ export function CesiumGlobe({
   const applyRasterLimitRef = useRef<(() => void) | null>(null);
   const rainLayerRef = useRef<ImageryLayer | null>(null);
   const rainUrlRef = useRef<string | null>(null);
+  /** Una capa por fotograma de radar: sólo la del instante actual está visible. */
+  const radarLayersRef = useRef<ImageryLayer[]>([]);
+  /** Opacidad pedida por el visitante; se aplica a todos los fotogramas. */
+  const radarOpacityRef = useRef(DEFAULT_RADAR_PRESET.alpha);
+  const [radarOpacity, setRadarOpacity] = useState(DEFAULT_RADAR_PRESET.alpha);
+  /** Hora del fotograma que se está viendo, para el reloj del radar. */
+  const [radarTime, setRadarTime] = useState<number | null>(null);
   const shellEntityIdsRef = useRef<string[]>([]);
   // Referencias vivas a los cascarones para encenderlos y apagarlos desde el
   // manejador de cámara (Entity.show no admite una propiedad animada en Cesium).
@@ -524,8 +548,16 @@ export function CesiumGlobe({
       viewer.scene.globe.depthTestAgainstTerrain = false;
     }
 
-    // Enable sky atmosphere (the glow halo around the Earth)
+    // Atmósfera real de Cesium: cielo, halo y dispersión calculados por el
+    // motor con la posición del Sol. Es la que se ve de serie desde ahora; los
+    // cascarones de `atmosphere-shells.ts` quedan como capa opcional, porque
+    // dos representaciones del mismo aire en el limbo lo dejan turbio.
     if (viewer.scene.skyAtmosphere) {
+      try {
+        viewer.scene.skyAtmosphere.perFragmentAtmosphere = true;
+      } catch {
+        // Versiones antiguas de Cesium sin dispersión por fragmento.
+      }
       viewer.scene.skyAtmosphere.show = true;
       viewer.scene.skyAtmosphere.brightnessShift = 0.05;
       viewer.scene.skyAtmosphere.hueShift = -0.05;
@@ -1996,53 +2028,103 @@ export function CesiumGlobe({
     });
   }, [outages]);
 
-  // RainViewer precipitation radar (imagery layer, swapped when a new frame lands)
+  /**
+   * Radar animado de RainViewer: una capa por fotograma de las últimas 2 h.
+   *
+   * Un radar de verdad no es una foto: es una secuencia, y lo que se lee en
+   * ella es hacia dónde va la lluvia. RainViewer publica un compuesto cada 10
+   * minutos, así que se monta una `ImageryLayer` por instante y se alterna cuál
+   * está visible —sólo una a la vez, que es como lo hacen Windy y
+   * earth.nullschool—. Las capas ocultas no piden teselas: la caché de texturas
+   * sólo crece con los fotogramas que ya se han visto.
+   *
+   * El reloj lo publica el propio visor (`radarTime`) y la opacidad la mueve el
+   * control de la esquina, que es lo único que el visitante necesita para
+   * comparar el radar con el mapa de debajo.
+   */
   useEffect(() => {
     const viewer = viewerRef.current;
     if (!viewer || viewer.isDestroyed()) return;
     const active = (envLayers ?? new Set<EnvLayerKey>()).has("precipitation");
 
-    if (!active || !rainTileUrl) {
-      if (rainLayerRef.current) {
-        try { viewer.imageryLayers.remove(rainLayerRef.current, true); } catch { /* noop */ }
-        rainLayerRef.current = null;
-        rainUrlRef.current = null;
-      }
-      return;
-    }
-    if (rainUrlRef.current === rainTileUrl && rainLayerRef.current) return;
-
-    try {
-      const provider = new UrlTemplateImageryProvider({
-        url: rainTileUrl,
-        // RainViewer sirve radar hasta el nivel 7 (su documentación: «Maximum
-        // zoom level is 7»). Del 8 en adelante devuelve una tesela con el
-        // texto «Zoom level not supported» en vez de un error: al acercar la
-        // cámara, ese texto se plantaba encima del globo como si fuera una
-        // capa. Declarando el tope real, Cesium amplía la última tesela válida
-        // y nunca pide la que no existe.
-        maximumLevel: 7,
-        minimumLevel: 0,
-        credit: "RainViewer",
+    const clearRadar = () => {
+      radarLayersRef.current.forEach((layer) => {
+        try { viewer.imageryLayers.remove(layer, true); } catch { /* noop */ }
       });
-      const layer = viewer.imageryLayers.addImageryProvider(provider);
-      // Los números viven en `globe-visuals.ts` con variantes (`suave`,
-      // `equilibrado`, `contraste`): aquí sólo se aplican, para poder afinarlos
-      // sin volver a tocar este efecto. El brillo nunca sube de 1 porque quema
-      // los ecos a blanco (medido sobre tesela: 34 % de píxeles saturados con
-      // 1,1 frente al 18 % de la fuente).
-      layer.alpha = DEFAULT_RADAR_PRESET.alpha;
-      layer.saturation = DEFAULT_RADAR_PRESET.saturation;
-      layer.brightness = DEFAULT_RADAR_PRESET.brightness;
-      if (rainLayerRef.current) {
-        try { viewer.imageryLayers.remove(rainLayerRef.current, true); } catch { /* noop */ }
+      radarLayersRef.current = [];
+      rainLayerRef.current = null;
+      rainUrlRef.current = null;
+    };
+
+    clearRadar();
+    setRadarTime(null);
+    if (!active) return;
+
+    const frames = radarFrames.length
+      ? radarFrames
+      : rainTileUrl
+        ? [{ time: Math.floor(Date.now() / 1000), url: rainTileUrl }]
+        : [];
+    if (!frames.length) return;
+
+    const layers: ImageryLayer[] = [];
+    frames.forEach((frame, index) => {
+      try {
+        const layer = viewer.imageryLayers.addImageryProvider(
+          new UrlTemplateImageryProvider({
+            url: frame.url,
+            // RainViewer sirve radar hasta el nivel 7 (su documentación: «Maximum
+            // zoom level is 7»). Del 8 en adelante devuelve una tesela con el
+            // texto «Zoom level not supported» en vez de un error: al acercar la
+            // cámara, ese texto se plantaba encima del globo como si fuera una
+            // capa. Declarando el tope real, Cesium amplía la última tesela válida
+            // y nunca pide la que no existe.
+            maximumLevel: 7,
+            minimumLevel: 0,
+            credit: "RainViewer",
+          }),
+        );
+        // Los números viven en `globe-visuals.ts` con variantes (`suave`,
+        // `equilibrado`, `contraste`). El brillo nunca sube de 1 porque quema
+        // los ecos a blanco (medido sobre tesela: 34 % de píxeles saturados con
+        // 1,1 frente al 18 % de la fuente).
+        layer.alpha = radarOpacityRef.current;
+        layer.saturation = DEFAULT_RADAR_PRESET.saturation;
+        layer.brightness = DEFAULT_RADAR_PRESET.brightness;
+        layer.show = index === frames.length - 1;
+        layers.push(layer);
+      } catch (e) {
+        console.warn("[CesiumGlobe] RainViewer layer failed:", e);
       }
-      rainLayerRef.current = layer;
-      rainUrlRef.current = rainTileUrl;
-    } catch (e) {
-      console.warn("[CesiumGlobe] RainViewer layer failed:", e);
-    }
-  }, [rainTileUrl, envLayers]);
+    });
+
+    radarLayersRef.current = layers;
+    rainLayerRef.current = layers[layers.length - 1] ?? null;
+    rainUrlRef.current = frames[frames.length - 1]?.url ?? null;
+    setRadarTime(frames[frames.length - 1]?.time ?? null);
+
+    if (layers.length < 2) return;
+
+    let cursor = layers.length - 1;
+    const timer = window.setInterval(() => {
+      if (viewer.isDestroyed()) return;
+      cursor = (cursor + 1) % layers.length;
+      radarLayersRef.current.forEach((layer, index) => {
+        layer.show = index === cursor;
+      });
+      setRadarTime(frames[cursor]?.time ?? null);
+    }, RADAR_FRAME_MS);
+    return () => window.clearInterval(timer);
+  }, [radarFrames, rainTileUrl, envLayers]);
+
+  /** La opacidad del radar se aplica a los fotogramas ya montados. */
+  useEffect(() => {
+    radarOpacityRef.current = radarOpacity;
+    radarLayersRef.current.forEach((layer) => {
+      layer.alpha = radarOpacity;
+    });
+  }, [radarOpacity]);
+
 
   /**
    * Envolturas de la atmósfera: cuatro cascarones translúcidos que sólo existen
@@ -2896,8 +2978,57 @@ export function CesiumGlobe({
     track("heliosphere-marker");
   }, [solarWind, envLayers]);
 
+  const radarActive = (envLayers ?? new Set<EnvLayerKey>()).has("precipitation");
+  const radarClock = radarTime
+    ? new Date(radarTime * 1000).toLocaleTimeString("es-ES", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "UTC",
+      })
+    : null;
+  const radarAgeMin = radarTime
+    ? Math.max(0, Math.round((Date.now() / 1000 - radarTime) / 60))
+    : null;
+
   return (
-    <div ref={containerRef} className="w-full h-full" style={{ background: "#000000" }} />
+    <div ref={containerRef} className="w-full h-full" style={{ background: "#000000" }}>
+      {/*
+        Reloj y opacidad del radar.
+
+        Van aquí y no en el panel de capas porque sólo tienen sentido con el
+        radar delante: la hora dice qué instante se está viendo —un radar sin
+        hora es una foto sin fecha— y la opacidad es lo que hace falta para
+        comparar la lluvia con el mapa de debajo sin apagar la capa.
+      */}
+      {radarActive && radarClock ? (
+        <div className="pointer-events-auto absolute bottom-16 left-3 z-20 w-52 rounded-lg border border-cyan-400/25 bg-slate-950/85 px-3 py-2 backdrop-blur-sm">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[10px] uppercase tracking-[0.18em] text-cyan-300/70">Radar</span>
+            <span className="font-mono text-xs text-cyan-100">{radarClock} UTC</span>
+          </div>
+          <div className="mt-0.5 text-[10px] text-slate-400">
+            {radarAgeMin !== null && radarAgeMin > 0 ? `hace ${radarAgeMin} min` : "último compuesto"}
+            {" · 2 h en bucle"}
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-[10px] text-slate-300">
+            <span className="w-14 shrink-0 uppercase tracking-[0.12em] text-cyan-300/60">Opacidad</span>
+            <input
+              type="range"
+              min={0.15}
+              max={1}
+              step={0.05}
+              value={radarOpacity}
+              onChange={(event) => setRadarOpacity(Number(event.target.value))}
+              className="h-1 w-full cursor-pointer accent-cyan-300"
+              aria-label="Opacidad del radar de lluvia"
+            />
+            <span className="w-8 shrink-0 text-right font-mono text-[10px] text-cyan-200">
+              {Math.round(radarOpacity * 100)}%
+            </span>
+          </label>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

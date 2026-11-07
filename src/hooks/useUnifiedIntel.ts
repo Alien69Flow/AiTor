@@ -329,6 +329,8 @@ export function useUnifiedIntel(activeLayers?: Set<EnvLayerKey>) {
     // Connector payloads
     rainTileUrl: rain.tileUrl,
     rainFrame: rain.latestFrame,
+    // Secuencia de las últimas dos horas, para animar el radar del globo.
+    rainFrames: rain.frames,
     surfaceWeather: surface.data,
     fires: fireDetections,
     auroraMesh: aurora.data,
