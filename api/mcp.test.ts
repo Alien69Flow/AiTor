@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import handler from "./mcp";
+import handler, { budgetToolResponse, compressToolResult } from "./mcp";
 
 /**
  * `POST /api/mcp` es la puerta del agente en producción y no tenía pruebas.
@@ -349,5 +349,82 @@ describe("MCP en /api/mcp", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+/**
+ * Presupuesto de los resultados que vuelven al modelo (idea de `headroom`).
+ *
+ * El bucle de herramientas reenvía cada resultado completo en cada ronda, así
+ * que lo que se fija aquí es que comprimir no cueste información crítica: el
+ * principio, el final y cualquier línea de error del trozo descartado.
+ */
+describe("presupuesto de resultados de herramientas", () => {
+  const largo = (() => {
+    const lineas = Array.from({ length: 400 }, (_, i) => `fila ${i} · lat ${i % 90} lon ${i % 180} · ok`);
+    // El error va en el centro a propósito: es lo que se perdería recortando.
+    lineas.splice(200, 0, "ERROR 500 en el origen: la cola de datos no respondió");
+    return lineas.join("\n");
+  })();
+
+  it("un texto corto pasa intacto", () => {
+    expect(compressToolResult("hola", 1000)).toBe("hola");
+  });
+
+  it("un texto largo cabe en el presupuesto y avisa de lo omitido", () => {
+    const salida = compressToolResult(largo, 2000);
+    expect(salida.length).toBeLessThan(2000 * 1.2);
+    expect(salida.length).toBeLessThan(largo.length);
+    expect(salida).toContain("caracteres omitidos");
+  });
+
+  it("conserva el principio y el final", () => {
+    const salida = compressToolResult(largo, 2000);
+    expect(salida.startsWith("fila 0 ")).toBe(true);
+    expect(salida).toContain("fila 399 ");
+  });
+
+  it("rescata la línea de error del trozo descartado", () => {
+    expect(compressToolResult(largo, 2000)).toContain("ERROR 500");
+  });
+
+  it("es determinista y no crece con presupuesto mínimo", () => {
+    expect(compressToolResult(largo, 2000)).toBe(compressToolResult(largo, 2000));
+    expect(compressToolResult("abcdefghij", 3)).toBe("abc");
+    expect(compressToolResult(largo, 50).length).toBeLessThanOrEqual(100);
+  });
+
+  it("mantiene la forma de la respuesta y sólo comprime cadenas", () => {
+    const salida = budgetToolResponse({ repo: "AiTor", count: 3, tree: largo, nested: { note: "ok" } }, 1200);
+    expect(salida.repo).toBe("AiTor");
+    expect(salida.count).toBe(3);
+    expect((salida.tree as string).length).toBeLessThan(1200 * 1.2);
+    expect(salida.nested).toEqual({ note: "ok" });
+  });
+
+  it("recorre arrays", () => {
+    const salida = budgetToolResponse({ items: [largo, "corto"] }, 800);
+    const items = salida.items as string[];
+    expect(items).toHaveLength(2);
+    expect(items[1]).toBe("corto");
+    expect(items[0].length).toBeLessThan(800 * 1.2);
+  });
+
+  it("una estructura enorme se degrada a texto comprimido", () => {
+    const enorme: Record<string, unknown> = {};
+    for (let i = 0; i < 4000; i++) enorme[`k${i}`] = `v${i}`;
+    const salida = budgetToolResponse(enorme, 600);
+    expect(Object.keys(salida)).toEqual(["text"]);
+    expect(String(salida.text).length).toBeLessThan(600 * 1.2);
+    expect(String(salida.text)).toContain("caracteres omitidos");
+  });
+
+  it("no toca tipos que no son cadena", () => {
+    expect(budgetToolResponse({ ok: true, n: null, x: 42, arr: [1, 2] }, 100)).toEqual({
+      ok: true,
+      n: null,
+      x: 42,
+      arr: [1, 2],
+    });
   });
 });
