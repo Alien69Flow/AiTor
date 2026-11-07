@@ -10,6 +10,7 @@ import { ChatInput } from "./ChatInput";
 import { EmptyState } from "./EmptyState";
 import { ThinkingIndicator } from "./ThinkingIndicator";
 import { AgentSidebar } from "./AgentSidebar";
+import { ConnectionsPanel } from "./ConnectionsPanel";
 import { DaoCity } from "./city/DaoCity";
 import { NeuralCore } from "./neural/NeuralCore";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -181,7 +182,9 @@ export function ChatContainer({ onOpenTab }: ChatContainerProps = {}) {
         messages={messages}
       />
 
-      {workspace === "neural" ? (
+      {workspace === "connections" ? (
+        <ConnectionsPanel />
+      ) : workspace === "neural" ? (
         <NeuralCore
           messages={messages}
           isLoading={isLoading}

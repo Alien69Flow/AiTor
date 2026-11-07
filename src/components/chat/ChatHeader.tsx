@@ -4,7 +4,7 @@ import { ModelSelector } from "./ModelSelector";
 import { ConversationExport } from "./ConversationExport";
 import { McpToolsButton } from "./McpToolsButton";
 import type { Message } from "@/hooks/useChat";
-import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, Network, Building2, Cpu } from "lucide-react";
+import { Trash2, LogOut, LogIn, PanelLeftOpen, PanelLeftClose, Plus, MessageSquare, Network, Building2, Cpu, Cable } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -28,6 +28,7 @@ const WORKSPACES: { id: ChatWorkspace; label: string; icon: typeof MessageSquare
   { id: "chat", label: "Chat", icon: MessageSquare, title: "Conversación con el oráculo" },
   { id: "neural", label: "Núcleo", icon: Network, title: "Núcleo neural: skills, RAG y workflows en vivo" },
   { id: "city", label: "Ciudad", icon: Building2, title: "AlienFlow.Space DAO City" },
+  { id: "connections", label: "Conexiones", icon: Cable, title: "Herramientas MCP y skills: estado y latencia reales" },
 ];
 
 export function ChatHeader({ selectedModel, onModelChange, onClear, onNewChat, hasMessages, onToggleSidebar, sidebarOpen, workspace, onWorkspaceChange, messages }: ChatHeaderProps) {

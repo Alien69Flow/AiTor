@@ -6,8 +6,8 @@ import { AI_MODELS, DEFAULT_MODEL } from "./ai-models";
  */
 const MODEL_KEY = "aitor_model";
 
-/** The three views the Agents workspace can show. */
-export type ChatWorkspace = "chat" | "neural" | "city";
+/** Las vistas del espacio de Agentes. `connections` es el panel de conexiones. */
+export type ChatWorkspace = "chat" | "neural" | "city" | "connections";
 
 export function readPreferredModel(): string {
   try {
