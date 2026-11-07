@@ -5,6 +5,7 @@ import {
 	SHELLS_VISIBLE_ABOVE_M,
 	shellExaggeration,
 	shellRadiusM,
+	shellVeilFraction,
 } from "./atmosphere-shells";
 
 describe("envolturas atmosféricas", () => {
@@ -37,6 +38,22 @@ describe("envolturas atmosféricas", () => {
 		for (const shell of ATMOSPHERE_SHELLS) {
 			expect(shell.alpha).toBeGreaterThan(0);
 			expect(shell.alpha).toBeLessThanOrEqual(0.05);
+		}
+	});
+
+	it("la veladura apilada del planeta se queda por debajo del 9 %", () => {
+		// Con las cuatro caras casi coincidentes los alfas se componen, no se
+		// eligen: 4 × 0,024 no es «un 2,4 % cada uno», es el 8 % de la esfera.
+		// Por encima de ~0,10 el satélite se ve lechoso, así que el tope va aquí.
+		const veil = shellVeilFraction();
+		expect(veil).toBeLessThan(0.09);
+		expect(veil).toBeGreaterThan(0.04);
+	});
+
+	it("el cascarón de dentro es el que más tapa y el de fuera el que menos", () => {
+		const alphas = ATMOSPHERE_SHELLS.map((shell) => shell.alpha);
+		for (let i = 1; i < alphas.length; i++) {
+			expect(alphas[i]).toBeLessThanOrEqual(alphas[i - 1]);
 		}
 	});
 
