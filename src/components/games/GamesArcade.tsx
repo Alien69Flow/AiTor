@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Brain, Crosshair, RotateCcw, Trophy, Zap } from "lucide-react";
+import { Brain, Crosshair, Layers, RotateCcw, Trophy, Zap } from "lucide-react";
+import {
+	cardLabel,
+	handOutcome,
+	handPoints,
+	handValue,
+	isBlackjack,
+	playDealer,
+	shuffledDeck,
+	type Card,
+	type HandOutcome,
+} from "@/lib/card-games";
 import {
 	IMPULSE_POINTS,
 	IMPULSE_TOLERANCE,
@@ -555,4 +566,258 @@ export function ReactorGame({
       </div>
     </GameCard>
   );
+}
+
+/* ------------------------------- Veintiuna ------------------------------- */
+
+const HAND_LABEL: Record<HandOutcome, string> = {
+	blackjack: "Blackjack",
+	win: "Mano ganada",
+	push: "Empate",
+	lose: "Mano perdida",
+	bust: "Te pasaste",
+};
+
+const HAND_CLASS: Record<HandOutcome, string> = {
+	blackjack: "text-primary",
+	win: "text-secondary",
+	push: "text-foreground/70",
+	lose: "text-destructive",
+	bust: "text-destructive",
+};
+
+/** Manos por partida: tres decisiones, no una. */
+export const VEINTIUNA_HANDS = 3;
+
+function PlayingCard({ card, hidden }: { card?: Card; hidden?: boolean }) {
+	if (hidden || !card) {
+		return (
+			<div className="flex h-14 w-10 items-center justify-center rounded border border-border/60 bg-muted/25 font-mono text-[12px] text-muted-foreground/35">
+				?
+			</div>
+		);
+	}
+	const red = card.suit === "♥" || card.suit === "♦";
+	return (
+		<div
+			className={`flex h-14 w-10 flex-col items-center justify-center rounded border bg-card/60 font-mono ${
+				red ? "border-destructive/40 text-destructive" : "border-border/60 text-foreground/85"
+			}`}
+		>
+			<span className="text-[12px] leading-none">{cardLabel(card).slice(0, -1)}</span>
+			<span className="mt-0.5 text-[10px] leading-none">{card.suit}</span>
+		</div>
+	);
+}
+
+/**
+ * Veintiuna: cartas contra el crupier, sin apuestas.
+ *
+ * La baraja sale de una semilla (`shuffledDeck`) y el crupier se juega con
+ * `playDealer`: el componente no decide ninguna regla, sólo reparte y pinta.
+ * Una partida son tres manos; al acabar se envía el total a la liga.
+ */
+export function VeintiunaGame({
+	hands = VEINTIUNA_HANDS,
+	seed,
+	best,
+	badge,
+	onRun,
+}: {
+	hands?: number;
+	seed?: number;
+	best: number;
+	badge?: string;
+	onRun: (game: GameId, score: number) => void;
+}) {
+	const [deck, setDeck] = useState<Card[]>([]);
+	const [player, setPlayer] = useState<Card[]>([]);
+	const [dealer, setDealer] = useState<Card[]>([]);
+	const [hand, setHand] = useState(0);
+	const [score, setScore] = useState(0);
+	const [outcome, setOutcome] = useState<HandOutcome | null>(null);
+	const [phase, setPhase] = useState<"idle" | "playing" | "settled" | "done">("idle");
+	const [hidden, setHidden] = useState(true);
+	const reported = useRef(false);
+
+	const settleHand = useCallback(
+		(playerCards: Card[], dealerCards: Card[], rest: Card[], totalSoFar: number, handIndex: number) => {
+			const remaining = [...rest];
+			const finalDealer = playDealer(dealerCards, () => {
+				const next = remaining.shift();
+				// Tres manos no gastan 52 cartas: si pasara, hay un fallo, no un empate.
+				if (!next) throw new Error("baraja agotada");
+				return next;
+			});
+			const result = handOutcome(playerCards, finalDealer);
+			const total = totalSoFar + handPoints(result);
+			setDealer(finalDealer);
+			setDeck(remaining);
+			setOutcome(result);
+			setHidden(false);
+			setScore(total);
+			if (handIndex >= hands) {
+				setPhase("done");
+				if (!reported.current) {
+					reported.current = true;
+					onRun("veintiuna", total);
+				}
+			} else {
+				setPhase("settled");
+			}
+		},
+		[hands, onRun],
+	);
+
+	const deal = useCallback(
+		(from: Card[], handIndex: number, totalSoFar: number) => {
+			const playerCards = [from[0], from[2]];
+			const dealerCards = [from[1], from[3]];
+			const rest = from.slice(4);
+			setPlayer(playerCards);
+			setDealer(dealerCards);
+			setDeck(rest);
+			setHand(handIndex);
+			setOutcome(null);
+			setHidden(true);
+			setPhase("playing");
+			// Un 21 de reparto se cobra sin decidir nada: no hay jugada que hacer.
+			if (isBlackjack(playerCards)) settleHand(playerCards, dealerCards, rest, totalSoFar, handIndex);
+		},
+		[settleHand],
+	);
+
+	const start = () => {
+		reported.current = false;
+		setScore(0);
+		setOutcome(null);
+		deal(shuffledDeck(seed ?? Date.now() % 1_000_000), 1, 0);
+	};
+
+	const hit = () => {
+		if (phase !== "playing") return;
+		const next = deck[0];
+		if (!next) return;
+		const rest = deck.slice(1);
+		const cards = [...player, next];
+		setPlayer(cards);
+		setDeck(rest);
+		if (handValue(cards) > 21) settleHand(cards, dealer, rest, score, hand);
+	};
+
+	const stand = () => {
+		if (phase !== "playing") return;
+		settleHand(player, dealer, deck, score, hand);
+	};
+
+	const nextHand = () => deal(deck, hand + 1, score);
+
+	const dealerShown = hidden && dealer.length > 0 ? handValue([dealer[0]]) : handValue(dealer);
+
+	return (
+		<GameCard
+			title="Veintiuna"
+			hint="Tres manos contra el crupier. Pide o plántate: sin apuestas, sólo puntos de liga."
+			icon={<Layers className="h-3.5 w-3.5" />}
+			badge={badge}
+			best={best}
+		>
+			<div className="mb-2 flex items-center gap-2">
+				<span className="w-14 font-mono text-[8px] uppercase tracking-widest text-muted-foreground/50">
+					Crupier
+				</span>
+				<div className="flex gap-1">
+					{dealer.map((card, index) => (
+						<PlayingCard key={`dealer-${index}`} card={card} hidden={hidden && index === 1} />
+					))}
+				</div>
+				<span className="ml-auto font-mono text-[10px] text-muted-foreground/60">
+					{dealer.length > 0 ? dealerShown : "—"}
+				</span>
+			</div>
+
+			<div className="mb-3 flex items-center gap-2">
+				<span className="w-14 font-mono text-[8px] uppercase tracking-widest text-muted-foreground/50">
+					Tú
+				</span>
+				<div className="flex gap-1">
+					{player.map((card, index) => (
+						<PlayingCard key={`player-${index}`} card={card} />
+					))}
+				</div>
+				<span className="ml-auto font-mono text-[10px] text-foreground/80">
+					{player.length > 0 ? handValue(player) : "—"}
+				</span>
+			</div>
+
+			<div className="mb-3 grid grid-cols-3 gap-2 font-mono text-[9px] text-muted-foreground/60">
+				<span>
+					Mano{" "}
+					<strong className="block text-[11px] text-foreground">
+						{Math.min(Math.max(hand, 1), hands)}/{hands}
+					</strong>
+				</span>
+				<span>
+					Puntos <strong className="block text-[11px] text-foreground">{score}</strong>
+				</span>
+				<span aria-live="polite">
+					Resultado{" "}
+					<strong className={`block text-[11px] ${outcome ? HAND_CLASS[outcome] : "text-foreground"}`}>
+						{outcome ? HAND_LABEL[outcome] : "—"}
+					</strong>
+				</span>
+			</div>
+
+			<div className="mt-auto flex flex-wrap items-center gap-2">
+				{phase === "idle" && (
+					<button
+						onClick={start}
+						className="rounded border border-primary/50 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+					>
+						Repartir
+					</button>
+				)}
+				{phase === "playing" && (
+					<>
+						<button
+							onClick={hit}
+							className="rounded border border-secondary/50 bg-secondary/10 px-3 py-1.5 font-mono text-[10px] text-secondary transition-colors hover:bg-secondary/20"
+						>
+							Pedir
+						</button>
+						<button
+							onClick={stand}
+							className="rounded border border-border/60 px-3 py-1.5 font-mono text-[10px] text-foreground/80 transition-colors hover:border-primary/40 hover:text-primary"
+						>
+							Plantarse
+						</button>
+					</>
+				)}
+				{phase === "settled" && (
+					<button
+						onClick={nextHand}
+						className="rounded border border-primary/50 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+					>
+						Siguiente mano
+					</button>
+				)}
+				{phase === "done" && (
+					<>
+						<button
+							onClick={start}
+							className="rounded border border-primary/50 bg-primary/10 px-3 py-1.5 font-mono text-[10px] text-primary transition-colors hover:bg-primary/20"
+						>
+							Otra vez
+						</button>
+						<span className="font-mono text-[9px] text-muted-foreground/55">
+							Partida enviada a la liga con {score} puntos
+						</span>
+					</>
+				)}
+				<span className="ml-auto flex items-center gap-1 font-mono text-[9px] text-muted-foreground/45">
+					<Trophy className="h-2.5 w-2.5" /> marca {Math.max(best, score)}
+				</span>
+			</div>
+		</GameCard>
+	);
 }

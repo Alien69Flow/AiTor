@@ -197,8 +197,8 @@ export function reactorMaxScore(rounds = REACTOR_ROUNDS): number {
 
 /* ------------------------------- marcas --------------------------------- */
 
-/** La mejor marca se guarda por juego en el navegador. */
-export type GameId = "impulse" | "memory" | "reactor";
+/** Juegos con marca propia. `veintiuna` vive en `card-games.ts`, mismo contrato. */
+export type GameId = "impulse" | "memory" | "reactor" | "veintiuna";
 
 export function readBest(game: GameId): number {
 	if (typeof window === "undefined") return 0;

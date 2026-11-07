@@ -26,12 +26,14 @@ import {
 	type HubGame,
 } from "@/lib/games-hub";
 import type { GameId } from "@/lib/mini-games";
-import { ImpulseGame, MemoryGame, ReactorGame } from "./GamesArcade";
+import { KIND_LABEL, MINIAPPS, plannedMiniApps } from "@/lib/miniapps";
+import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
 	memory: "Memoria de nodos",
 	reactor: "Reactor de pares",
+	veintiuna: "Veintiuna",
 };
 
 /** Una fila de la tabla del servidor (`GET /api/league`). */
@@ -50,13 +52,14 @@ type LeagueState =
 	| { status: "anon" }
 	| { status: "error" };
 
-type Section = "arcade" | "reto" | "liga" | "gamefi";
+type Section = "arcade" | "reto" | "liga" | "gamefi" | "modulos";
 
 const SECTIONS: { id: Section; label: string; icon: typeof Gamepad2 }[] = [
 	{ id: "arcade", label: "Arcade", icon: Gamepad2 },
 	{ id: "reto", label: "Reto del día", icon: Target },
 	{ id: "liga", label: "Liga", icon: Swords },
 	{ id: "gamefi", label: "GameFi", icon: Coins },
+	{ id: "modulos", label: "Módulos", icon: Layers },
 ];
 
 const product = (id: string) => PRODUCTS.find((entry) => entry.id === id);
@@ -207,7 +210,7 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: tres juegos que corren enteros en el navegador, un reto
+					Arcade del ecosistema: cuatro juegos que corren enteros en el navegador, un reto
 					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
@@ -268,6 +271,7 @@ export function GamesTab() {
 							badge={hasDaily && challenge.game === "reactor" ? "reto del día" : undefined}
 							onRun={handleRun}
 						/>
+						<VeintiunaGame best={profile.best.veintiuna} onRun={handleRun} />
 					</div>
 				)}
 
@@ -573,6 +577,70 @@ export function GamesTab() {
 									Tokenomics <ExternalLink className="h-2.5 w-2.5" />
 								</a>
 							)}
+						</div>
+					</div>
+				)}
+
+				{section === "modulos" && (
+					<div className="mx-auto max-w-3xl space-y-3">
+						<div className="rounded-xl border border-border/40 bg-card/40 p-3">
+							<h2 className="flex items-center gap-2 font-heading text-[10px] uppercase tracking-widest text-foreground/85">
+								<Layers className="h-3 w-3 text-primary" /> Registro de miniapps
+							</h2>
+							<p className="mt-1 font-mono text-[9px] leading-relaxed text-muted-foreground/60">
+								Cada módulo es un motor puro en `src/lib` más una ficha en `miniapps.ts`. La
+								pestaña los pinta sin cambios: añadir cartas, un plataformas o una mina es
+								escribir el motor, probarlo y declararlo aquí.
+							</p>
+							<p className="mt-1 font-mono text-[9px] text-muted-foreground/45">
+								{MINIAPPS.length} fichas · {MINIAPPS.length - plannedMiniApps().length} jugables ·{" "}
+								{plannedMiniApps().length} diseñadas
+							</p>
+						</div>
+
+						<div className="grid gap-2 sm:grid-cols-2">
+							{MINIAPPS.map((app) => (
+								<article
+									key={app.id}
+									className="rounded-xl border border-border/40 bg-card/40 p-3"
+								>
+									<header className="flex flex-wrap items-center gap-1.5">
+										<h3 className="font-heading text-[10px] uppercase tracking-widest text-foreground/85">
+											{app.name}
+										</h3>
+										<span className="rounded border border-border/50 px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground/60">
+											{KIND_LABEL[app.kind]}
+										</span>
+										<span
+											className={`rounded px-1.5 py-0.5 font-mono text-[8px] uppercase tracking-wider ${
+												app.status === "jugable"
+													? "bg-primary/15 text-primary"
+													: "bg-accent/10 text-accent"
+											}`}
+										>
+											{app.status}
+										</span>
+									</header>
+									<p className="mt-1 font-mono text-[9px] leading-relaxed text-foreground/70">
+										{app.tagline}
+									</p>
+									<p className="mt-1 font-mono text-[9px] leading-relaxed text-muted-foreground/55">
+										{app.controls}
+									</p>
+									<p className="mt-1 font-mono text-[8px] leading-relaxed text-muted-foreground/45">
+										{app.pointsRule}
+									</p>
+									<p className="mt-1.5 flex items-start gap-1 font-mono text-[8px] leading-relaxed text-accent/80">
+										<Coins className="mt-0.5 h-2.5 w-2.5 shrink-0" />
+										{app.payouts.state} · {app.payouts.note}
+									</p>
+									{app.requires && (
+										<p className="mt-1 font-mono text-[8px] leading-relaxed text-muted-foreground/45">
+											Falta: {app.requires}
+										</p>
+									)}
+								</article>
+							))}
 						</div>
 					</div>
 				)}
