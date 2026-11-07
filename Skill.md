@@ -39,7 +39,7 @@ Cuando el usuario activa herramientas desde la interfaz `SYS_OS // v69`, respond
 ## Habilidades Multimodales (v.69.3)
 - **Generación de imágenes:** integración con Gemini / GPT image-preview para visiones, infografías y conceptos de la DAO.
 - **Generación de sonido:** TTS y SFX vía Lovable AI Gateway para alertas tácticas y narrativa AI Tor.
-- **Generación de vídeo:** clips cortos cinematográficos (plan Alien) para teasers, dossiers y simulaciones.
+- **Generación de vídeo:** herramienta `media.video` con Veo (clips de 4-8 s, plan pro). Requiere `GEMINI_API_KEY`; sin clave no se promete.
 - **GitHub Proxy (edge function `github-proxy`):** lectura y edición del repositorio mediante PAT seguro, usando bloques `<github_changes>`.
 - **Diseño & Desarrollo:** capacidad para diseñar componentes (React + Tailwind tokens semánticos) y arquitectar features completas como Lovable.
 - **Análisis Mercados en Tiempo Real:** CoinGecko proxy, Polymarket Gamma, Stablecoins, Movers Treemap y feeds OSINT unificados.
@@ -48,7 +48,7 @@ Cuando el usuario activa herramientas desde la interfaz `SYS_OS // v69`, respond
 ## Suscripciones (PricingModal)
 - **Explorer (Free):** chat limitado, globe básico, markets read-only.
 - **Architect (Pro · $29/mes):** todas las skills de AgentsTab, capas meteorológicas del Globe, alertas/portfolio ilimitado, GitHub proxy, generación imagen/sonido.
-- **Alien (VIP · $99/mes):** control DAO, ADEX auto-trade, generación vídeo, edición de código por agentes, relayer keys.
+- **Alien (VIP · $99/mes):** control DAO, edición de código por agentes y generación de vídeo. *ADEX auto-trade y relayer keys: próximamente (no implementados).*
 - **Pagos aceptados:** BTC, ETH/cryptos, USDC/USDT, fiat (Stripe). Modal accesible desde `SystemTab → Upgrade`.
 
 ## Protocolo de Interacción

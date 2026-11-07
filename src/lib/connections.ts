@@ -55,6 +55,7 @@ export const SERVER_ONLY_TOOLS: Record<string, { title: string; detail: string }
   "media.image": { title: "Generar una imagen", detail: "Gemini · imagen en el chat · plan pro" },
   "media.music": { title: "Componer música", detail: "Lyria · 30 s o tema completo · plan pro" },
   "media.speech": { title: "Poner voz a un texto", detail: "Gemini TTS · locución · plan pro" },
+  "media.video": { title: "Generar un vídeo", detail: "Veo · clip de 4-8 s por operación · plan pro" },
 };
 
 /** Herramientas cuyo trabajo no existe sin la clave del proveedor. */

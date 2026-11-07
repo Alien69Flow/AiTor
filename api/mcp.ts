@@ -118,6 +118,12 @@ interface ToolResult {
    * su propio canal y el modelo sólo ve un `note` de que ya está en pantalla.
    */
   audio?: { mimeType: string; data: string; alt: string };
+  /**
+   * Clip ya generado, con el mismo trato que imagen y audio: el base64 nunca
+   * entra en `structuredContent` (el modelo no puede leer megas de vídeo) y se
+   * emite como evento `video` para que el chat lo reproduzca.
+   */
+  video?: { mimeType: string; data: string; alt: string };
 }
 
 /** Catálogo en orden. Se exporta para que las pruebas lo comprueben sin red. */
@@ -244,6 +250,41 @@ export const TOOLS: ToolDefinition[] = [
         },
       },
       required: ["text"],
+    },
+  },
+  {
+    name: "media.video",
+    title: "Generar un vídeo",
+    description:
+      "Genera un clip de 4, 6 u 8 segundos con Veo y lo muestra en el chat. Es una operación " +
+      "larga: la primera llamada arranca el trabajo y devuelve un `operation`; una segunda " +
+      "llamada con ese `operation` recoge el vídeo. Tarda entre uno y tres minutos, así que no " +
+      "digas que el vídeo está listo hasta tenerlo. Cuesta créditos: úsala cuando pidan vídeo.",
+    minTier: "pro",
+    inputSchema: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Qué pasa en el clip: escena, cámara, luz y estilo. Sin texto en pantalla.",
+        },
+        aspect: {
+          type: "string",
+          enum: ["16:9", "9:16"],
+          default: "16:9",
+          description: "Formato del clip.",
+        },
+        seconds: {
+          type: "integer",
+          enum: [4, 6, 8],
+          default: 6,
+          description: "Duración, en segundos.",
+        },
+        operation: {
+          type: "string",
+          description: "Operación ya arrancada (el `operation` que devolvió la llamada anterior).",
+        },
+      },
     },
   },
   {
@@ -1343,6 +1384,230 @@ async function runImage(args: Record<string, unknown>): Promise<ToolResult> {
   };
 }
 
+/* -------------------------------- vídeo --------------------------------- */
+
+/**
+ * Veo, por operaciones largas.
+ *
+ * El clip tarda entre uno y tres minutos y la función se corta a los sesenta
+ * segundos, así que no se puede esperar aquí dentro. La herramienta trabaja en
+ * dos pasos: arranca la operación y devuelve su nombre; una segunda llamada con
+ * `operation` la recoge. Mientras corre se dice tal cual, en vez de prometer un
+ * vídeo que todavía no existe.
+ *
+ * Los modelos van de rápido a bueno: un 404 (no disponible para esta clave) pasa
+ * al siguiente, y un 429 corta porque es la cuota compartida.
+ */
+const VIDEO_MODELS = ["veo-3.1-fast-generate-preview", "veo-3.0-fast-generate-001"];
+const VIDEO_ASPECTS = ["16:9", "9:16"];
+const VIDEO_SECONDS = [4, 6, 8];
+
+/**
+ * Techo de un clip que puede viajar en la respuesta, en caracteres base64.
+ *
+ * Limitar la respuesta ronda los 4,5 MB y el base64 pesa un tercio más que el
+ * mp4, así que por encima de esto el vídeo existe pero no se puede incrustar.
+ * En ese caso se dice cuánto ocupa y se ofrece un clip más corto: nunca se
+ * corta el base64 a la mitad, que sería un vídeo roto.
+ */
+export const MAX_INLINE_VIDEO_BASE64 = 3_000_000;
+
+export type VideoOperationState =
+  | { state: "running" }
+  | { state: "failed"; error: string }
+  | { state: "empty" }
+  | { state: "ready"; uri: string; mimeType: string };
+
+/**
+ * Estado de una operación de Veo.
+ *
+ * `done` sin muestras no es un fallo de transporte: casi siempre es el filtro de
+ * contenido. Se distingue de `running` para no dejar al modelo reintentando una
+ * operación que ya terminó vacía.
+ */
+export function parseVideoOperation(payload: {
+  done?: boolean;
+  error?: { message?: string };
+  response?: {
+    generateVideoResponse?: { generatedSamples?: { video?: { uri?: string; mimeType?: string } }[] };
+  };
+}): VideoOperationState {
+  if (payload.error?.message) return { state: "failed", error: payload.error.message.slice(0, 200) };
+  if (!payload.done) return { state: "running" };
+  const sample = payload.response?.generateVideoResponse?.generatedSamples?.find(
+    (entry) => entry.video?.uri,
+  );
+  if (!sample?.video?.uri) return { state: "empty" };
+  return { state: "ready", uri: sample.video.uri, mimeType: sample.video.mimeType || "video/mp4" };
+}
+
+/** ¿Cabe el clip en la respuesta? Un base64 vacío no es un vídeo. */
+export function fitsInlineVideo(base64: string, limit = MAX_INLINE_VIDEO_BASE64): boolean {
+  return base64.length > 0 && base64.length <= limit;
+}
+
+/** Arranca una generación y devuelve el nombre de la operación. */
+async function startVideo(
+  prompt: string,
+  aspect: string,
+  seconds: number,
+): Promise<{ model: string; operation: string }> {
+  let lastError = "Ningún modelo de vídeo disponible para esta clave";
+
+  for (const model of VIDEO_MODELS) {
+    const response = await fetch(`${GEMINI_BASE}/models/${model}:predictLongRunning`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": geminiKey() },
+      body: JSON.stringify({
+        instances: [{ prompt }],
+        parameters: { aspectRatio: aspect, durationSeconds: seconds, resolution: "720p" },
+      }),
+      signal: AbortSignal.timeout(45_000),
+    });
+
+    if (!response.ok) {
+      const detail = await response.text().catch(() => "");
+      lastError = `${model} respondió ${response.status}: ${detail.slice(0, 160)}`;
+      if (response.status === 429) break;
+      continue;
+    }
+
+    const payload = (await response.json()) as { name?: string };
+    if (payload.name) return { model, operation: payload.name };
+    lastError = `${model} no devolvió el nombre de la operación`;
+  }
+
+  throw new Error(lastError);
+}
+
+/** Consulta una operación arrancada antes. */
+async function readVideoOperation(operation: string): Promise<VideoOperationState> {
+  const path = operation.replace(/^\/+/, "");
+  const response = await fetch(`${GEMINI_BASE}/${path}`, {
+    headers: { "x-goog-api-key": geminiKey() },
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(`La operación de vídeo respondió ${response.status}: ${detail.slice(0, 160)}`);
+  }
+
+  return parseVideoOperation((await response.json()) as Parameters<typeof parseVideoOperation>[0]);
+}
+
+/** Descarga el mp4 con la clave del servidor: la URI de Veo no es pública. */
+async function downloadVideo(
+  uri: string,
+  mimeType: string,
+): Promise<{ mimeType: string; data: string }> {
+  const url = new URL(uri);
+  url.searchParams.set("alt", "media");
+  const response = await fetch(url, {
+    headers: { "x-goog-api-key": geminiKey() },
+    signal: AbortSignal.timeout(55_000),
+  });
+
+  if (!response.ok) throw new Error(`La descarga del vídeo respondió ${response.status}`);
+
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  return {
+    mimeType: response.headers.get("content-type") || mimeType,
+    data: Buffer.from(bytes).toString("base64"),
+  };
+}
+
+const VIDEO_WAIT_NOTE =
+  "El clip se está generando (Veo tarda entre uno y tres minutos y esta llamada no puede " +
+  "esperar). Vuelve a llamar a `media.video` con el `operation` que acabas de recibir para " +
+  "recogerlo. No digas que el vídeo está listo.";
+
+async function runVideo(args: Record<string, unknown>): Promise<ToolResult> {
+  const operation = typeof args.operation === "string" ? args.operation.trim() : "";
+  if (operation) return await collectVideo(operation);
+
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim().slice(0, 1_200) : "";
+  if (prompt.length < 3) throw new Error("`prompt` es obligatorio para generar un vídeo");
+  const aspect = VIDEO_ASPECTS.includes(String(args.aspect)) ? String(args.aspect) : "16:9";
+  const seconds = VIDEO_SECONDS.includes(Number(args.seconds)) ? Number(args.seconds) : 6;
+
+  const started = await startVideo(prompt, aspect, seconds);
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          ok: true,
+          model: started.model,
+          operation: started.operation,
+          state: "running",
+        }),
+      },
+    ],
+    structuredContent: {
+      ok: true,
+      model: started.model,
+      operation: started.operation,
+      aspect,
+      seconds,
+      state: "running",
+      note: VIDEO_WAIT_NOTE,
+    },
+  };
+}
+
+async function collectVideo(operation: string): Promise<ToolResult> {
+  const state = await readVideoOperation(operation);
+  if (state.state === "failed") throw new Error(`Veo falló: ${state.error}`);
+  if (state.state === "empty") {
+    throw new Error("La operación terminó sin vídeo (puede haber bloqueado el contenido)");
+  }
+  if (state.state === "running") {
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, operation, state: "running" }) }],
+      structuredContent: {
+        ok: true,
+        operation,
+        state: "running",
+        note: "Todavía se está generando. Vuelve a llamar en un minuto.",
+      },
+    };
+  }
+
+  const file = await downloadVideo(state.uri, state.mimeType);
+  if (!fitsInlineVideo(file.data)) {
+    const mb = Math.round((file.data.length * 0.75) / 1_048_576 * 10) / 10;
+    return {
+      content: [{ type: "text", text: JSON.stringify({ ok: true, state: "ready", tooLarge: true }) }],
+      structuredContent: {
+        ok: true,
+        state: "ready",
+        tooLarge: true,
+        megabytes: mb,
+        note:
+          `El vídeo existe y ocupa ${mb} MB, más de lo que cabe en el chat. Dilo tal cual y ` +
+          "ofrece un clip de 4 segundos, en vez de inventar un enlace o fingir que se ha mostrado.",
+      },
+    };
+  }
+
+  return {
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({ ok: true, state: "ready", mimeType: file.mimeType }),
+      },
+    ],
+    structuredContent: {
+      ok: true,
+      state: "ready",
+      mimeType: file.mimeType,
+      note: "El vídeo ya se está reproduciendo en el chat. No lo describas como enlace.",
+    },
+    video: { mimeType: file.mimeType, data: file.data, alt: "Clip generado con Veo" },
+  };
+}
+
 async function runDbSelect(args: Record<string, unknown>, caller: Caller): Promise<ToolResult> {
   const table = String(args.table ?? "");
   const allowed = READABLE_TABLES[table];
@@ -1392,6 +1657,7 @@ async function callTool(
     if (name === "media.image") return await runImage(args);
     if (name === "media.music") return await runMusic(args);
     if (name === "media.speech") return await runSpeech(args);
+    if (name === "media.video") return await runVideo(args);
     if (name === "github.repo") return await runGitRepo(args, caller);
     if (name === "github.propose") return await runGitPropose(args, caller);
     return await runDbSelect(args, caller);
@@ -1699,6 +1965,15 @@ async function runAgentStream(
           alt: result.image.alt,
         });
       }
+      // El clip viaja por su propio evento: un mp4 no se mete en el contexto.
+      if (result.video) {
+        emit({
+          type: "video",
+          mimeType: result.video.mimeType,
+          data: result.video.data,
+          alt: result.video.alt,
+        });
+      }
       // El audio viaja igual: el modelo no ve el base64, sólo sabe que suena.
       if (result.audio) {
         emit({
@@ -1765,9 +2040,10 @@ const SYSTEM_PROMPT =
   "INTERFACE_NOT_BOUND. Si no tienes herramienta para lo que te piden, dilo y " +
   "ofrece lo que sí puedes consultar. Para imágenes («dibuja», «genera una " +
   "imagen de…») usa `media.image`; para música o canciones, `media.music`; para " +
-  "locuciones o leer algo en voz alta, `media.speech`. Las tres cuestan créditos: " +
-  "úsalas cuando las piden, no para ilustrar. No tienes vídeo: si te lo piden, dilo " +
-  "en claro y ofrece imagen o música, en vez de describir un vídeo que no existe.";
+  "locuciones o leer algo en voz alta, `media.speech`. Las cuatro cuestan créditos: " +
+  "úsalas cuando las piden, no para ilustrar. Para vídeo usa `media.video` (Veo): arranca " +
+  "la operación, recógela con `operation` y sólo entonces di que el clip está listo. Si " +
+  "la operación sigue corriendo o el clip no cabe en la respuesta, dilo tal cual.";
 
 async function runAgent(prompt: string, caller: Caller) {
   const model = await resolveModel();

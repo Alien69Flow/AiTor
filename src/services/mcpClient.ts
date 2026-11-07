@@ -199,6 +199,16 @@ export interface AgentAudio {
   alt: string;
 }
 
+/**
+ * Clip generado en el turno, como data URL igual que imagen y audio: el
+ * reproductor no depende de ningún host externo ni de una URI de Veo que exige
+ * la clave del servidor.
+ */
+export interface AgentVideo {
+  url: string;
+  alt: string;
+}
+
 export interface AgentAnswer {
   answer: string;
   /** Monólogo del modelo antes de responder; vacío si no lo publicó. */
@@ -207,6 +217,8 @@ export interface AgentAnswer {
   images?: AgentImage[];
   /** Música o voz generada durante el turno. */
   audios?: AgentAudio[];
+  /** Clips de vídeo generados durante el turno. */
+  videos?: AgentVideo[];
   toolCalls: Array<{ name: string; args: Record<string, unknown>; isError: boolean }>;
 }
 
@@ -227,6 +239,8 @@ export interface AgentStreamHandlers {
   onImage?: (image: AgentImage) => void;
   /** Audio recién generado (música o voz). */
   onAudio?: (audio: AgentAudio) => void;
+  /** Clip listo, por el mismo camino que la imagen. */
+  onVideo?: (video: AgentVideo) => void;
   onTool?: (name: string, isError: boolean) => void;
 }
 
@@ -285,6 +299,7 @@ export async function streamAgentAnswer(
   let reasoning = "";
   const images: AgentImage[] = [];
   const audios: AgentAudio[] = [];
+  const videos: AgentVideo[] = [];
   let buffer = "";
   let failure: string | null = null;
 
@@ -315,6 +330,13 @@ export async function streamAgentAnswer(
       };
       audios.push(audio);
       handlers.onAudio?.(audio);
+    } else if (event.type === "video" && event.data) {
+      const video = {
+        url: `data:${event.mimeType || "video/mp4"};base64,${event.data}`,
+        alt: event.alt || "Vídeo generado",
+      };
+      videos.push(video);
+      handlers.onVideo?.(video);
     } else if (event.type === "delta" && event.text) {
       answer += event.text;
       handlers.onDelta?.(event.text);
@@ -349,7 +371,7 @@ export async function streamAgentAnswer(
   // El razonamiento no se reenvía aquí como delta: si el `done` trae la versión
   // final y el flujo ya la emitió por trozos, devolverla completa sirve para
   // guardarla en el mensaje sin duplicar lo que ya está en pantalla.
-  return { answer: answer.trim(), reasoning: reasoning.trim(), images, audios, toolCalls };
+  return { answer: answer.trim(), reasoning: reasoning.trim(), images, audios, videos, toolCalls };
 }
 
 /** Pregunta al modelo a través del servidor: la clave nunca llega al navegador. */
