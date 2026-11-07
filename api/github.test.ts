@@ -58,6 +58,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   delete process.env.GITHUB_TOKEN;
   delete process.env.GITHUB_PAT;
+  delete process.env.GITHUB_REPO_ALLOWLIST;
 });
 
 describe("rutas de lectura de GitHub", () => {
@@ -110,6 +111,29 @@ describe("GET/POST /api/github", () => {
     expect(seen.url).toBe("https://api.github.com/repos/Alien69Flow/AiTor/contents/src");
     // La caché es lo que mantiene usable la cuota anónima de 60/hora.
     expect(headers["cache-control"]).toMatch(/s-maxage/);
+  });
+
+  /**
+   * Esta ruta acepta `owner` y `repo` del llamante y no pide sesión, así que el
+   * PAT no puede ir a cualquier repositorio: si el token ve privados, atarlo a
+   * lo que pida el llamante los publica. Fuera de la allowlist, sin token.
+   */
+  it("sólo manda el token a los repositorios de la allowlist", async () => {
+    const visto: Array<Record<string, string>> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        visto.push((init?.headers ?? {}) as Record<string, string>);
+        return new Response(JSON.stringify({ full_name: "x/y" }), { status: 200 });
+      }),
+    );
+    process.env.GITHUB_TOKEN = "ghp_secreto";
+
+    await call({ action: "repo_info", owner: "Alien69Flow", repo: "AiTor" });
+    expect(visto[0]?.authorization).toBe("Bearer ghp_secreto");
+
+    await call({ action: "repo_info", owner: "otro", repo: "privado" });
+    expect(visto[1]?.authorization).toBeUndefined();
   });
 
   it("acepta GET con query string", async () => {

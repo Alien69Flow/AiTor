@@ -219,6 +219,19 @@ export default async function github(req: VercelRequest, res: VercelResponse) {
   const url = readUrl(params);
   // Sólo si el entorno lo trae: la función está obligada a trabajar sin token.
   const token = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || "";
+  /**
+   * El token se usa sólo con los repositorios de la allowlist.
+   *
+   * Esta ruta acepta `owner` y `repo` del llamante y no pide sesión. Si el PAT
+   * puede leer repositorios privados, atarlo a lo que el llamante pida convierte
+   * la ruta en una puerta a todos ellos. Fuera de la allowlist se consulta sin
+   * token: un repositorio público sigue respondiendo y uno privado da 404.
+   */
+  const allowlist = (process.env.GITHUB_REPO_ALLOWLIST || "Alien69Flow/AiTor")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  const mayUseToken = Boolean(token) && allowlist.includes(`${params.owner}/${params.repo}`.toLowerCase());
 
   try {
     const response = await fetch(url, {
@@ -226,7 +239,7 @@ export default async function github(req: VercelRequest, res: VercelResponse) {
         accept: "application/vnd.github+json",
         "x-github-api-version": "2022-11-28",
         "user-agent": "aitor-intel/1.0",
-        ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(mayUseToken ? { authorization: `Bearer ${token}` } : {}),
       },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
