@@ -11,10 +11,9 @@
  * Solo aparecen desde fuera (`SHELLS_VISIBLE_ABOVE_M`): de cerca se comen la
  * imagen satélite sin aportar nada.
  *
- * El relleno se apilaba hasta dejar una veladura de ~11 % sobre el planeta
- * entero (cuatro caras casi coincidentes). Se bajó a ~8 %: la escalera se lee
- * por los anillos del limbo, que no cambian, y el satélite recupera contraste.
- * El total está fijado en `shellVeilFraction()` y tiene prueba.
+ * Aquí vive la **geometría** (radios, colores, qué capa es cuál). La intensidad
+ * —relleno, anillo del limbo— está en `globe-visuals.ts`, con variantes, para
+ * poder cambiarla sin tocar el componente.
  */
 
 export interface AtmosphereShell {
@@ -27,8 +26,6 @@ export interface AtmosphereShell {
 	visualTopKm: number;
 	/** Color del cascarón (CSS hex). */
 	color: string;
-	/** Opacidad del relleno; el contorno va aparte. */
-	alpha: number;
 }
 
 /** Radio medio terrestre, en metros (el del elipsoide WGS84). */
@@ -46,24 +43,15 @@ export const SHELLS_VISIBLE_ABOVE_M = 8_000_000;
  * caza antes de que el globo dibuje una capa dentro de otra.
  */
 export const ATMOSPHERE_SHELLS: AtmosphereShell[] = [
-	{ id: "troposphere", label: "Troposfera", topKm: 12, visualTopKm: 120, color: "#38bdf8", alpha: 0.024 },
-	{ id: "stratosphere", label: "Estratosfera", topKm: 50, visualTopKm: 260, color: "#818cf8", alpha: 0.022 },
-	{ id: "mesosphere", label: "Mesosfera", topKm: 85, visualTopKm: 430, color: "#a78bfa", alpha: 0.02 },
-	{ id: "thermosphere", label: "Termosfera", topKm: 600, visualTopKm: 900, color: "#22d3ee", alpha: 0.018 },
+	{ id: "troposphere", label: "Troposfera", topKm: 12, visualTopKm: 120, color: "#38bdf8" },
+	{ id: "stratosphere", label: "Estratosfera", topKm: 50, visualTopKm: 260, color: "#818cf8" },
+	{ id: "mesosphere", label: "Mesosfera", topKm: 85, visualTopKm: 430, color: "#a78bfa" },
+	{ id: "thermosphere", label: "Termosfera", topKm: 600, visualTopKm: 900, color: "#22d3ee" },
 ];
 
 /** Radio visual de un cascarón, en metros (lo que espera Cesium). */
 export function shellRadiusM(shell: AtmosphereShell): number {
 	return EARTH_RADIUS_M + shell.visualTopKm * 1000;
-}
-
-/**
- * Qué fracción del planeta queda velada al apilar los rellenos de los cuatro
- * cascarones (composición «over» de alfas). Es la cifra que decide si el
- * satélite se lee: por encima de ~0,1 el planeta se ve lechoso.
- */
-export function shellVeilFraction(shells: AtmosphereShell[] = ATMOSPHERE_SHELLS): number {
-	return 1 - shells.reduce((clear, shell) => clear * (1 - shell.alpha), 1);
 }
 
 /** Cuántas veces se exagera la altura real al dibujarla. */
