@@ -267,6 +267,7 @@ interface CesiumGlobeProps {
     id: string; name: string; lat: number; lon: number;
     pressureHpa: number | null; windSpeedMs: number | null; windDirectionDeg: number | null;
     temperatureC: number | null; humidityPercent: number | null;
+    time: string;
   }[];
   /** ISS en su posición real (WhereTheISS.at). `null` mientras no hay medida. */
   iss?: IssPosition | null;
