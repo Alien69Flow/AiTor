@@ -65,7 +65,11 @@ export function createUno(seed = 1): UnoState {
 }
 
 /** Roba del mazo; si se agota, recicla el descarte menos su carta de arriba. */
-function takeCard(pile: PlayingCard[], discard: PlayingCard[], seed: number): [PlayingCard | null, PlayingCard[]] {
+function takeCard(
+	pile: PlayingCard[],
+	discard: PlayingCard[],
+	seed: number,
+): [PlayingCard | null, PlayingCard[]] {
 	if (pile.length) return [pile[0], pile.slice(1)];
 	if (discard.length <= 1) return [null, pile];
 	const recycled = shuffle(discard.slice(0, -1), seed);
@@ -77,6 +81,10 @@ function takeCard(pile: PlayingCard[], discard: PlayingCard[], seed: number): [P
  *
  * Un comodín sin color elegido no se acepta: dejarlo pasar pondría la mesa en un
  * color que no existe y la siguiente jugada sería imposible de calcular.
+ *
+ * El roba dos y el roba cuatro sacan cartas del mazo, así que el mazo que se
+ * devuelve es el que queda tras esos robos. Devolver el original duplicaría las
+ * cartas: aparecerían en la mano del rival y otra vez en el montón.
  */
 export function playUno(state: UnoState, cardId: string, chosenColor?: UnoColor): UnoState {
 	if (state.winner !== null) return state;
@@ -86,11 +94,13 @@ export function playUno(state: UnoState, cardId: string, chosenColor?: UnoColor)
 	if (!canPlay(card, { color: state.color, top: top(state.discard) })) return state;
 	if (isWild(card) && (!chosenColor || !UNO_COLORS.includes(chosenColor))) return state;
 
+	const discard = [...state.discard, card];
 	let hands: [PlayingCard[], PlayingCard[]] = [
 		state.hands[0].filter((entry) => entry.id !== cardId),
 		state.hands[1].filter((entry) => entry.id !== cardId),
 	];
-	let color: UnoColor = isWild(card) && chosenColor ? chosenColor : (card.suit as UnoColor);
+	let pile = state.drawPile;
+	const color: UnoColor = isWild(card) && chosenColor ? chosenColor : (card.suit as UnoColor);
 	const rank = isWild(card) ? card.suit : baseRank(card);
 
 	const opponent = (1 - state.turn) as 0 | 1;
@@ -100,9 +110,8 @@ export function playUno(state: UnoState, cardId: string, chosenColor?: UnoColor)
 	const forced = rank === "roba2" ? 2 : rank === "roba4" ? 4 : 0;
 	if (forced > 0) {
 		const drawn = [...hands[opponent]];
-		let pile = state.drawPile;
 		for (let count = 0; count < forced; count += 1) {
-			const [next, rest] = takeCard(pile, [...state.discard, card], state.seed + count);
+			const [next, rest] = takeCard(pile, discard, state.seed + count);
 			if (!next) break;
 			pile = rest;
 			drawn.push(next);
@@ -119,8 +128,8 @@ export function playUno(state: UnoState, cardId: string, chosenColor?: UnoColor)
 	return {
 		...state,
 		hands,
-		drawPile: state.drawPile,
-		discard: [...state.discard, card],
+		drawPile: pile,
+		discard,
 		color,
 		turn: winner === null ? turn : state.turn,
 		winner,
