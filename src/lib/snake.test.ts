@@ -38,7 +38,6 @@ describe("snake", () => {
 		const state = createSnake(1);
 		const turned = queueDirection(state, "left");
 		expect(turned.pending).toEqual([]);
-		// Y no muere por ello: sigue avanzando a la derecha.
 		const after = stepSnake(turned);
 		expect(after.alive).toBe(true);
 		expect(after.body[0].x).toBe(state.body[0].x + 1);
@@ -69,7 +68,6 @@ describe("snake", () => {
 
 	it("la pared mata", () => {
 		const state = createSnake(1);
-		// Cabeza tocando el borde derecho, mirando fuera.
 		const atEdge = {
 			...state,
 			body: [
@@ -83,34 +81,41 @@ describe("snake", () => {
 		expect(after.ticks).toBe(1);
 	});
 
-	it("morderse la cola mata, pero seguir a la cola no", () => {
+	it("morderse el cuerpo mata", () => {
 		const state = createSnake(1);
-		// Cabeza que se mete en la segunda celda del cuerpo: colisión real.
-		const loop = {
+		// Cabeza mirando abajo hacia una celda del cuerpo que no es la cola.
+		const bitten = stepSnake({
 			...state,
-			direction: "down" as const,
+			direction: "down",
+			body: [
+				{ x: 5, y: 5 },
+				{ x: 6, y: 5 },
+				{ x: 6, y: 6 },
+				{ x: 5, y: 6 },
+				{ x: 4, y: 6 },
+			],
+		});
+		expect(bitten.alive).toBe(false);
+	});
+
+	it("seguir a la propia cola es legal", () => {
+		const state = createSnake(1);
+		// La celda a la que entra la cabeza es la cola, que se libera en el mismo
+		// tic: contarla como colisión haría la serpiente injugable en pasillos
+		// ajustados.
+		const chase = stepSnake({
+			...state,
+			direction: "down",
 			body: [
 				{ x: 5, y: 5 },
 				{ x: 6, y: 5 },
 				{ x: 6, y: 6 },
 				{ x: 5, y: 6 },
 			],
-		};
-		const bitten = stepSnake({ ...loop, direction: "left" });
-		expect(bitten.alive).toBe(false);
-
-		// Perseguir la propia cola (la celda que se libera) es legal.
-		const chase = stepSnake({
-			...state,
-			direction: "down",
-			body: [
-				{ x: 5, y: 5 },
-				{ x: 5, y: 4 },
-				{ x: 6, y: 4 },
-			],
 		});
 		expect(chase.alive).toBe(true);
 		expect(chase.body[0]).toEqual({ x: 5, y: 6 });
+		expect(chase.body).toHaveLength(4);
 	});
 
 	it("comer crece, suma y pone comida nueva fuera del cuerpo", () => {
@@ -125,6 +130,13 @@ describe("snake", () => {
 			false,
 		);
 		expect(after.alive).toBe(true);
+	});
+
+	it("la puntuación no crece si no se come", () => {
+		const state = createSnake(1);
+		const moved = advanceSnake({ ...state, food: { x: 0, y: 0 } }, 3);
+		expect(moved.score).toBe(0);
+		expect(moved.ticks).toBe(3);
 	});
 
 	it("es determinista: la misma semilla da la misma partida", () => {
