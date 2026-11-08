@@ -83,14 +83,21 @@ console.log(`Capas raster declaradas — GIBS: ${gibs.length} · OWM: ${owm.leng
 
 for (const g of gibs) {
   const time = g.timeless ? "" : `${g.date ?? day(g.offset)}/`;
-  const url = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${g.layer}/default/${time}GoogleMapsCompatible_Level${g.level}/3/3/4.png`;
-  const r = await head(url);
+  const base = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${g.layer}/default/${time}GoogleMapsCompatible_Level${g.level}`;
+  const r = await head(`${base}/3/3/4.png`);
+  // Sonda polar: la misma capa pedida sobre el Ártico (z=2, esquina 1/0).
+  // Comparar estos bytes con los de la tesela de referencia separa «la capa
+  // está rota» de «la capa existe pero no tiene datos en esa parte del mundo».
+  const polar = await head(`${base}/2/1/0.png`);
   const isImage = Boolean(r.type?.startsWith("image")) && r.status === 200;
-  // Una tesela de 900 B es un PNG casi vacío: la capa existe pero ese día no
-  // tiene datos. Se avisa, no se falla, porque mañana puede tenerlos.
   const empty = isImage && r.bytes < 1_500;
+  const polarImage = Boolean(polar.type?.startsWith("image")) && polar.status === 200;
+  const polarEmpty = polarImage && polar.bytes < 1_500;
+  const esPolar = /Sea_Ice|Snow_Cover|Ice_Surface/i.test(g.layer);
+  const nota = esPolar ? (polarEmpty ? " · polo vacío" : " · polo con datos") : "";
   console.log(
-    `${record(isImage, empty)} ${g.key.padEnd(20)} ${String(r.status).padStart(3)} ${String(r.bytes).padStart(6)}B  ${time || "(sin fecha)"}  ${g.layer}`,
+    `${record(isImage, empty)} ${g.key.padEnd(20)} ${String(r.status).padStart(3)} ${String(r.bytes).padStart(6)}B  ${time || "(sin fecha)"}  ${g.layer}` +
+      `\n      ${" ".repeat(20)} polo ${String(polar.status).padStart(3)} ${String(polar.bytes).padStart(6)}B${nota}`,
   );
 }
 

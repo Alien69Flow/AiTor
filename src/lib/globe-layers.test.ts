@@ -270,10 +270,23 @@ describe("capas que faltaban o no pintaban", () => {
     expect(layerDef("oceanCurrents")?.gibs?.layer).toBe("OSCAR_Sea_Surface_Currents_Zonal");
   });
 
-  it("las corrientes llevan fecha fija porque la serie de OSCAR está detenida", () => {
+  it("las corrientes piden el último compuesto, sin fecha fija", () => {
     const currents = layerDef("oceanCurrents")?.gibs;
-    expect(currents?.date).toBe("2024-07-17");
-    expect(currents?.timeless).toBeUndefined();
+    // OSCAR publica compuestos de 5 días: con un TIME diario GIBS responde 404,
+    // así que la capa va sin segmento temporal y sigue a la última pasada.
+    expect(currents?.timeless).toBe(true);
+    expect(currents?.date).toBeUndefined();
+  });
+
+  it("el hielo marino es AMSR2 a 25 km, sin fecha fija", () => {
+    const ice = layerDef("seaIce")?.gibs;
+    // AMSRU2_Sea_Ice_Concentration_25km es la rejilla polar de AMSR2 (GCOM-W1).
+    // GIBS ya no la actualiza, así que sin TIME sirve la última pasada: pedirle
+    // el día de hoy devolvería 404 y la capa parecería rota.
+    expect(ice?.layer).toBe("AMSRU2_Sea_Ice_Concentration_25km");
+    expect(ice?.timeless).toBe(true);
+    expect(ice?.date).toBeUndefined();
+    expect(ice?.dateOffsetHours).toBeUndefined();
   });
 });
 
@@ -316,13 +329,15 @@ describe("un campo por familia", () => {
 
 describe("envolturas atmosféricas", () => {
   /**
-   * Los cascarones son opcionales desde que el globo usa la atmósfera real de
+   * Los cascarones se encienden junto a la atmósfera real de
    * Cesium: dos representaciones del mismo aire encendidas a la vez se suman
    * en el limbo del planeta y lo dejan turbio. De serie manda la de Cesium.
    */
-  it("la capa existe, es opcional y no viene encendida", () => {
+  it("la capa existe y viene encendida junto a la atmósfera de Cesium", () => {
     expect(layerDef("atmosphericShells")?.group).toBe("Atmospheric & Weather");
-    expect(DEFAULT_ACTIVE_LAYERS).not.toContain("atmosphericShells");
+    // #64 la encendió de serie: con sólo el halo, la escalera atmosférica no se
+    // podía ver desde fuera y el catálogo la anunciaba sin dibujarla.
+    expect(DEFAULT_ACTIVE_LAYERS).toContain("atmosphericShells");
   });
 });
 

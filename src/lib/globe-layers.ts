@@ -632,12 +632,13 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#e0f2fe",
 		Icon: Snowflake,
 		requiredTier: "signal",
-		source: "NASA GIBS · VIIRS NOAA-21 (diario)",
-		freshness: "1 día",
-		description: "Extensión de hielo marino de polo a polo, medida a 375 m",
-		// MUR deducía el hielo de la temperatura de la piel del mar y sólo marcaba
-		// el borde; VIIRS lo mide directamente todos los días.
-		gibs: { layer: "VIIRS_NOAA21_Sea_Ice", level: 6, alpha: 0.85, dateOffsetHours: 36 },
+		source: "NASA GIBS · AMSR2/GCOM-W1, 25 km",
+		freshness: "Última pasada publicada",
+		description: "Concentración de hielo marino de polo a polo, medida cada día a 25 km",
+		// AMSR2 mide la concentración en una rejilla polar de 25 km. GIBS
+		// cerró la serie (ongoing: false), así que la capa va sin segmento TIME:
+		// pedirle la fecha de hoy responde 404 y, sin fecha, sirve la última pasada.
+		gibs: { layer: "AMSRU2_Sea_Ice_Concentration_25km", level: 6, alpha: 0.85, timeless: true },
 	},
 	{
 		key: "iceSurfaceTemp",
