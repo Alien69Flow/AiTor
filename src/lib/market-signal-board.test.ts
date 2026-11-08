@@ -26,12 +26,13 @@ describe("snapshotFromEvent", () => {
 
 describe("buildSignalBoard", () => {
   it("pone arriba el mercado con más riesgo", () => {
+    // El motor suma 25 por alerta y 10 por aviso, con tope en 100.
     const board = buildSignalBoard([
-      // Liquidez fina (alerta) y rotación de 8 vueltas (aviso): 35 puntos.
+      // Profundidad fina (alerta) y rotación de 8 vueltas (aviso): 35 puntos.
       { id: "fino", title: "Fino", liquidity: 50_000, volume24hr: 400_000 },
-      // Liquidez fina y rotación de 40 vueltas: dos alertas, 50 puntos.
+      // Profundidad fina y rotación de 40 vueltas: dos alertas, 50 puntos.
       { id: "extremo", title: "Extremo", liquidity: 50_000, volume24hr: 2_000_000 },
-      // Un millón de fondo con 25 vueltas: una alerta, 25 puntos.
+      // Un millón de fondo con 25 vueltas: sólo alerta de rotación, 25 puntos.
       { id: "hondo", title: "Hondo", liquidity: 1_000_000, volume24hr: 25_000_000 },
     ]);
 
@@ -49,7 +50,7 @@ describe("buildSignalBoard", () => {
   });
 
   it("respeta el orden de gravedad dentro de la misma puntuación", () => {
-    // Las dos valen 25: una alerta de liquidez fina y una alerta de rotación.
+    // Las dos valen 25 y las dos empiezan por alerta: manda el nombre.
     const board = buildSignalBoard([
       { id: "rotacion", title: "Rotación", liquidity: 1_000_000, volume24hr: 25_000_000 },
       { id: "liquidez", title: "Liquidez", liquidity: 100_000 },
@@ -57,7 +58,6 @@ describe("buildSignalBoard", () => {
 
     expect(board.map((entry) => entry.score)).toEqual([25, 25]);
     expect(board.map((entry) => entry.signals[0]?.severity)).toEqual(["alert", "alert"]);
-    // A igual puntuación y gravedad, alfabético: «Liquidez» antes que «Rotación».
     expect(board.map((entry) => entry.label)).toEqual(["Liquidez", "Rotación"]);
   });
 
@@ -71,7 +71,9 @@ describe("buildSignalBoard", () => {
     const first = buildSignalBoard(events);
     const second = buildSignalBoard(events);
 
-    expect(first.map((entry) => entry.id)).toEqual(["uno", "dos"]);
+    // El duplicado se descarta por id, no por título: quedan dos mercados y,
+    // como los dos valen 25, el desempate alfabético pone «Dos» delante.
+    expect(first.map((entry) => entry.label)).toEqual(["Dos", "Uno"]);
     expect(first).toEqual(second);
   });
 });
