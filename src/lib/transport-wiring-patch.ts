@@ -190,8 +190,10 @@ function addImport(source: string): string {
  * y un fichero sucio invita a que el siguiente parche falle por ancla.
  *
  * La sangría del comentario del agrupador sale del propio `0,`, que es el que
- * puso el parche con la posición real de la llamada: alinearlo con la sangría
- * del comentario viejo lo dejaba a dos columnas del argumento.
+ * puso el parche con la posición real de la llamada. No se mira el texto de
+ * los comentarios: alinear por su contenido dejaba fuera cualquier redacción
+ * que no empezase por la misma palabra, y hacía que limpiar dos veces seguidas
+ * no diera el mismo fichero.
  */
 export function tidyPatchedTransport(source: string): string {
   let out = source;
@@ -210,11 +212,25 @@ export function tidyPatchedTransport(source: string): string {
     "),\n$1",
   );
 
-  // 3. El comentario del agrupador y el `0` con la sangría del argumento.
+  // 3. El comentario del agrupador y el `0` con la sangría del argumento: la
+  //    seña es el primer comentario, y todas las líneas de comentario que lo
+  //    siguen más el `0` se alinean con la sangría que ya tiene el `0,`.
   out = out.replace(
-    /[ \t]*(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)[ \t]*(\/\/ zoom[^\n]*\n)([ \t]*)(0,)/g,
-    (_match: string, first: string, second: string, indent: string, zero: string) =>
-      `${indent}${first}${indent}${second}${indent}${zero}`,
+    /[ \t]*(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)((?:[ \t]*\/\/[^\n]*\n)*)([ \t]*)(0,)/g,
+    (
+      _match: string,
+      first: string,
+      continuations: string,
+      indent: string,
+      zero: string,
+    ) => {
+      const rest = continuations
+        .split("\n")
+        .filter((line) => line.trim() !== "")
+        .map((line) => `${indent}${line.trim()}\n`)
+        .join("");
+      return `${indent}${first}${rest}${indent}${zero}`;
+    },
   );
 
   return out;

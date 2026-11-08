@@ -75,6 +75,10 @@ viewer.entities.add({
  * Restos que dejó la primera pasada del flujo, tal como se ven en el diff:
  * import en una línea, huecos con espacios y una línea vacía dentro del bloque
  * del modelo, y el comentario del agrupador desalineado con su argumento.
+ *
+ * El comentario del barco no empieza por la misma palabra que el del vuelo a
+ * propósito: la limpieza tiene que depender de dónde está el comentario, no de
+ * lo que diga.
  */
 const MESSY = `import {
   flightModelKind,
@@ -134,7 +138,7 @@ describe("parche de cableado de transporte", () => {
   it("importa modelScale una sola vez y en su línea", () => {
     const { source } = patchTransportWiring(SOURCE);
 
-    expect(source.match(/^[ \t]*modelScale,[\n\t]*$/gm)).toHaveLength(1);
+    expect(source.match(/modelHeadingRadians,\n[ \t]*modelScale,\n/g)).toHaveLength(1);
     expect(source).toContain("  modelHeadingRadians,\n  modelScale,\n  normalizedTrack,");
     expect(source).not.toContain("modelScale,\n\n");
   });
@@ -175,10 +179,12 @@ describe("parche de cableado de transporte", () => {
     expect(tidy.split("\n").filter((line) => line.trim() === "" && line !== "")).toHaveLength(0);
     expect(tidy).toMatch(/\),\n {4}distanceDisplayCondition: new DistanceDisplayCondition\(0, FLIGHT_MODEL_RANGE_M\),/);
 
-    // Comentario y `0` alineados con la sangría que ya tenía el argumento.
+    // Comentario y `0` alineados con la sangría que ya tenía el argumento,
+    // en los dos bloques y diga lo que diga el comentario.
     expect(tidy).toContain("        // Sin agrupador: cada vuelo");
     expect(tidy).toMatch(/\n {8}\/\/ zoom: agruparlo[^\n]*\n {8}0,/);
-    expect(tidy).toMatch(/\n {8}\/\/ zoom: en un puerto[^\n]*\n {8}0,/);
+    expect(tidy).toContain("        // Sin agrupador: cada barco");
+    expect(tidy).toMatch(/\n {8}\/\/ en un puerto[^\n]*\n {8}0,/);
   });
 
   it("reconoce el fichero ya parcheado y lo deja limpio", () => {
