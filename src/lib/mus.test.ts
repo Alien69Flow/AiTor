@@ -112,7 +112,7 @@ describe("juego y punto", () => {
     expect(musValue(card(7))).toBe(7);
   });
 
-  it("la treinta y una es el juego más alto", () => {
+  it("la treinta y una es el juego más alto con cuatro cartas", () => {
     expect(musJuego([card(7), card(7, "copas"), card(7, "bastos"), card(10)])).toBe(MUS_MAX_JUEGO);
     expect(musJuegoLabel(31)).toBe("treinta y una");
     expect(musJuegoLabel(30)).toBe("treinta");
@@ -120,7 +120,12 @@ describe("juego y punto", () => {
   });
 
   it("pasarse de 31 es no hay juego", () => {
-    expect(musJuego([card(7), card(7, "copas"), card(7, "bastos"), card(11)])).toBeNull();
+    // Con cuatro cartas el máximo es 31 (7 + 7 + 7 + figura), así que para pasarse
+    // hace falta una mano más larga, como en un descarte que no se descartó.
+    expect(musJuego([card(7), card(7, "copas"), card(7, "bastos"), card(11)])).toBe(MUS_MAX_JUEGO);
+    const larga = [card(7), card(7, "copas"), card(7, "bastos"), card(7, "espadas"), card(7)];
+    expect(musJuego(larga)).toBeNull();
+    expect(musPunto(larga)).toBe(35);
   });
 
   it("el punto sólo cuenta del 1 al 7", () => {
@@ -151,9 +156,11 @@ describe("piedras", () => {
   });
 
   it("quien no tiene juego pierde el lance del juego", () => {
-    const noJuego = musCount([card(7), card(7, "copas"), card(7, "bastos"), card(11)]);
+    const sinJuego = musCount([card(7), card(7, "copas"), card(7, "bastos"), card(7, "espadas"), card(7)]);
     const conJuego = musCount([card(7), card(7, "copas"), card(3), card(4)]);
-    expect(musCompare(noJuego, conJuego).juego).toBe(-1);
+    expect(sinJuego.juego).toBeNull();
+    expect(conJuego.juego).toBe(21);
+    expect(musCompare(sinJuego, conJuego).juego).toBe(-1);
   });
 
   it("la partida se cierra a 40 piedras", () => {
