@@ -45,9 +45,14 @@ describe("cámaras revividas", () => {
 
   it("lee y escribe en el almacenamiento con la clave pactada", () => {
     const storage = memoryStorage();
-    writeRevived({ "iss-hd": new Date(NOW).toISOString() }, storage);
+    // La marca se genera con la hora real y no con `NOW`: `writeRevived`
+    // caduca a los REVIVED_TTL_DAYS, así que una fecha fija convertía esta
+    // prueba en una bomba de relojería (falló justo al cumplirse los 14 días,
+    // sin que el código hubiera cambiado).
+    const mark = markRevived({}, "iss-hd");
+    writeRevived(mark, storage);
     expect(storage.dump()[LIVE_REVIVED_STORAGE_KEY]).toContain("iss-hd");
-    expect(readRevived(storage)).toEqual({ "iss-hd": new Date(NOW).toISOString() });
+    expect(readRevived(storage)).toEqual(mark);
   });
 
   it("un almacenamiento corrupto o ausente no rompe la app", () => {
