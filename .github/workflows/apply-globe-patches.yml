@@ -1,0 +1,74 @@
+# Aplica los parches del globo y los confirma en main.
+#
+# Existe porque el parche de la base estaba escrito, probado y fusionado, pero
+# nadie lo ejecutaba: `globe.baseColor` no aparecía en CesiumGlobe.tsx y el
+# globo seguía arrancando con el relleno azul y esperando al `fromUrl` de ArcGIS.
+# Ejecutarlo a mano depende de tener el portátil delante; esto lo hace la CI.
+#
+# El script falla con código 1 y sin escribir nada si las anclas cambiaron, así
+# que un fallo aquí es un aviso, no un parche a medias.
+
+name: Parches del globo
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Sólo cuando cambia algo que los parches tocan o leen. El commit que este
+    # mismo workflow crea vuelve a dispararlo, pero la segunda pasada no
+    # encuentra diferencias y termina sin confirmar nada: no hay bucle.
+    paths:
+      - "src/components/globe/CesiumGlobe.tsx"
+      - "src/lib/globe-layers.ts"
+      - "src/lib/globe-base-patch.ts"
+      - "src/lib/globe-defaults-patch.ts"
+      - "scripts/apply-globe-base-patch.ts"
+      - "scripts/apply-globe-defaults-patch.ts"
+      - ".github/workflows/apply-globe-patches.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parches-globo
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `--ignore-scripts` para no lanzar prebuild/predev, que aquí no hacen falta.
+      - name: Dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Parche de la base del globo
+        run: npx tsx scripts/apply-globe-base-patch.ts
+
+      # El parche de capas por defecto vive en el PR #57; si aún no está, se
+      # dice y se sigue, en vez de fallar por un archivo que no existe.
+      - name: Parche de capas por defecto
+        run: |
+          if [ -f scripts/apply-globe-defaults-patch.ts ]; then
+            npx tsx scripts/apply-globe-defaults-patch.ts
+          else
+            echo "· Todavía no existe scripts/apply-globe-defaults-patch.ts (PR #57)."
+          fi
+
+      - name: Confirmar en main si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Sin cambios: los parches ya estaban aplicados."
+            exit 0
+          fi
+          git add -A
+          git commit -m "Globo: aplica los parches automáticos (base y capas por defecto)"
+          git push
