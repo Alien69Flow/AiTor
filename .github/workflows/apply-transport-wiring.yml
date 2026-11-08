@@ -9,6 +9,11 @@
 # puede entrar otro commit (del autor o del propio bot) y entonces el push
 # directo se rechaza como non-fast-forward. Pasó en el run 42531885042: la
 # limpieza se aplicó y se commiteó, pero el push se quedó fuera por eso.
+#
+# Ojo con el commit que empuja el bot: se hace con GITHUB_TOKEN y GitHub no
+# lanza workflows con ese token, así que ese push no dispara ni el CI ni este
+# workflow. El head que sale de la limpieza necesita un empujón desde una
+# cuenta (o un workflow_dispatch) para tener sus checks.
 
 name: Cableado de transporte
 
