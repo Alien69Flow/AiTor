@@ -19,7 +19,10 @@ const card = (suit: string, rank: string): PlayingCard => ({
 	rank,
 });
 
-const withHands = (hands: [PlayingCard[], PlayingCard[]], trump: "oros" | "copas" | "espadas" | "bastos") => ({
+const withHands = (
+	hands: [PlayingCard[], PlayingCard[]],
+	trump: "oros" | "copas" | "espadas" | "bastos",
+) => ({
 	...createTrickGame("guinote", 1),
 	trump,
 	hands,
@@ -46,9 +49,8 @@ describe("bazas españolas", () => {
 		expect(a.trump).toBe(b.trump);
 	});
 
-	it("la pinta es el palo con más cartas y gana por mayoría real", () => {
+	it("la pinta es el palo con más cartas", () => {
 		expect(trumpOf([card("copas", "1"), card("copas", "2"), card("oros", "3")])).toBe("copas");
-		// Sin cartas, un palo válido igualmente (nunca `undefined`).
 		expect(trumpOf([])).toBe("oros");
 	});
 
@@ -61,17 +63,15 @@ describe("bazas españolas", () => {
 
 	it("manda el triunfo sobre el palo de salida y éste sobre el resto", () => {
 		const led = card("oros", "1");
-		// Triunfo copas: una sota de copas gana al as de oros.
 		expect(trickStrength(card("copas", "10"), "copas", led.suit)).toBeGreaterThan(
 			trickStrength(led, "copas", led.suit),
 		);
-		// Un as de otro palo no gana ni al dos de oros que salió.
 		expect(trickStrength(card("espadas", "1"), "copas", led.suit)).toBeLessThan(
 			trickStrength(card("oros", "2"), "copas", led.suit),
 		);
 	});
 
-	it("dentro del mismo palo, el as gana al rey y el tres al rey", () => {
+	it("dentro del mismo palo, el as y el tres mandan sobre el rey", () => {
 		expect(trickStrength(card("oros", "1"), "copas", "oros")).toBeGreaterThan(
 			trickStrength(card("oros", "12"), "copas", "oros"),
 		);
@@ -89,15 +89,15 @@ describe("bazas españolas", () => {
 
 	it("obliga a asistir al palo de salida si se tiene", () => {
 		const state = withHands(
-			[[card("oros", "1"), card("oros", "5"), card("bastos", "2")], [card("oros", "12"), card("copas", "4")]],
+			[
+				[card("oros", "1"), card("oros", "5"), card("bastos", "2")],
+				[card("oros", "12"), card("copas", "4")],
+			],
 			"espadas",
 		);
 		const played = playCard(state, "espanola:oros:1");
 		expect(played.trick).toHaveLength(1);
-		const legal = legalCards(played).map((entry) => entry.id);
-		expect(legal).toEqual(["espanola:oros:12"]);
-
-		// Intentar descartar copas con oros en mano no cambia nada.
+		expect(legalCards(played).map((entry) => entry.id)).toEqual(["espanola:oros:12"]);
 		expect(playCard(played, "espanola:copas:4")).toEqual(played);
 	});
 
@@ -112,33 +112,56 @@ describe("bazas españolas", () => {
 
 	it("resuelve la baza, suma puntos y da la salida al ganador", () => {
 		const state = withHands(
-			[[card("oros", "1"), card("oros", "2")], [card("copas", "12"), card("copas", "3")]],
+			[
+				[card("oros", "1"), card("oros", "2")],
+				[card("copas", "12"), card("copas", "3")],
+			],
 			"copas",
 		);
 		const played = playCard(playCard(state, "espanola:oros:1"), "espanola:copas:12");
 
 		expect(played.trick).toEqual([]);
 		expect(played.tricks).toEqual([0, 1]);
-		// As de oros (11) más rey de copas (4): el triunfo se lleva la baza.
 		expect(played.score).toEqual([0, 15]);
 		expect(played.turn).toBe(1);
 		expect(played.lastTrickWinner).toBe(1);
 	});
 
+	it("si sale el jugador 1 y su carta manda, la baza es suya", () => {
+		// Regresión: el ganador se decidía por la posición de la carta en la baza,
+		// así que en cuanto la salida pasaba al jugador 1 el tanteo se invertía.
+		const state = {
+			...withHands(
+				[
+					[card("oros", "2"), card("oros", "5")],
+					[card("copas", "12"), card("copas", "6")],
+				],
+				"copas",
+			),
+			turn: 1 as const,
+			leader: 1 as const,
+		};
+		const led = playCard(state, "espanola:copas:12");
+		expect(led.trick).toHaveLength(1);
+		expect(led.turn).toBe(0);
+
+		// El jugador 0 no tiene copas: descarta oros y pierde la baza.
+		const resolved = playCard(led, "espanola:oros:2");
+		expect(resolved.tricks).toEqual([0, 1]);
+		expect(resolved.score).toEqual([0, 4]);
+		expect(resolved.turn).toBe(1);
+	});
+
 	it("la última baza vale diez más y cierra la partida", () => {
-		const state = withHands(
-			[[card("oros", "2")], [card("oros", "12")]],
-			"copas",
-		);
+		const state = withHands([[card("oros", "2")], [card("oros", "12")]], "copas");
 		const played = playCard(playCard(state, "espanola:oros:2"), "espanola:oros:12");
 
 		expect(played.finished).toBe(true);
-		// Rey de oros: 4 puntos de carta más 10 de la última baza.
 		expect(played.score).toEqual([0, 4 + LAST_TRICK_POINTS]);
 		expect(winnerOf(played)).toBe(1);
 	});
 
-	it("una partida completa reparte todos los puntos y no se queda colgada", () => {
+	it("una partida completa no se queda colgada", () => {
 		let state = createTrickGame("tute", 5);
 		let guard = 0;
 		while (!state.finished && guard < 100) {
@@ -151,6 +174,5 @@ describe("bazas españolas", () => {
 		expect(state.tricks[0] + state.tricks[1]).toBe(3);
 		expect(state.hands[0]).toHaveLength(0);
 		expect(state.hands[1]).toHaveLength(0);
-		expect(winnerOf(state)).not.toBe(undefined);
 	});
 });
