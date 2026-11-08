@@ -85,7 +85,7 @@ export function kartStep(state: KartState, input: KartInput, curve: number, dt =
   const speed = clamp(state.speed + (throttle - KART_DRAG) * step, 0, KART_MAX_SPEED);
   const pull = clamp(curve, -1, 1) * KART_CURVE_PULL;
   const drift = clamp(
-    state.drift + ((pull - input.steer * KART_STEER_GRIP) / KART_MAX_SPEED) * KART_DRIFT_RATE * step,
+    state.drift + ((pull + input.steer * KART_STEER_GRIP) / KART_MAX_SPEED) * KART_DRIFT_RATE * step,
     -2,
     2,
   );
@@ -103,7 +103,10 @@ export function kartFinished(state: KartState): boolean {
 /** Puntos: vueltas cerradas más el tramo de la vuelta en curso. */
 export function kartScore(state: KartState): number {
   const laps = clamp(Math.floor(state.distance / KART_LAP_LENGTH), 0, KART_LAPS);
-  const partial = clamp(state.distance - laps * KART_LAP_LENGTH, 0, KART_LAP_LENGTH) / KART_LAP_LENGTH;
+  // El parcial sólo cuenta mientras la vuelta está en curso: restar contra la
+  // distancia con las vueltas ya acotadas dejaba un parcial ficticio en la meta
+  // y el marcador pasaba del techo de la partida.
+  const partial = laps >= KART_LAPS ? 0 : clamp((state.distance - laps * KART_LAP_LENGTH) / KART_LAP_LENGTH, 0, 1);
   return Math.round(laps * KART_LAP_POINTS + partial * KART_PARTIAL_POINTS);
 }
 
