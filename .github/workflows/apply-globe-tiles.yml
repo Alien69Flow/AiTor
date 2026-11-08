@@ -1,0 +1,81 @@
+# Sustituye las capas de teselas que llegaban casi vacías al globo.
+#
+# El parche vive en `src/lib/globe-tiles-patch.ts` con sus pruebas y aquí se
+# aplica sobre `globe-layers.ts`, que es el catálogo real. Si el catálogo cambió
+# y un ancla no está, el script sale con 1 y no escribe nada.
+#
+# El job verifica antes de confirmar (typecheck del proyecto y las pruebas del
+# parche) porque el commit que empuja el bot se hace con GITHUB_TOKEN y GitHub
+# no lanza workflows con ese token: sin estos pasos, el head parcheado no lo
+# compilaría nadie.
+#
+# La confirmación rebasa con reintentos: puede entrar un commit mientras corre.
+
+name: Globo · teselas
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/globo-teselas]
+    paths:
+      - "src/lib/globe-layers.ts"
+      - "src/lib/globe-tiles-patch.ts"
+      - "scripts/apply-globe-tiles-patch.ts"
+      - ".github/workflows/apply-globe-tiles.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: globo-teselas
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Aplicar las teselas densas
+        run: npx tsx scripts/apply-globe-tiles-patch.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Pruebas del parche
+        run: npx vitest run src/lib/globe-tiles-patch.test.ts
+
+      - name: Confirmar si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Sin cambios: las capas ya piden mallas densas."
+            exit 0
+          fi
+          git add -A
+          git commit -m "Globo: capas de teselas densas y corrientes sin fecha fija"
+          for intento in 1 2 3 4 5; do
+            if git push origin HEAD:feat/globo-teselas; then
+              echo "Parche confirmado en el intento $intento."
+              exit 0
+            fi
+            echo "Push rechazado (intento $intento): rebaso sobre origin y reintento."
+            if ! git pull --rebase --autostash origin feat/globo-teselas; then
+              git rebase --abort || true
+              echo "El rebase no se pudo aplicar: revisa el conflicto a mano." >&2
+              exit 1
+            fi
+          done
+          echo "No se pudo confirmar el parche tras cinco intentos." >&2
+          exit 1
