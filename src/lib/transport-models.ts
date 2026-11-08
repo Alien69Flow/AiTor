@@ -14,6 +14,9 @@
  * con proa afilada—, no con cajas: a la distancia del globo se ve la silueta y
  * una caja no se lee como un avión. Ejes glTF 2.0 (+Y arriba, +Z al morro),
  * que es lo que Cesium espera desde la 1.47.
+ *
+ * Este módulo no importa Cesium ni toca el DOM: son cuentas puras, y por eso
+ * las pruebas las comprueban sin montar el visor.
  */
 
 export interface TransportModel {
@@ -31,6 +34,11 @@ export const TRANSPORT_MODELS = {
 } as const satisfies Record<string, TransportModel>;
 
 export type TransportModelKind = keyof typeof TRANSPORT_MODELS;
+
+/** ¿El nombre corresponde a un modelo que de verdad existe en `public/models`? */
+export function isTransportModelKind(value: string): value is TransportModelKind {
+  return Object.prototype.hasOwnProperty.call(TRANSPORT_MODELS, value);
+}
 
 /**
  * Rumbo saneado, en grados desde el norte.
@@ -59,9 +67,17 @@ export function modelHeadingRadians(trackDegrees?: number | null): number {
   return (normalized * Math.PI) / 180;
 }
 
-/** Distancias (altura de cámara) a las que se cambia icono por modelo 3D. */
-export const FLIGHT_MODEL_RANGE_M = 900_000;
-export const SHIP_MODEL_RANGE_M = 700_000;
+/**
+ * Distancias (altura de cámara) a las que se cambia icono por modelo 3D.
+ *
+ * Estaban en 900 km (vuelos) y 700 km (barcos): justo por debajo de la vista
+ * de continente, así que al alejar un poco el globo todo volvía a ser una
+ * pegatina. Ahora el modelo entra antes y se encoge solo (ver `modelScale`),
+ * que es lo que hacía falta para que un avión se leyera como avión mientras se
+ * sigue viendo el mapa.
+ */
+export const FLIGHT_MODEL_RANGE_M = 2_600_000;
+export const SHIP_MODEL_RANGE_M = 1_800_000;
 
 /**
  * Cuántos contactos llevan modelo 3D a la vez.
@@ -77,14 +93,115 @@ export const SHIP_MODEL_LIMIT = 90;
  * Tope de escala de los modelos.
  *
  * `minimumPixelSize` agranda el modelo hasta que mide unos píxeles en pantalla:
- * un avión de 44 m reales a 800 km es una centésima de píxel, así que sin ese
+ * un avión de 45 m reales a 800 km es una centésima de píxel, así que sin ese
  * suelo no se vería nada justo en el rango en el que el icono ya se ha retirado.
- * El tope evita que a 900 km el avión se convierta en una pieza de decenas de
- * kilómetros con perspectiva imposible; dentro de los primeros kilómetros el
- * modelo se queda a escala real (1:1) y es donde importa.
+ * El tope evita que a 2 600 km el avión se convierta en una pieza de decenas de
+ * kilómetros con perspectiva imposible. Con el reparto por altura de
+ * `modelScale` estos topes quedan como red de seguridad, no como el valor de
+ * trabajo: a su distancia máxima cada modelo se queda por debajo.
  */
 export const FLIGHT_MODEL_MAX_SCALE = 2_500;
 export const SHIP_MODEL_MAX_SCALE = 600;
+
+/** Tamaño en pantalla que se busca para cada modelo, en píxeles. */
+export const FLIGHT_MODEL_TARGET_PX = 26;
+export const SHIP_MODEL_TARGET_PX = 40;
+
+/**
+ * Campo de visión vertical de Cesium por defecto, en radianes (60°).
+ *
+ * Con él, y la altura de cámara, se sabe cuántos metros cubre un píxel: es la
+ * cuenta que convierte «quiero que mida 26 px» en una escala concreta.
+ */
+export const CESIUM_DEFAULT_FOV_Y = Math.PI / 3;
+
+interface ModelView {
+  targetPx: number;
+  maxScale: number;
+}
+
+/**
+ * Cómo se ve cada modelo. Es un `Record` sobre los tipos existentes a
+ * propósito: el día que se añada un GLB nuevo, TypeScript obliga a decidir su
+ * tamaño en pantalla en vez de dejarlo con un valor por defecto silencioso.
+ */
+const MODEL_VIEW: Record<TransportModelKind, ModelView> = {
+  airliner: { targetPx: FLIGHT_MODEL_TARGET_PX, maxScale: FLIGHT_MODEL_MAX_SCALE },
+  helicopter: { targetPx: FLIGHT_MODEL_TARGET_PX, maxScale: FLIGHT_MODEL_MAX_SCALE },
+  ship: { targetPx: SHIP_MODEL_TARGET_PX, maxScale: SHIP_MODEL_MAX_SCALE },
+};
+
+export interface ModelScaleInput {
+  /** Altura de la cámara sobre el suelo, en metros. */
+  cameraHeightM: number;
+  /** Alto del canvas en píxeles (no del CSS lógico: píxeles de dibujo). */
+  viewportHeightPx: number;
+  /** Eslora o envergadura real del modelo, en metros. */
+  lengthM: number;
+  targetPx?: number;
+  fovY?: number;
+  maxScale?: number;
+}
+
+/**
+ * Escala para que un modelo de `lengthM` metros ocupe `targetPx` píxeles a la
+ * altura de cámara dada.
+ *
+ * Antes había una escala fija por tipo (2 500 para vuelos, 600 para barcos) que
+ * se aplicaba igual a 5 km que a 900 km: de cerca el avión era un mamotreto de
+ * kilómetros y de lejos se perdía. La escala correcta depende de la altura,
+ * porque lo que se quiere fijar es el tamaño **en pantalla**:
+ *
+ *   metrosPorPíxel = 2 · altura · tan(fov/2) / altoDelCanvas
+ *   escala         = objetivo_px · metrosPorPíxel / eslora
+ *
+ * Se acota a [1, maxScale]. El suelo en 1 es importante: por debajo de 1 el
+ * modelo encogería por debajo de su tamaño real y un petrolero de 250 m se
+ * vería más pequeño que el muelle que tiene al lado.
+ *
+ * Cualquier entrada inválida (NaN, cero, negativa) devuelve 1: es preferible un
+ * modelo a escala real que un `NaN` que Cesium traduce en geometría invisible.
+ */
+export function modelScaleForCamera(input: ModelScaleInput): number {
+  const {
+    cameraHeightM,
+    viewportHeightPx,
+    lengthM,
+    targetPx = FLIGHT_MODEL_TARGET_PX,
+    fovY = CESIUM_DEFAULT_FOV_Y,
+    maxScale = FLIGHT_MODEL_MAX_SCALE,
+  } = input;
+
+  const valid =
+    Number.isFinite(cameraHeightM) && cameraHeightM > 0 &&
+    Number.isFinite(viewportHeightPx) && viewportHeightPx > 0 &&
+    Number.isFinite(lengthM) && lengthM > 0 &&
+    Number.isFinite(targetPx) && targetPx > 0 &&
+    Number.isFinite(fovY) && fovY > 0 && fovY < Math.PI &&
+    Number.isFinite(maxScale) && maxScale >= 1;
+  if (!valid) return 1;
+
+  const metersPerPixel = (2 * cameraHeightM * Math.tan(fovY / 2)) / viewportHeightPx;
+  const wanted = (targetPx * metersPerPixel) / lengthM;
+  if (!Number.isFinite(wanted)) return 1;
+  return Math.min(maxScale, Math.max(1, wanted));
+}
+
+/** Lo mismo, pero eligiendo el modelo por su tipo y sin repetir constantes. */
+export function modelScale(
+  kind: TransportModelKind,
+  cameraHeightM: number,
+  viewportHeightPx: number,
+): number {
+  const view = MODEL_VIEW[kind];
+  return modelScaleForCamera({
+    cameraHeightM,
+    viewportHeightPx,
+    lengthM: TRANSPORT_MODELS[kind].lengthM,
+    targetPx: view.targetPx,
+    maxScale: view.maxScale,
+  });
+}
 
 /**
  * Designadores ICAO de tipo de aeronave que son helicópteros.
@@ -114,12 +231,74 @@ export function flightModelKind(flight: { aircraftType?: string | null }): Trans
   return isHelicopterType(flight.aircraftType) ? "helicopter" : "airliner";
 }
 
+/** Familia de un buque, deducida del tipo AIS. */
+export type ShipClass = "tanker" | "container" | "ferry" | "cargo" | "other";
+
 /**
- * Modelo de un buque. Hoy hay uno solo (carguero): la mayoría del tráfico AIS
- * son cargueros y petroleros, y distinguir un ferry de un portacontenedores a
- * 200 km no aporta nada. Se deja la función para que el día que haya modelos
- * por tipo no haya que tocar el renderizador.
+ * Palabras que aparecen en los campos de tipo de AIS y de los agregadores.
+ * Se comparan sobre el texto en minúsculas y sin acentos de puntuacion.
  */
-export function shipModelKind(_ship: { type?: string | null }): TransportModelKind {
-  return "ship";
+const SHIP_CLASS_WORDS: [ShipClass, string[]][] = [
+  ["container", ["container", "boxship", "box ship", "portacontenedor"]],
+  ["tanker", ["tanker", "petrol", "crude", "lng", "lpg", "chemical", "oil products", "product carrier"]],
+  ["ferry", ["ferry", "ro-ro", "roro", "ro ro", "ro pax", "ropax", "passenger", "cruise", "fast ferry"]],
+  ["cargo", ["cargo", "bulk", "freight", "general", "car carrier", "livestock"]],
+];
+
+/**
+ * Clase de buque a partir del tipo que publica el feed.
+ *
+ * AIS manda un número del 0 al 99 en `shipType` y cada agregador lo traduce a
+ * su manera: unos pasan el número («80»), otros el nombre del grupo
+ * («Tanker») y otros una descripción larga («Oil Products Tanker»). Todo eso
+ * acaba en el mismo `type` de la capa, así que aquí se acepta cualquiera de
+ * las tres formas.
+ *
+ * Rangos AIS relevantes: 60–69 pasaje, 70–79 carga, 80–89 petroleros. Un
+ * petrolero dibujado como carguero es un error de lectura del mapa, no un
+ * detalle: son 250 m de eslora y cubierta llena de tuberías.
+ */
+export function shipClassOf(type?: string | number | null): ShipClass {
+  if (type === null || type === undefined) return "other";
+  const raw = String(type).trim();
+  if (!raw) return "other";
+
+  // Código AIS numérico (con el 0 delante que algunos feeds conservan).
+  const code = Number(raw);
+  if (Number.isFinite(code) && /^\d{1,2}$/.test(raw)) {
+    if (code >= 80 && code <= 89) return "tanker";
+    if (code >= 70 && code <= 79) return "cargo";
+    if (code >= 60 && code <= 69) return "ferry";
+    return "other";
+  }
+
+  const words = raw.toLowerCase();
+  for (const [shipClass, needles] of SHIP_CLASS_WORDS) {
+    if (needles.some((needle) => words.includes(needle))) return shipClass;
+  }
+  return "other";
+}
+
+/**
+ * Qué kind de modelo corresponde a cada clase de buque.
+ *
+ * Son nombres candidatos: `shipModelKind` sólo los devuelve si el GLB está
+ * declarado en `TRANSPORT_MODELS`, de modo que un petrolero nunca intenta
+ * cargar `/models/tanker.glb` antes de que el generador lo haya creado. Hoy
+ * sólo existe el carguero, así que todo cae en `ship`; cuando los tres GLB
+ * estén generados basta con añadirlos a `TRANSPORT_MODELS` y esta tabla los
+ * empieza a usar sola, sin tocar el renderizador.
+ */
+const SHIP_CLASS_MODEL: Record<ShipClass, string> = {
+  tanker: "tanker",
+  container: "container",
+  ferry: "ferry",
+  cargo: "ship",
+  other: "ship",
+};
+
+/** Modelo de un buque según su tipo; cae en el carguero si aún no hay GLB propio. */
+export function shipModelKind(ship: { type?: string | number | null } | null | undefined): TransportModelKind {
+  const candidate = SHIP_CLASS_MODEL[shipClassOf(ship?.type)];
+  return isTransportModelKind(candidate) ? candidate : "ship";
 }
