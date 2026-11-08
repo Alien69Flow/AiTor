@@ -10,9 +10,13 @@ const card = (suit: string, rank: string): PlayingCard => ({
 	rank,
 });
 
+/** Mesa mínima: rojo arriba, turno del jugador 0. */
 const base = () => ({
 	...createUno(4),
-	hands: [[card("rojo", "5a")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]],
+	hands: [
+		[card("rojo", "5a"), card("rojo", "9a")],
+		[card("verde", "7a")],
+	] as [PlayingCard[], PlayingCard[]],
 	discard: [card("rojo", "3a")],
 	color: "rojo" as const,
 	turn: 0 as const,
@@ -38,31 +42,69 @@ describe("uno", () => {
 	});
 
 	it("el comodín exige color y lo fija", () => {
-		const state = { ...base(), hands: [[card("comodin", "1")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]] };
+		const state = {
+			...base(),
+			hands: [[card("comodin", "1"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
+		// Sin color elegido no se juega.
 		expect(playUno(state, "uno:comodin:1")).toEqual(state);
 
 		const played = playUno(state, "uno:comodin:1", "azul");
 		expect(played.color).toBe("azul");
-		expect(played.hands[0]).toHaveLength(0);
-		expect(played.winner).toBe(0);
+		expect(played.hands[0]).toHaveLength(1);
+		expect(played.turn).toBe(1);
+		expect(played.winner).toBe(null);
 	});
 
-	it("el roba dos roba al rival y le quita el turno", () => {
-		const state = { ...base(), hands: [[card("rojo", "roba2a")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]] };
+	it("el roba dos roba al rival, le quita el turno y descuenta del mazo", () => {
+		const state = {
+			...base(),
+			hands: [[card("rojo", "roba2a"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
 		const played = playUno(state, "uno:rojo:roba2a");
 		expect(played.hands[1]).toHaveLength(3);
+		expect(played.drawPile).toHaveLength(state.drawPile.length - 2);
 		expect(played.turn).toBe(0);
 		expect(played.winner).toBe(null);
 	});
 
 	it("el salto con dos jugadores deja el turno en quien tiró", () => {
-		const state = { ...base(), hands: [[card("rojo", "saltaa")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]] };
+		const state = {
+			...base(),
+			hands: [[card("rojo", "saltaa"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
 		const played = playUno(state, "uno:rojo:saltaa");
 		expect(played.turn).toBe(0);
+		expect(played.hands[1]).toHaveLength(1);
+	});
+
+	it("quedarse sin cartas es ganar", () => {
+		const state = {
+			...base(),
+			hands: [[card("rojo", "5a")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]],
+		};
+		const played = playUno(state, "uno:rojo:5a");
+		expect(played.winner).toBe(0);
+		expect(played.hands[0]).toHaveLength(0);
 	});
 
 	it("una jugada ilegal no cambia el estado", () => {
-		const state = { ...base(), hands: [[card("azul", "4a")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]] };
+		const state = {
+			...base(),
+			hands: [[card("azul", "4a"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
 		expect(playUno(state, "uno:azul:4a")).toEqual(state);
 		expect(playUno(state, "uno:rojo:99")).toEqual(state);
 	});
@@ -70,7 +112,7 @@ describe("uno", () => {
 	it("robar suma una carta y pasa el turno", () => {
 		const state = base();
 		const drawn = drawUno(state);
-		expect(drawn.hands[0]).toHaveLength(2);
+		expect(drawn.hands[0]).toHaveLength(state.hands[0].length + 1);
 		expect(drawn.drawPile).toHaveLength(state.drawPile.length - 1);
 		expect(drawn.turn).toBe(1);
 	});
