@@ -13,10 +13,15 @@
  * acercar, la celda se encoge y el grupo se abre solo hasta que cada sitio
  * recupera su nombre.
  *
+ * A escala de planeta el reparto cambia: con la Tierra entera en pantalla doce
+ * columnas dejan celdas de 16°, que a 1 500 px son ~158 px y siguen dejando
+ * decenas de burbujas sobre Europa y el este de Asia. Ahí se usan ocho
+ * columnas, que dan celdas de 20° (~197 px): el mismo planeta, menos ruido, y
+ * el grupo conserva su cuenta para no perder información.
+ *
  * Se calcula en un módulo aparte y sin Cesium para poder probarlo: la cámara,
  * los nombres y el dibujo no intervienen en la decisión.
  */
-
 /** Un punto del catálogo estático, con lo mínimo para agruparse. */
 export interface MapLabelPoint {
   id: string;
@@ -45,15 +50,31 @@ export const CLUSTER_MIN_ALTITUDE_M = 120_000;
 const COLUMNS = 12;
 
 /**
+ * Columnas a escala de planeta. Menos columnas, celdas más grandes: es el
+ * escalón donde la Tierra entera ocupa la pantalla y el ruido importa más que
+ * el detalle, porque a esa distancia un sitio suelto no se distingue igual.
+ */
+const PLANET_COLUMNS = 8;
+
+/**
+ * Altura a partir de la cual se considera vista de planeta. Por debajo, la
+ * celda de doce columnas ya cae en el mismo escalón, así que el cambio no
+ * altera el zoom de trabajo (regiones, países, ciudades).
+ */
+const PLANET_ALTITUDE_M = 8_000_000;
+
+/**
  * Tamaños de celda en grados. Son escalones fijos y no un valor continuo a
  * propósito: la cámara avisa a cada suspiro y reconstruir las entidades del
  * globo en cada movimiento sería un tirón constante. Con escalones, el globo se
  * repinta cuando el zoom cruza un umbral.
  *
- * El último escalón es 16° y no más: la vista nunca abarca más de 180° de
- * hemisferio, así que con doce columnas ninguna celda razonable pasa de ahí.
+ * El último escalón es 20° y no más: la vista nunca abarca más de 180° de
+ * hemisferio, así que con ocho columnas a escala de planeta ninguna celda
+ * razonable pasa de ahí, y una celda mayor se comería un continente entero en
+ * un solo punto.
  */
-export const CLUSTER_CELL_LADDER = [0, 0.5, 1, 2, 4, 8, 16] as const;
+export const CLUSTER_CELL_LADDER = [0, 0.5, 1, 2, 4, 8, 16, 20] as const;
 
 const toDegrees = (radians: number) => (radians * 180) / Math.PI;
 
@@ -78,8 +99,12 @@ export function clusterCellDegrees(altitudeMetres: number): number {
   const altitude = Number.isFinite(altitudeMetres) ? Math.max(0, altitudeMetres) : 0;
   if (altitude <= CLUSTER_MIN_ALTITUDE_M) return 0;
 
-  const target = visibleWidthDegrees(altitude) / COLUMNS;
-  return CLUSTER_CELL_LADDER.find((step) => step > 0 && step >= target) ?? CLUSTER_CELL_LADDER[CLUSTER_CELL_LADDER.length - 1];
+  const columns = altitude >= PLANET_ALTITUDE_M ? PLANET_COLUMNS : COLUMNS;
+  const target = visibleWidthDegrees(altitude) / columns;
+  return (
+    CLUSTER_CELL_LADDER.find((step) => step > 0 && step >= target) ??
+    CLUSTER_CELL_LADDER[CLUSTER_CELL_LADDER.length - 1]
+  );
 }
 
 const cellKey = (lat: number, lon: number, cell: number) =>
