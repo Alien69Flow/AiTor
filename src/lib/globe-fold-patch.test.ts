@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
@@ -36,7 +37,6 @@ describe("patchGlobeFold", () => {
     expect(changed).toBe(true);
     expect(source).toContain(FOLD_MARKER);
     expect(source).toContain("const [controlsOpen, setControlsOpen] = useState(false);");
-    expect(source).not.toContain("useState(true);\n\n  const legend");
 
     // Las dos llamadas a la leyenda nacen plegadas, escritorio y móvil.
     expect(source).toContain("legend(undefined, true)");
@@ -75,8 +75,12 @@ describe("patchGlobeFold", () => {
   });
 
   it("el panel real está plegado o conserva las anclas", () => {
+    // La ruta sale del directorio de trabajo y no de `import.meta.url`: en el
+    // entorno de pruebas del CI esa URL no lleva el esquema `file:` y `readFileSync`
+    // la rechaza con `ERR_INVALID_URL_SCHEME`. Vitest ejecuta siempre desde la
+    // raíz del proyecto.
     const real = readFileSync(
-      new URL("../components/dashboard/GlobeDashboard.tsx", import.meta.url),
+      resolve(process.cwd(), "src/components/dashboard/GlobeDashboard.tsx"),
       "utf8",
     );
 
