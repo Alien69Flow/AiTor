@@ -216,8 +216,8 @@ export const EARTH_SHELLS: EarthShell[] = [
 	},
 	{
 		id: "stratosphere", label: "Estratosfera", range: "16-50 km", kind: "shell",
-		layer: "stratosphere", source: "NASA GIBS · Aura MLS a 46 hPa (~22 km)",
-		note: "La capa sondea el tercio inferior de la envoltura: es donde está la capa de ozono y donde se ve el calentamiento súbito.",
+		layer: "stratosphere", source: "NASA GIBS · MERRA-2 a 250 hPa (~10 km)",
+		note: "La malla densa más cercana que sirve GIBS es la de 250 hPa (~10 km): el perfilador MLS a 46 hPa barre una franja fina y dejaba el globo casi vacío.",
 	},
 	{
 		id: "mesosphere", label: "Mesosfera", range: "50-85 km", kind: "shell",
@@ -273,6 +273,8 @@ export const CONNECTOR_LAYER_KEYS: readonly EnvLayerKey[] = [
 
 /** Catálogo tal y como lo declara cada capa, antes del techo de plan. */
 const LAYER_CATALOG: globeLayerDef[] = [
+  // Teselas densas: hielo, vapor, estratosfera y corrientes piden productos
+  // de malla completa (VIIRS, MERRA-2, OSCAR) en vez de barridos orbitales.
 	// === Atmospheric & Weather ===
 	{ 
 		key: "atmosphere", 
@@ -464,10 +466,10 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#67e8f9",
 		Icon: Cloudy,
 		requiredTier: "signal",
-		source: "NASA GIBS · AMSR2 (JAXA)",
+		source: "NASA GIBS · MERRA-2 (reanálisis)",
 		freshness: "Mensual (última disponible)",
-		description: "Columna de vapor de agua precipitable sobre el océano",
-		gibs: { layer: "AMSRU2_Columnar_Water_Vapor_Day", level: 6, alpha: 0.7, timeless: true },
+		description: "Columna de vapor de agua precipitable en toda la malla, océano y continente: media mensual del reanálisis",
+		gibs: { layer: "MERRA2_Total_Precipitable_Water_Vapor_Monthly", level: 6, alpha: 0.7, timeless: true },
 	},
 	{
 		key: "ozone",
@@ -497,15 +499,15 @@ const LAYER_CATALOG: globeLayerDef[] = [
 	},
 	{
 		key: "stratosphere",
-		label: "Estratosfera · temperatura",
+		label: "Temperatura a 250 hPa",
 		group: "Atmospheric & Weather",
 		color: "#818cf8",
 		Icon: Gauge,
 		requiredTier: "signal",
-		source: "NASA GIBS · Aura MLS (46 hPa)",
-		freshness: "1 día",
-		description: "Temperatura a 46 hPa (~22 km): calentamiento súbito estratosférico y el agujero de ozono visto por dentro",
-		gibs: { layer: "MLS_Temperature_46hPa_Day", level: 6, alpha: 0.75, timeless: true },
+		source: "NASA GIBS · MERRA-2 (250 hPa)",
+		freshness: "Media mensual",
+		description: "Temperatura a 250 hPa (~10,5 km), media mensual del reanálisis: cubre el globo entero en vez de un barrido de limbo",
+		gibs: { layer: "MERRA2_Air_Temperature_250hPa_Monthly", level: 6, alpha: 0.75, timeless: true },
 	},
 	{
 		key: "landSurfaceTemp",
@@ -584,18 +586,18 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#2dd4bf",
 		Icon: Waves,
 		requiredTier: "signal",
-		// OSCAR es el único vector de corrientes que GIBS sirve como tesela. La
-		// serie se interrumpió en julio de 2024: se fija la fecha para que la
-		// capa diga lo que es —la última pasada— en vez de pedir un día actual
-		// que devuelve 404.
-		source: "NASA GIBS · OSCAR (última pasada, jul 2024)",
-		freshness: "Serie detenida en 2024-07-17",
-		description: "Corriente superficial este-oeste (componente zonal) de la última pasada de OSCAR",
+		// OSCAR es el único vector de corrientes que GIBS sirve como tesela, y su
+		// producto es un compuesto de 5 días: pedirle un día suelto devuelve 404.
+		// sin segmento TIME GIBS sirve el último compuesto, así que la capa sigue
+		// a la última pasada en vez de quedarse congelada en 2024.
+		source: "NASA GIBS · OSCAR (compuesto de 5 días)",
+		freshness: "Último compuesto disponible",
+		description: "Corriente superficial este-oeste (componente zonal): compuesto de 5 días de la última pasada de OSCAR",
 		gibs: {
 			layer: "OSCAR_Sea_Surface_Currents_Zonal",
 			level: 6,
 			alpha: 0.8,
-			date: "2024-07-17",
+			timeless: true,
 			maxUpsample: 0,
 		},
 	},
@@ -618,9 +620,9 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#f97316",
 		Icon: Factory,
 		requiredTier: "signal",
-		source: "NASA GIBS · OCO-2",
+		source: "NASA GIBS · OCO-2 (muestreo orbital)",
 		freshness: "Media mensual",
-		description: "Columna media de CO₂ — emisiones y sumideros, mes a mes",
+		description: "Columna media de CO₂ del último día con pasada de OCO-2: es un barrido orbital, así que deja franjas sin dato entre órbitas",
 		gibs: { layer: "OCO-2_Carbon_Dioxide_Total_Column_Average", level: 8, alpha: 0.8, timeless: true },
 	},
 	{
@@ -630,12 +632,12 @@ const LAYER_CATALOG: globeLayerDef[] = [
 		color: "#e0f2fe",
 		Icon: Snowflake,
 		requiredTier: "signal",
-		source: "NASA GIBS · GHRSST MUR (diario)",
+		source: "NASA GIBS · VIIRS NOAA-21 (diario)",
 		freshness: "1 día",
-		description: "Concentración de hielo en el Ártico y la Antártida",
-		// La serie AMSR2 de GIBS termina en 2025-09: pedirle una fecha actual da
-		// 404. MUR publica la misma magnitud todos los días.
-		gibs: { layer: "GHRSST_L4_MUR25_Sea_Ice_Concentration", level: 6, alpha: 0.85, dateOffsetHours: 60 },
+		description: "Extensión de hielo marino de polo a polo, medida a 375 m",
+		// MUR deducía el hielo de la temperatura de la piel del mar y sólo marcaba
+		// el borde; VIIRS lo mide directamente todos los días.
+		gibs: { layer: "VIIRS_NOAA21_Sea_Ice", level: 6, alpha: 0.85, dateOffsetHours: 36 },
 	},
 	{
 		key: "iceSurfaceTemp",
