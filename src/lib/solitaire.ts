@@ -8,7 +8,11 @@
  * reparte de una o de tres— es variante, y aquí está fijado para que la partida
  * se pueda reproducir con la semilla.
  *
- * El estado guarda cuántas cartas de cada columna están boca abajo. Es lo único
+ * La fundación se comprueba contra su palo explícitamente. Deducirlo de «está
+ * vacía, luego vale cualquier as» permitía subir el as de diamantes a la
+ * fundación de corazones y bloqueaba la partida con dos ases en el mismo sitio.
+ *
+ * El estado guarda cuántas cartas de cada columna están boca abajo: es lo único
  * que no se puede deducir de las cartas, y sin ello la interfaz no sabría qué
  * enseñar ni cuándo destapar la siguiente al vaciar una columna.
  */
@@ -78,7 +82,8 @@ export function createSolitaire(seed = 1): SolitaireState {
 }
 
 /** Se ve la última carta de la columna, si queda alguna. */
-export const columnTop = (column: Column): PlayingCard | undefined => column.cards[column.cards.length - 1];
+export const columnTop = (column: Column): PlayingCard | undefined =>
+	column.cards[column.cards.length - 1];
 
 /** ¿Entra esta carta en esta columna del tablero? */
 export function canPlaceOnColumn(card: PlayingCard, column: Column): boolean {
@@ -92,13 +97,16 @@ export function foundationIndex(suit: string): number {
 	return Math.max(0, SUITS.indexOf(suit as Suit));
 }
 
-/** ¿Entra esta carta en esta fundación? As primero y siempre el mismo palo. */
-export function canPlaceOnFoundation(card: PlayingCard, foundation: PlayingCard[]): boolean {
+/** ¿Entra esta carta en la fundación de `suit`? As primero y siempre ese palo. */
+export function canPlaceOnFoundation(
+	card: PlayingCard,
+	foundation: PlayingCard[],
+	suit: string,
+): boolean {
+	if (card.suit !== suit) return false;
 	const expected = foundation.length + 1;
 	if (expected > 13) return false;
-	if (foundation.length === 0) return card.rank === "A";
-	const topCard = foundation[foundation.length - 1];
-	return topCard.suit === card.suit && rankOf(card) === expected;
+	return rankOf(card) === expected;
 }
 
 /** Recicla el descarte cuando el mazo se agota. */
@@ -153,7 +161,8 @@ export function moveWasteToColumn(state: SolitaireState, index: number): Solitai
 export function moveWasteToFoundation(state: SolitaireState, index: number): SolitaireState {
 	const card = state.waste[state.waste.length - 1];
 	const foundation = state.foundations[index];
-	if (!card || !foundation || !canPlaceOnFoundation(card, foundation)) return state;
+	const suit = SUITS[index];
+	if (!card || !foundation || !suit || !canPlaceOnFoundation(card, foundation, suit)) return state;
 
 	const foundations = state.foundations.map((entry, position) =>
 		position === index ? [...entry, card] : entry,
@@ -197,17 +206,26 @@ export function moveColumnToColumn(
 	return { ...state, tableau, moves: state.moves + 1 };
 }
 
-/** Columna a fundación. */
-export function moveColumnToFoundation(state: SolitaireState, from: number, index: number): SolitaireState {
+/** Columna a fundación: sólo la carta de arriba, y sólo si no quedan tapadas. */
+export function moveColumnToFoundation(
+	state: SolitaireState,
+	from: number,
+	index: number,
+): SolitaireState {
 	const source = state.tableau[from];
 	const foundation = state.foundations[index];
+	const suit = SUITS[index];
 	const card = source ? columnTop(source) : undefined;
-	if (!source || !foundation || !card || source.cards.length !== source.hidden + 1) return state;
-	if (!canPlaceOnFoundation(card, foundation)) return state;
+	if (!source || !foundation || !suit || !card) return state;
+	if (!canPlaceOnFoundation(card, foundation, suit)) return state;
 
 	const tableau = state.tableau.map((entry, position) =>
 		position === from
-			? reveal({ ...entry, cards: entry.cards.slice(0, -1), hidden: Math.min(entry.hidden, entry.cards.length - 1) })
+			? reveal({
+					...entry,
+					cards: entry.cards.slice(0, -1),
+					hidden: Math.min(entry.hidden, entry.cards.length - 1),
+				})
 			: entry,
 	);
 	const foundations = state.foundations.map((entry, position) =>
