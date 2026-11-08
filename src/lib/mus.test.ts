@@ -29,7 +29,12 @@ describe("baraja española", () => {
     const deck = musDeck();
     expect(deck).toHaveLength(MUS_DECK_SIZE);
     expect(new Set(deck.map(musCardLabel)).size).toBe(MUS_DECK_SIZE);
-    expect(deck.some((one) => one.rank === 8 || one.rank === 9)).toBe(false);
+    // Se compara como número: el tipo `MusRank` no incluye 8 ni 9, así que
+    // comparar los literales directamente sería un error de tipos, no una prueba.
+    const ranks = new Set<number>(deck.map((one) => one.rank));
+    expect(ranks.has(8)).toBe(false);
+    expect(ranks.has(9)).toBe(false);
+    expect(ranks.size).toBe(10);
     expect(new Set(deck.map((one) => one.suit)).size).toBe(4);
   });
 
