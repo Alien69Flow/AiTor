@@ -7,20 +7,20 @@
  * 1. Escala adaptativa. Los modelos entraban con `scale: 1`, es decir, a su
  *    tamaño real para siempre. Un avión de 45 m a 2 000 km mide menos de un
  *    píxel y a 200 km ya es una cerilla: la escala tenía que moverse con la
- *    cámara. `modelScale` ya sabe hacer la cuenta, pero hasta ahora sólo la
- *    usaba el tope de píxeles (`minimumPixelSize`). Ahora `scale` es un
- *    `CallbackProperty`, que Cesium evalúa en cada fotograma, así que el
- *    modelo se reescala solo al acercarse o alejarse.
+ *    cámara. `modelScale` ya sabe hacer la cuenta, y ahora `scale` es un
+ *    `CallbackProperty` que Cesium evalúa en cada fotograma.
  *
  * 2. Vuelos y barcos fuera del agrupador. `clusterGeoMarkers` metía los
  *    contactos en celdas por zoom: con el globo lejos, cuarenta aviones se
  *    convertían en un «40 aeronaves» sin un solo indicativo. Con `0` (sin
  *    agrupar) cada vuelo y cada barco conserva su marca y su etiqueta a
- *    cualquier altura; el resto de capas (cámaras, incendios, NASA, GDELT)
- *    siguen agrupándose igual.
+ *    cualquier altura; el resto de capas siguen agrupándose igual.
  *
  * El parche no adivina: cada ancla tiene que aparecer exactamente una vez o
- * lanza. Es preferible que el flujo de CI falle a que deje el visor a medias.
+ * lanza. Además sabe limpiar los restos de una aplicación anterior
+ * (`tidyPatchedTransport`): la primera pasada por CI se hizo con una versión
+ * anterior y dejó el import en una sola línea y huecos en blanco dentro de los
+ * bloques del modelo.
  */
 
 export interface TransportWiringResult {
@@ -178,18 +178,50 @@ function addImport(source: string): string {
 
   const matched = anchor[0];
   const after = anchor.index + matched.length;
-  // Se reescribe la línea encontrada y se añade la nueva detrás, para no dejar
-  // un hueco en blanco ni pegar dos identificadores en la misma línea.
+  // Se conserva la línea encontrada y se añade la nueva detrás, con su sangría.
   return `${source.slice(0, anchor.index)}${matched}${anchor[1]}modelScale,\n${source.slice(after)}`;
+}
+
+/**
+ * Limpia los restos de la primera aplicación del parche.
+ *
+ * No es cosmética: el import quedó con dos identificadores en la misma línea y
+ * los bloques del modelo con líneas en blanco llenas de espacios. Funciona,
+ * pero cualquier `prettier --check` o revisión posterior lo marca como sucio,
+ * y un fichero sucio invita a que el siguiente parche falle por ancla.
+ */
+export function tidyPatchedTransport(source: string): string {
+  let out = source;
+
+  // 1. `modelHeadingRadians,  modelScale,` y su línea en blanco detrás.
+  out = out.replace(
+    /([ \t]*)modelHeadingRadians,([ \t]+)modelScale,\n[ \t]*\n/,
+    "$1modelHeadingRadians,\n$1modelScale,\n",
+  );
+
+  // 2. Huecos con espacios entre el cierre del modelo y la condición de distancia.
+  out = out.replace(
+    /\),\n(?:[ \t]+\n)+([ \t]*distanceDisplayCondition: new DistanceDisplayCondition\(0, (?:FLIGHT|SHIP)_MODEL_RANGE_M\),)/g,
+    "),\n$1",
+  );
+
+  // 3. El comentario del agrupador y el `0` con la sangría del argumento.
+  out = out.replace(
+    /([ \t]*)(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)[ \t]*(\/\/ zoom[^\n]*\n)[ \t]*0,/g,
+    (_match: string, indent: string, first: string, second: string) =>
+      `${indent}${first}${indent}${second}${indent}0,`,
+  );
+
+  return out;
 }
 
 /**
  * Aplica los dos cambios.
  *
- * Si el fichero ya está parcheado devuelve `changed: false` sin tocarlo, para
- * que el flujo de CI pueda ejecutarse dos veces sin duplicar el cableado. Si
- * sólo está a medias, lanza: mezclar las dos versiones dejaría vuelos sin
- * agrupar y barcos agrupados sin que nadie se diera cuenta.
+ * Si el fichero ya está parcheado devuelve `changed: false` sin tocarlo, salvo
+ * que queden restos de formato: en ese caso devuelve la versión limpia. Si sólo
+ * está a medias, lanza: mezclar las dos versiones dejaría vuelos sin agrupar y
+ * barcos agrupados sin que nadie se diera cuenta.
  */
 export function patchTransportWiring(source: string): TransportWiringResult {
   const applied = source.includes(SCALE_MARKER);
@@ -203,7 +235,8 @@ export function patchTransportWiring(source: string): TransportWiringResult {
         "el parche está aplicado a medias: revisa CesiumGlobe.tsx antes de volver a ejecutarlo",
       );
     }
-    return { source, changed: false };
+    const tidied = tidyPatchedTransport(source);
+    return { source: tidied, changed: tidied !== source };
   }
 
   let patched = addImport(source);
