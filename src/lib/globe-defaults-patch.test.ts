@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import {
 	PATCHED_DEFAULT_LAYERS,
@@ -32,9 +33,24 @@ export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 export const MAX_RASTER_LAYERS = 8;
 `;
 
-/** Claves declaradas por un bloque, para poder comparar conjuntos. */
-const keysIn = (source: string) =>
-	[...source.matchAll(/"([A-Za-z][A-Za-z0-9]*)"/g)].map((match) => match[1]);
+/** Claves declaradas en un fragmento de fuente, en orden de aparición. */
+const keysIn = (fragment: string) =>
+	[...fragment.matchAll(/"([A-Za-z][A-Za-z0-9]*)"/g)].map((match) => match[1]);
+
+/**
+ * Claves del bloque `DEFAULT_ACTIVE_LAYERS`, y sólo de ese bloque.
+ *
+ * Buscar cadenas en el archivo entero daba un falso positivo: la unión de
+ * tipos de arriba también nombra las capas (`"precipitation"`), así que la
+ * comprobación de «el radar ya no está en la lista» fallaba con el parche bien
+ * aplicado. Se recorta el bloque antes de leer las claves.
+ */
+const defaultLayerKeys = (source: string) => {
+	const start = source.indexOf("export const DEFAULT_ACTIVE_LAYERS");
+	if (start === -1) return [];
+	const end = source.indexOf("];", start);
+	return keysIn(source.slice(start, end === -1 ? undefined : end + 2));
+};
 
 describe("applyGlobeDefaultsPatch", () => {
 	it("enciende las capas pedidas y apaga el radar duplicado", () => {
@@ -45,15 +61,16 @@ describe("applyGlobeDefaultsPatch", () => {
 		expect(result.already).toBe(false);
 		expect(result.problems).toEqual([]);
 
-		const keys = keysIn(result.source);
+		const keys = defaultLayerKeys(result.source);
 		for (const key of PATCHED_DEFAULT_LAYERS) {
 			expect(keys, `falta ${key}`).toContain(key);
 		}
 		expect(keys).not.toContain(PATCHED_DISABLED_LAYER);
 
-		// El resto del archivo no se toca.
+		// El resto del archivo no se toca: ni la unión de tipos ni el cupo.
 		expect(result.source).toContain("export const MAX_RASTER_LAYERS = 8;");
 		expect(result.source.startsWith("export type EnvLayerKey")).toBe(true);
+		expect(result.source).toContain('"precipitation" | "temperature"');
 	});
 
 	it("es idempotente: la segunda pasada no cambia ni un byte", () => {
@@ -87,7 +104,11 @@ describe("applyGlobeDefaultsPatch", () => {
 
 describe("el catálogo real", () => {
 	it("tiene las anclas y se puede parchear", () => {
-		const source = readFileSync(new URL("./globe-layers.ts", import.meta.url), "utf8");
+		// `new URL(import.meta.url)` no vale aquí: en el entorno de pruebas la URL
+		// del módulo no es de esquema `file` y readFileSync lanza
+		// ERR_INVALID_URL_SCHEME. Se resuelve desde la raíz del proyecto, como el
+		// resto de pruebas que leen archivos del repositorio.
+		const source = readFileSync(resolve(process.cwd(), "src/lib/globe-layers.ts"), "utf8");
 		const result = applyGlobeDefaultsPatch(source);
 
 		expect(result.problems).toEqual([]);
@@ -96,9 +117,10 @@ describe("el catálogo real", () => {
 		// son válidas: lo que no vale es que no encuentre el bloque.
 		expect(result.applied || result.already).toBe(true);
 
-		const keys = keysIn(result.source);
+		const keys = defaultLayerKeys(result.source);
 		for (const key of PATCHED_DEFAULT_LAYERS) {
 			expect(keys, `falta ${key}`).toContain(key);
 		}
+		expect(keys).not.toContain(PATCHED_DISABLED_LAYER);
 	});
 });
