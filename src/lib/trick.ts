@@ -16,6 +16,11 @@
  * de apuestas encima de la baza, y meterla aquí sin riel de premios sería
  * prometer algo que la pestaña no puede pagar. La baza y el tanteo son
  * completos y comprobables; el canto queda pendiente y declarado.
+ *
+ * La baza guarda quién la abrió (`leader`) porque el ganador no se puede
+ * deducir de la posición de la carta: si salía el jugador 1 y su carta mandaba,
+ * comparar sólo «primera contra segunda» le daba la baza al otro. Es el fallo
+ * clásico de los motores de bazas y sólo se ve cuando la salida cambia de mano.
  */
 
 import { deal, shuffle, spanishForty, type PlayingCard } from "./decks";
@@ -42,6 +47,8 @@ export interface TrickState {
 	hands: [PlayingCard[], PlayingCard[]];
 	/** Cartas jugadas en la baza en curso, en orden de salida. */
 	trick: PlayingCard[];
+	/** Quién abrió la baza en curso. */
+	leader: 0 | 1;
 	/** A quién le toca. */
 	turn: 0 | 1;
 	/** Bazas ganadas por cada uno. */
@@ -97,6 +104,7 @@ export function createTrickGame(variant: TrickVariant, seed = 1): TrickState {
 		trump: trumpOf(deck),
 		hands: [hands[0] ?? [], hands[1] ?? []],
 		trick: [],
+		leader: 0,
 		turn: 0,
 		tricks: [0, 0],
 		score: [0, 0],
@@ -140,21 +148,22 @@ export function playCard(state: TrickState, cardId: string): TrickState {
 		state.hands[0].filter((entry) => entry.id !== cardId),
 		state.hands[1].filter((entry) => entry.id !== cardId),
 	];
+	const leader = state.trick.length === 0 ? state.turn : state.leader;
 	const trick = [...state.trick, card];
 
 	// Sólo con dos jugadores la baza se cierra en cuanto responde el segundo.
 	if (trick.length < 2) {
-		return { ...state, hands, trick, turn: (1 - state.turn) as 0 | 1 };
+		return { ...state, hands, trick, leader, turn: (1 - state.turn) as 0 | 1 };
 	}
 
-	const ledSuit = trick[0].suit;
 	const [first, second] = trick;
+	// El que responde es `state.turn`; el que salió es `leader`.
 	const winner: 0 | 1 =
-		trickStrength(second, state.trump, ledSuit) > trickStrength(first, state.trump, ledSuit) ? 1 : 0;
+		trickStrength(second, state.trump, first.suit) >
+		trickStrength(first, state.trump, first.suit)
+			? state.turn
+			: leader;
 
-	// Quien salió es el jugador 0 del turno anterior; para saber a quién se le
-	// suman los puntos basta con comparar fuerzas, y el turno de salida pasa al
-	// ganador de la baza.
 	const points = trick.reduce((total, entry) => total + cardPoints(entry), 0);
 	const tricks: [number, number] = [state.tricks[0], state.tricks[1]];
 	tricks[winner] += 1;
@@ -172,6 +181,7 @@ export function playCard(state: TrickState, cardId: string): TrickState {
 		...state,
 		hands,
 		trick: [],
+		leader: winner,
 		turn: winner,
 		tricks,
 		score,
