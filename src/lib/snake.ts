@@ -70,7 +70,7 @@ const sameCell = (a: Cell, b: Cell) => a.x === b.x && a.y === b.y;
 function freeCell(body: Cell[], seed: number): Cell | null {
 	const total = SNAKE_GRID * SNAKE_GRID;
 	const occupied = new Set(body.map((cell) => cell.y * SNAKE_GRID + cell.x));
-	let cursor = Math.floor(nextRandom(seed) * total);
+	const cursor = Math.floor(nextRandom(seed) * total);
 	for (let step = 0; step < total; step += 1) {
 		const index = (cursor + step) % total;
 		if (!occupied.has(index)) {
@@ -135,7 +135,6 @@ export function stepSnake(state: SnakeState): SnakeState {
 	const head = state.body[0];
 	const next: Cell = { x: head.x + delta.x, y: head.y + delta.y };
 
-	// Pared: fuera de la rejilla.
 	if (next.x < 0 || next.y < 0 || next.x >= SNAKE_GRID || next.y >= SNAKE_GRID) {
 		return { ...state, direction, pending: [], alive: false, ticks: state.ticks + 1 };
 	}
