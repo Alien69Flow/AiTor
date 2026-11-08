@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-	FLIGHT_NO_CLUSTER_MARKER,
-	SCALE_MARKER,
-	SHIP_NO_CLUSTER_MARKER,
-	patchTransportWiring,
+  FLIGHT_NO_CLUSTER_MARKER,
+  SCALE_MARKER,
+  SHIP_NO_CLUSTER_MARKER,
+  patchTransportWiring,
 } from "./transport-wiring-patch";
 
 /** Copia reducida del visor con las anclas reales, tal como están en main. */
@@ -71,63 +71,66 @@ viewer.entities.add({
 `;
 
 describe("parche de cableado de transporte", () => {
-	it("cablea la escala adaptativa de los dos modelos", () => {
-		const { source, changed } = patchTransportWiring(SOURCE);
-		expect(changed).toBe(true);
-		expect(source).toContain(SCALE_MARKER);
-		expect(source.match(/new CallbackProperty\(/g)).toHaveLength(2);
-		expect(source).toMatch(/modelScale\(\s*flightModelKind\(flight\),/);
-		expect(source).toMatch(/modelScale\(\s*shipModelKind\(ship\),/);
-		// La altura y el alto del lienzo son lo que convierte «26 px» en escala.
-		expect(source.match(/viewer\.camera\.positionCartographic\?\.height \?\? 0/g)).toHaveLength(2);
-		expect(source.match(/viewer\.scene\.canvas\.clientHeight/g)).toHaveLength(2);
-		// Ya no queda ninguna escala fija.
-		expect(source).not.toContain("scale: 1,");
-	});
+  it("cablea la escala adaptativa de los dos modelos", () => {
+    const { source, changed } = patchTransportWiring(SOURCE);
+    expect(changed).toBe(true);
+    expect(source).toContain(SCALE_MARKER);
+    expect(source.match(/new CallbackProperty\(/g)).toHaveLength(2);
+    expect(source).toMatch(/modelScale\(\s*flightModelKind\(flight\),/);
+    expect(source).toMatch(/modelScale\(\s*shipModelKind\(ship\),/);
+    // La altura y el alto del lienzo son lo que convierte «26 px» en escala.
+    expect(source.match(/viewer\.camera\.positionCartographic\?\.height \?\? 0/g)).toHaveLength(2);
+    expect(source.match(/viewer\.scene\.canvas\.clientHeight/g)).toHaveLength(2);
+    expect(source).not.toContain("scale: 1,");
+  });
 
-	it("importa modelScale una sola vez y en orden", () => {
-		const { source } = patchTransportWiring(SOURCE);
-		expect(source.match(/^\s*modelScale,\s*$/gm)).toHaveLength(1);
-		expect(source).toContain("  modelHeadingRadians,\n  modelScale,\n  normalizedTrack,");
-	});
+  it("importa modelScale una sola vez y en orden alfabético", () => {
+    const { source } = patchTransportWiring(SOURCE);
+    expect(source.match(/^[ \t]*modelScale,[ \t]*$/gm)).toHaveLength(1);
+    expect(source).toContain("  modelHeadingRadians,\n  modelScale,\n  normalizedTrack,");
+    // Sin línea en blanco de más al insertar.
+    expect(source).not.toContain("modelScale,\n\n");
+  });
 
-	it("saca vuelos y barcos del agrupador", () => {
-		const { source } = patchTransportWiring(SOURCE);
-		expect(source).toContain(FLIGHT_NO_CLUSTER_MARKER);
-		expect(source).toContain(SHIP_NO_CLUSTER_MARKER);
-		// La celda del agrupador ya no se pasa: 0 significa «sin agrupar».
-		expect(source).not.toMatch(/flight,\s*\}\)\)[\s\S]{0,160}?lodCell,/);
-		expect(source).not.toMatch(/ship,\s*\}\)\)[\s\S]{0,160}?lodCell,/);
-	});
+  it("saca vuelos y barcos del agrupador sin tocar el resto", () => {
+    const { source } = patchTransportWiring(SOURCE);
+    expect(source).toContain(FLIGHT_NO_CLUSTER_MARKER);
+    expect(source).toContain(SHIP_NO_CLUSTER_MARKER);
+    // Sólo queda una celda: la de cámaras, que sí debe seguir agrupándose.
+    expect(source.match(/\blodCell\b/g)).toHaveLength(1);
+    expect(source).toContain("clusterGeoMarkers(cameras, lodCell)");
+  });
 
-	it("no toca las demás capas agrupadas", () => {
-		const { source } = patchTransportWiring(SOURCE);
-		expect(source).toContain("clusterGeoMarkers(cameras, lodCell)");
-		// Sólo hay dos llamadas sin celdas: vuelos y barcos.
-		expect(source.match(/lodCell,/g)).toHaveLength(1);
-	});
+  it("mantiene la llamada bien cerrada y con su coma", () => {
+    const { source } = patchTransportWiring(SOURCE);
+    expect(source).toMatch(/Number\.isFinite\(entry\.lon\)\),\n      \/\/ Sin agrupador: cada vuelo/);
+    expect(source).toMatch(/\n      0,\n\);\n\nconst shipGroups/);
+  });
 
-	it("es idempotente", () => {
-		const first = patchTransportWiring(SOURCE);
-		const second = patchTransportWiring(first.source);
-		expect(second.changed).toBe(false);
-		expect(second.source).toBe(first.source);
-	});
+  it("es idempotente", () => {
+    const first = patchTransportWiring(SOURCE);
+    const second = patchTransportWiring(first.source);
+    expect(second.changed).toBe(false);
+    expect(second.source).toBe(first.source);
+  });
 
-	it("se niega a aplicar si falta un bloque", () => {
-		const withoutShip = SOURCE.replace(
-			/distanceDisplayCondition: new DistanceDisplayCondition\(0, SHIP_MODEL_RANGE_M\),\n/,
-			"",
-		);
-		expect(() => patchTransportWiring(withoutShip)).toThrow(/SHIP_MODEL_RANGE_M/);
-	});
+  it("se niega a aplicar si falta un bloque de escala", () => {
+    const withoutShip = SOURCE.replace(
+      /distanceDisplayCondition: new DistanceDisplayCondition\(0, SHIP_MODEL_RANGE_M\),\n/,
+      "",
+    );
+    expect(() => patchTransportWiring(withoutShip)).toThrow(/SHIP_MODEL_RANGE_M/);
+  });
 
-	it("se niega si el parche está a medias", () => {
-		const half = SOURCE.replace("scale: 1,\n    distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),", `${SCALE_MARKER}`);
-		expect(() => patchTransportWiring(half)).toThrow(/a medias/);
-	});
+  it("se niega si el parche está a medias", () => {
+    const half = SOURCE.replace(
+      "    scale: 1,\n    distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),",
+      `    // ${SCALE_MARKER}`,
+    );
+    expect(() => patchTransportWiring(half)).toThrow(/a medias/);
+  });
 
-	it("no cambia nada si los anclas del agrupador no son las esperadas", () => {
-		expect(() => patchTransportWiring("export const nada = 1;\n")).toThrow();
-	});
+  it("no toca nada si las anclas no son las esperadas", () => {
+    expect(() => patchTransportWiring("export const nada = 1;\n")).toThrow();
+  });
 });
