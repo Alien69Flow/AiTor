@@ -514,7 +514,10 @@ export function CesiumGlobe({
 
     // Enable built-in Cesium sky with stars and atmosphere
     viewer.scene.backgroundColor = Color.BLACK;
-    viewer.scene.globe.enableLighting = true;
+    // El relleno del globo mientras no hay teselas es el que se veía azul:
+    // Cesium usa Color.BLUE si nadie le dice otra cosa.
+    viewer.scene.globe.baseColor = Color.fromCssColorString("#0b1220");
+    viewer.scene.globe.enableLighting = false;
     viewer.scene.globe.atmosphereLightIntensity = 8.0;
     // Nitidez: a densidad nativa (hasta 2×) el borde del planeta y las costas
     // dejan de verse blandos al acercarse. El 1,5 anterior ahorraba GPU a costa
@@ -609,11 +612,17 @@ export function CesiumGlobe({
         // fondo, que es lo único que hacía falta.
 
         // 2. Base satellite imagery FIRST (bottom of stack).
-        const baseProvider = await ArcGisMapServerImageryProvider.fromUrl(
-          "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer"
+        // 2. Imagen base síncrona: el proveedor de plantilla de teselas no resuelve
+        // nada por red antes de crear la capa, así que la Tierra ya sale con foto en
+        // el primer fotograma. El `fromUrl` de ArcGIS era asíncrono y durante ese
+        // hueco se veía el relleno plano del motor.
+        const baseLayer = viewer.imageryLayers.addImageryProvider(
+          new UrlTemplateImageryProvider({
+            url: "https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+            maximumLevel: 19,
+            credit: "Esri, Maxar, Earthstar Geographics",
+          }),
         );
-        if (viewer.isDestroyed()) return;
-        const baseLayer = viewer.imageryLayers.addImageryProvider(baseProvider);
         viewer.imageryLayers.lowerToBottom(baseLayer);
 
         // Fronteras y topónimos sobre la imagen base: sin esto el mapa es una

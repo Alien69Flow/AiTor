@@ -1083,25 +1083,29 @@ export const LAYER_GROUPS: LayerGroup[] = [
  */
 export const DEFAULT_ACTIVE_LAYERS: EnvLayerKey[] = [
 	// La atmósfera que se ve al abrir es la de Cesium (cielo y halo reales, con
-	// dispersión del Sol). Los cascarones dibujados —troposfera, estratosfera,
-	// mesosfera y termosfera como elipsoides translúcidos— quedan como capa
-	// opcional: son una explicación de la escalera atmosférica, no el aire.
+	// dispersión del Sol) más sus envolturas dibujadas: troposfera, estratosfera
+	// y termosfera como cascarones translúcidos. Con sólo el halo, la escalera
+	// atmosférica no se podía ver desde fuera y el catálogo la anunciaba.
 	"atmosphere",
+	"atmosphericShells",
+	// Meteo de entrada: nubes como contexto translúcido, tasa de lluvia del
+	// satélite (GPM IMERG) y temperatura del aire. El radar de RainViewer queda
+	// a un clic: encender IMERG y radar a la vez apila dos campos azules sobre
+	// el mismo píxel.
 	"clouds",
-	"precipitation",
+	"precipitationRate",
+	"temperature",
 	"wildfires",
 	"earthquakes",
 	"airTraffic",
-	// El globo se abría con aviones pero sin barcos ni conflictos: dos de las
-	// tres capas de tráfico/sucesos existían en el catálogo y había que
-	// descubrirlas en el panel. Encendidas de serie, la vista de planeta cuenta
-	// lo que de verdad está pasando.
+	// Tráfico marítimo y conflictos: existían en el catálogo y había que
+	// descubrirlos en el panel para que el planeta contara lo que pasa.
 	"marineTraffic",
 	"conflictZones",
 	"marketData",
 	"iss",
 	"liveCameras",
-	// Las dos esferas que el panel destaca: vienen encendidas para que se vea de
+	// Las dos esferas que el panel destaca, encendidas para que se vea de
 	// entrada qué mide el globo más allá de la superficie.
 	"vanAllen",
 	"heliosphere",
