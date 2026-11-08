@@ -22,7 +22,6 @@
  * anterior y dejó el import en una sola línea y huecos en blanco dentro de los
  * bloques del modelo.
  */
-
 export interface TransportWiringResult {
   source: string;
   changed: boolean;
@@ -189,6 +188,10 @@ function addImport(source: string): string {
  * los bloques del modelo con líneas en blanco llenas de espacios. Funciona,
  * pero cualquier `prettier --check` o revisión posterior lo marca como sucio,
  * y un fichero sucio invita a que el siguiente parche falle por ancla.
+ *
+ * La sangría del comentario del agrupador sale del propio `0,`, que es el que
+ * puso el parche con la posición real de la llamada: alinearlo con la sangría
+ * del comentario viejo lo dejaba a dos columnas del argumento.
  */
 export function tidyPatchedTransport(source: string): string {
   let out = source;
@@ -199,17 +202,19 @@ export function tidyPatchedTransport(source: string): string {
     "$1modelHeadingRadians,\n$1modelScale,\n",
   );
 
-  // 2. Huecos con espacios entre el cierre del modelo y la condición de distancia.
+  // 2. Huecos entre el cierre del modelo y la condición de distancia: con
+  //    espacios, con líneas vacías o con las dos cosas, que es como los dejó
+  //    la primera pasada.
   out = out.replace(
-    /\),\n(?:[ \t]+\n)+([ \t]*distanceDisplayCondition: new DistanceDisplayCondition\(0, (?:FLIGHT|SHIP)_MODEL_RANGE_M\),)/g,
+    /\),\n(?:[ \t]*\n)+([ \t]*distanceDisplayCondition: new DistanceDisplayCondition\(0, (?:FLIGHT|SHIP)_MODEL_RANGE_M\),)/g,
     "),\n$1",
   );
 
   // 3. El comentario del agrupador y el `0` con la sangría del argumento.
   out = out.replace(
-    /([ \t]*)(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)[ \t]*(\/\/ zoom[^\n]*\n)[ \t]*0,/g,
-    (_match: string, indent: string, first: string, second: string) =>
-      `${indent}${first}${indent}${second}${indent}0,`,
+    /[ \t]*(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)[ \t]*(\/\/ zoom[^\n]*\n)([ \t]*)(0,)/g,
+    (_match: string, first: string, second: string, indent: string, zero: string) =>
+      `${indent}${first}${indent}${second}${indent}${zero}`,
   );
 
   return out;
@@ -247,7 +252,7 @@ export function patchTransportWiring(source: string): TransportWiringResult {
     patched,
     FLIGHT_MODEL_ANCHOR,
     (indent) =>
-      `// ${FLIGHT_NO_CLUSTER_MARKER} conserva su marca y su etiqueta a cualquier\n` +
+      `${indent}// ${FLIGHT_NO_CLUSTER_MARKER} conserva su marca y su etiqueta a cualquier\n` +
       `${indent}// zoom: agruparlo dejaba el indicativo detrás de un «40 aeronaves».\n` +
       `${indent}0`,
   );
@@ -255,7 +260,7 @@ export function patchTransportWiring(source: string): TransportWiringResult {
     patched,
     SHIP_MODEL_ANCHOR,
     (indent) =>
-      `// ${SHIP_NO_CLUSTER_MARKER} conserva su nombre y su marca a cualquier\n` +
+      `${indent}// ${SHIP_NO_CLUSTER_MARKER} conserva su nombre y su marca a cualquier\n` +
       `${indent}// zoom: en un puerto, agruparlos escondía qué barco era cada uno.\n` +
       `${indent}0`,
   );
