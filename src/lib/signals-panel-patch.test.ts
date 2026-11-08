@@ -40,7 +40,7 @@ describe("patchSignalsPanel", () => {
     expect(panel).toBeLessThan(content);
 
     // El import entra una sola vez y en la cabecera.
-    expect(result.source.match(/MarketSignalsPanel"\);/g)).toHaveLength(1);
+    expect(result.source.match(/from "\.\/MarketSignalsPanel";/g)).toHaveLength(1);
     expect(result.source.indexOf('from "./MarketSignalsPanel"')).toBeLessThan(
       result.source.indexOf("export function SignalsTab"),
     );
