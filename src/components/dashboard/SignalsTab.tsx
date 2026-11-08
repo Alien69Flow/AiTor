@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { MarketSignalsPanel } from "./MarketSignalsPanel";
 
 interface TrendingCoin {
   id: string;
@@ -82,6 +83,10 @@ export function SignalsTab() {
           </Button>
         </div>
       </div>
+
+      {/* Panel de señales del motor: el motor puro ordena por urgencia y aquí sólo
+          se pinta. */}
+      <MarketSignalsPanel />
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto min-h-0">
