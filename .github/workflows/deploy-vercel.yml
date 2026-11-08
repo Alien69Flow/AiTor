@@ -1,0 +1,84 @@
+name: deploy-vercel
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vercel
+  cancel-in-progress: false
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: build y despliegue a producción
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Preflight de secretos
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::Falta el secreto VERCEL_TOKEN (Vercel -> Account Settings -> Tokens)."
+            exit 1
+          fi
+          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
+            echo "::error::Faltan VERCEL_ORG_ID y/o VERCEL_PROJECT_ID (Vercel -> Project Settings -> General)."
+            exit 1
+          fi
+
+      - name: Instalar dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Bajar configuración del proyecto
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
+
+      - name: Construir
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN"
+
+      - name: Publicar
+        id: deploy
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          url=$(npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN")
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Comprobar producción
+        run: |
+          for i in $(seq 1 20); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" https://aitor.alienflow.space/ || true)
+            if [ "$code" = "200" ]; then echo "Producción responde 200"; exit 0; fi
+            sleep 10
+          done
+          echo "::error::Producción no respondió 200 tras el despliegue"
+          exit 1
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Despliegue a producción"
+            echo ""
+            echo "- URL: ${{ steps.deploy.outputs.url }}"
+            echo "- Producción: https://aitor.alienflow.space/"
+          } >> "$GITHUB_STEP_SUMMARY"
