@@ -50,8 +50,8 @@ import {
   SHIP_MODEL_RANGE_M,
   TRANSPORT_MODELS,
   flightModelKind,
-  modelHeadingRadians,  modelScale,
-
+  modelHeadingRadians,
+  modelScale,
   normalizedTrack,
   shipModelKind,
 } from "@/lib/transport-models";
@@ -1447,8 +1447,8 @@ export function CesiumGlobe({
         }))
         .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
       // Sin agrupador: cada vuelo conserva su marca y su etiqueta a cualquier
-        // zoom; agruparlo dejaba el indicativo detrás de un «40 aeronaves».
-        0,
+      // zoom; agruparlo dejaba el indicativo detrás de un «40 aeronaves».
+      0,
     );
 
     let flightModelsUsed = 0;
@@ -1559,7 +1559,6 @@ export function CesiumGlobe({
                 ),
               false,
             ),
-  
             distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),
           },
           properties: { ...payload },
@@ -1695,8 +1694,6 @@ export function CesiumGlobe({
                 ),
               false,
             ),
-              
-  
             distanceDisplayCondition: new DistanceDisplayCondition(0, SHIP_MODEL_RANGE_M),
           },
           properties: { ...payload },
