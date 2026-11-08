@@ -21,6 +21,12 @@
  * (`tidyPatchedTransport`): la primera pasada por CI se hizo con una versión
  * anterior y dejó el import en una sola línea y huecos en blanco dentro de los
  * bloques del modelo.
+ *
+ * La limpieza tiene que ser un punto fijo: aplicarla dos veces seguidas debe
+ * devolver el mismo fichero. Si no, el workflow vuelve a ver diferencias en
+ * cada pasada y empuja un commit eternamente. Por eso el alineado de los
+ * comentarios del agrupador se hace por índices y comparando con el resultado,
+ * no con un `replace` global que pueda desplazarse línea a línea.
  */
 export interface TransportWiringResult {
   source: string;
@@ -182,18 +188,65 @@ function addImport(source: string): string {
 }
 
 /**
- * Limpia los restos de la primera aplicación del parche.
+ * Alinea el comentario del agrupador con el `0` que lo sigue.
+ *
+ * Se hace por índices y no con un `replace` global: el bloque de comentarios se
+ * localiza hacia atrás desde el marcador, se comprueba que la línea siguiente
+ * al bloque es el `0`, y se reconstruye con la sangría de ese `0`. Si ya está
+ * alineado devuelve el mismo texto, que es lo que hace la limpieza repetible.
+ */
+function alignClusterComment(source: string, marker: string): string {
+  const at = source.indexOf(marker);
+  if (at < 0) return source;
+
+  const commentStart = source.lastIndexOf("\n", at) + 1;
+  if (!/^[ \t]*\/\//.test(source.slice(commentStart))) return source;
+
+  // Hacia atrás, mientras las líneas anteriores sean comentarios.
+  let blockStart = commentStart;
+  while (blockStart > 0) {
+    const previousEnd = blockStart - 1; // el salto que precede al bloque
+    const previousStart = source.lastIndexOf("\n", previousEnd - 1) + 1;
+    if (!/^[ \t]*\/\//.test(source.slice(previousStart, previousEnd))) break;
+    blockStart = previousStart;
+  }
+
+  // Hacia delante, saltando los comentarios, hasta el `0`.
+  let cursor = commentStart;
+  for (;;) {
+    const end = source.indexOf("\n", cursor);
+    if (end < 0) return source;
+    cursor = end + 1;
+
+    const nextEnd = source.indexOf("\n", cursor);
+    const line = source.slice(cursor, nextEnd < 0 ? source.length : nextEnd);
+    if (/^[ \t]*\/\//.test(line)) continue;
+    if (line.trim() !== "0," && line.trim() !== "0") return source;
+
+    const indent = /^[ \t]*/.exec(line)?.[0] ?? "";
+    const block = source.slice(blockStart, cursor);
+    const aligned = `${block
+      .split("\n")
+      .filter((piece) => piece !== "")
+      .map((piece) => `${indent}${piece.trim()}`)
+      .join("\n")}\n`;
+
+    if (aligned === block) return source;
+    return source.slice(0, blockStart) + aligned + source.slice(cursor);
+  }
+}
+
+/**
+ * Limpia los restos de una aplicación anterior del parche.
  *
  * No es cosmética: el import quedó con dos identificadores en la misma línea y
  * los bloques del modelo con líneas en blanco llenas de espacios. Funciona,
  * pero cualquier `prettier --check` o revisión posterior lo marca como sucio,
  * y un fichero sucio invita a que el siguiente parche falle por ancla.
  *
- * La sangría del comentario del agrupador sale del propio `0,`, que es el que
- * puso el parche con la posición real de la llamada. No se mira el texto de
- * los comentarios: alinear por su contenido dejaba fuera cualquier redacción
- * que no empezase por la misma palabra, y hacía que limpiar dos veces seguidas
- * no diera el mismo fichero.
+ * Cada paso es un punto fijo: aplicarlo sobre su propio resultado no cambia
+ * nada. Es la condición que necesita el workflow para no empujar un commit en
+ * cada pasada.
  */
 export function tidyPatchedTransport(source: string): string {
   let out = source;
@@ -212,37 +265,31 @@ export function tidyPatchedTransport(source: string): string {
     "),\n$1",
   );
 
-  // 3. El comentario del agrupador y el `0` con la sangría del argumento: la
-  //    seña es el primer comentario, y todas las líneas de comentario que lo
-  //    siguen más el `0` se alinean con la sangría que ya tiene el `0,`.
-  out = out.replace(
-    /[ \t]*(\/\/ Sin agrupador: cada (?:vuelo|barco)[^\n]*\n)((?:[ \t]*\/\/[^\n]*\n)*)([ \t]*)(0,)/g,
-    (
-      _match: string,
-      first: string,
-      continuations: string,
-      indent: string,
-      zero: string,
-    ) => {
-      const rest = continuations
-        .split("\n")
-        .filter((line) => line.trim() !== "")
-        .map((line) => `${indent}${line.trim()}\n`)
-        .join("");
-      return `${indent}${first}${rest}${indent}${zero}`;
-    },
-  );
+  // 3. El comentario del agrupador y el `0` con la sangría del argumento.
+  out = alignClusterComment(out, FLIGHT_NO_CLUSTER_MARKER);
+  out = alignClusterComment(out, SHIP_NO_CLUSTER_MARKER);
 
   return out;
+}
+
+/** Aplica la limpieza hasta que ya no cambia nada (o hasta cuatro pasadas). */
+function settle(source: string): string {
+  let current = source;
+  for (let pass = 0; pass < 4; pass += 1) {
+    const next = tidyPatchedTransport(current);
+    if (next === current) return current;
+    current = next;
+  }
+  return current;
 }
 
 /**
  * Aplica los dos cambios.
  *
- * Si el fichero ya está parcheado devuelve `changed: false` sin tocarlo, salvo
- * que queden restos de formato: en ese caso devuelve la versión limpia. Si sólo
- * está a medias, lanza: mezclar las dos versiones dejaría vuelos sin agrupar y
- * barcos agrupados sin que nadie se diera cuenta.
+ * Si el fichero ya está parcheado devuelve la versión limpia y, cuando no hay
+ * nada que limpiar, `changed: false` con el texto intacto. Si sólo está a
+ * medias, lanza: mezclar las dos versiones dejaría vuelos sin agrupar y barcos
+ * agrupados sin que nadie se diera cuenta.
  */
 export function patchTransportWiring(source: string): TransportWiringResult {
   const applied = source.includes(SCALE_MARKER);
@@ -256,7 +303,7 @@ export function patchTransportWiring(source: string): TransportWiringResult {
         "el parche está aplicado a medias: revisa CesiumGlobe.tsx antes de volver a ejecutarlo",
       );
     }
-    const tidied = tidyPatchedTransport(source);
+    const tidied = settle(source);
     return { source: tidied, changed: tidied !== source };
   }
 
@@ -281,5 +328,7 @@ export function patchTransportWiring(source: string): TransportWiringResult {
       `${indent}0`,
   );
 
-  return { source: patched, changed: patched !== source };
+  // Se deja ya en su forma limpia: así la segunda pasada no encuentra trabajo.
+  const settled = settle(patched);
+  return { source: settled, changed: settled !== source };
 }
