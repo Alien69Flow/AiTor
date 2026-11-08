@@ -1604,7 +1604,7 @@ export function CesiumGlobe({
           ship,
         }))
         .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
-      // Sin agrupador: cada barco conserva su nombre y su marca a cualquier zoom:
+        // Sin agrupador: cada barco conserva su nombre y su marca a cualquier zoom:
         // en un puerto, agruparlos escondía qué barco era cada uno.
         0,
     );
