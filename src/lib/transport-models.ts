@@ -8,9 +8,12 @@
  * es más barato y se lee mejor.
  *
  * Los GLB viven en `public/models/` y los genera
- * `scripts/build-transport-models.mjs`: son cajas low-poly propias, sin
- * licencias de terceros ni descargas en el build. Ejes glTF 2.0 (+Y arriba,
- * +Z al morro), que es lo que Cesium espera desde la 1.47.
+ * `scripts/build-transport-models.mjs`: son modelos low-poly propios, sin
+ * licencias de terceros ni descargas en el build. Están hechos con lofts de
+ * secciones —fuselaje que se afina en el morro, ala con flecha y diedro, casco
+ * con proa afilada—, no con cajas: a la distancia del globo se ve la silueta y
+ * una caja no se lee como un avión. Ejes glTF 2.0 (+Y arriba, +Z al morro),
+ * que es lo que Cesium espera desde la 1.47.
  */
 
 export interface TransportModel {
@@ -22,9 +25,9 @@ export interface TransportModel {
 }
 
 export const TRANSPORT_MODELS = {
-  airliner: { url: "/models/airliner.glb", lengthM: 44, label: "Avión de pasajeros" },
-  helicopter: { url: "/models/helicopter.glb", lengthM: 13, label: "Helicóptero" },
-  ship: { url: "/models/cargo-ship.glb", lengthM: 190, label: "Carguero" },
+  airliner: { url: "/models/airliner.glb", lengthM: 45, label: "Avión de pasajeros" },
+  helicopter: { url: "/models/helicopter.glb", lengthM: 15, label: "Helicóptero" },
+  ship: { url: "/models/cargo-ship.glb", lengthM: 192, label: "Carguero" },
 } as const satisfies Record<string, TransportModel>;
 
 export type TransportModelKind = keyof typeof TRANSPORT_MODELS;
