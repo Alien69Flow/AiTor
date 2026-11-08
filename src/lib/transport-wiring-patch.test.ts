@@ -101,10 +101,11 @@ describe("parche de cableado de transporte", () => {
     expect(source).toContain("clusterGeoMarkers(cameras, lodCell)");
   });
 
-  it("mantiene la llamada bien cerrada y con su coma", () => {
+  it("deja la llamada bien cerrada y con su coma", () => {
     const { source } = patchTransportWiring(SOURCE);
-    expect(source).toMatch(/Number\.isFinite\(entry\.lon\)\),\n      \/\/ Sin agrupador: cada vuelo/);
-    expect(source).toMatch(/\n      0,\n\);\n\nconst shipGroups/);
+    // La sangría del argumento se reutiliza: sólo se cambia el valor.
+    expect(source).toMatch(/Number\.isFinite\(entry\.lon\)\),\s*\/\/ Sin agrupador: cada vuelo/);
+    expect(source).toMatch(/\/\/ Sin agrupador: cada vuelo[\s\S]*?\n\s*0,\n\);\n\nconst shipGroups/);
   });
 
   it("es idempotente", () => {
