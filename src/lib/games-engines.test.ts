@@ -46,12 +46,43 @@ describe("escalera orbital", () => {
 	});
 
 	it("los bordes del mundo son paredes", () => {
-		const start = createPlatformer(1);
-		const left = advancePlatformer(start, { left: true, right: false, jump: false }, 240);
-		expect(left.runner.x).toBe(0);
+		// La torre real empieza con una plataforma de 26 de ancho en el centro: si
+		// se camina hacia el borde del mundo, el corredor se sale de ESA plataforma
+		// y cae antes de llegar a la pared. Para probar la pared lo que hace falta
+		// es suelo de lado a lado, que es justo lo que hace `within(x, 0, width)`.
+		const fullWidth = {
+			runner: { x: PLATFORMER.width / 2, y: 0, vx: 0, vy: 0, onGround: true },
+			platforms: [
+				{ id: "p0", x: 0, y: 0, w: PLATFORMER.width, h: PLATFORMER.platformHeight },
+			],
+			best: 0,
+			reached: ["p0"],
+			over: false,
+			seed: 1,
+		};
 
-		const right = advancePlatformer(start, { left: false, right: true, jump: false }, 240);
+		const left = advancePlatformer(fullWidth, { left: true, right: false, jump: false }, 240);
+		expect(left.runner.x).toBe(0);
+		// Y no se muere al llegar: la pared detiene, no deja caer.
+		expect(left.over).toBe(false);
+
+		const right = advancePlatformer(
+			fullWidth,
+			{ left: false, right: true, jump: false },
+			240,
+		);
 		expect(right.runner.x).toBe(PLATFORMER.width);
+		expect(right.over).toBe(false);
+
+		// Salir de la plataforma andando sí deja de apoyar: es la otra mitad de la
+		// regla, y es lo que pasa en la torre de verdad.
+		const tower = advancePlatformer(
+			createPlatformer(1),
+			{ left: true, right: false, jump: false },
+			240,
+		);
+		expect(tower.runner.x).toBeGreaterThan(0);
+		expect(tower.over).toBe(true);
 	});
 
 	it("salta por encima de la plataforma y vuelve a caer en ella", () => {
