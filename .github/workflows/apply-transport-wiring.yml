@@ -4,6 +4,11 @@
 # del autor en cada cambio: esto lo hace la CI sobre el fichero real, y sólo
 # cuando cambia algo que el parche lee o toca. Si las anclas cambiaron, el
 # script falla con código 1 y no escribe nada.
+#
+# La confirmación rebasa con reintentos: entre el checkout del job y el push
+# puede entrar otro commit (del autor o del propio bot) y entonces el push
+# directo se rechaza como non-fast-forward. Pasó en el run 42531885042: la
+# limpieza se aplicó y se commiteó, pero el push se quedó fuera por eso.
 
 name: Cableado de transporte
 
@@ -29,6 +34,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Historial completo: el rebase necesita la base remota, no un clon
+          # superficial de un solo commit.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
@@ -52,4 +61,17 @@ jobs:
           fi
           git add -A
           git commit -m "Globo: escala adaptativa de los modelos y vuelos/barcos sin agrupar"
-          git push
+          for intento in 1 2 3 4 5; do
+            if git push origin HEAD:feat/transporte-modelos; then
+              echo "Cableado confirmado en el intento $intento."
+              exit 0
+            fi
+            echo "Push rechazado (intento $intento): rebaso sobre origin y reintento."
+            if ! git pull --rebase --autostash origin feat/transporte-modelos; then
+              git rebase --abort || true
+              echo "El rebase no se pudo aplicar: revisa el conflicto a mano." >&2
+              exit 1
+            fi
+          done
+          echo "No se pudo confirmar el cableado tras cinco intentos." >&2
+          exit 1
