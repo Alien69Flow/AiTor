@@ -21,6 +21,8 @@ import {
 const ids = (snapshot: Parameters<typeof analyzeMarket>[0]) =>
   analyzeMarket(snapshot).map((signal) => signal.id);
 
+const SEVERITY_ORDER = { alert: 0, watch: 1, info: 2 } as const;
+
 describe("funding anualizado", () => {
   it("normaliza el periodo: 0,01 % cada 8 h es un 10,95 % anual", () => {
     // El error clásico es leer la tasa del periodo como si fuera anual.
@@ -29,9 +31,11 @@ describe("funding anualizado", () => {
     expect(annualizeFunding(0.0001, 1)).toBeCloseTo(0.876, 6);
   });
 
-  it("dos exchanges con el mismo coste real dan el mismo anualizado", () => {
-    // 0,01 % cada 8 h y 0,02 % cada 4 h cobran lo mismo por hora.
-    expect(annualizeFunding(0.0001, 8)).toBeCloseTo(annualizeFunding(0.0002, 4), 9);
+  it("dos exchanges con el mismo coste por hora dan el mismo anualizado", () => {
+    // 0,01 % cada 8 h y 0,005 % cada 4 h cobran 0,0000125 por hora: lo mismo.
+    expect(annualizeFunding(0.0001, 8)).toBeCloseTo(annualizeFunding(0.00005, 4), 9);
+    // Y con el doble de tasa en la mitad de periodo, el doble de coste.
+    expect(annualizeFunding(0.0002, 4)).toBeCloseTo(annualizeFunding(0.0001, 8) * 4, 9);
   });
 
   it("respeta el signo y el periodo por defecto", () => {
@@ -57,9 +61,11 @@ describe("impacto de una orden sobre la liquidez", () => {
   });
 
   it("es monótono y acotado", () => {
-    const values = [0.5, 1, 2, 5, 10].map((impact) => maxTradeForImpact(500_000, impact));
-    for (let i = 1; i < values.length; i += 1) {
-      expect(values[i]).toBeGreaterThan(values[i - 1]);
+    let previous = 0;
+    for (const impact of [0.5, 1, 2, 5, 10]) {
+      const size = maxTradeForImpact(500_000, impact);
+      expect(size).toBeGreaterThan(previous);
+      previous = size;
     }
     // Un impacto del 0 % o del 100 % no tiene orden finita: se devuelve 0.
     expect(maxTradeForImpact(500_000, 0)).toBe(0);
@@ -72,6 +78,7 @@ describe("impacto de una orden sobre la liquidez", () => {
     expect(turnoverRatio(10_000_000, 2_000_000)).toBe(5);
     expect(turnoverRatio(1_000_000, 0)).toBe(0);
     expect(turnoverRatio(null, 1_000_000)).toBe(0);
+    expect(turnoverRatio(Number.POSITIVE_INFINITY, 1_000_000)).toBe(0);
   });
 
   it("la base CEX/DEX se mide en puntos básicos", () => {
@@ -91,7 +98,7 @@ describe("funding contra interés abierto", () => {
       openInterestChange24hPct: 12,
     });
     expect(signals.map((s) => s.id)).toContain("funding-longs-crowded");
-    expect(signals[0].severity).toBe("alert");
+    expect(signals[0]?.severity).toBe("alert");
     expect(annualizeFunding(0.0006, 8)).toBeGreaterThanOrEqual(FUNDING_EXTREME_ANNUAL);
   });
 
@@ -102,7 +109,7 @@ describe("funding contra interés abierto", () => {
       openInterestChange24hPct: 9,
     });
     expect(signals.map((s) => s.id)).toEqual(["funding-shorts-crowded"]);
-    expect(signals[0].severity).toBe("alert");
+    expect(signals[0]?.severity).toBe("alert");
   });
 
   it("funding alto con OI cayendo es un eco, no apalancamiento nuevo", () => {
@@ -112,13 +119,13 @@ describe("funding contra interés abierto", () => {
       openInterestChange24hPct: -20,
     });
     expect(signals.map((s) => s.id)).toEqual(["funding-unwind"]);
-    expect(signals[0].severity).toBe("info");
+    expect(signals[0]?.severity).toBe("info");
   });
 
   it("sin variación de OI no se afirma que entre dinero nuevo", () => {
     const signals = analyzeMarket({ fundingRate: 0.0003, fundingIntervalHours: 8 });
     expect(signals.map((s) => s.id)).toEqual(["funding-elevated-no-oi"]);
-    expect(signals[0].detail).toContain("no se");
+    expect(signals[0]?.detail).toContain("no se");
   });
 
   it("funding bajo no genera señal", () => {
@@ -133,6 +140,8 @@ describe("liquidez y rotación", () => {
     const thin = signals.find((s) => s.id === "liquidity-thin");
     expect(thin?.severity).toBe("alert");
     expect(thin?.detail).toContain("1 %");
+    // 300 k$ sobre 90 k$ es 3,3 vueltas: todavía no es rotación alta.
+    expect(signals.map((s) => s.id)).toEqual(["liquidity-thin"]);
   });
 
   it("volumen veinte veces la liquidez es rotación extrema", () => {
@@ -148,7 +157,7 @@ describe("liquidez y rotación", () => {
 });
 
 describe("CEX contra DEX", () => {
-  it("la misma base es alerta con liquidez fina y aviso con liquidez honda", () => {
+  it("la misma base se lee distinto con liquidez fina que con liquidez honda", () => {
     const thin = analyzeMarket({
       cexPrice: 100,
       dexPrice: 104,
@@ -215,23 +224,36 @@ describe("composición", () => {
     const first = analyzeMarket(snapshot);
     const second = analyzeMarket(snapshot);
     expect(first.map((s) => s.id)).toEqual(second.map((s) => s.id));
-    expect(first[0].severity).toBe("alert");
-    expect(first[first.length - 1].severity).toBe("info");
-    for (let i = 1; i < first.length; i += 1) {
-      const order = { alert: 0, watch: 1, info: 2 } as const;
-      expect(order[first[i].severity]).toBeGreaterThanOrEqual(order[first[i - 1].severity]);
+    expect(first.length).toBeGreaterThan(2);
+    expect(first[0]?.severity).toBe("alert");
+    expect(first[first.length - 1]?.severity).toBe("info");
+
+    let previous = 0;
+    for (const signal of first) {
+      const position = SEVERITY_ORDER[signal.severity];
+      expect(position).toBeGreaterThanOrEqual(previous);
+      previous = position;
     }
   });
 
   it("un retrato vacío no lanza y puntúa cero", () => {
     expect(analyzeMarket({})).toEqual([]);
     expect(riskScore([])).toBe(0);
+    // Un apalancamiento apiñado son 25 puntos; liquidez fina más rotación
+    // extrema son dos alertas, 50.
     expect(riskScore(analyzeMarket({ fundingRate: 0.0006, openInterestChange24hPct: 20 }))).toBe(25);
-    expect(riskScore(analyzeMarket({ liquidityUsd: 50_000, volume24hUsd: 9_000_000 }))).toBe(35);
+    expect(riskScore(analyzeMarket({ liquidityUsd: 50_000, volume24hUsd: 9_000_000 }))).toBe(50);
     expect(riskScore([
       { id: "a", severity: "alert", title: "", detail: "" },
       { id: "b", severity: "watch", title: "", detail: "" },
       { id: "c", severity: "info", title: "", detail: "" },
     ])).toBe(38);
+    expect(riskScore([
+      { id: "a", severity: "alert", title: "", detail: "" },
+      { id: "b", severity: "alert", title: "", detail: "" },
+      { id: "c", severity: "alert", title: "", detail: "" },
+      { id: "d", severity: "alert", title: "", detail: "" },
+      { id: "e", severity: "alert", title: "", detail: "" },
+    ])).toBe(100);
   });
 });
