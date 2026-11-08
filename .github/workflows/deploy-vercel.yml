@@ -1,5 +1,15 @@
 name: deploy-vercel
 
+# Despliegue a producción del sitio, sin depender de la integración de Git de
+# Vercel, que lleva fallando en cada push a `main` («Deployment has failed») y
+# deja producción con la build vieja.
+#
+# El build corre aquí, en el runner, así que si falla el error real queda en el
+# log del job en vez de en un panel que hay que abrir a mano.
+#
+# Sólo hace falta un secreto: VERCEL_TOKEN (Vercel -> Account Settings ->
+# Tokens). El proyecto y el equipo van escritos abajo porque no son secretos.
+
 on:
   push:
     branches: [main]
@@ -13,8 +23,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
-  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  VERCEL_PROJECT: ai-tor
+  VERCEL_SCOPE: alien-flow-space
+  PRODUCTION_URL: https://aitor.alienflow.space
 
 jobs:
   deploy:
@@ -34,26 +45,27 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::Falta el secreto VERCEL_TOKEN (Vercel -> Account Settings -> Tokens)."
-            exit 1
-          fi
-          if [ -z "$VERCEL_ORG_ID" ] || [ -z "$VERCEL_PROJECT_ID" ]; then
-            echo "::error::Faltan VERCEL_ORG_ID y/o VERCEL_PROJECT_ID (Vercel -> Project Settings -> General)."
+            echo "::error::Falta el secreto VERCEL_TOKEN (Vercel -> Account Settings -> Tokens). Sin el no hay despliegue desde GitHub."
             exit 1
           fi
 
       - name: Instalar dependencias
         run: npm ci --no-audit --no-fund
 
-      - name: Bajar configuración del proyecto
+      - name: Enlazar el proyecto
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: >-
+          npx --yes vercel@latest link --yes
+          --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
+
+      - name: Bajar variables y ajustes de producción
         env:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
 
       - name: Construir
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
-        run: npx --yes vercel@latest build --prod --token "$VERCEL_TOKEN"
+        run: npx --yes vercel@latest build --prod
 
       - name: Publicar
         id: deploy
@@ -62,23 +74,29 @@ jobs:
         run: |
           url=$(npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Publicado en $url"
 
       - name: Comprobar producción
         run: |
           for i in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" https://aitor.alienflow.space/ || true)
-            if [ "$code" = "200" ]; then echo "Producción responde 200"; exit 0; fi
+            code=$(curl -s -o /dev/null -w "%{http_code}" "$PRODUCTION_URL/" || true)
+            if [ "$code" = "200" ]; then
+              echo "Produccion responde 200"
+              exit 0
+            fi
+            echo "Intento $i: HTTP $code"
             sleep 10
           done
-          echo "::error::Producción no respondió 200 tras el despliegue"
+          echo "::error::Produccion no respondio 200 tras el despliegue"
           exit 1
 
       - name: Resumen
         if: always()
         run: |
           {
-            echo "## Despliegue a producción"
+            echo "## Despliegue a produccion"
             echo ""
-            echo "- URL: ${{ steps.deploy.outputs.url }}"
-            echo "- Producción: https://aitor.alienflow.space/"
+            echo "- URL publicada: ${{ steps.deploy.outputs.url }}"
+            echo "- Produccion: $PRODUCTION_URL"
+            echo "- Build: vercel build en Actions (log en este job)"
           } >> "$GITHUB_STEP_SUMMARY"
