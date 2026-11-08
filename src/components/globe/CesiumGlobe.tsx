@@ -51,6 +51,7 @@ import {
   TRANSPORT_MODELS,
   flightModelKind,
   modelHeadingRadians,
+  modelScale,
   normalizedTrack,
   shipModelKind,
 } from "@/lib/transport-models";
@@ -1445,7 +1446,9 @@ export function CesiumGlobe({
           flight,
         }))
         .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
-      lodCell,
+      // Sin agrupador: cada vuelo conserva su marca y su etiqueta a cualquier
+      // zoom; agruparlo dejaba el indicativo detrás de un «40 aeronaves».
+      0,
     );
 
     let flightModelsUsed = 0;
@@ -1544,7 +1547,18 @@ export function CesiumGlobe({
             uri: TRANSPORT_MODELS[flightModelKind(flight)].url,
             minimumPixelSize: 20,
             maximumScale: FLIGHT_MODEL_MAX_SCALE,
-            scale: 1,
+            // Escala adaptativa por altura de cámara: Cesium evalúa este callback en cada fotograma con
+            // el visor vivo, así que el avión se reescala al acercarse en vez de
+            // quedarse con la escala del momento en que se creó la entidad.
+            scale: new CallbackProperty(
+              () =>
+                modelScale(
+                  flightModelKind(flight),
+                  viewer.camera.positionCartographic?.height ?? 0,
+                  viewer.scene.canvas.clientHeight,
+                ),
+              false,
+            ),
             distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),
           },
           properties: { ...payload },
@@ -1590,7 +1604,9 @@ export function CesiumGlobe({
           ship,
         }))
         .filter((entry) => Number.isFinite(entry.lat) && Number.isFinite(entry.lon)),
-      lodCell,
+        // Sin agrupador: cada barco conserva su nombre y su marca a cualquier zoom:
+        // en un puerto, agruparlos escondía qué barco era cada uno.
+        0,
     );
 
     shipGroups.forEach((group) => {
@@ -1667,7 +1683,17 @@ export function CesiumGlobe({
             uri: TRANSPORT_MODELS[shipModelKind(ship)].url,
             minimumPixelSize: 18,
             maximumScale: SHIP_MODEL_MAX_SCALE,
-            scale: 1,
+            // Escala adaptativa por altura de cámara: el casco cambia de tamaño con la altura de cámara
+            // para leerse a 1 500 km sin convertirse en una pieza de kilómetros.
+            scale: new CallbackProperty(
+              () =>
+                modelScale(
+                  shipModelKind(ship),
+                  viewer.camera.positionCartographic?.height ?? 0,
+                  viewer.scene.canvas.clientHeight,
+                ),
+              false,
+            ),
             distanceDisplayCondition: new DistanceDisplayCondition(0, SHIP_MODEL_RANGE_M),
           },
           properties: { ...payload },

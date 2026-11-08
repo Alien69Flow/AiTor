@@ -1,0 +1,82 @@
+# Aplica el cableado de transporte del globo y lo confirma en la rama.
+#
+# El parche está escrito y probado, pero no se puede ejecutar desde el portátil
+# del autor en cada cambio: esto lo hace la CI sobre el fichero real, y sólo
+# cuando cambia algo que el parche lee o toca. Si las anclas cambiaron, el
+# script falla con código 1 y no escribe nada.
+#
+# La confirmación rebasa con reintentos: entre el checkout del job y el push
+# puede entrar otro commit (del autor o del propio bot) y entonces el push
+# directo se rechaza como non-fast-forward. Pasó en el run 42531885042: la
+# limpieza se aplicó y se commiteó, pero el push se quedó fuera por eso.
+#
+# Ojo con el commit que empuja el bot: se hace con GITHUB_TOKEN y GitHub no
+# lanza workflows con ese token, así que ese push no dispara ni el CI ni este
+# workflow. El head que sale de la limpieza necesita un empujón desde una
+# cuenta (o un workflow_dispatch) para tener sus checks.
+
+name: Cableado de transporte
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/transporte-modelos]
+    paths:
+      - "src/components/globe/CesiumGlobe.tsx"
+      - "src/lib/transport-wiring-patch.ts"
+      - "scripts/apply-transport-wiring.ts"
+      - ".github/workflows/apply-transport-wiring.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cableado-transporte
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Historial completo: el rebase necesita la base remota, no un clon
+          # superficial de un solo commit.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `--ignore-scripts` para no lanzar prebuild/predev, que aquí no hacen falta.
+      - name: Dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Aplicar el cableado
+        run: npx tsx scripts/apply-transport-wiring.ts
+
+      - name: Confirmar si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Sin cambios: el cableado ya estaba aplicado."
+            exit 0
+          fi
+          git add -A
+          git commit -m "Globo: escala adaptativa de los modelos y vuelos/barcos sin agrupar"
+          for intento in 1 2 3 4 5; do
+            if git push origin HEAD:feat/transporte-modelos; then
+              echo "Cableado confirmado en el intento $intento."
+              exit 0
+            fi
+            echo "Push rechazado (intento $intento): rebaso sobre origin y reintento."
+            if ! git pull --rebase --autostash origin feat/transporte-modelos; then
+              git rebase --abort || true
+              echo "El rebase no se pudo aplicar: revisa el conflicto a mano." >&2
+              exit 1
+            fi
+          done
+          echo "No se pudo confirmar el cableado tras cinco intentos." >&2
+          exit 1
