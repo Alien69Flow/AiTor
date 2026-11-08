@@ -71,7 +71,11 @@ viewer.entities.add({
 });
 `;
 
-/** Restos que dejó la primera pasada del flujo, tal como se ven en el diff. */
+/**
+ * Restos que dejó la primera pasada del flujo, tal como se ven en el diff:
+ * import en una línea, huecos con espacios y una línea vacía dentro del bloque
+ * del modelo, y el comentario del agrupador desalineado con su argumento.
+ */
 const MESSY = `import {
   flightModelKind,
   modelHeadingRadians,  modelScale,
@@ -82,7 +86,7 @@ const MESSY = `import {
 
 const flightGroups = clusterGeoMarkers(
   flights,
-      // Sin agrupador: cada vuelo conserva su marca y su etiqueta a cualquier
+// Sin agrupador: cada vuelo conserva su marca y su etiqueta a cualquier
         // zoom: agruparlo dejaba el indicativo detrás de un «40 aeronaves».
         0,
 );
@@ -107,7 +111,7 @@ viewer.entities.add({
 
 const shipGroups = clusterGeoMarkers(
   ships,
-      // Sin agrupador: cada barco conserva su nombre y su marca a cualquier zoom:
+// Sin agrupador: cada barco conserva su nombre y su marca a cualquier zoom:
         // en un puerto, agruparlos escondía qué barco era cada uno.
         0,
 );
@@ -116,6 +120,7 @@ const shipGroups = clusterGeoMarkers(
 describe("parche de cableado de transporte", () => {
   it("cablea la escala adaptativa de los dos modelos", () => {
     const { source, changed } = patchTransportWiring(SOURCE);
+
     expect(changed).toBe(true);
     expect(source).toContain(SCALE_MARKER);
     expect(source.match(/new CallbackProperty\(/g)).toHaveLength(2);
@@ -128,13 +133,15 @@ describe("parche de cableado de transporte", () => {
 
   it("importa modelScale una sola vez y en su línea", () => {
     const { source } = patchTransportWiring(SOURCE);
-    expect(source.match(/^[ \t]*modelScale,[ \t]*$/gm)).toHaveLength(1);
+
+    expect(source.match(/^[ \t]*modelScale,[\n\t]*$/gm)).toHaveLength(1);
     expect(source).toContain("  modelHeadingRadians,\n  modelScale,\n  normalizedTrack,");
     expect(source).not.toContain("modelScale,\n\n");
   });
 
   it("saca vuelos y barcos del agrupador sin tocar el resto", () => {
     const { source } = patchTransportWiring(SOURCE);
+
     expect(source).toContain(FLIGHT_NO_CLUSTER_MARKER);
     expect(source).toContain(SHIP_NO_CLUSTER_MARKER);
     expect(source.match(/\blodCell\b/g)).toHaveLength(1);
@@ -143,6 +150,7 @@ describe("parche de cableado de transporte", () => {
 
   it("deja la llamada bien cerrada y con su coma", () => {
     const { source } = patchTransportWiring(SOURCE);
+
     expect(source).toMatch(/Number\.isFinite\(entry\.lon\)\),\s*\/\/ Sin agrupador: cada vuelo/);
     expect(source).toMatch(/\/\/ Sin agrupador: cada vuelo[\s\S]*?\n\s*0,\n\);\n\nconst shipGroups/);
   });
@@ -150,25 +158,33 @@ describe("parche de cableado de transporte", () => {
   it("es idempotente sobre un fichero ya limpio", () => {
     const first = patchTransportWiring(SOURCE);
     const second = patchTransportWiring(first.source);
+
     expect(second.changed).toBe(false);
     expect(second.source).toBe(first.source);
   });
 
   it("limpia los restos de la primera aplicación", () => {
     const tidy = tidyPatchedTransport(MESSY);
+
+    // El import vuelve a una línea por identificador, sin el hueco detrás.
     expect(tidy).toContain("  modelHeadingRadians,\n  modelScale,\n");
     expect(tidy).not.toContain("modelHeadingRadians,  modelScale");
-    // Ni una línea con sólo espacios dentro del bloque del modelo.
+
+    // Ni una línea con sólo espacios, ni dentro del bloque del modelo ni en
+    // el hueco que quedó entre el cierre y la condición de distancia.
     expect(tidy.split("\n").filter((line) => line.trim() === "" && line !== "")).toHaveLength(0);
-    // Comentario y cero alineados con el argumento.
-    expect(tidy).toContain(
-      "      // Sin agrupador: cada vuelo",
-    );
-    expect(tidy).toMatch(/\n {6}\/\/ zoom: agruparlo[^\n]*\n {6}0,/);
+    expect(tidy).toMatch(/\),\n {4}distanceDisplayCondition: new DistanceDisplayCondition\(0, FLIGHT_MODEL_RANGE_M\),/);
+
+    // Comentario y `0` alineados con la sangría que ya tenía el argumento.
+    expect(tidy).toContain("        // Sin agrupador: cada vuelo");
+    expect(tidy).toMatch(/\n {8}\/\/ zoom: agruparlo[^\n]*\n {8}0,/);
+    expect(tidy).toMatch(/\n {8}\/\/ zoom: en un puerto[^\n]*\n {8}0,/);
   });
 
   it("reconoce el fichero ya parcheado y lo deja limpio", () => {
-    const { source } = patchTransportWiring(MESSY);
+    const { source, changed } = patchTransportWiring(MESSY);
+
+    expect(changed).toBe(true);
     expect(source).not.toContain("modelHeadingRadians,  modelScale");
     expect(source.split("\n").filter((line) => line.trim() === "" && line !== "")).toHaveLength(0);
   });
@@ -178,6 +194,7 @@ describe("parche de cableado de transporte", () => {
       /distanceDisplayCondition: new DistanceDisplayCondition\(0, SHIP_MODEL_RANGE_M\),\n/,
       "",
     );
+
     expect(() => patchTransportWiring(withoutShip)).toThrow(/SHIP_MODEL_RANGE_M/);
   });
 
@@ -186,6 +203,7 @@ describe("parche de cableado de transporte", () => {
       "    scale: 1,\n    distanceDisplayCondition: new DistanceDisplayCondition(0, FLIGHT_MODEL_RANGE_M),",
       `    // ${SCALE_MARKER}`,
     );
+
     expect(() => patchTransportWiring(half)).toThrow(/a medias/);
   });
 

@@ -11,6 +11,7 @@
  *    se ve como un barco que se borra al acercarse.
  */
 import { describe, expect, it } from "vitest";
+
 import {
   CESIUM_DEFAULT_FOV_Y,
   FLIGHT_MODEL_MAX_SCALE,
@@ -30,10 +31,16 @@ const HEIGHTS = [2_000, 5_000, 20_000, 100_000, 400_000, 900_000, 1_800_000, 2_6
 
 describe("escala de los modelos por altura de cámara", () => {
   it("de cerca el modelo está a escala real", () => {
-    // A 2 km un avión de 45 m ocupa en pantalla más de lo que mide el objetivo:
-    // la escala baja a 1 y no se encoge por debajo de su tamaño real.
-    expect(modelScale("airliner", 2_000, VIEWPORT)).toBe(1);
+    // Muy cerca la cuenta pediría encoger por debajo del tamaño real, así que
+    // se queda en el suelo de 1: ni un avión diminuto ni un mamotreto.
+    expect(modelScale("airliner", 300, VIEWPORT)).toBe(1);
     expect(modelScale("ship", 3_000, VIEWPORT)).toBe(1);
+
+    // A 2 km el objetivo de 26 px son unos 67 m y el avión mide 45 m, así que
+    // pide 1,5: escala casi real, y muy lejos de la escala fija de 2 500.
+    const near = modelScale("airliner", 2_000, VIEWPORT);
+    expect(near).toBeGreaterThan(1);
+    expect(near).toBeLessThan(2);
   });
 
   it("crece con la altura, sin saltos ni retrocesos", () => {
@@ -87,12 +94,14 @@ describe("escala de los modelos por altura de cámara", () => {
     // metrosPorPíxel a 400 km con fov 60° y 900 px de alto.
     const metersPerPixel = (2 * 400_000 * Math.tan(CESIUM_DEFAULT_FOV_Y / 2)) / VIEWPORT;
     const expected = (26 * metersPerPixel) / TRANSPORT_MODELS.airliner.lengthM;
-    expect(modelScaleForCamera({
-      cameraHeightM: 400_000,
-      viewportHeightPx: VIEWPORT,
-      lengthM: TRANSPORT_MODELS.airliner.lengthM,
-      targetPx: 26,
-    })).toBeCloseTo(expected, 3);
+    expect(
+      modelScaleForCamera({
+        cameraHeightM: 400_000,
+        viewportHeightPx: VIEWPORT,
+        lengthM: TRANSPORT_MODELS.airliner.lengthM,
+        targetPx: 26,
+      }),
+    ).toBeCloseTo(expected, 3);
   });
 });
 
