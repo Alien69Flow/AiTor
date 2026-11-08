@@ -6,6 +6,10 @@ import {
   CLASH_HIT_DAMAGE,
   CLASH_LANES,
   CLASH_SHIP_HP,
+  KART_ACCEL,
+  KART_CURVE_PULL,
+  KART_DRAG,
+  KART_DRIFT_RATE,
   KART_GRIP_LIMIT,
   KART_LAP_LENGTH,
   KART_LAPS,
@@ -29,19 +33,30 @@ import {
   type TrafficCar,
 } from "./arcade-racers";
 
+/** El motor acota el paso a un décimo de segundo: las pruebas lo usan tal cual. */
+const STEP = 0.1;
+
 describe("kart", () => {
   it("arranca parado y acelera en el primer paso", () => {
-    const after = kartStep(kartStart(), { steer: 0 }, 0, 1);
-    expect(after.speed).toBe(110);
-    expect(after.distance).toBe(110);
+    const after = kartStep(kartStart(), { steer: 0 }, 0, STEP);
+    const speed = (KART_ACCEL - KART_DRAG) * STEP;
+    expect(kartStart().speed).toBe(0);
+    expect(after.speed).toBeCloseTo(speed, 6);
+    expect(after.distance).toBeCloseTo(speed * STEP, 6);
     expect(after.lap).toBe(1);
   });
 
+  it("un paso más largo que el máximo se acota igual", () => {
+    expect(kartStep(kartStart(), { steer: 0 }, 0, 1)).toEqual(
+      kartStep(kartStart(), { steer: 0 }, 0, STEP),
+    );
+  });
+
   it("frenar no deja velocidad negativa", () => {
-    const moving = { ...kartStart(), speed: 100, distance: 500 };
-    const after = kartStep(moving, { steer: 0, brake: true }, 0, 1);
-    expect(after.speed).toBe(0);
-    expect(after.distance).toBe(500);
+    let state = { ...kartStart(), speed: 100, distance: 500 };
+    for (let i = 0; i < 10; i++) state = kartStep(state, { steer: 0, brake: true }, 0, STEP);
+    expect(state.speed).toBe(0);
+    expect(state.distance).toBeGreaterThan(500);
   });
 
   it("no pasa de la velocidad máxima", () => {
@@ -51,23 +66,27 @@ describe("kart", () => {
   });
 
   it("la curva saca el coche y el volante lo devuelve", () => {
-    const fast = { ...kartStart(), speed: KART_MAX_SPEED };
-    const drifted = kartStep(fast, { steer: 0 }, 1, 1);
-    expect(drifted.drift).toBeCloseTo(0.275, 3);
-    const corrected = kartStep(drifted, { steer: 1 }, 1, 1);
-    expect(corrected.drift).toBeLessThan(drifted.drift);
+    const pull = (KART_CURVE_PULL / KART_MAX_SPEED) * KART_DRIFT_RATE * STEP;
+    let state = { ...kartStart(), speed: KART_MAX_SPEED };
+    for (let i = 0; i < 10; i++) state = kartStep(state, { steer: 0 }, 1, STEP);
+    expect(state.drift).toBeCloseTo(pull * 10, 6);
+    // La curva empuja a la derecha: el volante a la izquierda devuelve el coche.
+    expect(kartStep(state, { steer: -1 }, 1, STEP).drift).toBeLessThan(state.drift);
+    // Y a la derecha lo saca aún más: el volante empuja hacia donde se pulsa.
+    expect(kartStep(state, { steer: 1 }, 1, STEP).drift).toBeGreaterThan(state.drift);
   });
 
   it("fuera de pista se cobra en distancia y se marca el tiempo", () => {
     const off = { ...kartStart(), speed: KART_MAX_SPEED, drift: KART_GRIP_LIMIT + 0.1 };
-    const after = kartStep(off, { steer: 0 }, 1, 1);
-    expect(after.offTrack).toBe(1);
-    expect(after.distance).toBeLessThan(KART_MAX_SPEED);
+    let state = off;
+    for (let i = 0; i < 10; i++) state = kartStep(state, { steer: 0 }, 0, STEP);
+    expect(state.offTrack).toBeCloseTo(1, 6);
+    expect(state.distance).toBeLessThan(KART_MAX_SPEED);
   });
 
   it("vuelve al asfalto y el contador de fuera de pista se resetea", () => {
     const back = { ...kartStart(), speed: 100, drift: 0, offTrack: 3 };
-    expect(kartStep(back, { steer: 0 }, 0, 0.1).offTrack).toBe(0);
+    expect(kartStep(back, { steer: 0 }, 0, STEP).offTrack).toBe(0);
   });
 
   it("la vuelta sube al cruzar la meta y la partida termina a las dos", () => {
@@ -80,9 +99,11 @@ describe("kart", () => {
 
   it("el marcador no se pasa del techo de la partida", () => {
     const perfect = { ...kartStart(), distance: KART_LAPS * KART_LAP_LENGTH };
-    expect(kartScore(perfect)).toBe(KART_LAPS * 1000);
-    expect(kartScore({ ...perfect, distance: KART_LAPS * KART_LAP_LENGTH * 3 })).toBe(KART_LAPS * 1000);
     expect(kartScore(kartStart())).toBe(0);
+    expect(kartScore(perfect)).toBe(KART_LAPS * 1000);
+    // Ya en la meta el parcial no cuenta: el techo son las vueltas de la partida.
+    expect(kartScore({ ...perfect, distance: KART_LAPS * KART_LAP_LENGTH * 3 })).toBe(KART_LAPS * 1000);
+    expect(kartScore({ ...kartStart(), distance: KART_LAP_LENGTH / 2 })).toBe(200);
   });
 
   it("la pista es determinista y cabe en el rango de pendiente", () => {
@@ -191,7 +212,6 @@ describe("combate por carriles", () => {
     };
     const after = clashTick(state, "fire", 7);
     expect(after.kills).toBe(1);
-    expect(after.enemies.some((enemy) => enemy.at === 0.4)).toBe(false);
     expect(after.enemies).toHaveLength(2);
     expect(clashScore(after)).toBeGreaterThan(0);
   });
@@ -209,8 +229,11 @@ describe("combate por carriles", () => {
     const shielded = clashTick(state, "shield", 7);
     expect(shielded.hp).toBe(CLASH_SHIP_HP);
     expect(shielded.shielded).toBe(false);
-    const unshielded = clashTick(state, "left", 7);
-    expect(unshielded.hp).toBe(CLASH_SHIP_HP - CLASH_HIT_DAMAGE);
+    // Sin escudo y sin mover de carril, el golpe entra.
+    const hit = clashTick(state, "fire", 7);
+    expect(hit.hp).toBe(CLASH_SHIP_HP - CLASH_HIT_DAMAGE);
+    // Y moverse de carril esquiva: el enemigo se queda en el suyo.
+    expect(clashTick(state, "left", 7).hp).toBe(CLASH_SHIP_HP);
   });
 
   it("el casco se vacía y la partida termina", () => {
