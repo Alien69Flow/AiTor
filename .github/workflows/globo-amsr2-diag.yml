@@ -1,0 +1,88 @@
+# Sondeo de anclas del parche AMSR2.
+#
+# El run 42540490875 murió en «Aplicar el parche» sin escribir nada, y el log
+# accesible sólo trae el arranque del job. Este workflow imprime y confirma un
+# `diag.txt` con las líneas reales de `main` que el parche necesita, para
+# reajustar las anclas contra el fichero de verdad y no de memoria.
+name: globo-amsr2-diag
+
+on:
+  push:
+    branches: [feat/globo-amsr2b]
+    paths:
+      - ".github/workflows/globo-amsr2-diag.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sondear:
+    name: sondear anclas
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Volcar anclas
+        run: |
+          node > diag.txt <<'NODE'
+          const { readFileSync } = require("node:fs");
+
+          const files = {
+            layers: "src/lib/globe-layers.ts",
+            test: "src/lib/globe-layers.test.ts",
+            audit: "scripts/check-globe-layers.mjs",
+          };
+
+          const needles = {
+            layers: [
+              'source: "NASA GIBS \u00b7 VIIRS NOAA-21 (diario)",',
+              'freshness: "1 d\u00eda",',
+              '"Extensi\u00f3n de hielo marino de polo a polo, medida a 375 m"',
+              "// MUR deduc\u00eda el hielo",
+              'gibs: { layer: "VIIRS_NOAA21_Sea_Ice"',
+              "AMSRU2_Sea_Ice_Concentration_25km",
+            ],
+            test: [
+              "las corrientes llevan fecha fija porque la serie de OSCAR est\u00e1 detenida",
+              "la capa existe, es opcional y no viene encendida",
+              "Los cascarones son opcionales desde que el globo usa la atm\u00f3sfera real de",
+            ],
+            audit: ["for (const g of gibs) {", "const r = await head("],
+          };
+
+          const focus = [/seaIce/i, /Sea_Ice/, /MUR/, /cascarones/i, /corrientes/i, /hielo/i];
+
+          for (const [name, path] of Object.entries(files)) {
+            const src = readFileSync(path, "utf8");
+            console.log(`## ${path} (${src.length} B, ${src.split("\n").length} l\u00edneas)`);
+            for (const needle of needles[name]) {
+              const count = src.split(needle).length - 1;
+              console.log(`  ${String(count).padStart(2)}x  ${needle}`);
+            }
+            console.log("  -- l\u00edneas que el parche toca --");
+            src.split("\n").forEach((line, i) => {
+              if (focus.some((re) => re.test(line))) console.log(`  ${i + 1}: ${line.trim()}`);
+            });
+            console.log("");
+          }
+          NODE
+          sed -n '1,200p' diag.txt
+
+      - name: Confirmar diagnóstico
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add diag.txt
+          if git diff --cached --quiet; then
+            echo "Sin cambios en el diagnóstico."
+            exit 0
+          fi
+          git commit -m "diagn\u00f3stico: anclas reales del parche AMSR2"
+          for intento in 1 2 3; do
+            if git push origin HEAD:feat/globo-amsr2b; then exit 0; fi
+            git fetch origin feat/globo-amsr2b
+            git rebase origin/feat/globo-amsr2b || exit 1
+          done
+          exit 1
