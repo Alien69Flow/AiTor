@@ -18,33 +18,45 @@ const SOURCE = [
 ].join("\n");
 
 describe("perfil visual del globo", () => {
-  it("enciende MSAA y mete el bloque del perfil tras la atmósfera de suelo", () => {
+  it("pide MSAA al visor y mete el bloque tras la atmósfera de suelo", () => {
     const result = applyGlobeVisualProfile(SOURCE);
 
     expect(result.ok).toBe(true);
-    expect(result.applied).toEqual(["MSAA 4x en el contexto", "bloque del perfil"]);
-    expect(result.source).toContain("msaaSamples: 4");
+    expect(result.applied).toEqual(["MSAA 4x en el visor", "bloque del perfil"]);
+    // `msaaSamples` es opción del `Viewer` en Cesium 1.143, no del contexto.
+    expect(result.source).toContain("\n      msaaSamples: 4,");
     expect(result.source).toContain(PROFILE_MARKER);
     // El bloque hereda la sangría del ancla (4 espacios) y suma la suya.
     expect(result.source).toContain("    // Perfil visual");
     expect(result.source).toContain("      const scene = viewer.scene;");
   });
 
-  it("el bloque cubre las cuatro familias: aire, sol, antialiasing y nitidez", () => {
+  it("cubre las cuatro familias: aire, sol, antialiasing y nitidez", () => {
     const { source } = applyGlobeVisualProfile(SOURCE);
 
-    // Atmósfera con dispersión por fragmento.
+    // Atmósfera con dispersión por fragmento y halo más denso.
     expect(source).toContain("sky.perFragmentAtmosphere = true;");
-    expect(source).toContain("sky.atmosphereMieScattering = 4.0;");
     expect(source).toContain("sky.atmosphereLightIntensity = 12.0;");
+    expect(source).toContain("sky.atmosphereMieAnisotropy = 0.9;");
+    expect(source).toContain("sky.atmosphereMieScaleHeight = 12000;");
     // Sol real, no una luz fija.
     expect(source).toContain("dynamicAtmosphereLightingFromSun = true;");
     expect(source).toContain("scene.sun.glowFactor = 1.0;");
-    // Antialiasing.
+    // Antialiasing: FXAA sobre el MSAA del visor.
     expect(source).toContain("scene.postProcessStages.fxaa.enabled = true;");
     // Nitidez de teselas.
     expect(source).toContain("scene.globe.tileCacheSize = 2500;");
     expect(source).toContain("scene.globe.preloadAncestors = true;");
+    expect(source).toContain("scene.globe.preloadSiblings = true;");
+  });
+
+  it("no usa propiedades que el Cesium del repo no tipa", () => {
+    const { source } = applyGlobeVisualProfile(SOURCE);
+
+    // Las tres que tumbaron el typecheck del run 42540427830.
+    expect(source).not.toContain("atmosphereMieScattering");
+    expect(source).not.toContain("sky.dynamicLighting");
+    expect(source).not.toContain("webgl: { alpha: false }, msaaSamples");
   });
 
   it("aplicarlo dos veces no duplica nada", () => {
@@ -53,7 +65,7 @@ describe("perfil visual del globo", () => {
 
     expect(twice.ok).toBe(true);
     expect(twice.applied).toEqual([]);
-    expect(twice.already).toEqual(["MSAA 4x en el contexto", "bloque del perfil"]);
+    expect(twice.already).toEqual(["MSAA 4x en el visor", "bloque del perfil"]);
     expect(twice.source).toBe(once.source);
   });
 
