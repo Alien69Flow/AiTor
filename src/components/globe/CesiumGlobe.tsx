@@ -355,7 +355,8 @@ export function CesiumGlobe({
     Ion.defaultAccessToken = "";
     // Resolve workers, lunar textures and reference tables from the same origin.
     // The preview's dependency optimizer otherwise infers /@oj-deps/Assets/.
-    buildModuleUrl.setBaseUrl(`${window.location.origin}/cesium/`);
+    const assetResolver = buildModuleUrl as typeof buildModuleUrl & { setBaseUrl: (url: string) => void };
+    assetResolver.setBaseUrl(`${window.location.origin}/cesium/`);
 
     const viewer = new CesiumViewer(containerRef.current, {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
