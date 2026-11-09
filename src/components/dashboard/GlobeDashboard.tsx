@@ -34,6 +34,8 @@ import { Wifi, CircleCheck as CheckCircle2, Compass, Layers, Wrench, Database, P
 import { GlobeCommandBar } from "./GlobeCommandBar";
 import { CosmicZoom } from "../globe/CosmicZoom";
 import { Button } from "@/components/ui/button";
+import { BroadcastDirectory } from "./BroadcastDirectory";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 
 type MobilePanel = "legend" | "navigate" | "diagnostics" | "feed" | null;
 
@@ -56,6 +58,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const [controlsOpen, setControlsOpen] = useState(true);
   // The two desktop rails leave too little Earth visible below a wide desktop.
   const [wideLayout, setWideLayout] = useState(() => window.innerWidth >= 1100);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
   useEffect(() => {
     const update = () => setWideLayout(window.innerWidth >= 1100);
     window.addEventListener("resize", update);
@@ -273,6 +276,13 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
       <h2 className="sr-only">Globo táctico en tiempo real: capas meteorológicas, OSINT y mercados</h2>
 
       <GlobeCommandBar activeSignals={activeSignals} layerStatus={intel.layerStatus} layersCount={envLayers.size} />
+      <Dialog open={broadcastOpen} onOpenChange={setBroadcastOpen}>
+        <DialogContent className="max-h-[85dvh] w-[calc(100%-24px)] overflow-y-auto">
+          <DialogTitle>Canales y competiciones</DialogTitle>
+          <DialogDescription>Disponibilidad y reproducción en la fuente oficial.</DialogDescription>
+          <BroadcastDirectory />
+        </DialogContent>
+      </Dialog>
 
       {/* LIVE MARKETS — must stay anchored at the TOP of the globe view.
           Do not move this into the bottom group with the alerts bar. */}
@@ -316,6 +326,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           wildfireCount={intel.fires.length} outageCount={outages.length}
           criticalIntelCount={intel.osint.filter((event) => event.severity === "CRITICAL").length} />
 
+        <Button variant="outline" size="sm" onClick={() => setBroadcastOpen(true)} className="absolute right-2 bottom-2 z-30 h-8 bg-background/90 text-[10px]">Canales <Database className="h-3.5 w-3.5" /></Button>
         {/* Desktop: collapsible control rail so the globe stays visible */}
         <div className={`pointer-events-none absolute inset-y-0 left-0 z-30 ${wideLayout ? "flex" : "hidden"}`}>
           {controlsOpen ? (
