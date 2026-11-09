@@ -11,6 +11,8 @@ const ALLOWED_ORIGINS = [
   "aitor.lovable.app",
   "id-preview--2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovable.app",
   "preview--2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovable.app",
+  // The editor iframe uses this host, not the public preview URL.
+  "2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovableproject.com",
   "aitor.alienflow.space",
   "alienflow.space",
   ".alienflow.space",
