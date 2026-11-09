@@ -14,18 +14,28 @@ name: deploy-vercel
 #
 # Lo mismo con el tope del plan gratuito: 100 despliegues al día por equipo.
 # Cuando se agota, la API contesta `api-deployments-free-per-day` («more than
-# 100»), que no es un fallo del código ni de los secretos. El job lo reconoce y
-# lo explica en el resumen y en la PR en vez de dejar un log opaco.
+# 100»), que no es un fallo del código ni de los secretos. Ahí el despliegue no
+# se da por perdido: se explica en el resumen y en la PR, y queda pendiente para
+# que el `schedule` de abajo lo reintente cada hora hasta que Vercel lo acepte
+# (la cuota se reinicia a las 00:00 UTC). El reintento sólo actúa si el último
+# despliegue real se quedó en ese estado, así que un fallo de código o un
+# secreto ausente no se repiten solos.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
+  # El minuto 23 de cada hora: si no hay cuota pendiente, el job `gate` lo deja
+  # en «no toca» y no se construye ni se despliega nada.
+  schedule:
+    - cron: '23 * * * *'
 
 # Comentar en la PR del commit necesita escritura en issues (los comentarios de
-# PR son comentarios de issue) y en pull requests.
+# PR son comentarios de issue) y en pull requests. Revisar los runs anteriores y
+# sus anotaciones necesita `actions: read`.
 permissions:
   contents: read
+  actions: read
   issues: write
   pull-requests: write
 
@@ -39,8 +49,50 @@ env:
   PRODUCTION_URL: https://aitor.alienflow.space
 
 jobs:
+  # Un cron cada hora no debe desplegar por desplegar. Se busca el último
+  # despliegue real (el job de este workflow, no el gate) y sólo se reintenta si
+  # se quedó pendiente por la cuota diaria, que es lo único que se arregla solo
+  # con el paso del tiempo.
+  gate:
+    name: ¿toca desplegar?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.decidir.outputs.deploy }}
+    steps:
+      - name: Decidir si este run despliega
+        id: decidir
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          echo "deploy=false" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "Lanzado por «${{ github.event_name }}»: se despliega."
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/deploy-vercel.yml/runs?branch=main&per_page=20" --jq '.workflow_runs[].id' || true)
+          for run in $runs; do
+            job=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run/jobs?per_page=50" \
+              --jq '.jobs[] | select(.name == "build y despliegue a producción") | select(.status == "completed") | select(.conclusion != "skipped") | .id' | head -n 1)
+            [ -z "$job" ] && continue
+            if gh api "repos/$GITHUB_REPOSITORY/check-runs/$job/annotations" --jq '.[].message' | grep -q 'Cuota diaria de Vercel agotada'; then
+              echo "El run $run quedó pendiente por la cuota diaria: se reintenta ahora."
+              echo "deploy=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "El run $run es el último despliegue real y no quedó pendiente por cuota."
+            fi
+            exit 0
+          done
+          echo "Sin despliegues anteriores que reintentar."
+
   deploy:
     name: build y despliegue a producción
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # A nivel de job para poder preguntarlo en los `if` de los pasos: el
@@ -70,7 +122,7 @@ jobs:
           2. GitHub -> **Settings -> Secrets and variables -> Actions** -> *New repository secret*, con el nombre `VERCEL_TOKEN`.
           3. Vuelve a lanzar **deploy-vercel** (*Run workflow*) o empuja a `main`.
 
-          Mientras falte, `aitor.alienflow.space` sigue con la build anterior.
+          Mientras falte, `aitor.alienflow.space` sigue con la build anterior. Este caso no se reintenta solo: sin token, cada intento fallaría igual.
           TEXTO
 
           {
@@ -125,10 +177,10 @@ jobs:
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Publicado en $url"
 
-      # Mismo trato que el token ausente. El plan gratuito son 100 despliegues
-      # al día por equipo y la API lo dice con un código
-      # (`api-deployments-free-per-day`), no con una frase legible: aquí se
-      # traduce para que el rojo del job no se confunda con un fallo de código.
+      # Mismo trato que el token ausente, con una diferencia: este fallo se
+      # arregla solo con el tiempo, así que el despliegue queda pendiente y lo
+      # reintenta el `schedule` de cada hora. La anotación lleva la frase
+      # «Cuota diaria de Vercel agotada» porque el job `gate` busca justo eso.
       - name: Aviso de cuota diaria de Vercel
         if: failure()
         env:
@@ -151,23 +203,33 @@ jobs:
             'La build pasó: lo que Vercel rechazó fue el despliegue, no el código. El plan gratuito permite **100 despliegues al día** por equipo y hoy ya se habían gastado; la API responde `more than 100` con el código `api-deployments-free-per-day` y no crea ninguna versión nueva.' \
             '' \
             '- No falta ningún secreto y no hay nada que corregir en el repositorio.' \
-            '- La cuota se reinicia a las **00:00 UTC**: el siguiente push a `main` (o *Run workflow*) vuelve a desplegar sin tocar nada.' \
+            '- El despliegue queda **pendiente**: este workflow lo reintenta solo **cada hora** y para en cuanto Vercel lo acepta, así que no hace falta lanzarlo a mano.' \
+            '- La cuota se reinicia a las **00:00 UTC**; el primer intento del día nuevo es el que suele pasar.' \
             '- Mientras tanto, `aitor.alienflow.space` sigue sirviendo la build anterior.' \
-            '- Si urge publicar antes del reinicio, hay que lanzarlo desde el panel de Vercel con otra cuenta.' \
             > "$aviso"
 
           {
-            echo "## Despliegue bloqueado: cuota diaria de Vercel"
+            echo "## Despliegue pendiente: cuota diaria de Vercel"
             echo ""
             cat "$aviso"
             echo ""
             echo "- Commit: \`$GITHUB_SHA\`"
             echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo "- Reintento: \`schedule\` al minuto 23 de cada hora, sólo mientras la cuota siga pendiente"
           } >> "$GITHUB_STEP_SUMMARY"
 
           pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
           if [ -n "$pr" ]; then
-            if gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$(cat "$aviso")" >/dev/null; then
+            # Una vez al día por PR: el cron puede caer aquí muchas veces y no
+            # hace falta repetir el mismo aviso cada hora. La marca va oculta en
+            # un comentario HTML, así que no se ve en la PR.
+            marca="<!-- deploy-vercel-cuota:$(date -u +%F) -->"
+            cuerpo=$(mktemp)
+            cat "$aviso" > "$cuerpo"
+            printf '\n%s\n' "$marca" >> "$cuerpo"
+            if gh api "repos/$GITHUB_REPOSITORY/issues/$pr/comments?per_page=100" --jq '.[].body' | grep -Fq -- "$marca"; then
+              echo "El aviso de hoy ya está en la PR #$pr; no se repite."
+            elif gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$(cat "$cuerpo")" >/dev/null; then
               echo "Aviso publicado en la PR #$pr"
             else
               echo "::warning::No se pudo comentar en la PR #$pr; el aviso queda en el resumen del job."
@@ -176,7 +238,8 @@ jobs:
             echo "Sin PR asociada al commit $GITHUB_SHA; el aviso queda en el resumen del job."
           fi
 
-          echo "::error title=Cuota diaria de Vercel agotada::Vercel permite 100 despliegues al día en el plan gratuito y ya se gastaron. No falta ningún secreto: la cuota se reinicia a las 00:00 UTC y el siguiente push a main vuelve a desplegar. Detalle en el resumen del job y en la PR del commit."
+          echo "::error title=Cuota diaria de Vercel agotada::Cuota diaria de Vercel agotada: Vercel permite 100 despliegues al día en el plan gratuito y hoy se gastaron. No falta ningún secreto ni hay que tocar el código: la cuota se reinicia a las 00:00 UTC y este workflow lo reintenta solo cada hora. Detalle en el resumen del job y en la PR del commit."
+          exit 1
 
       - name: Comprobar producción
         run: |
