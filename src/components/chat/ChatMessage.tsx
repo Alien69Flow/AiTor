@@ -34,19 +34,19 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
 
   return (
     <div className={cn(
-      "group w-full py-5 px-4 md:px-6 transition-colors",
+      "group w-full py-3.5 px-3 sm:py-5 sm:px-6 transition-colors",
       isUser ? "bg-transparent" : "bg-card/30"
     )}>
-      <div className="max-w-3xl mx-auto flex gap-4">
+      <div className="max-w-3xl mx-auto flex gap-2.5 sm:gap-4">
         {/* Avatar */}
         <div className="flex-shrink-0 mt-1">
           {isUser ? (
-            <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
-              <User className="w-4 h-4 text-primary" />
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+              <User className="h-3.5 w-3.5 text-primary sm:h-4 sm:w-4" />
             </div>
           ) : (
-            <div className="w-7 h-7 rounded-lg border border-secondary/30 overflow-hidden bg-card/60 flex items-center justify-center">
-              <Cpu className="h-4 w-4 text-secondary" aria-label="AI Tor" />
+            <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg border border-secondary/30 overflow-hidden bg-card/60 flex items-center justify-center">
+              <Cpu className="h-3.5 w-3.5 text-secondary sm:h-4 sm:w-4" aria-label="AI Tor" />
             </div>
           )}
         </div>
@@ -57,7 +57,7 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             <span className="text-xs font-mono font-bold tracking-wide text-foreground/80">
               {isUser ? "Tú" : "AI Tor"}
             </span>
-            <span className="text-[9px] font-mono text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="text-[9px] font-mono text-muted-foreground/40 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
               {formatTime(message.timestamp)}
             </span>
           </div>
@@ -96,8 +96,8 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
           )}
 
           <div className={cn(
-            "text-sm leading-7 font-mono",
-            isUser ? "text-foreground/90 whitespace-pre-wrap" : "text-muted-foreground prose-terminal"
+            "text-[13.5px] leading-6 sm:text-sm sm:leading-7 font-mono",
+            isUser ? "whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-foreground/90" : "text-muted-foreground prose-terminal"
           )}>
             {isUser ? (
               message.content
@@ -208,7 +208,7 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
           )}
 
           {!isUser && message.content && (
-            <div className="mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
+            <div className="mt-2 transition-opacity sm:opacity-0 sm:group-hover:opacity-100">
               <button
                 onClick={handleCopy}
                 className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground/50 hover:text-foreground/70 transition-colors"

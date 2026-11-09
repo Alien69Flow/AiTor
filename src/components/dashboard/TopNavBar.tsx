@@ -51,7 +51,7 @@ export function TopNavBar({ activeTab, onTabChange, onOpenPalette }: TopNavBarPr
         </div>
 
         {/* Center: 6 section tabs (desktop only) */}
-        <nav aria-label="Secciones del terminal" className="hidden md:flex items-center gap-0.5">
+        <nav aria-label="Secciones del terminal" className="hidden md:flex min-w-0 items-center gap-0.5 overflow-x-auto no-scrollbar">
           {SECTIONS.map((section) => {
             const isActive = activeTab === section.id;
             return (
@@ -59,7 +59,7 @@ export function TopNavBar({ activeTab, onTabChange, onOpenPalette }: TopNavBarPr
                 key={section.id}
                 onClick={() => onTabChange(section.id)}
                 aria-current={isActive ? "page" : undefined}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-heading tracking-wider uppercase transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 ${
+                className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap px-2 py-1.5 rounded-md text-[10px] font-heading tracking-wider uppercase transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 lg:px-3 lg:text-[11px] ${
                   isActive
                     ? "bg-primary/15 text-primary shadow-[0_0_8px_hsl(var(--primary)/0.2)]"
                     : "text-muted-foreground/60 hover:text-foreground hover:bg-muted/30"
