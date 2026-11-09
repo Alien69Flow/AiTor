@@ -1,11 +1,14 @@
 #!/usr/bin/env node
 /**
- * Hielo marino a AMSR2 25 km y, de paso, las dos pruebas del catálogo que
- * quedaron congeladas en el comportamiento anterior a #63 y #64.
+ * Hielo marino a AMSR2 25 km sobre el catálogo actual.
  *
- * Sustituye capturando la sangría, así que no depende de la indentación exacta
- * del fichero. Todo o nada: si un ancla no aparece una sola vez, sale con 1 sin
- * escribir nada.
+ * Segunda versión: la de #68 anclaba en títulos de prueba que `main` ya
+ * reescribió («las corrientes piden el último compuesto…»), así que fallaba
+ * entera sin escribir nada. Esta ancla en el bloque `seaIce` del catálogo,
+ * localizado por su `key`, y no en el fichero entero: `freshness: "1 día"`
+ * sale nueve veces y una sustitución global habría tocado las otras ocho.
+ *
+ * Todo o nada: si algo no aparece exactamente una vez, sale con 1 sin escribir.
  *
  * Uso:  node scripts/globe-amsr2-patch.mjs [--check]
  */
@@ -13,146 +16,117 @@ import { readFileSync, writeFileSync } from "node:fs";
 
 const LAYERS = "src/lib/globe-layers.ts";
 const TEST = "src/lib/globe-layers.test.ts";
-const AUDIT = "scripts/check-globe-layers.mjs";
+const NEW_LAYER = "AMSRU2_Sea_Ice_Concentration_25km";
 
 const files = {
   [LAYERS]: readFileSync(LAYERS, "utf8"),
   [TEST]: readFileSync(TEST, "utf8"),
-  [AUDIT]: readFileSync(AUDIT, "utf8"),
 };
 
 const checkOnly = process.argv.includes("--check");
 
-/** Ya aplicado: el id nuevo está en el catálogo. */
-if (files[LAYERS].includes("AMSRU2_Sea_Ice_Concentration_25km")) {
+if (files[LAYERS].includes(NEW_LAYER)) {
   console.log("El parche ya estaba aplicado; no se toca nada.");
   process.exit(0);
 }
 
-function swap(file, label, pattern, build) {
-  const src = files[file];
-  const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`;
-  const count = (src.match(new RegExp(pattern.source, flags)) ?? []).length;
-  if (count !== 1) {
-    throw new Error(`${file}: «${label}» aparece ${count} veces, se esperaba 1. No se escribe nada.`);
+/** Recorta el objeto `{ ... }` que contiene `key: "<key>"`. */
+function blockOf(src, key) {
+  const at = src.indexOf(`key: "${key}"`);
+  if (at < 0) return null;
+  const open = src.lastIndexOf("{", at);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < src.length; i += 1) {
+    const ch = src[i];
+    if (ch === "{") depth += 1;
+    else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return src.slice(open, i + 1);
+    }
   }
-  files[file] = src.replace(pattern, (...args) => build(args[0], args.slice(1, -2)));
-  console.log(`OK   ${file} · ${label}`);
+  return null;
 }
 
-// ── Catálogo: el hielo marino pasa a AMSR2 25 km ──────────────────────────
-swap(
-  LAYERS,
-  "fuente y frescura del hielo marino",
-  /^([ \t]*)source: "NASA GIBS · VIIRS NOAA-21 \(diario\)",[ \t]*\r?\n[ \t]*freshness: "1 día",/m,
-  (whole, [indent]) =>
-    `${indent}source: "NASA GIBS · AMSR2/GCOM-W1, 25 km",\n` +
-    `${indent}freshness: "Última pasada publicada",`,
-);
+/** Sustituye dentro del bloque y devuelve el bloque nuevo, o falla. */
+function swapIn(block, label, pattern, replace) {
+  const flags = `${pattern.flags.replace("g", "")}g`;
+  const hits = block.match(new RegExp(pattern.source, flags)) ?? [];
+  if (hits.length !== 1) {
+    throw new Error(
+      `«${label}» aparece ${hits.length} veces en el bloque, se esperaba 1. No se escribe nada.`,
+    );
+  }
+  console.log(`OK   ${label}`);
+  return block.replace(pattern, replace);
+}
 
-swap(
-  LAYERS,
-  "descripción del hielo marino",
-  /"Extensión de hielo marino de polo a polo, medida a 375 m"/,
-  () => '"Concentración de hielo marino de polo a polo, medida cada día a 25 km"',
-);
+const ice = blockOf(files[LAYERS], "seaIce");
+if (!ice) {
+  throw new Error('No encuentro el bloque `key: "seaIce"`. No se escribe nada.');
+}
 
-swap(
-  LAYERS,
+let block = ice;
+block = swapIn(
+  block,
+  "fuente del hielo marino",
+  /source: "NASA GIBS \u00b7 VIIRS NOAA-21 \(diario\)",/,
+  'source: "NASA GIBS \u00b7 AMSR2/GCOM-W1, 25 km",',
+);
+block = swapIn(
+  block,
+  "frescura del hielo marino",
+  /freshness: "1 d\u00eda",/,
+  'freshness: "\u00daltima pasada publicada",',
+);
+block = swapIn(
+  block,
+  "descripci\u00f3n del hielo marino",
+  /description: "Extensi\u00f3n de hielo marino de polo a polo, medida a 375 m",/,
+  'description: "Concentraci\u00f3n de hielo marino de polo a polo, medida cada d\u00eda a 25 km",',
+);
+block = swapIn(
+  block,
   "comentario del hielo marino",
-  /^([ \t]*)\/\/ MUR deducía el hielo[^\n]*\n[ \t]*\/\/ el borde; VIIRS lo mide directamente todos los días\./m,
-  (whole, [indent]) =>
-    `${indent}// AMSR2 mide la concentración en una rejilla polar de 25 km. GIBS\n` +
-    `${indent}// cerró la serie (ongoing: false), así que la capa va sin segmento TIME:\n` +
-    `${indent}// pedirle la fecha de hoy responde 404 y, sin fecha, sirve la última pasada.`,
+  /\/\/ MUR deduc[^\n]*\n([ \t]*)\/\/ el borde; VIIRS lo mide[^\n]*/,
+  (_match, pad) =>
+    "// AMSR2 mide la concentraci\u00f3n en una rejilla polar de 25 km. GIBS\n" +
+    `${pad}// ya no la actualiza a diario: sin segmento TIME sirve la \u00faltima pasada.`,
 );
-
-swap(
-  LAYERS,
+block = swapIn(
+  block,
   "tesela del hielo marino",
-  /^([ \t]*)gibs: \{ layer: "VIIRS_NOAA21_Sea_Ice"[^\n]*$/m,
-  (whole, [indent]) =>
-    `${indent}gibs: { layer: "AMSRU2_Sea_Ice_Concentration_25km", level: 6, alpha: 0.85, timeless: true },`,
+  /gibs: \{ layer: "VIIRS_NOAA21_Sea_Ice"[^}]*\}/,
+  `gibs: { layer: "${NEW_LAYER}", level: 6, alpha: 0.85, timeless: true }`,
 );
 
-// ── Pruebas: las dos que fijaban el comportamiento anterior ──────────────
-swap(
-  TEST,
-  "prueba de las corrientes",
-  /it\("las corrientes llevan fecha fija porque la serie de OSCAR está detenida", \(\) => \{[\s\S]*?\n  \}\);/m,
-  () =>
-    [
-      'it("las corrientes piden el último compuesto, sin fecha fija", () => {',
-      '    const currents = layerDef("oceanCurrents")?.gibs;',
-      "    // OSCAR publica compuestos de 5 días: con un TIME diario GIBS responde 404,",
-      "    // así que la capa va sin segmento temporal y sigue a la última pasada.",
-      "    expect(currents?.timeless).toBe(true);",
-      "    expect(currents?.date).toBeUndefined();",
-      "  });",
-      "",
-      '  it("el hielo marino es AMSR2 a 25 km, sin fecha fija", () => {',
-      '    const ice = layerDef("seaIce")?.gibs;',
-      "    // AMSRU2_Sea_Ice_Concentration_25km es la rejilla polar de AMSR2 (GCOM-W1).",
-      "    // GIBS ya no la actualiza, así que sin TIME sirve la última pasada: pedirle",
-      "    // el día de hoy devolvería 404 y la capa parecería rota.",
-      '    expect(ice?.layer).toBe("AMSRU2_Sea_Ice_Concentration_25km");',
-      "    expect(ice?.timeless).toBe(true);",
-      "    expect(ice?.date).toBeUndefined();",
-      "    expect(ice?.dateOffsetHours).toBeUndefined();",
-      "  });",
-    ].join("\n"),
-);
+files[LAYERS] = files[LAYERS].replace(ice, () => block);
 
-swap(
-  TEST,
-  "prueba de los cascarones atmosféricos",
-  /it\("la capa existe, es opcional y no viene encendida", \(\) => \{[\s\S]*?\n  \}\);/m,
-  () =>
-    [
-      'it("la capa existe y viene encendida junto a la atmósfera de Cesium", () => {',
-      '    expect(layerDef("atmosphericShells")?.group).toBe("Atmospheric & Weather");',
-      "    // #64 la encendió de serie: con sólo el halo, la escalera atmosférica no se",
-      "    // podía ver desde fuera y el catálogo la anunciaba sin dibujarla.",
-      '    expect(DEFAULT_ACTIVE_LAYERS).toContain("atmosphericShells");',
-      "  });",
-    ].join("\n"),
-);
-
-swap(
-  TEST,
-  "comentario de los cascarones",
-  /Los cascarones son opcionales desde que el globo usa la atmósfera real de/,
-  () => "Los cascarones se encienden junto a la atmósfera real de",
-);
-
-// ── Auditoría: sonda de tesela polar para comparar bytes ─────────────────
-swap(
-  AUDIT,
-  "bucle de capas GIBS",
-  /for \(const g of gibs\) \{[\s\S]*?\n\}\n/,
-  () =>
-    [
-      "for (const g of gibs) {",
-      '  const time = g.timeless ? "" : `${g.date ?? day(g.offset)}/`;',
-      "  const base = `https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/${g.layer}/default/${time}GoogleMapsCompatible_Level${g.level}`;",
-      "  const r = await head(`${base}/3/3/4.png`);",
-      "  // Sonda polar: la misma capa pedida sobre el Ártico (z=2, esquina 1/0).",
-      "  // Comparar estos bytes con los de la tesela de referencia separa «la capa",
-      "  // está rota» de «la capa existe pero no tiene datos en esa parte del mundo».",
-      "  const polar = await head(`${base}/2/1/0.png`);",
-      '  const isImage = Boolean(r.type?.startsWith("image")) && r.status === 200;',
-      "  const empty = isImage && r.bytes < 1_500;",
-      '  const polarImage = Boolean(polar.type?.startsWith("image")) && polar.status === 200;',
-      "  const polarEmpty = polarImage && polar.bytes < 1_500;",
-      "  const esPolar = /Sea_Ice|Snow_Cover|Ice_Surface/i.test(g.layer);",
-      '  const nota = esPolar ? (polarEmpty ? " · polo vacío" : " · polo con datos") : "";',
-      "  console.log(",
-      "    `${record(isImage, empty)} ${g.key.padEnd(20)} ${String(r.status).padStart(3)} ${String(r.bytes).padStart(6)}B  ${time || \"(sin fecha)\"}  ${g.layer}` +",
-      "      `\\n      ${\" \".repeat(20)} polo ${String(polar.status).padStart(3)} ${String(polar.bytes).padStart(6)}B${nota}`,",
-      "  );",
-      "}",
-    ].join("\n") + "\n",
-);
+// Prueba nueva, colgada justo antes de la de corrientes, que ya existe en main.
+const TEST_ANCHOR =
+  /^([ \t]*)it\("las corrientes piden el \u00faltimo compuesto, sin fecha fija", \(\) => \{/m;
+const anchor = TEST_ANCHOR.exec(files[TEST]);
+if (!anchor) {
+  throw new Error(
+    "No encuentro la prueba de corrientes donde colgar la del hielo. No se escribe nada.",
+  );
+}
+const pad = anchor[1];
+const rows = [
+  'it("el hielo marino es AMSR2 a 25 km y va sin fecha fija", () => {',
+  '  const ice = layerDef("seaIce")?.gibs;',
+  "  // AMSRU2_Sea_Ice_Concentration_25km es la rejilla polar de AMSR2 (GCOM-W1).",
+  "  // GIBS ya no la actualiza a diario: sin segmento TIME sirve la última pasada,",
+  "  // que es justo la que se quiere ver en el globo.",
+  `  expect(ice?.layer).toBe("${NEW_LAYER}");`,
+  "  expect(ice?.timeless).toBe(true);",
+  "  expect(ice?.date).toBeUndefined();",
+  "  expect(ice?.dateOffsetHours).toBeUndefined();",
+  "});",
+];
+const inserted = rows.map((row) => `${pad}${row}`).join("\n");
+files[TEST] = files[TEST].replace(TEST_ANCHOR, () => `${inserted}\n${anchor[0]}`);
+console.log(`OK   ${TEST} \u00b7 prueba del hielo marino`);
 
 if (checkOnly) {
   console.log("\n--check: no se escribe nada.");
