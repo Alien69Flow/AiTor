@@ -137,8 +137,8 @@ jobs:
   # Sale siempre, también cuando `quality` muere en `Install dependencies`: por
   # eso el paso de la tabla y el del aviso van por separado, con `needs` y
   # `if: always()`, y todo lo que puede fallar está envuelto en `||`. Un run que
-  # falla no es un run lento, así que en ese caso el aviso se calla y la tabla
-  # marca en rojo el paso que se rompió.
+  # falla no es un run lento, así que en ese caso el aviso se calla; la tabla
+  # marca en rojo el paso que se rompió y lo enlaza con su log.
   resumen:
     name: resumen de tiempos
     runs-on: ubuntu-latest
@@ -199,13 +199,18 @@ jobs:
                 if (conclusion === "cancelled") return "cancelado";
                 return conclusion || "—";
               };
+              const roto = (conclusion) => conclusion === "failure" || conclusion === "cancelled";
+              const enlace = (job, paso) =>
+                job.html_url && paso.number ? job.html_url + "#step:" + paso.number + ":1" : "";
               const filas = [];
               for (const job of jobs) {
                 for (const paso of job.steps || []) {
                   if (!paso.started_at || !paso.completed_at) continue;
+                  const url = roto(paso.conclusion) ? enlace(job, paso) : "";
                   filas.push({
                     job: job.name,
                     nombre: paso.name,
+                    texto: url ? "[" + paso.name + "](" + url + ")" : paso.name,
                     estado: marca(paso.conclusion),
                     segundos: seg(paso),
                   });
@@ -220,13 +225,13 @@ jobs:
               console.log("| --- | --- | --- | ---: | ---: |");
               for (const fila of filas) {
                 const parte = total > 0 ? Math.round((fila.segundos / total) * 100) : 0;
-                console.log("| " + fila.job + " | " + fila.nombre + " | " + fila.estado + " | " + reloj(fila.segundos) + " | " + parte + " % |");
+                console.log("| " + fila.job + " | " + fila.texto + " | " + fila.estado + " | " + reloj(fila.segundos) + " | " + parte + " % |");
               }
               const enCurso = jobs
                 .filter((job) => (job.steps || []).some((paso) => paso.started_at && !paso.completed_at))
                 .map((job) => job.name);
               console.log("");
-              console.log("**Total medido:** " + reloj(total) + " en " + jobs.length + " jobs" + (enCurso.length ? "; todavía en curso: " + enCurso.join(", ") : "") + ". El resumen se escribe antes de que el job de CI haga su limpieza, así que ese último tramo no entra; el reloj del run completo está en su cabecera.");
+              console.log("**Total medido:** " + reloj(total) + " en " + jobs.length + " jobs" + (enCurso.length ? "; todavía en curso: " + enCurso.join(", ") : "") + ". Los pasos en rojo enlazan con su log. El resumen se escribe antes de que el job de CI haga su limpieza, así que ese último tramo no entra; el reloj del run completo está en su cabecera.");
             ' || echo "_No se pudo leer el informe de tiempos._"
             echo ""
             echo "## Tests más lentos"
@@ -350,6 +355,6 @@ jobs:
             cat "$AVISO_MD" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ -n "${NUMERO_PR:-}" ]; then
               gh pr comment "$NUMERO_PR" --body-file "$AVISO_MD" 2>/dev/null \
-                || echo "_No se pudo comentar en la PR: el aviso queda en el resumen del run."
+                || echo "_No se pudo comentar en la PR: el aviso queda en el resumen del run._"
             fi
           fi
