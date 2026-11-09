@@ -9,21 +9,27 @@ name: deploy-vercel
 #
 # Sólo hace falta un secreto: VERCEL_TOKEN (Vercel -> Account Settings ->
 # Tokens). El proyecto y el equipo van escritos abajo porque no son secretos.
+# Si falta, el job lo deja escrito en el resumen y en la PR del commit, además
+# de marcar el error: nada de un preflight mudo.
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
+# Comentar en la PR del commit necesita escritura en issues (los comentarios de
+# PR son comentarios de issue) y en pull requests.
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: deploy-vercel
   cancel-in-progress: false
 
 env:
-  VERCEL_PROJECT: ai-tor
+  VERCEL_PROJECT: ai-top
   VERCEL_SCOPE: alien-flow-space
   PRODUCTION_URL: https://aitor.alienflow.space
 
@@ -32,6 +38,10 @@ jobs:
     name: build y despliegue a producción
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # A nivel de job para poder preguntarlo en los `if` de los pasos: el
+    # contexto `secrets` no se puede usar en un `if`.
+    env:
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,28 +50,60 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Preflight de secretos
+      - name: Aviso de secreto ausente
+        if: env.VERCEL_TOKEN == ''
         env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo "::error::Falta el secreto VERCEL_TOKEN (Vercel -> Account Settings -> Tokens). Sin el no hay despliegue desde GitHub."
-            exit 1
+          aviso=$(mktemp)
+          cat > "$aviso" <<'TEXTO'
+          ### El despliegue no publica: falta `VERCEL_TOKEN`
+
+          El workflow se ha parado antes de construir porque el repositorio no tiene el secreto **`VERCEL_TOKEN`**.
+
+          1. Vercel -> **Account Settings -> Tokens** -> *Create Token*.
+          2. GitHub -> **Settings -> Secrets and variables -> Actions** -> *New repository secret*, con el nombre `VERCEL_TOKEN`.
+          3. Vuelve a lanzar **deploy-vercel** (*Run workflow*) o empuja a `main`.
+
+          Mientras falte, `aitor.alienflow.space` sigue con la build anterior.
+          TEXTO
+
+          {
+            echo "## Despliegue bloqueado: falta VERCEL_TOKEN"
+            echo ""
+            cat "$aviso"
+            echo ""
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # El push a main viene de una PR fusionada: se busca por commit.
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$pr" ]; then
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$(cat "$aviso")" >/dev/null; then
+              echo "Aviso publicado en la PR #$pr"
+            else
+              echo "::warning::No se pudo comentar en la PR #$pr; el aviso queda en el resumen del job."
+            fi
+          else
+            echo "Sin PR asociada al commit $GITHUB_SHA; el aviso queda en el resumen del job."
           fi
+
+      - name: Parar sin desplegar
+        if: env.VERCEL_TOKEN == ''
+        run: |
+          echo "::error::Falta el secreto VERCEL_TOKEN (Vercel -> Account Settings -> Tokens). Sin el no hay despliegue desde GitHub; las instrucciones están en el resumen del job y en la PR del commit."
+          exit 1
 
       - name: Instalar dependencias
         run: npm ci --no-audit --no-fund
 
       - name: Enlazar el proyecto
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: >-
           npx --yes vercel@latest link --yes
           --project "$VERCEL_PROJECT" --scope "$VERCEL_SCOPE" --token "$VERCEL_TOKEN"
 
       - name: Bajar variables y ajustes de producción
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: npx --yes vercel@latest pull --yes --environment=production --token "$VERCEL_TOKEN"
 
       - name: Construir
@@ -69,8 +111,6 @@ jobs:
 
       - name: Publicar
         id: deploy
-        env:
-          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
         run: |
           url=$(npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN")
           echo "url=$url" >> "$GITHUB_OUTPUT"
@@ -81,22 +121,26 @@ jobs:
           for i in $(seq 1 20); do
             code=$(curl -s -o /dev/null -w "%{http_code}" "$PRODUCTION_URL/" || true)
             if [ "$code" = "200" ]; then
-              echo "Produccion responde 200"
+              echo "Producción responde 200"
               exit 0
             fi
             echo "Intento $i: HTTP $code"
             sleep 10
           done
-          echo "::error::Produccion no respondio 200 tras el despliegue"
+          echo "::error::Producción no respondió 200 tras el despliegue"
           exit 1
 
       - name: Resumen
         if: always()
         run: |
           {
-            echo "## Despliegue a produccion"
+            echo "## Despliegue a producción"
             echo ""
-            echo "- URL publicada: ${{ steps.deploy.outputs.url }}"
-            echo "- Produccion: $PRODUCTION_URL"
+            if [ -z "$VERCEL_TOKEN" ]; then
+              echo "- Estado: sin desplegar, falta \`VERCEL_TOKEN\` (instrucciones arriba)"
+            else
+              echo "- URL publicada: ${{ steps.deploy.outputs.url }}"
+            fi
+            echo "- Producción: $PRODUCTION_URL"
             echo "- Build: vercel build en Actions (log en este job)"
           } >> "$GITHUB_STEP_SUMMARY"
