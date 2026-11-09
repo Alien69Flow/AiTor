@@ -270,6 +270,16 @@ describe("capas que faltaban o no pintaban", () => {
     expect(layerDef("oceanCurrents")?.gibs?.layer).toBe("OSCAR_Sea_Surface_Currents_Zonal");
   });
 
+  it("el hielo marino es AMSR2 a 25 km y va sin fecha fija", () => {
+    const ice = layerDef("seaIce")?.gibs;
+    // AMSRU2_Sea_Ice_Concentration_25km es la rejilla polar de AMSR2 (GCOM-W1).
+    // GIBS ya no la actualiza a diario: sin segmento TIME sirve la última pasada,
+    // que es justo la que se quiere ver en el globo.
+    expect(ice?.layer).toBe("AMSRU2_Sea_Ice_Concentration_25km");
+    expect(ice?.timeless).toBe(true);
+    expect(ice?.date).toBeUndefined();
+    expect(ice?.dateOffsetHours).toBeUndefined();
+  });
   it("las corrientes piden el último compuesto, sin fecha fija", () => {
     const currents = layerDef("oceanCurrents")?.gibs;
     // OSCAR publica compuestos de 5 días: con un TIME diario GIBS responde 404,

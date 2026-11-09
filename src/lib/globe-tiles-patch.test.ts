@@ -31,7 +31,9 @@ describe("patchGlobeTiles", () => {
   it("cambia las capas casi vacías por productos de malla densa", () => {
     const source = patched();
 
-    expect(source).toContain('layer: "VIIRS_NOAA21_Sea_Ice"');
+    // El hielo salió de MUR primero y ahora es la rejilla polar de AMSR2: lo que
+    // esta prueba defiende es que no vuelva a pedirse el barrido que no pintaba.
+    expect(source).toContain('layer: "AMSRU2_Sea_Ice_Concentration_25km"');
     expect(source).toContain('layer: "MERRA2_Total_Precipitable_Water_Vapor_Monthly"');
     expect(source).toContain('layer: "MERRA2_Air_Temperature_250hPa_Monthly"');
     expect(source).toContain('label: "Temperatura a 250 hPa"');
