@@ -28,6 +28,9 @@ const DISTRICT_MODULE: Record<string, { tab: WorkspaceTab; label: string }> = {
   signal: { tab: "system", label: "Niveles y monetización" },
   embassy: { tab: "alien", label: "Fuentes y registro" },
   academy: { tab: "agents", label: "Chat" },
+  observatory: { tab: "cosmos", label: "Órbitas y fuentes NASA" },
+  market: { tab: "markets", label: "Mercados" },
+  archive: { tab: "system", label: "Fuentes y configuración DAO" },
 };
 
 export function DaoCity({ messages, isLoading, onSend, onChat, onOpenTab }: DaoCityProps) {
@@ -61,7 +64,7 @@ export function DaoCity({ messages, isLoading, onSend, onChat, onOpenTab }: DaoC
       <div className="min-w-0">
         <p className="mb-1 font-mono text-[9px] text-secondary">ΔlieπFlΦw · SOVEREIGN INTELLIGENCE</p>
         <h1 className="text-base font-heading sm:text-xl">AlienFlow.Space <span className="text-secondary">DAO City</span></h1>
-        <p className="mt-1 font-mono text-[10px] text-muted-foreground">6 distritos · AI Tor / coordinación</p>
+        <p className="mt-1 font-mono text-[10px] text-muted-foreground">{CITY_DISTRICTS.length} distritos · AI Tor / coordinación</p>
       </div>
       <div className="pointer-events-auto flex shrink-0 gap-1">
         <Button variant="outline" size="icon" className="h-8 w-8 bg-background/80" title="Restablecer cámara" aria-label="Restablecer cámara" onClick={() => setReset(v => v + 1)}><Compass className="h-4 w-4" /></Button>
