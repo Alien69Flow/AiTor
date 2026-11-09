@@ -366,14 +366,20 @@ SystemTab.tsx
 ## 📝 NOTES
 
 ### Globo LIVE, emisiones y cobros (plan aprobado)
-- [ ] Clima: ampliar ciudades, coexistencia de lecturas, unidades y datos ausentes.
-- [ ] Mercados: quitar respaldo inventado y mostrar frescura; ampliar fuentes verificables.
-- [ ] Alertas: mareas costeras y datos orbitales con fuente y fecha.
-- [ ] Cámaras: ampliar catálogo oficial sin falsos LIVE ni ubicación ficticia.
-- [ ] Recuperar avances GitHub/Vercel, modelos de aviones y escalas cósmicas.
-- [ ] DAO City: ampliar espacios, agentes, Skills, RAG y Workflows con acciones verificables.
-- [ ] Migración a backend propio: verificar acceso al destino y traslado seguro de funciones y secretos, sin borrar Cloud.
-- [ ] Synapse: verificar destinos y alta comercial antes de habilitar BTC/tarjeta y nuevas redes.
+- [x] Clima puntual: 40 ciudades, lecturas simultáneas de temperatura/humedad/presión/viento, m/s correctos y ausencia distinta de cero.
+- [x] Mercados: quitar respaldo inventado y mostrar hora de la fuente y atraso.
+- [x] Alertas: observaciones NOAA en tres estaciones costeras y posición propagada de ISS, sin llamarlas alertas críticas; ubicación clicable.
+- [x] Emisiones: directorio oficial compartido ALIEN/GLOBE de noticias, finanzas, deportes y esports, sin atribuir reproducción ni LIVE no comprobado.
+- [x] UI compacta: paneles plegables bajo 1100 px y globo visible a 780×565.
+- [x] Recursos Cesium locales: corregidas rutas bloqueadas de luna, cielo y tablas astronómicas.
+- [x] DAO City: nueve distritos, con observatorio, mercado y archivo de fuentes; navegación a módulos existentes.
+- [ ] Clima global continuo y mercados tradicionales: requieren fuentes con cobertura/derechos verificables; las ciudades no son un raster mundial.
+- [ ] Vídeo incrustado de broadcasters: pendiente de reproductores autorizados; enlaces oficiales disponibles.
+- [ ] Recuperar revisión exacta GitHub/Vercel y modelos de aviones: pendiente de identificar la revisión desplegada y modelos con licencia.
+- [ ] Cartografía DAO de Vía Láctea/CMB: pendiente de enlaces o archivos de referencia del usuario; las diez escalas existentes se conservan.
+- [ ] RAG y Workflows persistentes de DAO City: dependen de acceso de administración al backend propio y criterios de evaluación/aprobación.
+- [ ] Migración a backend propio: bloqueada; las herramientas administran Cloud y el CLI no dispone de credencial para el destino. No se extrajeron secretos ni se borró Cloud.
+- [ ] Synapse BTC/tarjeta y nuevas redes: pendiente de acceso al destino, configuración comercial admitida y destinos de liquidación comprobados. No se habilitaron pagos sin verificación.
 
 ### DAO City
 - [x] Sustituir Neural por ciudad holográfica 3D con distritos seleccionables.
