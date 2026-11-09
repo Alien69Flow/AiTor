@@ -3,12 +3,14 @@
 // public), so abuse is contained with an origin allowlist + per-IP rate limit
 // instead of a JWT requirement.
 
-// Only origins this project actually serves. The Lovable editor/preview hosts
-// were removed with the rest of that integration: leaving them here would let
-// any `*.lovable.app` preview spend the paid upstream quota.
+// Only origins this project actually serves, including its verified preview.
+// Never allow all *.lovable.app projects to spend this app's upstream quota.
 // A leading dot means "this domain and its subdomains"; without it the entry
 // matches only that exact host, so `notalienflow.space` cannot sneak in.
 const ALLOWED_ORIGINS = [
+  "aitor.lovable.app",
+  "id-preview--2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovable.app",
+  "preview--2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovable.app",
   "aitor.alienflow.space",
   "alienflow.space",
   ".alienflow.space",
