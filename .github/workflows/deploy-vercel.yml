@@ -11,6 +11,11 @@ name: deploy-vercel
 # Tokens). El proyecto y el equipo van escritos abajo porque no son secretos.
 # Si falta, el job lo deja escrito en el resumen y en la PR del commit, además
 # de marcar el error: nada de un preflight mudo.
+#
+# Lo mismo con el tope del plan gratuito: 100 despliegues al día por equipo.
+# Cuando se agota, la API contesta `api-deployments-free-per-day` («more than
+# 100»), que no es un fallo del código ni de los secretos. El job lo reconoce y
+# lo explica en el resumen y en la PR en vez de dejar un log opaco.
 
 on:
   push:
@@ -112,9 +117,66 @@ jobs:
       - name: Publicar
         id: deploy
         run: |
-          url=$(npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN")
+          set -o pipefail
+          # El log se guarda entero: si Vercel rechaza el despliegue, el motivo
+          # viaja en el JSON de error y no en el código de salida. El paso
+          # siguiente lo lee para nombrar la causa si es la cuota diaria.
+          url=$(npx --yes vercel@latest deploy --prebuilt --prod --yes --token "$VERCEL_TOKEN" 2>&1 | tee "$RUNNER_TEMP/vercel-deploy.log" | tail -n 1)
           echo "url=$url" >> "$GITHUB_OUTPUT"
           echo "Publicado en $url"
+
+      # Mismo trato que el token ausente. El plan gratuito son 100 despliegues
+      # al día por equipo y la API lo dice con un código
+      # (`api-deployments-free-per-day`), no con una frase legible: aquí se
+      # traduce para que el rojo del job no se confunda con un fallo de código.
+      - name: Aviso de cuota diaria de Vercel
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          log="$RUNNER_TEMP/vercel-deploy.log"
+          if [ ! -f "$log" ]; then
+            echo "Sin log de Vercel: el despliegue no llegó a intentarse."
+            exit 0
+          fi
+          if ! grep -qE 'api-deployments-free-per-day|more than 100' "$log"; then
+            echo "El fallo no es la cuota diaria: el log de Vercel ya lo explica."
+            exit 0
+          fi
+
+          aviso=$(mktemp)
+          printf '%s\n' \
+            '### El despliegue no publica: Vercel agotó sus 100 despliegues del día' \
+            '' \
+            'La build pasó: lo que Vercel rechazó fue el despliegue, no el código. El plan gratuito permite **100 despliegues al día** por equipo y hoy ya se habían gastado; la API responde `more than 100` con el código `api-deployments-free-per-day` y no crea ninguna versión nueva.' \
+            '' \
+            '- No falta ningún secreto y no hay nada que corregir en el repositorio.' \
+            '- La cuota se reinicia a las **00:00 UTC**: el siguiente push a `main` (o *Run workflow*) vuelve a desplegar sin tocar nada.' \
+            '- Mientras tanto, `aitor.alienflow.space` sigue sirviendo la build anterior.' \
+            '- Si urge publicar antes del reinicio, hay que lanzarlo desde el panel de Vercel con otra cuenta.' \
+            > "$aviso"
+
+          {
+            echo "## Despliegue bloqueado: cuota diaria de Vercel"
+            echo ""
+            cat "$aviso"
+            echo ""
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          pr=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$pr" ]; then
+            if gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$pr/comments" -f body="$(cat "$aviso")" >/dev/null; then
+              echo "Aviso publicado en la PR #$pr"
+            else
+              echo "::warning::No se pudo comentar en la PR #$pr; el aviso queda en el resumen del job."
+            fi
+          else
+            echo "Sin PR asociada al commit $GITHUB_SHA; el aviso queda en el resumen del job."
+          fi
+
+          echo "::error title=Cuota diaria de Vercel agotada::Vercel permite 100 despliegues al día en el plan gratuito y ya se gastaron. No falta ningún secreto: la cuota se reinicia a las 00:00 UTC y el siguiente push a main vuelve a desplegar. Detalle en el resumen del job y en la PR del commit."
 
       - name: Comprobar producción
         run: |
@@ -138,8 +200,10 @@ jobs:
             echo ""
             if [ -z "$VERCEL_TOKEN" ]; then
               echo "- Estado: sin desplegar, falta \`VERCEL_TOKEN\` (instrucciones arriba)"
-            else
+            elif [ -n "${{ steps.deploy.outputs.url }}" ]; then
               echo "- URL publicada: ${{ steps.deploy.outputs.url }}"
+            else
+              echo "- Estado: sin desplegar; la causa está en el aviso de este mismo resumen"
             fi
             echo "- Producción: $PRODUCTION_URL"
             echo "- Build: vercel build en Actions (log en este job)"
