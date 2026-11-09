@@ -21,7 +21,16 @@ describe("registro de miniapps", () => {
 
 	it("los módulos jugables son exactamente los que el arcade sabe montar", () => {
 		expect(PLAYABLE_IDS).toEqual(liveMiniApps().map((app) => app.id));
-		expect(PLAYABLE_IDS).toEqual(["impulse", "memory", "reactor", "veintiuna"]);
+		expect(PLAYABLE_IDS).toEqual([
+			"impulse",
+			"memory",
+			"reactor",
+			"veintiuna",
+			"kart",
+			"chicken-road",
+			"lane-clash",
+			"mus",
+		]);
 	});
 
 	it("cada clase tiene su etiqueta", () => {
