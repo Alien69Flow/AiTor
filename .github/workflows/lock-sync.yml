@@ -3,8 +3,8 @@ name: lock sync
 # Sincroniza package-lock.json con package.json ejecutando el propio npm
 # (`npm install --package-lock-only`) en un runner, para cuando no hay Node a
 # mano. Se lanza con un push a la rama porque `workflow_dispatch` exige el
-# fichero en la rama por defecto. El commit que genera lleva la marca
-# `lock-sync: aplicado` para que el job no se vuelva a disparar.
+# fichero en la rama por defecto. No hace falta guarda contra bucles: un push
+# hecho con GITHUB_TOKEN no vuelve a disparar workflows.
 
 on:
   push:
@@ -15,7 +15,6 @@ permissions:
 
 jobs:
   sync:
-    if: ${{ !contains(github.event.head_commit.message || '', 'lock-sync: aplicado') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -41,5 +40,5 @@ jobs:
           git config user.name "lock-sync"
           git config user.email "lock-sync@users.noreply.github.com"
           git add package-lock.json
-          git commit -m "lock-sync: aplicado — package-lock.json en sincronía con package.json"
+          git commit -m "lock-sync aplicado: package-lock.json en sincronía con package.json"
           git push origin "HEAD:${{ github.ref_name }}"
