@@ -28,6 +28,7 @@ import {
 import type { GameId } from "@/lib/mini-games";
 import { KIND_LABEL, MINIAPPS, plannedMiniApps } from "@/lib/miniapps";
 import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
+import { ChickenCrossGame, KartRaceGame, LaneClashGame, MusGame } from "./ArcadeRacers";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
@@ -210,7 +211,7 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: cuatro juegos que corren enteros en el navegador, un reto
+					Arcade del ecosistema: siete juegos que corren enteros en el navegador, un reto
 					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
@@ -272,6 +273,10 @@ export function GamesTab() {
 							onRun={handleRun}
 						/>
 						<VeintiunaGame best={profile.best.veintiuna} onRun={handleRun} />
+						<KartRaceGame />
+						<ChickenCrossGame />
+						<LaneClashGame />
+						<MusGame />
 					</div>
 				)}
 
