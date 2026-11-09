@@ -300,7 +300,7 @@ jobs:
           while read -r ANTERIOR; do
             [ -n "$ANTERIOR" ] || continue
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ANTERIOR/jobs?per_page=50" \
-              --jq '[.jobs[] | select(.name | contains("typecheck")) | select(.conclusion == "success") | select(.started_at != null and .completed_at != null) | ((.completed_at | dateiso8601) - (.started_at | dateiso8601))] | max // empty' \
+              --jq '[.jobs[] | select(.name | contains("typecheck")) | select(.conclusion == "success") | select(.started_at != null and .completed_at != null) | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | max // empty' \
               2>/dev/null >> "$HISTORIAL_JSON" || :
           done < "$ANTERIORES"
           node -e '
@@ -350,6 +350,6 @@ jobs:
             cat "$AVISO_MD" | tee -a "$GITHUB_STEP_SUMMARY"
             if [ -n "${NUMERO_PR:-}" ]; then
               gh pr comment "$NUMERO_PR" --body-file "$AVISO_MD" 2>/dev/null \
-                || echo "_No se pudo comentar en la PR: el aviso queda en el resumen del run._"
+                || echo "_No se pudo comentar en la PR: el aviso queda en el resumen del run."
             fi
           fi
