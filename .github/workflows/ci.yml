@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: read
+  # Leer los pasos del run en curso para el resumen de tiempos del job `quality`.
+  actions: read
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -38,8 +40,10 @@ jobs:
 
       # jsdom needs require(esm), so these only run on Node >= 20 (this job uses
       # 22). Vitest 3 is pinned: vitest 5 requires Vite 6 and this app is on 5.
+      # El reporter json añade un fichero con la duración de cada test para el
+      # resumen final; la salida de siempre no cambia y los tests corren una vez.
       - name: Unit tests
-        run: npm test
+        run: npm test -- --reporter=default --reporter=json --outputFile.json=vitest-report.json
 
       # The repo carries pre-existing lint debt (135 problems: src, supabase/functions,
       # backend). Keep it non-blocking so this gate stays useful, and flip it to
@@ -59,6 +63,98 @@ jobs:
           path: dist
           if-no-files-found: warn
           retention-days: 7
+
+      # Dónde se va el tiempo, de un vistazo. Los tiempos por paso los da la API de
+      # Actions para este mismo run, así que la tabla no hay que mantenerla a mano;
+      # los tests más lentos salen del informe JSON de Vitest. Es un informe, no un
+      # gate: si algo falla aquí lo dice en el resumen y el job no cambia de estado.
+      - name: Resumen de tiempos
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOBS_JSON: ${{ runner.temp }}/jobs.json
+        run: |
+          set -u
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=50" > "$JOBS_JSON" 2>/dev/null || : > "$JOBS_JSON"
+          {
+            echo "## Dónde se va el tiempo"
+            echo ""
+            node -e '
+              const fs = require("node:fs");
+              const ruta = process.env.JOBS_JSON || "";
+              let datos = {};
+              try {
+                datos = ruta && fs.existsSync(ruta) ? JSON.parse(fs.readFileSync(ruta, "utf8")) : {};
+              } catch {
+                datos = {};
+              }
+              const job = (datos.jobs || []).find((j) => (j.name || "").includes("typecheck"));
+              if (!job) {
+                console.log("_La API no devolvió este job; los tiempos están en la página del run._");
+                process.exit(0);
+              }
+              const seg = (paso) => (new Date(paso.completed_at) - new Date(paso.started_at)) / 1000;
+              const pasos = (job.steps || [])
+                .filter((paso) => paso.started_at && paso.completed_at)
+                .map((paso) => ({ nombre: paso.name, segundos: seg(paso) }));
+              const total = pasos.reduce((suma, paso) => suma + paso.segundos, 0);
+              const reloj = (s) => {
+                const redondo = Math.round(s);
+                return Math.floor(redondo / 60) + ":" + String(redondo % 60).padStart(2, "0");
+              };
+              console.log("| Paso | Duración | Parte del tiempo medido |");
+              console.log("| --- | ---: | ---: |");
+              for (const paso of pasos) {
+                const parte = total > 0 ? Math.round((paso.segundos / total) * 100) : 0;
+                console.log("| " + paso.nombre + " | " + reloj(paso.segundos) + " | " + parte + " % |");
+              }
+              console.log("");
+              console.log("**Total medido:** " + reloj(total) + ". Los pasos de limpieza (post) terminan después de este resumen, así que no entran; el reloj del job completo está en la cabecera del run.");
+            ' || echo "_No se pudo leer el informe de tiempos._"
+            echo ""
+            echo "## Tests más lentos"
+            echo ""
+            node -e '
+              const fs = require("node:fs");
+              const informe = "vitest-report.json";
+              if (!fs.existsSync(informe)) {
+                console.log("_Vitest no dejó informe: los tests no llegaron a ejecutarse._");
+                process.exit(0);
+              }
+              let datos = {};
+              try {
+                datos = JSON.parse(fs.readFileSync(informe, "utf8"));
+              } catch {
+                datos = {};
+              }
+              const relativa = (ruta) =>
+                ruta.startsWith(process.cwd() + "/") ? ruta.slice(process.cwd().length + 1) : ruta;
+              const tests = [];
+              for (const fichero of datos.testResults || []) {
+                for (const test of fichero.assertionResults || []) {
+                  tests.push({
+                    nombre: test.fullName || test.title || "(sin nombre)",
+                    fichero: relativa(fichero.name || ""),
+                    milisegundos: Number(test.duration) || 0,
+                  });
+                }
+              }
+              tests.sort((a, b) => b.milisegundos - a.milisegundos);
+              const lentos = tests.slice(0, 10);
+              if (!lentos.length) {
+                console.log("_El informe no trae tests con duración._");
+                process.exit(0);
+              }
+              const barra = (texto) => texto.replace(/\|/g, "\\|");
+              console.log("| Test | Fichero | Duración |");
+              console.log("| --- | --- | ---: |");
+              for (const test of lentos) {
+                console.log("| " + barra(test.nombre) + " | " + barra(test.fichero) + " | " + (test.milisegundos / 1000).toFixed(2) + " s |");
+              }
+              console.log("");
+              console.log("De " + tests.length + " tests, los 10 más lentos.");
+            ' || echo "_No se pudo leer el informe de tests._"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   # The login page offers every method GoTrue has switched on, so an enabled
   # provider without credentials is a button that dies on click (that is how
