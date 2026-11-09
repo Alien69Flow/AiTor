@@ -495,6 +495,9 @@ export function CesiumGlobe({
   useEffect(() => {
     if (!containerRef.current) return;
     Ion.defaultAccessToken = "";
+    // Pin asset resolution before Viewer initializes its moon, sky and workers.
+    const assetResolver = buildModuleUrl as typeof buildModuleUrl & { setBaseUrl: (url: string) => void };
+    assetResolver.setBaseUrl(`${window.location.origin}/cesium/`);
 
     const viewer = new CesiumViewer(containerRef.current, {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
