@@ -1,0 +1,43 @@
+## src/lib/globe-layers.ts (38522 B, 1154 líneas)
+   1x  source: "NASA GIBS · VIIRS NOAA-21 (diario)",
+   9x  freshness: "1 día",
+   1x  "Extensión de hielo marino de polo a polo, medida a 375 m"
+   1x  // MUR deducía el hielo
+   1x  gibs: { layer: "VIIRS_NOAA21_Sea_Ice"
+   0x  AMSRU2_Sea_Ice_Concentration_25km
+  -- líneas que el parche toca --
+  62: | "seaIce"
+  77: // Envolturas de la atmósfera como cascarones, visibles desde fuera
+  276: // Teselas densas: hielo, vapor, estratosfera y corrientes piden productos
+  338: description: "Troposfera, estratosfera, mesosfera y termosfera como cascarones, visibles al mirar el planeta desde fuera"
+  422: source: "NASA GIBS · GHRSST MUR25",
+  425: gibs: { layer: "GHRSST_L4_MUR25_Sea_Surface_Temperature", level: 6, alpha: 0.8, dateOffsetHours: 60 },
+  584: label: "Corrientes oceánicas",
+  589: // OSCAR es el único vector de corrientes que GIBS sirve como tesela, y su
+  629: key: "seaIce",
+  630: label: "Hielo marino",
+  637: description: "Extensión de hielo marino de polo a polo, medida a 375 m",
+  638: // MUR deducía el hielo de la temperatura de la piel del mar y sólo marcaba
+  640: gibs: { layer: "VIIRS_NOAA21_Sea_Ice", level: 6, alpha: 0.85, dateOffsetHours: 36 },
+  644: label: "Temperatura del hielo",
+  651: description: "Criósfera: a qué temperatura está el hielo y la nieve, el termómetro del deshielo",
+  663: description: "Hidrosfera: salinidad superficial, que marca corrientes, lluvia y deshielo",
+  1052: seaIce: "climate",
+  1089: // y termosfera como cascarones translúcidos. Con sólo el halo, la escalera
+
+## src/lib/globe-layers.test.ts (14503 B, 364 líneas)
+   0x  las corrientes llevan fecha fija porque la serie de OSCAR está detenida
+   0x  la capa existe, es opcional y no viene encendida
+   1x  Los cascarones son opcionales desde que el globo usa la atmósfera real de
+  -- líneas que el parche toca --
+  113: "seaIce",
+  252: * y corrientes no estaban declaradas. Estas pruebas fijan el arreglo y las tres
+  263: it("declara nieve, temperatura del aire y corrientes como rásters propios", () => {
+  273: it("las corrientes piden el último compuesto, sin fecha fija", () => {
+  321: * Los cascarones son opcionales desde que el globo usa la atmósfera real de
+
+## scripts/check-globe-layers.mjs (4672 B, 112 líneas)
+   1x  for (const g of gibs) {
+   2x  const r = await head(
+  -- líneas que el parche toca --
+
