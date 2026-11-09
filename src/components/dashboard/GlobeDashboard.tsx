@@ -54,6 +54,13 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   // diagnóstico. Cerrada, el globo parecía no tener capas atmosféricas porque
   // no había forma de descubrirlas sin pulsar un icono sin etiqueta.
   const [controlsOpen, setControlsOpen] = useState(true);
+  // The two desktop rails leave too little Earth visible below a wide desktop.
+  const [wideLayout, setWideLayout] = useState(() => window.innerWidth >= 1100);
+  useEffect(() => {
+    const update = () => setWideLayout(window.innerWidth >= 1100);
+    window.addEventListener("resize", update);
+    return () => window.removeEventListener("resize", update);
+  }, []);
   const [paywallReason, setPaywallReason] = useState<string | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"]));
   const [envLayers, setEnvLayers] = useState<Set<EnvLayerKey>>(new Set(DEFAULT_ACTIVE_LAYERS));
@@ -310,7 +317,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           criticalIntelCount={intel.osint.filter((event) => event.severity === "CRITICAL").length} />
 
         {/* Desktop: collapsible control rail so the globe stays visible */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden md:flex">
+        <div className={`pointer-events-none absolute inset-y-0 left-0 z-30 ${wideLayout ? "flex" : "hidden"}`}>
           {controlsOpen ? (
             <aside className="legend-scroll pointer-events-auto w-[320px] overflow-y-auto border-r border-primary/20 bg-background/70 p-2.5 backdrop-blur-md">
               <div className="mb-2 flex items-center justify-between">
@@ -339,7 +346,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           )}
         </div>
 
-        {!selectedHotspot && feedOpen && (
+        {wideLayout && !selectedHotspot && feedOpen && (
           <aside className="pointer-events-auto absolute inset-y-0 right-0 z-20 hidden w-[300px] border-l border-primary/20 bg-background/60 backdrop-blur-md md:block">
             <div className="flex h-9 items-center justify-between border-b border-border/60 px-3">
               <div className="flex items-center gap-2 text-[9px] uppercase text-primary"><Database className="h-3.5 w-3.5" /> Tactical telemetry</div>
@@ -348,16 +355,17 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             <div className="h-[calc(100%-2.25rem)]">{feed}</div>
           </aside>
         )}
-        {!selectedHotspot && !feedOpen && <Button variant="outline" size="icon" onClick={() => setFeedOpen(true)} className="absolute right-2 top-2 z-30 hidden h-9 w-9 rounded-sm border-primary/30 bg-card/85 md:inline-flex" aria-label="Abrir telemetría"><Database className="text-primary" /></Button>}
+        {wideLayout && !selectedHotspot && !feedOpen && <Button variant="outline" size="icon" onClick={() => setFeedOpen(true)} className="absolute right-2 top-2 z-30 h-9 w-9 rounded-sm border-primary/30 bg-card/85" aria-label="Abrir telemetría"><Database className="text-primary" /></Button>}
 
         {/* Mobile controls */}
-        <div className="absolute left-2 top-2 z-30 flex flex-col gap-1.5 md:hidden">
+        {!wideLayout && <div className="absolute left-2 top-2 z-30 flex flex-col gap-1.5">
           {([{ id: "legend" as const, Icon: Layers, label: "Capas" }, { id: "navigate" as const, Icon: Compass, label: "Navegar" }, { id: "feed" as const, Icon: Database, label: "Feed" }, { id: "diagnostics" as const, Icon: Wrench, label: "Diagnóstico" }]).map(({ id, Icon, label }) => (
             <Button key={id} variant="outline" size="icon" onClick={() => setMobilePanel(mobilePanel === id ? null : id)} aria-label={label}
               className="h-8 w-8 rounded-sm border-primary/30 bg-card/85"><Icon className="text-primary" /></Button>
           ))}
-        </div>
-        {mobilePanel && <div className="fixed inset-x-0 bottom-14 z-50 max-h-[62vh] overflow-y-auto border-t border-primary/30 bg-background/95 p-3 backdrop-blur-xl md:hidden">
+        </div>}
+        {!wideLayout && mobilePanel && <div className="absolute inset-x-2 bottom-2 z-50 max-h-[72%] overflow-y-auto border border-primary/30 bg-background/95 p-3 backdrop-blur-xl">
+          <div className="mb-2 flex justify-end"><Button variant="ghost" size="sm" onClick={() => setMobilePanel(null)} className="h-7 text-[10px]">Cerrar panel</Button></div>
           {mobilePanel === "legend" && legend(() => setMobilePanel(null), false)}
           {mobilePanel === "navigate" && <NavigatePanel onNavigate={handleNavigate} forceOpen onClose={() => setMobilePanel(null)} />}
           {mobilePanel === "feed" && <div className="h-[52vh]">{feed}</div>}
