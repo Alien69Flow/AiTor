@@ -507,6 +507,7 @@ export function CesiumGlobe({
       // un tope de 1,5× para no hundir la GPU con catorce capas encendidas.
       useBrowserRecommendedResolution: false,
       contextOptions: { webgl: { alpha: false } },
+      msaaSamples: 4,
       // Start with no base layer so async imagery never wipes overlays that
       // were already added (that race made toggled-on layers invisible).
       baseLayer: false,
@@ -533,6 +534,47 @@ export function CesiumGlobe({
     // Atmósfera pegada al suelo: es lo que da profundidad al satélite en las
     // distancias largas y hace que el planeta parezca un planeta.
     viewer.scene.globe.showGroundAtmosphere = true;
+
+    // Perfil visual «Google Earth» (sin claves): aire con dispersión real, sol que
+    // ilumina el terreno, bordes sin escalones y teselas nítidas al acercarse.
+    try {
+      const scene = viewer.scene;
+      // 1. Aire: dispersión por fragmento y halo denso en el limbo. Es lo que
+      //    da profundidad al planeta visto desde fuera y lo convierte en un
+      //    planeta en vez de una bola de textura.
+      const sky = scene.skyAtmosphere;
+      if (sky) {
+        sky.show = true;
+        sky.perFragmentAtmosphere = true;
+        sky.atmosphereLightIntensity = 12.0;
+        sky.atmosphereMieAnisotropy = 0.9;
+        sky.atmosphereMieScaleHeight = 12000;
+        sky.hueShift = -0.05;
+        sky.saturationShift = 0.2;
+        sky.brightnessShift = 0.05;
+      }
+      // 2. Sol: el terreno y el aire se encienden con la posición real del
+      //    astro (hora del sistema), no con una luz fija de estudio.
+      scene.globe.enableLighting = true;
+      scene.globe.dynamicAtmosphereLighting = true;
+      scene.globe.dynamicAtmosphereLightingFromSun = true;
+      if (scene.sun) {
+        scene.sun.show = true;
+        scene.sun.glowFactor = 1.0;
+      }
+      if (scene.moon) scene.moon.show = true;
+      // 3. Antialiasing: FXAA sobre el MSAA 4x que pide el visor.
+      scene.postProcessStages.fxaa.enabled = true;
+      // 4. Nitidez: caché mayor y vecinas precargadas; el error de pantalla
+      //    fino lo sigue ajustando `resolveGlobeDetail` según la altura.
+      scene.globe.tileCacheSize = 2500;
+      scene.globe.preloadAncestors = true;
+      scene.globe.preloadSiblings = true;
+      scene.fog.enabled = true;
+      scene.fog.density = 0.0002;
+    } catch (e) {
+      console.warn("[CesiumGlobe] perfil visual parcial:", e);
+    }
 
     // Relieve real: teselas Terrarium abiertas (sin token de Ion) en vez del
     // elipsoide liso. Si el proveedor no se puede construir, el visor sigue con
