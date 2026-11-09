@@ -129,11 +129,16 @@ jobs:
           '
 
   # Dónde se va el tiempo, de un vistazo: los pasos de los tres jobs con su
-  # duración (los tiempos los da la API de Actions para este mismo run, así que
-  # no hay nada que mantener a mano) y los tests más lentos, sacados del informe
-  # JSON de Vitest. Si el job de CI se va muy por encima de la media de los
-  # últimos runs, avisa aquí y en la PR. Es un informe, no un gate: si algo falla
-  # en este job lo dice el resumen y nadie se queda sin fusionar.
+  # estado y su duración (los tiempos los da la API de Actions para este mismo
+  # run, así que no hay nada que mantener a mano) y los tests más lentos, sacados
+  # del informe JSON de Vitest. Si el job de CI se va muy por encima de la media
+  # de los últimos runs, avisa aquí y en la PR.
+  #
+  # Sale siempre, también cuando `quality` muere en `Install dependencies`: por
+  # eso el paso de la tabla y el del aviso van por separado, con `needs` y
+  # `if: always()`, y todo lo que puede fallar está envuelto en `||`. Un run que
+  # falla no es un run lento, así que en ese caso el aviso se calla y la tabla
+  # marca en rojo el paso que se rompió.
   resumen:
     name: resumen de tiempos
     runs-on: ubuntu-latest
@@ -187,11 +192,23 @@ jobs:
                 process.exit(0);
               }
               const seg = (paso) => (new Date(paso.completed_at) - new Date(paso.started_at)) / 1000;
+              const marca = (conclusion) => {
+                if (conclusion === "success") return "ok";
+                if (conclusion === "failure") return "**falló**";
+                if (conclusion === "skipped") return "saltado";
+                if (conclusion === "cancelled") return "cancelado";
+                return conclusion || "—";
+              };
               const filas = [];
               for (const job of jobs) {
                 for (const paso of job.steps || []) {
                   if (!paso.started_at || !paso.completed_at) continue;
-                  filas.push({ job: job.name, nombre: paso.name, segundos: seg(paso) });
+                  filas.push({
+                    job: job.name,
+                    nombre: paso.name,
+                    estado: marca(paso.conclusion),
+                    segundos: seg(paso),
+                  });
                 }
               }
               const total = filas.reduce((suma, fila) => suma + fila.segundos, 0);
@@ -199,17 +216,17 @@ jobs:
                 const redondo = Math.round(dato);
                 return Math.floor(redondo / 60) + ":" + String(redondo % 60).padStart(2, "0");
               };
-              console.log("| Job | Paso | Duración | Parte del tiempo medido |");
-              console.log("| --- | --- | ---: | ---: |");
+              console.log("| Job | Paso | Estado | Duración | Parte del tiempo medido |");
+              console.log("| --- | --- | --- | ---: | ---: |");
               for (const fila of filas) {
                 const parte = total > 0 ? Math.round((fila.segundos / total) * 100) : 0;
-                console.log("| " + fila.job + " | " + fila.nombre + " | " + reloj(fila.segundos) + " | " + parte + " % |");
+                console.log("| " + fila.job + " | " + fila.nombre + " | " + fila.estado + " | " + reloj(fila.segundos) + " | " + parte + " % |");
               }
               const enCurso = jobs
                 .filter((job) => (job.steps || []).some((paso) => paso.started_at && !paso.completed_at))
                 .map((job) => job.name);
               console.log("");
-              console.log("**Total medido:** " + reloj(total) + " en " + jobs.length + " jobs" + (enCurso.length ? "; todavía en curso: " + enCurso.join(", ") : "") + ". Los pasos de limpieza (post) terminan después de este resumen, así que no entran; el reloj del run completo está en su cabecera.");
+              console.log("**Total medido:** " + reloj(total) + " en " + jobs.length + " jobs" + (enCurso.length ? "; todavía en curso: " + enCurso.join(", ") : "") + ". El resumen se escribe antes de que el job de CI haga su limpieza, así que ese último tramo no entra; el reloj del run completo está en su cabecera.");
             ' || echo "_No se pudo leer el informe de tiempos._"
             echo ""
             echo "## Tests más lentos"
@@ -255,8 +272,9 @@ jobs:
             ' || echo "_No se pudo leer el informe de tests._"
           } | tee -a "$GITHUB_STEP_SUMMARY"
 
-          # ¿Este run se ha ido de tiempo? Se compara el job de CI con la media de
-          # los últimos runs del workflow. Nunca cambia el estado del job.
+          # ¿Este run se ha ido de tiempo? Se compara con la media de los últimos
+          # runs que acabaron bien (los que fallan en `npm ci` duran un segundo y
+          # ensuciarían la media). Nunca cambia el estado del job.
           : > "$HISTORIAL_JSON"
           : > "$ANTERIORES"
           : > "$AVISO_MD"
@@ -282,7 +300,7 @@ jobs:
           while read -r ANTERIOR; do
             [ -n "$ANTERIOR" ] || continue
             gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ANTERIOR/jobs?per_page=50" \
-              --jq '[.jobs[] | select(.name | contains("typecheck")) | select(.started_at != null and .completed_at != null) | ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))] | max // empty' \
+              --jq '[.jobs[] | select(.name | contains("typecheck")) | select(.conclusion == "success") | select(.started_at != null and .completed_at != null) | ((.completed_at | dateiso8601) - (.started_at | dateiso8601))] | max // empty' \
               2>/dev/null >> "$HISTORIAL_JSON" || :
           done < "$ANTERIORES"
           node -e '
@@ -299,10 +317,12 @@ jobs:
               .map((linea) => Number(linea.trim()))
               .filter((n) => Number.isFinite(n) && n > 0);
             let actual = 0;
+            let acabado = "";
             try {
               const datos = JSON.parse(leer(process.env.JOBS_JSON));
               const job = (datos.jobs || []).find((j) => (j.name || "").includes("typecheck"));
               if (job && job.started_at) actual = (Date.now() - new Date(job.started_at).getTime()) / 1000;
+              acabado = (job && job.conclusion) || "";
             } catch {
               actual = 0;
             }
@@ -310,21 +330,20 @@ jobs:
               const redondo = Math.round(dato);
               return Math.floor(redondo / 60) + ":" + String(redondo % 60).padStart(2, "0");
             };
-            if (numeros.length < 3 || actual <= 0) {
+            const callar = () => {
               fs.writeFileSync(process.env.AVISO_MD, "");
               process.exit(0);
-            }
+            };
+            if (acabado !== "success") callar();
+            if (numeros.length < 3 || actual <= 0) callar();
             const media = numeros.reduce((suma, n) => suma + n, 0) / numeros.length;
             const sobra = actual - media;
-            if (sobra < 60 || actual < media * 1.5) {
-              fs.writeFileSync(process.env.AVISO_MD, "");
-              process.exit(0);
-            }
+            if (sobra < 60 || actual < media * 1.5) callar();
             const enlace = process.env.GITHUB_SERVER_URL + "/" + process.env.GITHUB_REPOSITORY + "/actions/runs/" + process.env.GITHUB_RUN_ID;
             fs.writeFileSync(
               process.env.AVISO_MD,
               "## Este run va lento\n\n" +
-                "El job de CI lleva **" + reloj(actual) + "** frente a **" + reloj(media) + "** de media en los últimos " + numeros.length + " runs, " + reloj(sobra) + " de más. Las tablas de arriba dicen dónde se fue el tiempo: [ver el run](" + enlace + ").\n",
+                "El job de CI lleva **" + reloj(actual) + "** frente a **" + reloj(media) + "** de media en los últimos " + numeros.length + " runs que acabaron bien, " + reloj(sobra) + " de más. Las tablas de arriba dicen dónde se fue el tiempo: [ver el run](" + enlace + ").\n",
             );
           ' 2>/dev/null || : > "$AVISO_MD"
           if [ -s "$AVISO_MD" ]; then
