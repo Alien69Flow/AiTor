@@ -137,7 +137,6 @@ export type Database = {
       user_credits: {
         Row: {
           paid_tier: Database["public"]["Enums"]["credit_tier"]
-          paid_until: string | null
           reset_at: string
           updated_at: string
           used: number
@@ -145,7 +144,6 @@ export type Database = {
         }
         Insert: {
           paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          paid_until?: string | null
           reset_at?: string
           updated_at?: string
           used?: number
@@ -153,7 +151,6 @@ export type Database = {
         }
         Update: {
           paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          paid_until?: string | null
           reset_at?: string
           updated_at?: string
           used?: number
