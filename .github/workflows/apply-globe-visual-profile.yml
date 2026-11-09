@@ -1,0 +1,78 @@
+# Aplica el perfil visual «Google Earth» al visor de Cesium.
+#
+# El parche vive en `src/lib/globe-visual-profile.ts` con sus pruebas y aquí se
+# aplica sobre `CesiumGlobe.tsx`, que es el visor real. Si el fuente cambió y un
+# ancla no está, el script sale con 1 y no escribe nada.
+#
+# El job compila y prueba antes de confirmar: el commit que empuja el bot va
+# firmado con GITHUB_TOKEN y GitHub no lanza workflows con ese token, así que
+# sin estos pasos el head parcheado no lo validaría nadie.
+name: Globo · perfil visual
+
+on:
+  push:
+    branches: [feat/globo-perfil-visual]
+    paths:
+      - "src/lib/globe-visual-profile.ts"
+      - "scripts/apply-globe-visual-profile.ts"
+      - ".github/workflows/apply-globe-visual-profile.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: globo-perfil-visual
+  cancel-in-progress: false
+
+jobs:
+  pintar:
+    name: aplicar, compilar y probar
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Dependencias
+        run: npm ci --ignore-scripts
+
+      - name: Aplicar el perfil
+        run: npx tsx scripts/apply-globe-visual-profile.ts
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Pruebas del perfil
+        run: npx vitest run src/lib/globe-visual-profile.test.ts
+
+      - name: Confirmar si hubo cambios
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Sin cambios: el perfil ya está aplicado."
+            exit 0
+          fi
+          git add -A
+          git commit -m "globo: perfil visual tipo Google Earth (atmósfera, sol, MSAA y teselas)"
+          for intento in 1 2 3 4 5; do
+            if git push origin HEAD:feat/globo-perfil-visual; then
+              echo "Perfil confirmado en el intento $intento."
+              exit 0
+            fi
+            echo "Push rechazado (intento $intento): rebaso y reintento."
+            if ! git pull --rebase --autostash origin feat/globo-perfil-visual; then
+              git rebase --abort || true
+              echo "El rebase no se pudo aplicar: revisa el conflicto a mano." >&2
+              exit 1
+            fi
+          done
+          echo "No se pudo confirmar el perfil tras cinco intentos." >&2
+          exit 1
