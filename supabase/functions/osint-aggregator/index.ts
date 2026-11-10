@@ -1,5 +1,6 @@
 // OSINT Aggregator: Firecrawl Search v2 with tactical categorization
 import { guardPublic } from "../_shared/guard.ts";
+import { firecrawlSearch } from "../_shared/firecrawl.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -72,29 +73,15 @@ Deno.serve(async (req) => {
     await Promise.all(
       targets.map(async ({ query, category }) => {
         try {
-          const res = await fetch("https://api.firecrawl.dev/v2/search", {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${apiKey}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              query,
-              limit,
-              tbs: "qdr:d",
-              lang: "en",
-            }),
-          });
+          // v2 no documenta `lang`: el idioma va implícito en `query` y `country`.
+          const reply = await firecrawlSearch(apiKey, { query, limit, tbs: "qdr:d" });
 
-          if (!res.ok) {
-            console.error(`Firecrawl ${category} failed: ${res.status}`);
+          if (!reply.ok) {
+            console.error(`Firecrawl ${category} failed: ${reply.status}`);
             return;
           }
 
-          const data = await res.json();
-          const results = data?.data?.web || data?.data || data?.web || [];
-
-          for (const r of results.slice(0, limit)) {
+          for (const r of reply.results.slice(0, limit)) {
             const title = r.title || r.url || "Untitled";
             const url = r.url || "";
             const summary = r.description || r.snippet || "";

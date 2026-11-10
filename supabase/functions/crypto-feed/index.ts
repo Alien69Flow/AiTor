@@ -1,3 +1,5 @@
+import { firecrawlSearch } from '../_shared/firecrawl.ts';
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
@@ -36,22 +38,26 @@ Deno.serve(async (req) => {
         });
       }
 
-      const res = await fetch('https://api.firecrawl.dev/v1/search', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${firecrawlKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query: 'crypto blockchain market news today',
-          limit: 15,
-          tbs: 'qdr:d',
-        }),
+      // Firecrawl v2: los resultados vienen en `data.web`, no en `data`.
+      const reply = await firecrawlSearch(firecrawlKey, {
+        query: 'crypto blockchain market news today',
+        limit: 15,
+        tbs: 'qdr:d',
+        sources: ['web'],
       });
-      const data = await res.json();
-      return new Response(JSON.stringify(data), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+
+      if (!reply.ok) {
+        return new Response(
+          JSON.stringify({ success: false, error: reply.error || `Firecrawl error: ${reply.status}` }),
+          { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data = (reply.payload as { data?: unknown } | null)?.data ?? null;
+      return new Response(
+        JSON.stringify({ success: true, count: reply.results.length, results: reply.results, data }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     return new Response(JSON.stringify({ success: false, error: 'Invalid action' }), {

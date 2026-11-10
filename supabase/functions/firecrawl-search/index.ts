@@ -1,10 +1,19 @@
 import { guardPublic } from "../_shared/guard.ts";
+import { firecrawlSearch } from "../_shared/firecrawl.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
+/**
+ * Búsqueda web con Firecrawl **v2**.
+ *
+ * v2 mueve los resultados a `data.web`, así que esta función devuelve además
+ * `results` ya aplanado: quien lea `results` no depende de la forma cruda, y
+ * quien lea `data` sigue viendo el cuerpo original para lo que quiera sacar
+ * (`creditsUsed`, avisos…).
+ */
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -36,35 +45,32 @@ Deno.serve(async (req) => {
 
     console.log('Searching:', query);
 
-    const response = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query,
-        limit,
-        lang: options?.lang || 'es',
-        country: options?.country,
-        tbs: options?.tbs,
-        scrapeOptions: options?.scrapeOptions || { formats: ['markdown'] },
-      }),
+    const reply = await firecrawlSearch(apiKey, {
+      query,
+      limit,
+      country: options?.country,
+      tbs: options?.tbs,
+      sources: ['web'],
+      // Sin esto, v2 devuelve url/título/descripción y nada de contenido.
+      scrapeOptions: options?.scrapeOptions || { formats: ['markdown'] },
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('Firecrawl API error:', data);
+    if (!reply.ok) {
+      console.error('Firecrawl API error:', reply.payload);
       return new Response(
-        JSON.stringify({ success: false, error: data.error || `Request failed with status ${response.status}` }),
-        { status: response.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: false,
+          error: reply.error || `Request failed with status ${reply.status}`,
+        }),
+        { status: reply.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log('Search successful, results:', data?.data?.length || 0);
+    const data = (reply.payload as { data?: unknown } | null)?.data ?? null;
+
+    console.log('Search successful, results:', reply.results.length);
     return new Response(
-      JSON.stringify(data),
+      JSON.stringify({ success: true, count: reply.results.length, results: reply.results, data }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

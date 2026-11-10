@@ -6,6 +6,7 @@ const corsHeaders = {
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { secretMatches } from '../_shared/guard.ts';
+import { FIRECRAWL_BASE, firecrawlSearch } from '../_shared/firecrawl.ts';
 
 /** One sighting before it is upserted into `uap_sightings`. */
 interface CollectedSighting {
@@ -45,9 +46,9 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
 
-    // 1. Scrape NUFORC recent reports
+    // 1. Scrape NUFORC recent reports (Firecrawl v2; la v1 se apaga el 10/12/2026).
     console.log('Scraping NUFORC...');
-    const nuforcResponse = await fetch('https://api.firecrawl.dev/v1/scrape', {
+    const nuforcResponse = await fetch(`${FIRECRAWL_BASE}/scrape`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${firecrawlKey}`,
@@ -63,19 +64,12 @@ Deno.serve(async (req) => {
 
     // 2. Search for recent UAP/UFO news
     console.log('Searching UAP news...');
-    const searchResponse = await fetch('https://api.firecrawl.dev/v1/search', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${firecrawlKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        query: 'UAP UFO sighting report 2026',
-        limit: 10,
-        tbs: 'qdr:w',
-      }),
+    const searchReply = await firecrawlSearch(firecrawlKey, {
+      query: 'UAP UFO sighting report 2026',
+      limit: 10,
+      tbs: 'qdr:w',
+      sources: ['web'],
     });
-    const searchData = await searchResponse.json();
 
     const sightings: CollectedSighting[] = [];
 
@@ -104,20 +98,18 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Parse search results as news-based sightings
-    const searchResults = searchData?.data || searchData?.results || [];
-    if (Array.isArray(searchResults)) {
-      for (const result of searchResults.slice(0, 10)) {
-        sightings.push({
-          location: 'Global',
-          date_reported: new Date().toISOString().split('T')[0],
-          type: 'News Report',
-          severity: 'investigating',
-          description: (result.description || result.title || 'UAP news report').substring(0, 500),
-          source: 'Web Search',
-          source_url: result.url || '',
-        });
-      }
+    // Parse search results as news-based sightings (`data.web` en v2).
+    const searchResults = searchReply.results;
+    for (const result of searchResults.slice(0, 10)) {
+      sightings.push({
+        location: 'Global',
+        date_reported: new Date().toISOString().split('T')[0],
+        type: 'News Report',
+        severity: 'investigating',
+        description: (result.description || result.title || 'UAP news report').substring(0, 500),
+        source: 'Web Search',
+        source_url: result.url || '',
+      });
     }
 
     // Upsert instead of wiping the table, so a failed scrape never destroys data.
