@@ -1,0 +1,38 @@
+name: debug-ci
+
+# Temporal: el log del job `build` se trunca antes del fallo y las anotaciones
+# sólo dicen «exit code 1». Este workflow corre la suite completa, conserva el
+# código de salida (sin `| tail` suelto, que lo enmascara) e imprime únicamente
+# las líneas de fallo. Se borra cuando el CI esté en verde.
+on:
+  push:
+    branches: [feat/liga-verificable, fix/cobros-libro-y-precio-unico]
+
+permissions:
+  contents: read
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Suite completa (sólo fallos)
+        shell: bash
+        run: |
+          set -o pipefail
+          status=0
+          npm test > /tmp/vitest.log 2>&1 || status=$?
+          echo "EXIT_STATUS=$status"
+          grep -aE "FAIL|×|AssertionError|Expected|Received|Test Files|Tests " /tmp/vitest.log | tail -n 80
+          echo "---- cola del log ----"
+          tail -n 30 /tmp/vitest.log
+          exit $status
