@@ -2,23 +2,32 @@
  * Parche que hace nacer el globo con el rail de controles y la leyenda
  * plegados.
  *
- * Hoy `GlobeDashboard.tsx` abre el rail entero al cargar (`controlsOpen` en
- * `true`) y llama a la leyenda con `defaultCollapsed` en `false`, así que el
- * primer render tapa media pantalla con paneles antes de que el usuario pida
- * nada. Lo que se quiere es lo contrario: el globo despejado y sólo los botones
+ * `GlobeDashboard.tsx` abre el rail al cargar (`controlsOpen` en `true`) y
+ * llama a la leyenda con `defaultCollapsed` en `false`, así que el primer
+ * render tapa media pantalla con paneles antes de que el usuario pida nada. Lo
+ * que se quiere es lo contrario: el globo despejado y sólo los botones
  * genéricos del rail (abrir controles, capas, navegar) a la vista.
  *
  * Va como parche y no editando el fichero a mano porque `GlobeDashboard.tsx`
  * tiene más de cuatrocientas líneas con plantillas dentro de atributos `title`:
  * una comilla de más deja el TSX sin compilar y aquí no hay máquina para
- * comprobarlo. Las anclas son literales y cada una tiene que aparecer una sola
- * vez, o el parche lanza y no escribe nada.
+ * comprobarlo. Las dos llamadas a la leyenda se buscan como literales; la
+ * declaración del rail, por forma, porque su inicializador ha cambiado con el
+ * tiempo (`useState(true)` y luego uno perezoso que mira el ancho de la
+ * ventana). Cada ancla tiene que aparecer una sola vez, o el parche lanza y no
+ * escribe nada.
  */
 
 /** Marca de que el plegado inicial ya está aplicado. */
 export const FOLD_MARKER = "Plegado al cargar";
 
-const CONTROLS_ANCHOR = "const [controlsOpen, setControlsOpen] = useState(true);";
+/**
+ * Línea que declara el estado del rail, con el inicializador que traiga.
+ *
+ * No se busca el texto exacto porque el componente lo ha ido estrechando y el
+ * parche sólo necesita reconocer la declaración para dejarla en `false`.
+ */
+const CONTROLS_LINE = /^[ \t]*const \[controlsOpen, setControlsOpen\] = useState\(.*\);[ \t]*$/gm;
 const DESKTOP_LEGEND_ANCHOR = "legend(undefined, false)";
 const MOBILE_LEGEND_ANCHOR = "legend(() => setMobilePanel(null), false)";
 
@@ -29,11 +38,11 @@ const MOBILE_LEGEND_ANCHOR = "legend(() => setMobilePanel(null), false)";
 const STALE_COMMENT =
   /[ \t]*\/\/ Abierta por defecto:[^\n]*\n[ \t]*\/\/ diagnóstico\.[^\n]*\n[ \t]*\/\/ no había forma de descubrirlas[^\n]*\n/;
 
-const FOLDED_CONTROLS = [
+/** Comentario nuevo del rail ya plegado. */
+const FOLDED_COMMENT = [
   `  // ${FOLD_MARKER}: el globo arranca con sólo los botones genéricos del rail`,
-  "  // (abrir controles, capas y navegar). La leyenda, la navegación y el" ,
+  "  // (abrir controles, capas y navegar). La leyenda, la navegación y el",
   "  // diagnóstico se abren a petición: al entrar, el planeta se ve entero.",
-  "  const [controlsOpen, setControlsOpen] = useState(false);",
 ].join("\n");
 
 export interface GlobeFoldResult {
@@ -51,6 +60,26 @@ function uniqueIndexOf(source: string, anchor: string): number {
   return index;
 }
 
+/** Deja el rail cerrado conservando el sangrado de la línea. */
+function foldControls(source: string): string {
+  const [first, second] = source.match(CONTROLS_LINE) ?? [];
+  if (!first) {
+    throw new Error("ancla no encontrada: declaración de controlsOpen");
+  }
+  if (second) {
+    throw new Error("ancla repetida: declaración de controlsOpen");
+  }
+
+  const start = source.indexOf(first);
+  const indent = /^[ \t]*/.exec(first)?.[0] ?? "";
+
+  return (
+    source.slice(0, start) +
+    `${indent}const [controlsOpen, setControlsOpen] = useState(false);` +
+    source.slice(start + first.length)
+  );
+}
+
 /** Aplica los tres cambios: rail cerrado y las dos leyendas plegadas. */
 export function patchGlobeFold(source: string): GlobeFoldResult {
   if (source.includes(FOLD_MARKER)) return { source, changed: false };
@@ -62,14 +91,10 @@ export function patchGlobeFold(source: string): GlobeFoldResult {
     );
   }
 
-  let out = source.replace(STALE_COMMENT, `${FOLDED_CONTROLS}\n`);
-
-  // La línea del estado se sustituye entera para no duplicar el `useState`.
-  const controlsIndex = uniqueIndexOf(out, CONTROLS_ANCHOR);
-  out =
-    out.slice(0, controlsIndex) +
-    "const [controlsOpen, setControlsOpen] = useState(false);" +
-    out.slice(controlsIndex + CONTROLS_ANCHOR.length);
+  // Primero el comentario y después la declaración: la nueva ya nace en `false`,
+  // así que el recuento de anclas sigue viendo una sola.
+  let out = source.replace(STALE_COMMENT, `${FOLDED_COMMENT}\n`);
+  out = foldControls(out);
 
   // La leyenda nace plegada en escritorio y en móvil.
   const desktop = uniqueIndexOf(out, DESKTOP_LEGEND_ANCHOR);
