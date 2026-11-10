@@ -14,6 +14,10 @@
  *  - Mar:   `meri.digitraffic.fi` (AIS abierto de la agencia finlandesa, CC BY
  *           4.0). Cubre el Báltico y se dice: no se extrapola al resto del mundo.
  *
+ * Los dos feeds se cachean en memoria 90 s y reutilizan la última lectura real
+ * hasta 15 min (`stale: true`) para no machacar a las fuentes comunitarias ni
+ * dejar la capa vacía por un 429 puntual.
+ *
  * Regla que no se negocia: si ninguna fuente responde, la respuesta lo dice
  * (`unavailable: true`) y devuelve una lista vacía. Nunca se rellena con barcos
  * ni aviones inventados.
@@ -22,7 +26,13 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const maxDuration = 30;
 
-const TIMEOUT_MS = 12_000;
+/**
+ * Tope de espera por fuente, el mismo para todas. Antes eran 12 s por sondeo y,
+ * como el aire encadena adsb.lol y luego OpenSky, el peor caso se acercaba a los
+ * 30 s de `maxDuration`. Con 8 s —el margen que ya usa la función edge— ninguna
+ * fuente corta distinto y el total queda holgado.
+ */
+const SOURCE_TIMEOUT_MS = 8_000;
 
 interface Flight {
   icao24: string;
@@ -80,6 +90,10 @@ const MAX_SHIPS = 500;
 const AIR_FRESH_MS = 90_000;
 const AIR_STALE_MS = 15 * 60_000;
 
+/** Igual para el mar: Digitraffic sirve un catálogo grande y no hace falta por visita. */
+const MARINE_FRESH_MS = 90_000;
+const MARINE_STALE_MS = 15 * 60_000;
+
 interface AirPayload {
   count: number;
   flights: Flight[];
@@ -92,7 +106,19 @@ interface AirPayload {
   stale?: boolean;
 }
 
+interface MarinePayload {
+  count: number;
+  ships: Ship[];
+  source: string | null;
+  coverage: string | null;
+  unavailable: boolean;
+  reason: string | null;
+  cached?: boolean;
+  stale?: boolean;
+}
+
 let airCache: { at: number; body: AirPayload } | null = null;
+let marineCache: { at: number; body: MarinePayload } | null = null;
 
 interface AdsbAircraft {
   hex?: string;
@@ -130,7 +156,7 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: { "user-agent": "aitor-intel/1.0", ...(init?.headers ?? {}) },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
+    signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} en ${url}`);
   return (await response.json()) as T;
@@ -382,6 +408,40 @@ async function fetchMarine(): Promise<{
   }
 }
 
+/**
+ * Mar con la misma política que el aire: 90 s de frescura y, si las fuentes
+ * callan, la última lectura real hasta 15 min en vez de una capa vacía. Los
+ * barcos que llegan así siguen siendo barcos que existieron; sólo se dice que la
+ * lectura es antigua.
+ */
+async function getMarine(): Promise<MarinePayload> {
+  const hit = marineCache;
+  if (hit && Date.now() - hit.at < MARINE_FRESH_MS) {
+    return { ...hit.body, cached: true };
+  }
+
+  const { ships, source, coverage, reason } = await fetchMarine();
+  const body: MarinePayload = {
+    count: ships.length,
+    ships,
+    source,
+    coverage,
+    unavailable: ships.length === 0,
+    reason,
+  };
+
+  if (ships.length > 0) {
+    marineCache = { at: Date.now(), body };
+    return body;
+  }
+
+  if (hit && Date.now() - hit.at < MARINE_STALE_MS) {
+    return { ...hit.body, stale: true, reason: reason ?? hit.body.reason };
+  }
+
+  return body;
+}
+
 function frameStamp(feature: DigitrafficLocation, fallback: string): string {
   const stamp = feature.properties?.timestampExternal;
   return typeof stamp === "number" ? new Date(stamp).toISOString() : fallback;
@@ -403,16 +463,8 @@ export default async function traffic(req: VercelRequest, res: VercelResponse) {
   }
 
   if (kind === "marine") {
-    const { ships, source, coverage, reason } = await fetchMarine();
-    return json(res, {
-      count: ships.length,
-      ships,
-      source,
-      coverage,
-      unavailable: ships.length === 0,
-      reason,
-      timestamp: new Date().toISOString(),
-    });
+    const body = await getMarine();
+    return json(res, { ...body, timestamp: new Date().toISOString() });
   }
 
   return json(res, { error: "kind debe ser air o marine" }, 400);
