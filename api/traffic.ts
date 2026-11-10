@@ -70,6 +70,30 @@ const ADS_B_CENTERS: { lat: number; lon: number; radiusNm: number }[] = [
 const MAX_FLIGHTS = 600;
 const MAX_SHIPS = 500;
 
+/**
+ * Caché en memoria del feed aéreo. adsb.lol es una red ciudadana sin clave: si
+ * cada visitante dispara ocho sondeos, su proxy nos frena con 429 y la capa se
+ * queda vacía. Con 90 s de frescura, una ráfaga de visitas cuesta un solo
+ * barrido; con 15 min de reutilización, un corte puntual de las fuentes no
+ * borra los aviones que ya estaban pintados.
+ */
+const AIR_FRESH_MS = 90_000;
+const AIR_STALE_MS = 15 * 60_000;
+
+interface AirPayload {
+  count: number;
+  flights: Flight[];
+  source: string | null;
+  unavailable: boolean;
+  reason: string | null;
+  /** La lectura sale de la caché, no de esta petición. */
+  cached?: boolean;
+  /** Se reutiliza la última lectura real porque ahora mismo no responde nadie. */
+  stale?: boolean;
+}
+
+let airCache: { at: number; body: AirPayload } | null = null;
+
 interface AdsbAircraft {
   hex?: string;
   flight?: string;
@@ -222,6 +246,39 @@ async function fetchAir(): Promise<{ flights: Flight[]; source: string | null; r
   }
 }
 
+/**
+ * Aire con caché: si hay una lectura de hace menos de 90 s se devuelve tal cual y
+ * no se toca la red. Si las fuentes fallan y hay una lectura real de menos de
+ * 15 min, se reutiliza marcada como `stale` — son posiciones que existieron, no
+ * una lista inventada — para que un 429 puntual no deje la capa sin aviones.
+ */
+async function getAir(): Promise<AirPayload> {
+  const hit = airCache;
+  if (hit && Date.now() - hit.at < AIR_FRESH_MS) {
+    return { ...hit.body, cached: true };
+  }
+
+  const { flights, source, reason } = await fetchAir();
+  const body: AirPayload = {
+    count: flights.length,
+    flights,
+    source,
+    unavailable: flights.length === 0,
+    reason,
+  };
+
+  if (flights.length > 0) {
+    airCache = { at: Date.now(), body };
+    return body;
+  }
+
+  if (hit && Date.now() - hit.at < AIR_STALE_MS) {
+    return { ...hit.body, stale: true, reason: reason ?? hit.body.reason };
+  }
+
+  return body;
+}
+
 interface DigitrafficLocation {
   mmsi?: number;
   geometry?: { coordinates?: [number, number] };
@@ -341,15 +398,8 @@ export default async function traffic(req: VercelRequest, res: VercelResponse) {
   const kind = String(req.query.kind ?? "air");
 
   if (kind === "air") {
-    const { flights, source, reason } = await fetchAir();
-    return json(res, {
-      count: flights.length,
-      flights,
-      source,
-      unavailable: flights.length === 0,
-      reason,
-      timestamp: new Date().toISOString(),
-    });
+    const body = await getAir();
+    return json(res, { ...body, timestamp: new Date().toISOString() });
   }
 
   if (kind === "marine") {
