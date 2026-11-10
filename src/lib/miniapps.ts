@@ -2,9 +2,10 @@
  * Registro de miniapps: el contrato que comparten todos los módulos del arcade.
  *
  * Un módulo no es una carpeta con un componente suelto: es una ficha aquí, un
- * motor puro en `src/lib` y una tarjeta en `GamesArcade`. Añadir una carta, un
- * plataformas o una mina consiste en escribir el motor, probarlo y añadir la
- * ficha; la pestaña los lista sin cambios.
+ * motor puro en `src/lib` y una tarjeta en `GamesArcade` o en su propio fichero
+ * dentro de `components/games`. Añadir una carta, un plataformas o una mina
+ * consiste en escribir el motor, probarlo y añadir la ficha; la pestaña los
+ * lista sin cambios.
  *
  * Lo que paga y lo que no se declara explícitamente: hoy ningún módulo mueve
  * dinero, y una ficha con premios reales no puede entrar sin riel, custodia y
@@ -12,10 +13,9 @@
  */
 
 import type { GameId } from "./mini-games";
-
 export type MiniAppKind = "arcade" | "cartas" | "casino" | "plataformas" | "mineria";
 
-/** `jugable` = se puede jugar ya; `diseñado` = ficha y reglas, sin motor todavía. */
+/** `jugable` = se puede jugar ya; `diseñado` = ficha y reglas, sin motor montado. */
 export type MiniAppStatus = "jugable" | "diseñado";
 
 /** Riel de pago. `ninguno` es el estado real de todo lo jugable hoy. */
@@ -24,7 +24,7 @@ export type PayoutRail = "ninguno" | "sats" | "ton";
 export type PayoutState = "sin premios" | "diseñado" | "activo";
 
 export interface MiniApp {
-	/** Identificador estable; coincide con `GameId` en los módulos jugables. */
+	/** Identificador estable; coincide con `GameId` en los módulos de la liga. */
 	id: string;
 	name: string;
 	kind: MiniAppKind;
@@ -37,7 +37,7 @@ export interface MiniApp {
 	pointsRule: string;
 	/** ¿Entra en el reto diario? */
 	challenge: boolean;
-	/** Componente de `GamesArcade` que lo monta, si está jugable. */
+	/** Componente que lo monta, si está jugable. */
 	component?: string;
 	/** Fichero del motor puro que decide sus reglas. */
 	engine?: string;
@@ -57,6 +57,9 @@ export const KIND_LABEL: Record<MiniAppKind, string> = {
 	plataformas: "Plataformas",
 	mineria: "Minería",
 };
+
+/** Puntos que no salen del navegador: la marca es local y no toca la liga. */
+const LOCAL_NOTE = "Puntos locales del arcade: no suman a la liga del servidor.";
 
 /** Fichas, en el orden en que conviene leerlas. */
 export const MINIAPPS: MiniApp[] = [
@@ -120,15 +123,66 @@ export const MINIAPPS: MiniApp[] = [
 		id: "escalera-orbital",
 		name: "Escalera orbital",
 		kind: "plataformas",
-		status: "diseñado",
-		tagline: "Salto lateral con gravedad baja y plataformas que se cierran.",
+		status: "jugable",
+		tagline: "Salto lateral con gravedad baja y una torre que nunca repite.",
 		controls: "Izquierda y derecha para moverse, espacio para saltar.",
-		pointsRule: "Puntos por altura y por plataforma nueva; caer reinicia la escalera.",
+		pointsRule: "10 puntos por metro de altura y 50 por plataforma nueva.",
 		challenge: false,
+		component: "EscaleraGame",
 		engine: "src/lib/platformer.ts",
-		requires:
-			"Motor de física discreta (paso fijo, colisión AABB) con su prueba de saltos y bordes.",
-		payouts: { rail: "ninguno", state: "sin premios", note: "Puntos de liga locales." },
+		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
+	},
+	{
+		id: "ovni-flappy",
+		name: "OVNI Flappy",
+		kind: "arcade",
+		status: "jugable",
+		tagline: "El platillo de siempre, con física que no se rompe al ir lento.",
+		controls: "Espacio o tocar para aletear entre los restos de la estación.",
+		pointsRule: "10 puntos por cada hueco superado.",
+		challenge: false,
+		component: "FlappyGame",
+		engine: "src/lib/flappy.ts",
+		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
+	},
+	{
+		id: "kart-orbital",
+		name: "Kart orbital",
+		kind: "arcade",
+		status: "jugable",
+		tagline: "Dos vueltas con deriva: la curva empuja más cuanto más rápido vas.",
+		controls: "Flechas para el volante; la deriva te saca de pista.",
+		pointsRule: "1000 por vuelta cerrada y hasta 400 por el tramo en curso.",
+		challenge: false,
+		component: "KartGame",
+		engine: "src/lib/arcade-racers.ts",
+		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
+	},
+	{
+		id: "cruce-alien",
+		name: "Cruce alienígena",
+		kind: "arcade",
+		status: "jugable",
+		tagline: "Nueve carriles de tráfico determinista y una meta que paga 500.",
+		controls: "Salta de carril en carril antes de que llegue el coche.",
+		pointsRule: "20 por salto, 60 por carril nuevo y 500 por cruzar entero.",
+		challenge: false,
+		component: "CruceGame",
+		engine: "src/lib/arcade-racers.ts",
+		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
+	},
+	{
+		id: "escuadron-alien",
+		name: "Escuadrón en carriles",
+		kind: "arcade",
+		status: "jugable",
+		tagline: "Combate por carriles con oleadas que salen de la semilla.",
+		controls: "Muévete de carril, dispara al más cercano y escúdate.",
+		pointsRule: "100 por baja y 50 por cada oleada superada.",
+		challenge: false,
+		component: "ClashGame",
+		engine: "src/lib/arcade-racers.ts",
+		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
 	},
 	{
 		id: "mesa-dao",
@@ -166,58 +220,6 @@ export const MINIAPPS: MiniApp[] = [
 			note: "Sin proveedor configurado no se promete ni un sat: el saldo se queda en cero y así se dice.",
 		},
 	},
-	{
-		id: "kart",
-		name: "Kart de la órbita",
-		kind: "arcade",
-		status: "jugable",
-		tagline: "Dos vueltas con deriva: la curva empuja más cuanto más rápido pasas.",
-		controls: "Flechas izquierda y derecha para corregir, espacio para frenar; botones en móvil.",
-		pointsRule: "1000 por vuelta cerrada y hasta 400 por el tramo en curso.",
-		challenge: false,
-		component: "KartRaceGame",
-		engine: "src/lib/arcade-racers.ts",
-		payouts: { rail: "ninguno", state: "sin premios", note: "Puntos de liga locales." },
-	},
-	{
-		id: "chicken-road",
-		name: "Cruce de carriles",
-		kind: "arcade",
-		status: "jugable",
-		tagline: "Nueve filas de tráfico y una gallina que no puede dudar.",
-		controls: "Salta hacia delante y muévete de lado; el tráfico no espera.",
-		pointsRule: "20 por salto, 60 por fila alcanzada y 500 por cruzar.",
-		challenge: false,
-		component: "ChickenCrossGame",
-		engine: "src/lib/arcade-racers.ts",
-		payouts: { rail: "ninguno", state: "sin premios", note: "Puntos de liga locales." },
-	},
-	{
-		id: "lane-clash",
-		name: "Combate por carriles",
-		kind: "arcade",
-		status: "jugable",
-		tagline: "Tres carriles, oleadas que avanzan con cada orden y un escudo de un golpe.",
-		controls: "Muévete de carril, dispara al más cercano y levanta el escudo.",
-		pointsRule: "100 por baja y 50 por oleada superada.",
-		challenge: false,
-		component: "LaneClashGame",
-		engine: "src/lib/arcade-racers.ts",
-		payouts: { rail: "ninguno", state: "sin premios", note: "Puntos de liga locales." },
-	},
-	{
-		id: "mus",
-		name: "Mus",
-		kind: "cartas",
-		status: "jugable",
-		tagline: "Baraja española de 40: descartes, pares, juego y punto a 40 piedras.",
-		controls: "Descarta hasta cuatro cartas, canta y compara los tres lances.",
-		pointsRule: "Una piedra por lance ganado: hasta tres por mano, partida a 40.",
-		challenge: false,
-		component: "MusGame",
-		engine: "src/lib/mus.ts",
-		payouts: { rail: "ninguno", state: "sin premios", note: "Sin apuestas ni saldo: sólo piedras en pantalla." },
-	},
 ];
 
 /** Los que ya se pueden jugar. */
@@ -231,7 +233,10 @@ export function miniAppById(id: string): MiniApp | undefined {
 	return MINIAPPS.find((app) => app.id === id);
 }
 
-/** Ids que el arcade sabe montar hoy; el hub los usa para validar marcas. */
+/**
+ * Ids que puntúan en la liga del servidor. No son todos los jugables: los del
+ * arcade extendido guardan su marca en el navegador y no envían partidas.
+ */
 export const PLAYABLE_IDS: GameId[] = liveMiniApps()
 	.map((app) => app.id)
 	.filter((id): id is GameId => id === "impulse" || id === "memory" || id === "reactor" || id === "veintiuna");
