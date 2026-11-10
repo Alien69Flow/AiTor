@@ -36,14 +36,13 @@ describe("uno", () => {
 
 	it("sólo vale el color de la mesa, el mismo número o un comodín", () => {
 		const state = unoStart(7);
-		const painted = state.hand.map((card) => unoPlayable(state, card));
-		for (const [index, card] of state.hand.entries()) {
+		for (const card of state.hand) {
 			const expected =
 				card.suit === "comodin" ||
 				card.suit === "roba4" ||
 				card.suit === state.color ||
 				baseRank(card) === baseRank(state.discard);
-			expect(painted[index]).toBe(expected);
+			expect(unoPlayable(state, card)).toBe(expected);
 		}
 	});
 
@@ -55,20 +54,24 @@ describe("uno", () => {
 		expect(unoPlay(state, "no-existe")).toBe(state);
 	});
 
-	it("tirar una carta pasa el turno y el bot responde en la misma jugada", () => {
+	it("la carta jugada sale de la mano y el turno vuelve a ti", () => {
 		const state = unoStart(5);
 		const legal = unoLegal(state);
 		if (legal.length === 0) return;
 		const next = unoPlay(state, legal[0].id);
+		// El bot responde en la misma jugada, así que el descarte ya puede ser
+		// suyo; lo que no puede pasar es que la carta siga en tu mano.
 		expect(next.played).toBe(1);
-		expect(next.discard.id).toBe(legal[0].id);
+		expect(next.hand.some((card) => card.id === legal[0].id)).toBe(false);
 		expect(next.turn).toBe(0);
 	});
 
-	it("robar deja la mano con una carta más y el turno en el bot", () => {
+	it("robar suma al menos una carta y deja el turno en el bot", () => {
 		const state = unoStart(9);
 		const next = unoDraw(state);
-		expect(next.hand.length).toBe(state.hand.length + 1);
+		// Si el bot tira un roba-dos o un roba-cuatro, la mano crece más de una.
+		expect(next.hand.length).toBeGreaterThanOrEqual(state.hand.length + 1);
+		expect(next.draw.length).toBeLessThan(state.draw.length);
 		expect(next.turn).toBe(0);
 	});
 
@@ -79,9 +82,8 @@ describe("uno", () => {
 
 	it("vaciar la mano cierra la partida con bonus", () => {
 		const state = unoStart(4);
-		const single = unoPlay(state, state.hand[0].id);
-		const score = unoScore(single);
-		expect(score).toBeGreaterThanOrEqual(0);
+		expect(unoScore(state)).toBe(0);
 		expect(unoScore({ ...state, winner: 0 })).toBe(UNO_WIN_BONUS);
+		expect(unoScore({ ...state, played: 3 })).toBe(60);
 	});
 });
