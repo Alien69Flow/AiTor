@@ -4,7 +4,7 @@ import { SOCCER, createSoccer, soccerScore, soccerStep } from "./head-soccer";
 
 const still = { left: false, right: false, jump: false };
 
- describe("head soccer", () => {
+describe("head soccer", () => {
 	it("saca la pelota al centro y los dos en su campo", () => {
 		const state = createSoccer(1);
 		expect(state.ball.x).toBe(SOCCER.width / 2);
@@ -42,7 +42,8 @@ const still = { left: false, right: false, jump: false };
 		const next = soccerStep(state, still, 0.05);
 		expect(next.score).toEqual([0, 1]);
 		expect(next.ball.x).toBe(SOCCER.width / 2);
-		expect(next.you.x).toBe(next.you.x);
+		expect(next.you.x).toBe(SOCCER.width * 0.25);
+		expect(next.rival.x).toBe(SOCCER.width * 0.75);
 		expect(next.over).toBe(false);
 	});
 
@@ -70,6 +71,7 @@ const still = { left: false, right: false, jump: false };
 		expect(soccerScore(win)).toBe(600 + 200 + 10);
 		expect(soccerScore({ ...createSoccer(1), clock: 30 })).toBe(30);
 	});
+
 	it("el jugador no cruza al campo rival", () => {
 		let state = createSoccer(1);
 		for (let step = 0; step < 60; step += 1) {
