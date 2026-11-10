@@ -19,6 +19,7 @@ const OPENSKY_API = "https://opensky-network.org/api";
 const OPENSKY_TOKEN_URL =
   "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 const ADSB_LOL_API = "https://api.adsb.lol/v2";
+const ADSB_BASE = { url: ADSB_LOL_API };
 
 /** Aircraft as the app consumes it: same shape whichever source answered. */
 interface Flight {
@@ -168,7 +169,7 @@ async function fetchAdsbLol(box: Box, maxRadiusNm = 250): Promise<Flight[]> {
   const radiusNm = Math.min(maxRadiusNm, Math.max(25, Math.ceil(Math.hypot(dLatNm, dLonNm) / 2)));
 
   const response = await fetch(
-    `${ADSB_LOL_API}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
+    `${ADSB_BASE.url}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
     { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) },
   );
   if (!response.ok) throw new Error(`ADSB.lol HTTP ${response.status}`);
