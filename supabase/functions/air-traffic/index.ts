@@ -226,7 +226,6 @@ Deno.serve(async (req) => {
   for (const [name, probe] of [
     ["opensky", fetchOpenSky],
     ["adsb.lol", (b: Box) => fetchAdsbLol(b)],
-    ["airplanes.live", fetchAirplanesLive],
   ] as const) {
     try {
       const result = await probe(box);
@@ -271,9 +270,4 @@ function json(body: unknown, maxAge: number) {
   return new Response(JSON.stringify(body), {
     headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": `public, max-age=${maxAge}` },
   });
-}
-
-/** airplanes.live shares the ADSBexchange v2 schema; third fallback when the others throttle. */
-async function fetchAirplanesLive(box: Box): Promise<Flight[]> {
-  return fetchAdsbLol(box, 250, "https://api.airplanes.live/v2");
 }
