@@ -1,151 +1,213 @@
 /**
- * Uno: motor de turnos sobre la baraja de 108 del módulo de barajas.
+ * UNO del arcade, en funciones puras.
  *
- * Las cuatro reglas que deciden una partida son: se juega a color o a número,
- * el comodín siempre entra, el dos obliga a robar dos y el salto/reversa quita
- * el turno. Con dos jugadores la reversa y el salto hacen lo mismo —el turno
- * vuelve a quien tiró— y por eso se resuelven con la misma rama: no es un atajo,
- * es lo que pasa de verdad en una mesa de dos.
+ * La baraja ya está en `decks.ts` (108 cartas reales: 25 por color, 4 comodines
+ * y 4 roba-cuatro), así que aquí sólo viven las reglas: qué carta se puede
+ * tirar, qué hace cada acción y cuándo se acaba. El rival es un bot que juega
+ * con la misma baraja y las mismas reglas, no una IA aparte.
  *
- * El estado guarda el color activo aparte del descarte porque el comodín no
- * tiene color propio. Sin ese campo, la interfaz tendría que recordar el color
- * elegido por su cuenta y cualquier recarga lo perdería.
+ * Por qué el color viaja en el estado: un comodín no dice de qué color se
+ * juega, lo elige quien lo tira. Guardarlo en `state.color` evita que el
+ * componente tenga que recordarlo y que una recarga cambie la partida.
+ *
+ * Lo que este motor NO hace: cantar «uno» ni penalizar por no hacerlo. Es una
+ * regla de mesa entre personas; con un bot no hay a quién avisar.
  */
 
-import { buildDeck, deal, shuffle, type PlayingCard } from "./decks";
+import { buildDeck, shuffle, type PlayingCard } from "./decks";
 
-export type UnoColor = "rojo" | "amarillo" | "verde" | "azul";
-export const UNO_COLORS: readonly UnoColor[] = ["rojo", "amarillo", "verde", "azul"];
-/** Mano inicial: siete cartas por jugador, como el juego de mesa. */
-export const UNO_HAND = 7;
+/** Cartas en mano al empezar. */
+export const UNO_HAND_SIZE = 5;
+
+/** Puntos por carta colocada. */
+export const UNO_CARD_POINTS = 20;
+
+/** Bonus por quedarse sin cartas. */
+export const UNO_WIN_BONUS = 300;
+
+export const UNO_COLORS = ["rojo", "amarillo", "verde", "azul"] as const;
+export type UnoColor = (typeof UNO_COLORS)[number];
 
 export interface UnoState {
-	hands: [PlayingCard[], PlayingCard[]];
-	drawPile: PlayingCard[];
-	discard: PlayingCard[];
-	/** Color que hay que igualar ahora mismo. */
+	hand: PlayingCard[];
+	rival: PlayingCard[];
+	draw: PlayingCard[];
+	/** Carta boca arriba que manda el color o el número. */
+	discard: PlayingCard;
+	/** Color en juego; en un comodín lo decide quien lo tira. */
 	color: UnoColor;
 	turn: 0 | 1;
+	/** Cartas que has colocado: de aquí sale la puntuación. */
+	played: number;
+	finished: boolean;
 	winner: 0 | 1 | null;
-	seed: number;
 }
 
-const isWild = (card: PlayingCard) => card.suit === "comodin" || card.suit === "roba4";
-/** `5a` y `5b` son el mismo cinco: el sufijo sólo evita identificadores repetidos. */
-const baseRank = (card: PlayingCard) => card.rank.replace(/[ab]$/, "");
-
-const top = (cards: PlayingCard[]): PlayingCard | undefined => cards[cards.length - 1];
-
-/** ¿Entra esta carta sobre la mesa actual? */
-export function canPlay(card: PlayingCard, current: { color: UnoColor; top?: PlayingCard }): boolean {
-	if (isWild(card)) return true;
-	if (current.color === card.suit) return true;
-	return Boolean(current.top) && baseRank(current.top as PlayingCard) === baseRank(card);
+/** `3a` y `3b` son el mismo número: el sufijo sólo evita dos ids iguales. */
+export function baseRank(card: PlayingCard): string {
+	return card.rank.replace(/[ab]$/, "");
 }
 
-export function createUno(seed = 1): UnoState {
-	const deck = shuffle(buildDeck("uno"), seed);
-	const { hands, rest } = deal(deck, 2, UNO_HAND);
-
-	// La primera carta no puede ser comodín: nadie ha elegido color todavía.
-	const startIndex = rest.findIndex((card) => !isWild(card));
-	const index = startIndex < 0 ? 0 : startIndex;
-	const start = rest[index];
-	const drawPile = rest.filter((_, position) => position !== index);
-
-	return {
-		hands: [hands[0] ?? [], hands[1] ?? []],
-		drawPile,
-		discard: start ? [start] : [],
-		color: (start?.suit as UnoColor) ?? "rojo",
-		turn: 0,
-		winner: null,
-		seed,
-	};
+function isWild(card: PlayingCard): boolean {
+	return card.suit === "comodin" || card.suit === "roba4";
 }
 
-/** Roba del mazo; si se agota, recicla el descarte menos su carta de arriba. */
-function takeCard(
-	pile: PlayingCard[],
-	discard: PlayingCard[],
-	seed: number,
-): [PlayingCard | null, PlayingCard[]] {
-	if (pile.length) return [pile[0], pile.slice(1)];
-	if (discard.length <= 1) return [null, pile];
-	const recycled = shuffle(discard.slice(0, -1), seed);
-	return [recycled[0] ?? null, recycled.slice(1)];
+function isColored(card: PlayingCard): card is PlayingCard & { suit: UnoColor } {
+	return (UNO_COLORS as readonly string[]).includes(card.suit);
+}
+
+/** Color que más se repite en una mano; sin cartas de color, rojo. */
+function pickColor(cards: readonly PlayingCard[]): UnoColor {
+	const counts = new Map<string, number>();
+	for (const card of cards) {
+		if (isColored(card)) counts.set(card.suit, (counts.get(card.suit) ?? 0) + 1);
+	}
+	let best: UnoColor = "rojo";
+	let bestCount = 0;
+	for (const color of UNO_COLORS) {
+		const count = counts.get(color) ?? 0;
+		if (count > bestCount) {
+			best = color;
+			bestCount = count;
+		}
+	}
+	return best;
 }
 
 /**
- * Juega una carta del jugador al que le toca.
+ * Partida nueva.
  *
- * Un comodín sin color elegido no se acepta: dejarlo pasar pondría la mesa en un
- * color que no existe y la siguiente jugada sería imposible de calcular.
- *
- * El roba dos y el roba cuatro sacan cartas del mazo, así que el mazo que se
- * devuelve es el que queda tras esos robos. Devolver el original duplicaría las
- * cartas: aparecerían en la mano del rival y otra vez en el montón.
+ * La primera carta del descarte tiene que ser un número: si saliera un
+ * comodín, la mesa empezaría pidiendo un color que nadie ha elegido.
  */
-export function playUno(state: UnoState, cardId: string, chosenColor?: UnoColor): UnoState {
-	if (state.winner !== null) return state;
-	const hand = state.hands[state.turn];
-	const card = hand.find((entry) => entry.id === cardId);
-	if (!card) return state;
-	if (!canPlay(card, { color: state.color, top: top(state.discard) })) return state;
-	if (isWild(card) && (!chosenColor || !UNO_COLORS.includes(chosenColor))) return state;
+export function unoStart(seed = 1): UnoState {
+	const deck = shuffle(buildDeck("uno"), seed);
+	const opening = deck.findIndex((card) => isColored(card) && /^\d/.test(card.rank));
+	const start = opening < 0 ? 0 : opening;
+	const first = deck[start];
+	const rest = [...deck.slice(0, start), ...deck.slice(start + 1)];
 
-	const discard = [...state.discard, card];
-	let hands: [PlayingCard[], PlayingCard[]] = [
-		state.hands[0].filter((entry) => entry.id !== cardId),
-		state.hands[1].filter((entry) => entry.id !== cardId),
-	];
-	let pile = state.drawPile;
-	const color: UnoColor = isWild(card) && chosenColor ? chosenColor : (card.suit as UnoColor);
-	const rank = isWild(card) ? card.suit : baseRank(card);
-
-	const opponent = (1 - state.turn) as 0 | 1;
-	let turn: 0 | 1 = opponent;
-
-	// El roba dos y el roba cuatro roban y además quitan el turno.
-	const forced = rank === "roba2" ? 2 : rank === "roba4" ? 4 : 0;
-	if (forced > 0) {
-		const drawn = [...hands[opponent]];
-		for (let count = 0; count < forced; count += 1) {
-			const [next, rest] = takeCard(pile, discard, state.seed + count);
-			if (!next) break;
-			pile = rest;
-			drawn.push(next);
-		}
-		hands = opponent === 0 ? [drawn, hands[1]] : [hands[0], drawn];
-		turn = state.turn;
-	}
-
-	// Salto y reversa: con dos jugadores el turno se queda donde está.
-	if (rank === "salta" || rank === "reversa") turn = state.turn;
-
-	const winner = hands[state.turn].length === 0 ? state.turn : null;
+	const hand = rest.slice(0, UNO_HAND_SIZE);
+	const rival = rest.slice(UNO_HAND_SIZE, UNO_HAND_SIZE * 2);
+	const draw = rest.slice(UNO_HAND_SIZE * 2);
 
 	return {
-		...state,
-		hands,
-		drawPile: pile,
-		discard,
-		color,
-		turn: winner === null ? turn : state.turn,
-		winner,
+		hand,
+		rival,
+		draw,
+		discard: first,
+		color: isColored(first) ? first.suit : "rojo",
+		turn: 0,
+		played: 0,
+		finished: false,
+		winner: null,
 	};
 }
 
-/** Roba una carta y pasa el turno. */
-export function drawUno(state: UnoState): UnoState {
-	if (state.winner !== null) return state;
-	const [card, pile] = takeCard(state.drawPile, state.discard, state.seed + 1);
-	if (!card) return state;
+/** ¿Vale esta carta sobre la mesa actual? Comodín y roba-cuatro, siempre. */
+export function unoPlayable(state: UnoState, card: PlayingCard): boolean {
+	if (isWild(card)) return true;
+	if (card.suit === state.color) return true;
+	return baseRank(card) === baseRank(state.discard);
+}
 
-	const hands: [PlayingCard[], PlayingCard[]] = [
-		state.turn === 0 ? [...state.hands[0], card] : state.hands[0],
-		state.turn === 1 ? [...state.hands[1], card] : state.hands[1],
-	];
+/** Cartas que puedes tirar ahora. */
+export function unoLegal(state: UnoState): PlayingCard[] {
+	if (state.finished || state.turn !== 0) return [];
+	return state.hand.filter((card) => unoPlayable(state, card));
+}
 
-	return { ...state, hands, drawPile: pile, turn: (1 - state.turn) as 0 | 1 };
+function afterPlay(state: UnoState, card: PlayingCard): UnoState {
+	const hand = state.hand.filter((entry) => entry.id !== card.id);
+	const color = isWild(card) ? pickColor(hand) : isColored(card) ? card.suit : state.color;
+
+	let rival = state.rival;
+	let draw = state.draw;
+	if (card.suit === "roba4" || baseRank(card) === "roba2") {
+		const take = card.suit === "roba4" ? 4 : 2;
+		rival = [...rival, ...draw.slice(0, take)];
+		draw = draw.slice(take);
+	}
+
+	const base: UnoState = {
+		...state,
+		hand,
+		rival,
+		draw,
+		discard: card,
+		color,
+		played: state.played + 1,
+	};
+
+	if (hand.length === 0) return { ...base, finished: true, winner: 0 };
+	return { ...base, turn: 1 };
+}
+
+/**
+ * Turno del bot: tira si puede y, si no, roba una y pasa.
+ *
+ * No vuelve a llamar a `unoPlay` a propósito: con dos jugadores basta un
+ * intercambio por jugada, y una llamada cruzada sería un bucle esperando a que
+ * alguien tenga carta.
+ */
+export function unoBot(state: UnoState): UnoState {
+	if (state.finished || state.turn !== 1) return state;
+
+	const card = state.rival.find((entry) => unoPlayable(state, entry));
+	if (!card) {
+		const next = state.draw[0];
+		if (!next) return { ...state, turn: 0 };
+		return { ...state, rival: [...state.rival, next], draw: state.draw.slice(1), turn: 0 };
+	}
+
+	const rival = state.rival.filter((entry) => entry.id !== card.id);
+	const color = isWild(card) ? pickColor(rival) : isColored(card) ? card.suit : state.color;
+
+	let hand = state.hand;
+	let draw = state.draw;
+	if (card.suit === "roba4" || baseRank(card) === "roba2") {
+		const take = card.suit === "roba4" ? 4 : 2;
+		hand = [...hand, ...draw.slice(0, take)];
+		draw = draw.slice(take);
+	}
+
+	const base: UnoState = {
+		...state,
+		hand,
+		rival,
+		draw,
+		discard: card,
+		color,
+		turn: 0,
+	};
+
+	if (rival.length === 0) return { ...base, finished: true, winner: 1 };
+	return base;
+}
+
+/**
+ * Juega una carta. Una jugada ilegal no lanza ni cambia nada: devuelve el
+ * mismo estado, igual que el resto de motores de la pestaña.
+ */
+export function unoPlay(state: UnoState, cardId: string): UnoState {
+	if (state.finished || state.turn !== 0) return state;
+	const card = state.hand.find((entry) => entry.id === cardId);
+	if (!card || !unoPlayable(state, card)) return state;
+
+	const played = afterPlay(state, card);
+	if (played.finished) return played;
+	return unoBot(played);
+}
+
+/** Robar: el turno pasa al bot aunque la carta robada se pudiera tirar. */
+export function unoDraw(state: UnoState): UnoState {
+	if (state.finished || state.turn !== 0) return state;
+	const next = state.draw[0];
+	if (!next) return state;
+	return unoBot({ ...state, hand: [...state.hand, next], draw: state.draw.slice(1), turn: 1 });
+}
+
+/** Puntos de la partida: cartas colocadas y bonus por vaciar la mano. */
+export function unoScore(state: UnoState): number {
+	return state.played * UNO_CARD_POINTS + (state.winner === 0 ? UNO_WIN_BONUS : 0);
 }
