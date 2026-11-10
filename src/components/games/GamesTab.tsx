@@ -28,7 +28,11 @@ import {
 import type { GameId } from "@/lib/mini-games";
 import { KIND_LABEL, MINIAPPS, plannedMiniApps } from "@/lib/miniapps";
 import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
-import { ChickenCrossGame, KartRaceGame, LaneClashGame, MusGame } from "./ArcadeRacers";
+import { ClashGame } from "./ClashGame";
+import { CruceGame } from "./CruceGame";
+import { EscaleraGame } from "./EscaleraGame";
+import { FlappyGame } from "./FlappyGame";
+import { KartGame } from "./KartGame";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
@@ -54,7 +58,6 @@ type LeagueState =
 	| { status: "error" };
 
 type Section = "arcade" | "reto" | "liga" | "gamefi" | "modulos";
-
 const SECTIONS: { id: Section; label: string; icon: typeof Gamepad2 }[] = [
 	{ id: "arcade", label: "Arcade", icon: Gamepad2 },
 	{ id: "reto", label: "Reto del día", icon: Target },
@@ -62,7 +65,6 @@ const SECTIONS: { id: Section; label: string; icon: typeof Gamepad2 }[] = [
 	{ id: "gamefi", label: "GameFi", icon: Coins },
 	{ id: "modulos", label: "Módulos", icon: Layers },
 ];
-
 const product = (id: string) => PRODUCTS.find((entry) => entry.id === id);
 
 function Chip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
@@ -188,7 +190,6 @@ export function GamesTab() {
 		rank.next && rank.next.min > rank.min
 			? Math.min(100, Math.round(((profile.points - rank.min) / (rank.next.min - rank.min)) * 100))
 			: 100;
-
 	const playHub = product("adex");
 	const engine = product("ace");
 	const dao = product("dao");
@@ -211,7 +212,7 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: siete juegos que corren enteros en el navegador, un reto
+					Arcade del ecosistema: nueve juegos que corren enteros en el navegador, un reto
 					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
@@ -273,10 +274,11 @@ export function GamesTab() {
 							onRun={handleRun}
 						/>
 						<VeintiunaGame best={profile.best.veintiuna} onRun={handleRun} />
-						<KartRaceGame />
-						<ChickenCrossGame />
-						<LaneClashGame />
-						<MusGame />
+						<EscaleraGame />
+						<FlappyGame />
+						<KartGame />
+						<CruceGame />
+						<ClashGame />
 					</div>
 				)}
 
@@ -326,6 +328,7 @@ export function GamesTab() {
 								<li>· Un pulso perfecto son 100 puntos, uno bueno 40, y cada acierto seguido suma 10 más (hasta 8).</li>
 								<li>· En memoria, cada ronda completada son 40 puntos de liga.</li>
 								<li>· En reactor, 100 por pareja acertada más 10 por segundo restante y 10 por combo.</li>
+								<li>· Escalera, OVNI, kart, cruce y escuadrón guardan su marca en el navegador: no envían partidas.</li>
 								<li>· La racha cuenta días seguidos con al menos una partida, no partidas.</li>
 							</ul>
 						</div>
@@ -340,7 +343,6 @@ export function GamesTab() {
 							<Chip label="Puntos" value={String(profile.points)} />
 							<Chip label="Últimas" value={`${ladder.length}/${HISTORY_LIMIT}`} />
 						</div>
-
 						{/* Clasificación real: la calcula el servidor, no el navegador. */}
 						<div className="rounded-xl border border-primary/30 bg-primary/5">
 							<header className="flex items-center gap-2 border-b border-primary/20 px-3 py-2">
@@ -404,7 +406,6 @@ export function GamesTab() {
 								</p>
 							)}
 						</div>
-
 						<h3 className="font-heading text-[10px] uppercase tracking-widest text-muted-foreground/60">
 							Tu historial local
 						</h3>
@@ -436,7 +437,6 @@ export function GamesTab() {
 								))}
 							</ol>
 						)}
-
 						<p className="font-mono text-[9px] leading-relaxed text-muted-foreground/45">
 							Arriba manda la tabla del servidor (Postgres, una fila por partida). Abajo queda
 							tu historial del navegador, que funciona sin sesión. La competición del ecosistema
@@ -605,10 +605,7 @@ export function GamesTab() {
 
 						<div className="grid gap-2 sm:grid-cols-2">
 							{MINIAPPS.map((app) => (
-								<article
-									key={app.id}
-									className="rounded-xl border border-border/40 bg-card/40 p-3"
-								>
+								<article key={app.id} className="rounded-xl border border-border/40 bg-card/40 p-3">
 									<header className="flex flex-wrap items-center gap-1.5">
 										<h3 className="font-heading text-[10px] uppercase tracking-widest text-foreground/85">
 											{app.name}
