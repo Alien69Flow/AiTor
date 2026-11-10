@@ -32,6 +32,8 @@ import { ChickenCrossGame, KartRaceGame, LaneClashGame, MusGame } from "./Arcade
 import { EscaleraGame } from "./EscaleraGame";
 import { FlappyGame } from "./FlappyGame";
 import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
+import { RouletteGame } from "./RouletteGame";
+import { UnoGame } from "./UnoGame";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
@@ -211,7 +213,7 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: diez juegos que corren enteros en el navegador, un reto
+					Arcade del ecosistema: doce juegos que corren enteros en el navegador, un reto
 					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
@@ -273,6 +275,7 @@ export function GamesTab() {
 							onRun={handleRun}
 						/>
 						<VeintiunaGame best={profile.best.veintiuna} onRun={handleRun} />
+						<UnoGame best={readArcadeBest("uno")} onRun={(score) => saveArcadeBest("uno", score)} />
 						<EscaleraGame />
 						<FlappyGame />
 						<KartRaceGame best={readArcadeBest("kart")} onRun={(score) => saveArcadeBest("kart", score)} />
@@ -285,6 +288,10 @@ export function GamesTab() {
 							onRun={(score) => saveArcadeBest("lane-clash", score)}
 						/>
 						<MusGame best={readArcadeBest("mus")} onRun={(score) => saveArcadeBest("mus", score)} />
+						<RouletteGame
+							best={readArcadeBest("ruleta")}
+							onRun={(score) => saveArcadeBest("ruleta", score)}
+						/>
 					</div>
 				)}
 
@@ -334,7 +341,7 @@ export function GamesTab() {
 								<li>· Un pulso perfecto son 100 puntos, uno bueno 40, y cada acierto seguido suma 10 más (hasta 8).</li>
 								<li>· En memoria, cada ronda completada son 40 puntos de liga.</li>
 								<li>· En reactor, 100 por pareja acertada más 10 por segundo restante y 10 por combo.</li>
-								<li>· Escalera, OVNI, kart, cruce, escuadrón y mus guardan su marca en el navegador: no envían partidas.</li>
+								<li>· Escalera, OVNI, UNO, kart, cruce, escuadrón, mus y ruleta guardan su marca en el navegador: no envían partidas.</li>
 								<li>· La racha cuenta días seguidos con al menos una partida, no partidas.</li>
 							</ul>
 						</div>
