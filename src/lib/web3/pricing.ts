@@ -15,8 +15,15 @@ import {
 	type PayToken,
 } from "../../../supabase/functions/_shared/pricing";
 
-export { monthlyEquivalent, synapsePriceLabel } from "../../../supabase/functions/_shared/pricing";
-export { formatPrice, NFT_DOMAIN, PAYMENT_DOMAIN, PRICE_VERSION } from "../../../supabase/functions/_shared/pricing";
+export {
+	cyclePrice,
+	formatPrice,
+	monthlyEquivalent,
+	NFT_DOMAIN,
+	PAYMENT_DOMAIN,
+	PRICE_VERSION,
+	synapsePriceLabel,
+} from "../../../supabase/functions/_shared/pricing";
 export type { BillingCycle, PayChain, PayToken };
 
 export interface TokenInfo {
