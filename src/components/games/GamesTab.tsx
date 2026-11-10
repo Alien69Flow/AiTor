@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { DAOS, DOMAINS, GAMEFI_TRACKS, NFT_PROFILES, PRODUCTS } from "@/lib/ecosystem";
 import { authClient } from "@/integrations/supabase/client";
+import { readArcadeBest, saveArcadeBest } from "@/lib/arcade-best";
 import {
 	HISTORY_LIMIT,
 	REWARDS_NOTE,
@@ -27,12 +28,10 @@ import {
 } from "@/lib/games-hub";
 import type { GameId } from "@/lib/mini-games";
 import { KIND_LABEL, MINIAPPS, plannedMiniApps } from "@/lib/miniapps";
-import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
-import { ClashGame } from "./ClashGame";
-import { CruceGame } from "./CruceGame";
+import { ChickenCrossGame, KartRaceGame, LaneClashGame, MusGame } from "./ArcadeRacers";
 import { EscaleraGame } from "./EscaleraGame";
 import { FlappyGame } from "./FlappyGame";
-import { KartGame } from "./KartGame";
+import { ImpulseGame, MemoryGame, ReactorGame, VeintiunaGame } from "./GamesArcade";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
@@ -212,7 +211,7 @@ export function GamesTab() {
 					)}
 				</div>
 				<p className="mt-1 max-w-2xl font-mono text-[10px] leading-relaxed text-muted-foreground/60">
-					Arcade del ecosistema: nueve juegos que corren enteros en el navegador, un reto
+					Arcade del ecosistema: diez juegos que corren enteros en el navegador, un reto
 					diario reproducible y la liga de la temporada en el servidor del proyecto.
 				</p>
 
@@ -276,9 +275,16 @@ export function GamesTab() {
 						<VeintiunaGame best={profile.best.veintiuna} onRun={handleRun} />
 						<EscaleraGame />
 						<FlappyGame />
-						<KartGame />
-						<CruceGame />
-						<ClashGame />
+						<KartRaceGame best={readArcadeBest("kart")} onRun={(score) => saveArcadeBest("kart", score)} />
+						<ChickenCrossGame
+							best={readArcadeBest("chicken-road")}
+							onRun={(score) => saveArcadeBest("chicken-road", score)}
+						/>
+						<LaneClashGame
+							best={readArcadeBest("lane-clash")}
+							onRun={(score) => saveArcadeBest("lane-clash", score)}
+						/>
+						<MusGame best={readArcadeBest("mus")} onRun={(score) => saveArcadeBest("mus", score)} />
 					</div>
 				)}
 
@@ -328,7 +334,7 @@ export function GamesTab() {
 								<li>· Un pulso perfecto son 100 puntos, uno bueno 40, y cada acierto seguido suma 10 más (hasta 8).</li>
 								<li>· En memoria, cada ronda completada son 40 puntos de liga.</li>
 								<li>· En reactor, 100 por pareja acertada más 10 por segundo restante y 10 por combo.</li>
-								<li>· Escalera, OVNI, kart, cruce y escuadrón guardan su marca en el navegador: no envían partidas.</li>
+								<li>· Escalera, OVNI, kart, cruce, escuadrón y mus guardan su marca en el navegador: no envían partidas.</li>
 								<li>· La racha cuenta días seguidos con al menos una partida, no partidas.</li>
 							</ul>
 						</div>
