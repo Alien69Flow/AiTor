@@ -212,6 +212,13 @@ Deno.serve(async (req) => {
     lomax: Number(url.searchParams.get("lomax") ?? 30),
   };
 
+  const key = `${box.lamin},${box.lamax},${box.lomin},${box.lomax}`;
+  const hit = CACHE.get(key);
+  // Serve a fresh cache hit without touching the rate-limited upstreams.
+  if (hit && Date.now() - hit.at < FRESH_MS) {
+    return json({ ...hit.body, cached: true }, 120);
+  }
+
   const failed: string[] = [];
   let flights: Flight[] = [];
   let source: string | null = null;
@@ -219,6 +226,7 @@ Deno.serve(async (req) => {
   for (const [name, probe] of [
     ["opensky", fetchOpenSky],
     ["adsb.lol", fetchAdsbLol],
+    ["airplanes.live", fetchAirplanesLive],
   ] as const) {
     try {
       const result = await probe(box);
@@ -234,6 +242,11 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Every upstream failed: reuse the last real answer (up to 15 min) marked stale.
+  if (!flights.length && hit && Date.now() - hit.at < STALE_MS) {
+    return json({ ...hit.body, stale: true, reason: failed.join(" · ") }, 60);
+  }
+
   const body = {
     count: flights.length,
     flights,
@@ -246,11 +259,27 @@ Deno.serve(async (req) => {
     timestamp: new Date().toISOString(),
   };
 
-  return new Response(JSON.stringify(body), {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-      "Cache-Control": `public, max-age=${flights.length ? 120 : 60}`,
-    },
-  });
+  if (flights.length) CACHE.set(key, { at: Date.now(), body });
+  return json(body, flights.length ? 120 : 60);
 });
+
+const FRESH_MS = 90_000;
+const STALE_MS = 15 * 60_000;
+const CACHE = new Map<string, { at: number; body: Record<string, unknown> }>();
+
+function json(body: unknown, maxAge: number) {
+  return new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": `public, max-age=${maxAge}` },
+  });
+}
+
+/** airplanes.live shares the ADSBexchange v2 schema; third fallback when the others throttle. */
+async function fetchAirplanesLive(box: Box): Promise<Flight[]> {
+  const prev = ADSB_BASE.url;
+  ADSB_BASE.url = "https://api.airplanes.live/v2";
+  try {
+    return await fetchAdsbLol(box);
+  } finally {
+    ADSB_BASE.url = prev;
+  }
+}
