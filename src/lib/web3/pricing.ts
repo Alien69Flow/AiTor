@@ -16,7 +16,7 @@ import {
 } from "../../../supabase/functions/_shared/pricing";
 
 export { monthlyEquivalent, synapsePriceLabel } from "../../../supabase/functions/_shared/pricing";
-export { NFT_DOMAIN, PAYMENT_DOMAIN, PRICE_VERSION } from "../../../supabase/functions/_shared/pricing";
+export { formatPrice, NFT_DOMAIN, PAYMENT_DOMAIN, PRICE_VERSION } from "../../../supabase/functions/_shared/pricing";
 export type { BillingCycle, PayChain, PayToken };
 
 export interface TokenInfo {

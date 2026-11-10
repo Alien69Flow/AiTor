@@ -5,6 +5,7 @@ import {
 	PAY_CHAINS,
 	PRICE_VERSION,
 	cyclePrice,
+	formatPrice,
 	monthlyEquivalent,
 	synapsePriceLabel,
 } from "./pricing";
@@ -28,8 +29,16 @@ describe("precios de los planes", () => {
 		expect(monthlyEquivalent("yearly")).toBe(8.25);
 	});
 
-	it("la etiqueta del plan sale del precio, no de un texto aparte", () => {
-		expect(synapsePriceLabel()).toBe("desde 8,25 USDC / mes");
+	it("la etiqueta del plan sale del ciclo más barato por mes", () => {
+		// 24 / 3 = 8 gana a 99 / 12 = 8,25: el trimestral es el más barato.
+		expect(Math.min(...(Object.keys(BILLING_CYCLES) as (keyof typeof BILLING_CYCLES)[]).map(monthlyEquivalent))).toBe(8);
+		expect(synapsePriceLabel()).toBe("desde 8 USDC / mes");
+	});
+
+	it("formatea con coma y sin decimales de relleno", () => {
+		expect(formatPrice(8)).toBe("8");
+		expect(formatPrice(8.25)).toBe("8,25");
+		expect(formatPrice(9.5)).toBe("9,5");
 	});
 
 	it("no se cobra un ciclo inventado", () => {
