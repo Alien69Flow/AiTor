@@ -19,7 +19,7 @@ describe("registro de miniapps", () => {
 		}
 	});
 
-	it("el arcade monta doce juegos y la liga sólo puntúa los cuatro de siempre", () => {
+	it("el arcade monta quince juegos y la liga sólo puntúa los cuatro de siempre", () => {
 		const live = liveMiniApps().map((app) => app.id);
 		expect(live).toEqual([
 			"impulse",
@@ -33,9 +33,12 @@ describe("registro de miniapps", () => {
 			"chicken-road",
 			"lane-clash",
 			"mus",
+			"guinote",
 			"ruleta",
+			"head-soccer",
+			"party",
 		]);
-		// Los ocho del arcade extendido se juegan en la pestaña pero no son
+		// Los once del arcade extendido se juegan en la pestaña pero no son
 		// `GameId`: no entran en la liga, ni en /api/games, ni en los pagos.
 		expect(PLAYABLE_IDS).toEqual(["impulse", "memory", "reactor", "veintiuna"]);
 		for (const id of PLAYABLE_IDS) expect(live).toContain(id);
