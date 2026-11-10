@@ -2,10 +2,10 @@
  * Registro de miniapps: el contrato que comparten todos los módulos del arcade.
  *
  * Un módulo no es una carpeta con un componente suelto: es una ficha aquí, un
- * motor puro en `src/lib` y una tarjeta en `GamesArcade` o en su propio fichero
- * dentro de `components/games`. Añadir una carta, un plataformas o una mina
- * consiste en escribir el motor, probarlo y añadir la ficha; la pestaña los
- * lista sin cambios.
+ * motor puro en `src/lib` y una tarjeta en `GamesArcade`, en `ArcadeRacers` o en
+ * su propio fichero dentro de `components/games`. Añadir una carta, un
+ * plataformas o una mina consiste en escribir el motor, probarlo y añadir la
+ * ficha; la pestaña los monta.
  *
  * Lo que paga y lo que no se declara explícitamente: hoy ningún módulo mueve
  * dinero, y una ficha con premios reales no puede entrar sin riel, custodia y
@@ -13,9 +13,10 @@
  */
 
 import type { GameId } from "./mini-games";
+
 export type MiniAppKind = "arcade" | "cartas" | "casino" | "plataformas" | "mineria";
 
-/** `jugable` = se puede jugar ya; `diseñado` = ficha y reglas, sin motor montado. */
+/** `jugable` = se puede jugar ya; `diseñado` = ficha y reglas, sin motor todavía. */
 export type MiniAppStatus = "jugable" | "diseñado";
 
 /** Riel de pago. `ninguno` es el estado real de todo lo jugable hoy. */
@@ -24,7 +25,7 @@ export type PayoutRail = "ninguno" | "sats" | "ton";
 export type PayoutState = "sin premios" | "diseñado" | "activo";
 
 export interface MiniApp {
-	/** Identificador estable; coincide con `GameId` en los módulos de la liga. */
+	/** Identificador estable; coincide con `GameId` en los módulos jugables. */
 	id: string;
 	name: string;
 	kind: MiniAppKind;
@@ -146,43 +147,56 @@ export const MINIAPPS: MiniApp[] = [
 		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
 	},
 	{
-		id: "kart-orbital",
-		name: "Kart orbital",
+		id: "kart",
+		name: "Kart de la órbita",
 		kind: "arcade",
 		status: "jugable",
-		tagline: "Dos vueltas con deriva: la curva empuja más cuanto más rápido vas.",
-		controls: "Flechas para el volante; la deriva te saca de pista.",
+		tagline: "Dos vueltas con deriva: la curva empuja más cuanto más rápido pasas.",
+		controls: "Flechas izquierda y derecha para corregir, espacio para frenar; botones en móvil.",
 		pointsRule: "1000 por vuelta cerrada y hasta 400 por el tramo en curso.",
 		challenge: false,
-		component: "KartGame",
+		component: "KartRaceGame",
 		engine: "src/lib/arcade-racers.ts",
 		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
 	},
 	{
-		id: "cruce-alien",
-		name: "Cruce alienígena",
+		id: "chicken-road",
+		name: "Cruce de carriles",
 		kind: "arcade",
 		status: "jugable",
-		tagline: "Nueve carriles de tráfico determinista y una meta que paga 500.",
-		controls: "Salta de carril en carril antes de que llegue el coche.",
-		pointsRule: "20 por salto, 60 por carril nuevo y 500 por cruzar entero.",
+		tagline: "Nueve filas de tráfico y una gallina que no puede dudar.",
+		controls: "Salta hacia delante y muévete de lado; el tráfico no espera.",
+		pointsRule: "20 por salto, 60 por fila alcanzada y 500 por cruzar.",
 		challenge: false,
-		component: "CruceGame",
+		component: "ChickenCrossGame",
 		engine: "src/lib/arcade-racers.ts",
 		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
 	},
 	{
-		id: "escuadron-alien",
-		name: "Escuadrón en carriles",
+		id: "lane-clash",
+		name: "Combate por carriles",
 		kind: "arcade",
 		status: "jugable",
-		tagline: "Combate por carriles con oleadas que salen de la semilla.",
-		controls: "Muévete de carril, dispara al más cercano y escúdate.",
-		pointsRule: "100 por baja y 50 por cada oleada superada.",
+		tagline: "Tres carriles, oleadas que avanzan con cada orden y un escudo de un golpe.",
+		controls: "Muévete de carril, dispara al más cercano y levanta el escudo.",
+		pointsRule: "100 por baja y 50 por oleada superada.",
 		challenge: false,
-		component: "ClashGame",
+		component: "LaneClashGame",
 		engine: "src/lib/arcade-racers.ts",
 		payouts: { rail: "ninguno", state: "sin premios", note: LOCAL_NOTE },
+	},
+	{
+		id: "mus",
+		name: "Mus",
+		kind: "cartas",
+		status: "jugable",
+		tagline: "Baraja española de 40: descartes, pares, juego y punto a 40 piedras.",
+		controls: "Descarta hasta cuatro cartas, canta y compara los tres lances.",
+		pointsRule: "Una piedra por lance ganado: hasta tres por mano, partida a 40.",
+		challenge: false,
+		component: "MusGame",
+		engine: "src/lib/mus.ts",
+		payouts: { rail: "ninguno", state: "sin premios", note: "Sin apuestas ni saldo: sólo piedras en pantalla." },
 	},
 	{
 		id: "mesa-dao",
