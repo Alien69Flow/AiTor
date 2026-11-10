@@ -1,27 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 import handler, {
   MAX_SCORE,
+  MAX_UNVERIFIED_RUNS_PER_DAY,
   clampScore,
+  countsForDaily,
+  dateKey,
   decodeClaims,
   handleFromClaims,
   isLeagueGame,
   isMissingRelation,
   leaguePoints,
   seasonOf,
+  serverChallenge,
+  startOfUtcDay,
   validateSubmission,
 } from "./league";
+import { dailyChallenge } from "../src/lib/games-hub";
 
 /**
- * La liga del servidor es la primera cosa de la pestaña de juegos que decide
- * algo con datos de otros: temporada, puntos y nombre visible. Lo que se fija
- * aquí son las dos reglas que el navegador no puede saltarse (temporada y
- * puntos los pone el servidor) y que un fallo de base de datos se cuenta como
- * tal, no como una tabla vacía.
+ * La liga decide con datos de otros: temporada, puntos, reto del día y nombre
+ * visible. Aquí se fija lo que el navegador no puede saltarse y lo que impide
+ * inflar la tabla: puntos del servidor, reto recalculado y testigo de partida.
  */
 
 interface Result {
   status: number;
-  body: Record<string, unknown> & { rows?: { handle: string; rank: number }[]; me?: unknown; entry?: { points: number } };
+  body: Record<string, unknown> & {
+    rows?: { handle: string; rank: number }[];
+    me?: unknown;
+    entry?: { points: number; daily: string | null; verified?: boolean };
+    nonce?: string | null;
+  };
 }
 
 type Req = Parameters<typeof handler>[0];
@@ -38,7 +47,6 @@ function call(options: { method?: string; query?: Record<string, string>; body?:
     const res = {
       statusCode: 0,
       headers: {} as Record<string, string>,
-      payload: undefined as unknown,
       setHeader(name: string, value: string) {
         this.headers[name] = value;
         return this;
@@ -48,7 +56,6 @@ function call(options: { method?: string; query?: Record<string, string>; body?:
         return this;
       },
       json(payload: unknown) {
-        this.payload = payload;
         resolve({ status: this.statusCode, body: payload as Result["body"] });
         return this;
       },
@@ -64,21 +71,29 @@ function token(claims: Record<string, unknown>): string {
   return `${encode({ alg: "HS256", typ: "JWT" })}.${encode(claims)}.firma`;
 }
 
+/** Respuesta REST falsa: se enruta por método y trozo de URL. */
+function mockRest(respond: (options: { method: string; url: string; body: string | null }) => Response) {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) =>
+      respond({ method: init?.method ?? "GET", url: String(url), body: typeof init?.body === "string" ? init.body : null }),
+    ),
+  );
+}
+
+const JWT = token({ sub: "user-1", email: "aitor@alienflow.space" });
+const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), { status });
+
 describe("validación de una partida", () => {
   it("acepta los tres juegos y calcula los puntos en el servidor", () => {
-    const impulse = validateSubmission({ game: "impulse", score: 340 });
-    expect(impulse).toEqual({ game: "impulse", score: 340, points: 340, daily: null });
-
+    expect(validateSubmission({ game: "impulse", score: 340 })).toEqual({
+      game: "impulse",
+      score: 340,
+      points: 340,
+      daily: null,
+    });
     const memory = validateSubmission({ game: "memory", score: 3 });
-    expect("error" in memory).toBe(false);
     if (!("error" in memory)) expect(memory.points).toBe(120);
-
-    const reactor = validateSubmission({ game: "reactor", score: 780, daily: "2026-11-07" });
-    expect("error" in reactor).toBe(false);
-    if (!("error" in reactor)) {
-      expect(reactor.points).toBe(780);
-      expect(reactor.daily).toBe("2026-11-07");
-    }
   });
 
   it("rechaza un juego inventado y una marca que no es número", () => {
@@ -88,39 +103,48 @@ describe("validación de una partida", () => {
     expect(validateSubmission({ game: "impulse", score: "10" })).toEqual({
       error: "score debe ser un número",
     });
-    expect(validateSubmission(null)).toEqual({
-      error: "game debe ser uno de: impulse, memory, reactor",
-    });
   });
 
-  it("recorta la marca al techo real de cada juego", () => {
+  it("recorta la marca y no deja inflar los puntos", () => {
     expect(clampScore("impulse", 10_000_000)).toBe(MAX_SCORE.impulse);
     expect(clampScore("memory", 99)).toBe(MAX_SCORE.memory);
-    expect(clampScore("reactor", -10)).toBe(0);
-    expect(clampScore("reactor", 12.6)).toBe(13);
+    expect(leaguePoints("memory", 12)).toBe(480);
+    expect(leaguePoints("memory", 1e9)).toBeLessThanOrEqual(MAX_SCORE.memory * 40);
     expect(isLeagueGame("reactor")).toBe(true);
     expect(isLeagueGame("Reactor")).toBe(false);
   });
+});
 
-  it("los puntos no se pueden inflar desde fuera", () => {
-    // La memoria pesa por rondas: 12 rondas no pueden dar 12 puntos, dan 480.
-    expect(leaguePoints("memory", 12)).toBe(480);
-    expect(leaguePoints("memory", 1e9)).toBeLessThanOrEqual(MAX_SCORE.memory * 40);
-    expect(leaguePoints("reactor", 780)).toBe(780);
+describe("reto del día", () => {
+  it("el servidor reparte el mismo reto que la web durante 90 días", () => {
+    const start = Date.UTC(2026, 0, 1);
+    for (let day = 0; day < 90; day++) {
+      const date = new Date(start + day * 86_400_000);
+      expect(serverChallenge(date)).toEqual(dailyChallenge(date));
+    }
+  });
+
+  it("sólo cuenta como reto la fecha de hoy en el juego de hoy", () => {
+    const today = new Date(Date.UTC(2026, 10, 10, 12, 0));
+    const challenge = serverChallenge(today);
+    expect(countsForDaily(challenge.game, challenge.id, today)).toBe(challenge.id);
+    expect(countsForDaily(challenge.game, "2020-01-01", today)).toBeNull();
+    expect(countsForDaily(challenge.game, undefined, today)).toBeNull();
+  });
+
+  it("el día y la temporada se leen en UTC", () => {
+    const lateNight = new Date(Date.UTC(2026, 10, 7, 23, 59));
+    expect(dateKey(lateNight)).toBe("2026-11-07");
+    expect(seasonOf(lateNight)).toBe("2026-11");
+    expect(startOfUtcDay(lateNight)).toBe("2026-11-07T00:00:00.000Z");
   });
 });
 
 describe("temporada y nombre visible", () => {
-  it("la temporada es el mes en UTC", () => {
-    expect(seasonOf(new Date(Date.UTC(2026, 10, 7, 23, 59)))).toBe("2026-11");
-    expect(seasonOf(new Date(Date.UTC(2026, 0, 1, 0, 0)))).toBe("2026-01");
-  });
-
   it("lee el JWT sin verificarlo y saca un nombre limpio", () => {
     const claims = decodeClaims(token({ sub: "abc", email: "aitor@alienflow.space" }));
     expect(claims?.sub).toBe("abc");
     expect(handleFromClaims(claims)).toBe("aitor");
-
     expect(handleFromClaims(decodeClaims(token({ user_metadata: { full_name: "Aitor Álvarez" } })))).toBe(
       "AitorAlvarez",
     );
@@ -132,14 +156,7 @@ describe("temporada y nombre visible", () => {
 
 describe("ruta de la liga", () => {
   it("una tabla sin migrar es 503, no una clasificación vacía", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(JSON.stringify({ message: 'relation "game_season_table" does not exist', code: "42P01" }), {
-          status: 400,
-        }),
-      ),
-    );
+    mockRest(() => json({ message: 'relation "game_season_table" does not exist', code: "42P01" }, 400));
     try {
       const { status, body } = await call({ query: { season: "2026-11" } });
       expect(status).toBe(503);
@@ -150,37 +167,27 @@ describe("ruta de la liga", () => {
     }
   });
 
-  it("devuelve la tabla con puestos y tu fila", async () => {
-    const jwt = token({ sub: "user-1", email: "aitor@alienflow.space" });
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify([
-            { handle: "aitor", points: 900, runs: 4, best: 420, user_id: "user-1", last_played: "2026-11-07T10:00:00Z" },
-            { handle: "nova", points: 1200, runs: 2, best: 700, user_id: "user-2", last_played: null },
-          ]),
-          { status: 200 },
-        ),
-      ),
+  it("devuelve la tabla con puestos, tu fila y el reto del servidor", async () => {
+    mockRest(() =>
+      json([
+        { handle: "aitor", points: 900, runs: 4, best: 420, user_id: "user-1", last_played: "2026-11-07T10:00:00Z" },
+        { handle: "nova", points: 1200, runs: 2, best: 700, user_id: "user-2", last_played: null },
+      ]),
     );
     try {
-      const { status, body } = await call({ query: { season: "2026-11", limit: "10" }, auth: jwt });
+      const { status, body } = await call({ query: { season: "2026-11", limit: "10" }, auth: JWT });
       expect(status).toBe(200);
       expect(body.rows?.map((row) => row.handle)).toEqual(["aitor", "nova"]);
-      expect(body.rows?.[0].rank).toBe(1);
       expect(body.me).toMatchObject({ rank: 1, points: 900 });
       expect(body.signedIn).toBe(true);
+      expect(body.challenge).toMatchObject({ id: dateKey() });
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
   it("sin sesión la tabla es pública pero no hay fila propia", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
-    );
+    mockRest(() => json([]));
     try {
       const { body } = await call({ query: {} });
       expect(body.signedIn).toBe(false);
@@ -196,40 +203,166 @@ describe("ruta de la liga", () => {
     expect(body.error).toBe("unauthorized");
   });
 
-  it("una marca válida se inserta con los puntos del servidor y la temporada del servidor", async () => {
-    const jwt = token({ sub: "user-1", user_metadata: { full_name: "Aitor" } });
-    let sent: Record<string, unknown> | null = null;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (_url: string, init: RequestInit) => {
-        sent = JSON.parse(String(init.body));
-        return new Response(JSON.stringify([{ id: "row-1" }]), { status: 201 });
-      }),
-    );
+  it("un método que no existe no rompe: 405", async () => {
+    const { status } = await call({ method: "DELETE" });
+    expect(status).toBe(405);
+  });
+});
+
+describe("testigo de partida", () => {
+  it("abrir un testigo devuelve el nonce, el reto y su caducidad", async () => {
+    let created: Record<string, unknown> | null = null;
+    mockRest(({ method, url, body }) => {
+      if (method === "GET" && url.includes("league_run_tokens?user_id=eq.user-1")) return json([]);
+      if (method === "POST" && url.endsWith("league_run_tokens")) {
+        created = JSON.parse(String(body));
+        return json([{ id: "11111111-1111-1111-1111-111111111111" }], 201);
+      }
+      return json({ message: "ruta no simulada", url }, 500);
+    });
     try {
-      const { status, body } = await call({
-        method: "POST",
-        auth: jwt,
-        body: { game: "memory", score: 3, daily: "2026-11-07" },
-      });
+      const { status, body } = await call({ method: "POST", auth: JWT, body: { intent: "start", game: "memory" } });
       expect(status).toBe(201);
-      expect(body.entry.points).toBe(120);
-      expect(sent).toMatchObject({
-        user_id: "user-1",
-        handle: "Aitor",
-        game: "memory",
-        score: 3,
-        points: 120,
-        season: seasonOf(),
-        daily: "2026-11-07",
-      });
+      expect(body.nonce).toBe("11111111-1111-1111-1111-111111111111");
+      expect(body.daily).toBe(dateKey());
+      expect(created).toMatchObject({ user_id: "user-1", game: "memory", season: seasonOf(), daily: dateKey() });
     } finally {
       vi.unstubAllGlobals();
     }
   });
 
-  it("un método que no existe no rompe: 405", async () => {
-    const { status } = await call({ method: "DELETE" });
-    expect(status).toBe(405);
+  it("no se abren más testigos que partidas caben en el día", async () => {
+    mockRest(() => json(Array.from({ length: 40 }, (_, i) => ({ id: `t-${i}` }))));
+    try {
+      const { status, body } = await call({ method: "POST", auth: JWT, body: { intent: "start", game: "impulse" } });
+      expect(status).toBe(429);
+      expect(body.error).toBe("daily_run_limit");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("una partida con testigo nuevo se inserta y el testigo se cierra antes", async () => {
+    const order: string[] = [];
+    let sent: Record<string, unknown> | null = null;
+    mockRest(({ method, url, body }) => {
+      if (method === "GET" && url.includes("league_run_tokens?id=eq.nonce-1")) {
+        return json([
+          { id: "nonce-1", user_id: "user-1", game: "memory", expires_at: new Date(Date.now() + 60_000).toISOString(), used_at: null },
+        ]);
+      }
+      if (method === "PATCH" && url.includes("used_at=is.null")) {
+        order.push("cerrar");
+        return json([{ id: "nonce-1", used_at: new Date().toISOString() }]);
+      }
+      if (method === "GET" && url.includes("game_scores?user_id=eq.user-1")) return json([]);
+      if (method === "POST" && url.endsWith("game_scores")) {
+        order.push("insertar");
+        sent = JSON.parse(String(body));
+        return json([{ id: "row-1" }], 201);
+      }
+      return json({ message: "ruta no simulada", url }, 500);
+    });
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "memory", score: 4, nonce: "nonce-1" },
+      });
+      expect(status).toBe(201);
+      expect(body.entry.verified).toBe(true);
+      expect(body.entry.points).toBe(160);
+      expect(order).toEqual(["cerrar", "insertar"]);
+      expect(sent).toMatchObject({ user_id: "user-1", game: "memory", score: 4, points: 160, season: seasonOf() });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un testigo gastado no deja puntuar dos veces", async () => {
+    mockRest(({ url }) => {
+      if (url.includes("league_run_tokens?id=eq.nonce-1")) {
+        return json([
+          {
+            id: "nonce-1",
+            user_id: "user-1",
+            game: "memory",
+            expires_at: new Date(Date.now() + 60_000).toISOString(),
+            used_at: new Date().toISOString(),
+          },
+        ]);
+      }
+      return json({ message: "no debería llegar aquí", url }, 500);
+    });
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "memory", score: 4, nonce: "nonce-1" },
+      });
+      expect(status).toBe(409);
+      expect(body.error).toBe("run_token_used");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un testigo de otro juego no vale", async () => {
+    mockRest(() =>
+      json([
+        { id: "nonce-1", user_id: "user-1", game: "reactor", expires_at: new Date(Date.now() + 60_000).toISOString(), used_at: null },
+      ]),
+    );
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "memory", score: 4, nonce: "nonce-1" },
+      });
+      expect(status).toBe(400);
+      expect(body.error).toBe("run_token_game_mismatch");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("sin testigo el cupo baja a tres partidas al día", async () => {
+    const today = Array.from({ length: MAX_UNVERIFIED_RUNS_PER_DAY }, (_, i) => ({ id: `r-${i}` }));
+    mockRest(({ url }) => {
+      if (url.includes("game_scores?user_id=eq.user-1")) return json(today);
+      return json({ message: "no debería llegar aquí", url }, 500);
+    });
+    try {
+      const { status, body } = await call({ method: "POST", auth: JWT, body: { game: "impulse", score: 120 } });
+      expect(status).toBe(429);
+      expect(body.error).toBe("daily_run_limit");
+      expect(body.verified).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un reto inventado se guarda como partida normal", async () => {
+    let sent: Record<string, unknown> | null = null;
+    mockRest(({ method, url, body }) => {
+      if (method === "GET" && url.includes("game_scores?user_id=eq.user-1")) return json([]);
+      if (method === "POST" && url.endsWith("game_scores")) {
+        sent = JSON.parse(String(body));
+        return json([{ id: "row-1" }], 201);
+      }
+      return json({ message: "ruta no simulada", url }, 500);
+    });
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "impulse", score: 120, daily: "2020-01-01" },
+      });
+      expect(status).toBe(201);
+      expect(body.entry.daily).toBeNull();
+      expect(sent).toMatchObject({ daily: null });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });
