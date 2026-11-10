@@ -1,0 +1,4 @@
+# Vercel cuenta cada fichero de `api/` como una Serverless Function y el plan
+# Hobby permite 12 por despliegue. Los `*.test.ts` no son endpoints: se quedan
+# en el repo para que `npm test` los ejecute, pero no se suben a Vercel.
+api/*.test.ts
