@@ -77,10 +77,21 @@ export function monthlyEquivalent(cycle: BillingCycle): number {
 	return Math.round((BILLING_CYCLES[cycle].priceUsd / months) * 100) / 100;
 }
 
+/**
+ * Importe con dos decimales como mucho y coma decimal.
+ *
+ * Se formatea a mano en vez de con `toLocaleString`: la etiqueta tiene que ser
+ * la misma en Node (pruebas) y en el navegador, sin depender del ICU instalado.
+ */
+export function formatPrice(value: number): string {
+	const rounded = Math.round(value * 100) / 100;
+	return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(".", ",");
+}
+
 /** Texto de la tarjeta Synapse, derivado del precio y no escrito a mano. */
 export function synapsePriceLabel(): string {
 	const cheapest = Math.min(...(Object.keys(BILLING_CYCLES) as BillingCycle[]).map(monthlyEquivalent));
-	return `desde ${cheapest.toLocaleString("es-ES", { maximumFractionDigits: 2 })} USDC / mes`;
+	return `desde ${formatPrice(cheapest)} USDC / mes`;
 }
 
 /** Qué se cobra por un ciclo, o `null` si el ciclo no existe. */
