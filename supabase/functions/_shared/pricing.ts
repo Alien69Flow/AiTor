@@ -82,10 +82,14 @@ export function monthlyEquivalent(cycle: BillingCycle): number {
  *
  * Se formatea a mano en vez de con `toLocaleString`: la etiqueta tiene que ser
  * la misma en Node (pruebas) y en el navegador, sin depender del ICU instalado.
+ * El cero de relleno se recorta (9,5 y no 9,50): es lo que promete «como
+ * mucho» y lo que se lee mejor en una tarjeta de precio.
  */
 export function formatPrice(value: number): string {
 	const rounded = Math.round(value * 100) / 100;
-	return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(".", ",");
+	if (Number.isInteger(rounded)) return String(rounded);
+	const text = rounded.toFixed(2).replace(".", ",");
+	return text.endsWith("0") ? text.slice(0, -1) : text;
 }
 
 /** Texto de la tarjeta Synapse, derivado del precio y no escrito a mano. */
