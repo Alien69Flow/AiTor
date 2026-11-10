@@ -57,11 +57,11 @@ interface GlobeDashboardProps {
 export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
   const [selectedHotspot, setSelectedHotspot] = useState<UnifiedHotspotData | null>(null);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>(null);
-  const [feedOpen, setFeedOpen] = useState(true);
+  const [feedOpen, setFeedOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1440);
   // Abierta por defecto: dentro viven la leyenda, las esferas de la Tierra y el
   // diagnóstico. Cerrada, el globo parecía no tener capas atmosféricas porque
   // no había forma de descubrirlas sin pulsar un icono sin etiqueta.
-  const [controlsOpen, setControlsOpen] = useState(true);
+  const [controlsOpen, setControlsOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1280);
   const [paywallReason, setPaywallReason] = useState<string | null>(null);
   const [visibleLayers, setVisibleLayers] = useState<Set<LayerKey>>(new Set(["finance", "intel", "conflict", "geopolitical", "logistics", "cryptozoo", "convergence"]));
   const [envLayers, setEnvLayers] = useState<Set<EnvLayerKey>>(new Set(DEFAULT_ACTIVE_LAYERS));
@@ -368,7 +368,38 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           Do not move this into the bottom group with the alerts bar. */}
       <div className="z-30 shrink-0"><MarketTicker prices={intel.cryptoPrices} /></div>
 
-      <div className="relative flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1">
+        {/* Desktop: collapsible control rail so the globe stays visible */}
+        <div className="relative z-30 hidden shrink-0 md:flex">
+          {controlsOpen ? (
+            <aside className="legend-scroll pointer-events-auto w-[280px] lg:w-[320px] overflow-y-auto border-r border-primary/20 bg-background/70 p-2.5 backdrop-blur-md">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-[9px] uppercase tracking-wider text-primary">Mission controls</span>
+                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-sm" onClick={() => setControlsOpen(false)} aria-label="Ocultar controles"><PanelLeftClose /></Button>
+              </div>
+              <div className="space-y-2">
+                {legend(undefined, false)}
+                <NavigatePanel onNavigate={handleNavigate} />
+                <Button variant="outline" size="sm" onClick={() => setMobilePanel(mobilePanel === "diagnostics" ? null : "diagnostics")}
+                  className="h-8 w-full rounded-sm border-border/70 bg-card/75 text-[10px] uppercase text-muted-foreground">
+                  <Wrench className="h-3.5 w-3.5 text-primary" /> Diagnostics
+                </Button>
+                {mobilePanel === "diagnostics" && <GlobeDiagnostics />}
+              </div>
+            </aside>
+          ) : (
+            <div className="pointer-events-auto flex flex-col gap-1.5 border-r border-primary/20 bg-background/70 p-1.5">
+              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Abrir controles"
+                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><PanelLeftOpen className="text-primary" /></Button>
+              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Capas"
+                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><Layers className="text-primary" /></Button>
+              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Navegar"
+                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><Compass className="text-primary" /></Button>
+            </div>
+          )}
+        </div>
+
+      <div className="relative min-w-0 flex-1">
         <div className="absolute inset-0 z-0">
           <HybridGlobe layers={envLayers} onHotspotClick={setSelectedHotspot} onZoomFar={handleZoomFar}
             onViewScale={setViewScale}
@@ -394,7 +425,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             scale={viewScale}
             onZoomIn={() => zoomControlsRef.current?.zoomIn()}
             onZoomOut={() => zoomControlsRef.current?.zoomOut()}
-            className="absolute bottom-2 left-2 z-20 md:bottom-3 md:left-[3.25rem]"
+            className="absolute bottom-3 left-3 z-20 hidden md:block"
           />
         )}
 
@@ -406,47 +437,6 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           liveConflictCount={intel.conflictEvents.length}
           wildfireCount={intel.fires.length} outageCount={outages.length}
           criticalIntelCount={intel.osint.filter((event) => event.severity === "CRITICAL").length} />
-
-        {/* Desktop: collapsible control rail so the globe stays visible */}
-        <div className="pointer-events-none absolute inset-y-0 left-0 z-30 hidden md:flex">
-          {controlsOpen ? (
-            <aside className="legend-scroll pointer-events-auto w-[320px] overflow-y-auto border-r border-primary/20 bg-background/70 p-2.5 backdrop-blur-md">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-[9px] uppercase tracking-wider text-primary">Mission controls</span>
-                <Button variant="ghost" size="icon" className="h-6 w-6 rounded-sm" onClick={() => setControlsOpen(false)} aria-label="Ocultar controles"><PanelLeftClose /></Button>
-              </div>
-              <div className="space-y-2">
-                {legend(undefined, false)}
-                <NavigatePanel onNavigate={handleNavigate} />
-                <Button variant="outline" size="sm" onClick={() => setMobilePanel(mobilePanel === "diagnostics" ? null : "diagnostics")}
-                  className="h-8 w-full rounded-sm border-border/70 bg-card/75 text-[10px] uppercase text-muted-foreground">
-                  <Wrench className="h-3.5 w-3.5 text-primary" /> Diagnostics
-                </Button>
-                {mobilePanel === "diagnostics" && <GlobeDiagnostics />}
-              </div>
-            </aside>
-          ) : (
-            <div className="pointer-events-auto flex flex-col gap-1.5 p-2">
-              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Abrir controles"
-                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><PanelLeftOpen className="text-primary" /></Button>
-              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Capas"
-                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><Layers className="text-primary" /></Button>
-              <Button variant="outline" size="icon" onClick={() => setControlsOpen(true)} aria-label="Navegar"
-                className="h-9 w-9 rounded-sm border-primary/30 bg-card/85"><Compass className="text-primary" /></Button>
-            </div>
-          )}
-        </div>
-
-        {!selectedHotspot && feedOpen && (
-          <aside className="pointer-events-auto absolute inset-y-0 right-0 z-20 hidden w-[300px] border-l border-primary/20 bg-background/60 backdrop-blur-md md:block">
-            <div className="flex h-9 items-center justify-between border-b border-border/60 px-3">
-              <div className="flex items-center gap-2 text-[9px] uppercase text-primary"><Database className="h-3.5 w-3.5" /> Tactical telemetry</div>
-              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-sm" onClick={() => setFeedOpen(false)} aria-label="Cerrar telemetría"><PanelRightClose /></Button>
-            </div>
-            <div className="h-[calc(100%-2.25rem)]">{feed}</div>
-          </aside>
-        )}
-        {!selectedHotspot && !feedOpen && <Button variant="outline" size="icon" onClick={() => setFeedOpen(true)} className="absolute right-2 top-2 z-30 hidden h-9 w-9 rounded-sm border-primary/30 bg-card/85 md:inline-flex" aria-label="Abrir telemetría"><Database className="text-primary" /></Button>}
 
         {/* Mobile controls */}
         <div className="absolute left-2 top-2 z-30 flex flex-col gap-1.5 md:hidden">
@@ -461,6 +451,18 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
           {mobilePanel === "feed" && <div className="h-[52vh]">{feed}</div>}
           {mobilePanel === "diagnostics" && <GlobeDiagnostics />}
         </div>}
+        {!selectedHotspot && !feedOpen && <Button variant="outline" size="icon" onClick={() => setFeedOpen(true)} className="absolute right-2 top-2 z-30 hidden h-9 w-9 rounded-sm border-primary/30 bg-card/85 md:inline-flex" aria-label="Abrir telemetría"><Database className="text-primary" /></Button>}
+
+      </div>
+        {!selectedHotspot && feedOpen && (
+          <aside className="pointer-events-auto relative z-20 hidden w-[280px] shrink-0 xl:w-[300px] border-l border-primary/20 bg-background/60 backdrop-blur-md md:block">
+            <div className="flex h-9 items-center justify-between border-b border-border/60 px-3">
+              <div className="flex items-center gap-2 text-[9px] uppercase text-primary"><Database className="h-3.5 w-3.5" /> Tactical telemetry</div>
+              <Button variant="ghost" size="icon" className="h-7 w-7 rounded-sm" onClick={() => setFeedOpen(false)} aria-label="Cerrar telemetría"><PanelRightClose /></Button>
+            </div>
+            <div className="h-[calc(100%-2.25rem)]">{feed}</div>
+          </aside>
+        )}
       </div>
 
       {/* LIVE ALERTS / events (fires, earthquakes, news) — must stay at the BOTTOM.

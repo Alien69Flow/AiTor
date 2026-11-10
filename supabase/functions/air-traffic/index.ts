@@ -160,7 +160,7 @@ interface AdsbLolAircraft {
  * It is queried by centre + radius, so the returned area covers the requested
  * box rather than matching it exactly.
  */
-async function fetchAdsbLol(box: Box, maxRadiusNm = 250): Promise<Flight[]> {
+async function fetchAdsbLol(box: Box, maxRadiusNm = 250, base = ADSB_LOL_API): Promise<Flight[]> {
   const lat = (box.lamin + box.lamax) / 2;
   const lon = (box.lomin + box.lomax) / 2;
   const dLatNm = (box.lamax - box.lamin) * 60; // 1° of latitude ≈ 60 nm
@@ -168,7 +168,7 @@ async function fetchAdsbLol(box: Box, maxRadiusNm = 250): Promise<Flight[]> {
   const radiusNm = Math.min(maxRadiusNm, Math.max(25, Math.ceil(Math.hypot(dLatNm, dLonNm) / 2)));
 
   const response = await fetch(
-    `${ADSB_LOL_API}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
+    `${base}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
     { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) },
   );
   if (!response.ok) throw new Error(`ADSB.lol HTTP ${response.status}`);
@@ -212,13 +212,20 @@ Deno.serve(async (req) => {
     lomax: Number(url.searchParams.get("lomax") ?? 30),
   };
 
+  const key = `${box.lamin},${box.lamax},${box.lomin},${box.lomax}`;
+  const hit = CACHE.get(key);
+  // Serve a fresh cache hit without touching the rate-limited upstreams.
+  if (hit && Date.now() - hit.at < FRESH_MS) {
+    return json({ ...hit.body, cached: true }, 120);
+  }
+
   const failed: string[] = [];
   let flights: Flight[] = [];
   let source: string | null = null;
 
   for (const [name, probe] of [
     ["opensky", fetchOpenSky],
-    ["adsb.lol", fetchAdsbLol],
+    ["adsb.lol", (b: Box) => fetchAdsbLol(b)],
   ] as const) {
     try {
       const result = await probe(box);
@@ -234,6 +241,11 @@ Deno.serve(async (req) => {
     }
   }
 
+  // Every upstream failed: reuse the last real answer (up to 15 min) marked stale.
+  if (!flights.length && hit && Date.now() - hit.at < STALE_MS) {
+    return json({ ...hit.body, stale: true, reason: failed.join(" · ") }, 60);
+  }
+
   const body = {
     count: flights.length,
     flights,
@@ -246,11 +258,16 @@ Deno.serve(async (req) => {
     timestamp: new Date().toISOString(),
   };
 
-  return new Response(JSON.stringify(body), {
-    headers: {
-      ...corsHeaders,
-      "Content-Type": "application/json",
-      "Cache-Control": `public, max-age=${flights.length ? 120 : 60}`,
-    },
-  });
+  if (flights.length) CACHE.set(key, { at: Date.now(), body });
+  return json(body, flights.length ? 120 : 60);
 });
+
+const FRESH_MS = 90_000;
+const STALE_MS = 15 * 60_000;
+const CACHE = new Map<string, { at: number; body: Record<string, unknown> }>();
+
+function json(body: unknown, maxAge: number) {
+  return new Response(JSON.stringify(body), {
+    headers: { ...corsHeaders, "Content-Type": "application/json", "Cache-Control": `public, max-age=${maxAge}` },
+  });
+}

@@ -499,6 +499,10 @@ export function CesiumGlobe({
     const assetResolver = buildModuleUrl as typeof buildModuleUrl & { setBaseUrl: (url: string) => void };
     assetResolver.setBaseUrl(`${window.location.origin}/cesium/`);
 
+    // Perfil ligero en móvil/tablet o equipos con pocos núcleos: menos píxeles,
+    // sin MSAA y menos teselas precargadas para que el planeta aparezca rápido.
+    const lowPower =
+      window.innerWidth < 1024 || (navigator.hardwareConcurrency || 8) <= 4;
     const viewer = new CesiumViewer(containerRef.current, {
       animation: false, baseLayerPicker: false, fullscreenButton: false,
       geocoder: false, homeButton: false, infoBox: false, sceneModePicker: false,
@@ -510,7 +514,7 @@ export function CesiumGlobe({
       // un tope de 1,5× para no hundir la GPU con catorce capas encendidas.
       useBrowserRecommendedResolution: false,
       contextOptions: { webgl: { alpha: false } },
-      msaaSamples: 4,
+      msaaSamples: lowPower ? 1 : 4,
       // Start with no base layer so async imagery never wipes overlays that
       // were already added (that race made toggled-on layers invisible).
       baseLayer: false,
@@ -526,7 +530,7 @@ export function CesiumGlobe({
     // Nitidez: a densidad nativa (hasta 2×) el borde del planeta y las costas
     // dejan de verse blandos al acercarse. El 1,5 anterior ahorraba GPU a costa
     // de que todo saliera medio píxel borroso en pantallas retina.
-    viewer.resolutionScale = Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+    viewer.resolutionScale = lowPower ? 1 : Math.min(Math.max(window.devicePixelRatio || 1, 1), 1.5);
     // Antialiasing por post-proceso: sin esto, las fronteras, los cables y el
     // limbo terrestre se dibujaban con escalones de un píxel.
     try {
@@ -570,9 +574,9 @@ export function CesiumGlobe({
       scene.postProcessStages.fxaa.enabled = true;
       // 4. Nitidez: caché mayor y vecinas precargadas; el error de pantalla
       //    fino lo sigue ajustando `resolveGlobeDetail` según la altura.
-      scene.globe.tileCacheSize = 2500;
+      scene.globe.tileCacheSize = lowPower ? 600 : 2000;
       scene.globe.preloadAncestors = true;
-      scene.globe.preloadSiblings = true;
+      scene.globe.preloadSiblings = !lowPower;
       scene.fog.enabled = true;
       scene.fog.density = 0.0002;
     } catch (e) {
@@ -587,9 +591,9 @@ export function CesiumGlobe({
     // del `if (terrain)` porque la nitidez no debe depender de que el proveedor
     // de relieve esté disponible; el valor fino lo ajusta `syncWorldDetail`
     // según la altura de la cámara.
-    viewer.scene.globe.tileCacheSize = 1500;
-    viewer.scene.globe.maximumScreenSpaceError = 1.6;
-    viewer.scene.globe.preloadSiblings = true;
+    viewer.scene.globe.tileCacheSize = lowPower ? 600 : 1500;
+    viewer.scene.globe.maximumScreenSpaceError = lowPower ? 2.5 : 1.6;
+    viewer.scene.globe.preloadSiblings = !lowPower;
 
     const terrain = createTerrariumTerrainProvider();
     if (terrain) {
