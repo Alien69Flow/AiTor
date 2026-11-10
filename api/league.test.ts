@@ -36,6 +36,9 @@ interface Result {
 type Req = Parameters<typeof handler>[0];
 type Res = Parameters<typeof handler>[1];
 
+/** Un testigo es un uuid: el handler lo exige antes de consultar la base. */
+const NONCE = "22222222-2222-2222-2222-222222222222";
+
 function call(options: { method?: string; query?: Record<string, string>; body?: unknown; auth?: string }) {
   return new Promise<Result>((resolve) => {
     const req = {
@@ -83,6 +86,16 @@ function mockRest(respond: (options: { method: string; url: string; body: string
 
 const JWT = token({ sub: "user-1", email: "aitor@alienflow.space" });
 const json = (payload: unknown, status = 200) => new Response(JSON.stringify(payload), { status });
+
+/** Fila de testigo viva, para las respuestas simuladas. */
+const tokenRow = (overrides: Record<string, unknown> = {}) => ({
+  id: NONCE,
+  user_id: "user-1",
+  game: "memory",
+  expires_at: new Date(Date.now() + 60_000).toISOString(),
+  used_at: null,
+  ...overrides,
+});
 
 describe("validación de una partida", () => {
   it("acepta los tres juegos y calcula los puntos en el servidor", () => {
@@ -216,14 +229,14 @@ describe("testigo de partida", () => {
       if (method === "GET" && url.includes("league_run_tokens?user_id=eq.user-1")) return json([]);
       if (method === "POST" && url.endsWith("league_run_tokens")) {
         created = JSON.parse(String(body));
-        return json([{ id: "11111111-1111-1111-1111-111111111111" }], 201);
+        return json([{ id: NONCE }], 201);
       }
       return json({ message: "ruta no simulada", url }, 500);
     });
     try {
       const { status, body } = await call({ method: "POST", auth: JWT, body: { intent: "start", game: "memory" } });
       expect(status).toBe(201);
-      expect(body.nonce).toBe("11111111-1111-1111-1111-111111111111");
+      expect(body.nonce).toBe(NONCE);
       expect(body.daily).toBe(dateKey());
       expect(created).toMatchObject({ user_id: "user-1", game: "memory", season: seasonOf(), daily: dateKey() });
     } finally {
@@ -242,18 +255,34 @@ describe("testigo de partida", () => {
     }
   });
 
+  it("un nonce que no es uuid se rechaza sin tocar la base", async () => {
+    let touched = false;
+    mockRest(() => {
+      touched = true;
+      return json({}, 500);
+    });
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "memory", score: 4, nonce: "nonce-1" },
+      });
+      expect(status).toBe(400);
+      expect(body.error).toBe("run_token_invalid");
+      expect(touched).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("una partida con testigo nuevo se inserta y el testigo se cierra antes", async () => {
     const order: string[] = [];
     let sent: Record<string, unknown> | null = null;
     mockRest(({ method, url, body }) => {
-      if (method === "GET" && url.includes("league_run_tokens?id=eq.nonce-1")) {
-        return json([
-          { id: "nonce-1", user_id: "user-1", game: "memory", expires_at: new Date(Date.now() + 60_000).toISOString(), used_at: null },
-        ]);
-      }
+      if (method === "GET" && url.includes(`league_run_tokens?id=eq.${NONCE}`)) return json([tokenRow()]);
       if (method === "PATCH" && url.includes("used_at=is.null")) {
         order.push("cerrar");
-        return json([{ id: "nonce-1", used_at: new Date().toISOString() }]);
+        return json([{ id: NONCE, used_at: new Date().toISOString() }]);
       }
       if (method === "GET" && url.includes("game_scores?user_id=eq.user-1")) return json([]);
       if (method === "POST" && url.endsWith("game_scores")) {
@@ -267,7 +296,7 @@ describe("testigo de partida", () => {
       const { status, body } = await call({
         method: "POST",
         auth: JWT,
-        body: { game: "memory", score: 4, nonce: "nonce-1" },
+        body: { game: "memory", score: 4, nonce: NONCE },
       });
       expect(status).toBe(201);
       expect(body.entry.verified).toBe(true);
@@ -281,16 +310,8 @@ describe("testigo de partida", () => {
 
   it("un testigo gastado no deja puntuar dos veces", async () => {
     mockRest(({ url }) => {
-      if (url.includes("league_run_tokens?id=eq.nonce-1")) {
-        return json([
-          {
-            id: "nonce-1",
-            user_id: "user-1",
-            game: "memory",
-            expires_at: new Date(Date.now() + 60_000).toISOString(),
-            used_at: new Date().toISOString(),
-          },
-        ]);
+      if (url.includes(`league_run_tokens?id=eq.${NONCE}`)) {
+        return json([tokenRow({ used_at: new Date().toISOString() })]);
       }
       return json({ message: "no debería llegar aquí", url }, 500);
     });
@@ -298,7 +319,7 @@ describe("testigo de partida", () => {
       const { status, body } = await call({
         method: "POST",
         auth: JWT,
-        body: { game: "memory", score: 4, nonce: "nonce-1" },
+        body: { game: "memory", score: 4, nonce: NONCE },
       });
       expect(status).toBe(409);
       expect(body.error).toBe("run_token_used");
@@ -307,17 +328,33 @@ describe("testigo de partida", () => {
     }
   });
 
-  it("un testigo de otro juego no vale", async () => {
-    mockRest(() =>
-      json([
-        { id: "nonce-1", user_id: "user-1", game: "reactor", expires_at: new Date(Date.now() + 60_000).toISOString(), used_at: null },
-      ]),
-    );
+  it("un testigo caducado no vale", async () => {
+    mockRest(({ url }) => {
+      if (url.includes(`league_run_tokens?id=eq.${NONCE}`)) {
+        return json([tokenRow({ expires_at: new Date(Date.now() - 60_000).toISOString() })]);
+      }
+      return json({ message: "no debería llegar aquí", url }, 500);
+    });
     try {
       const { status, body } = await call({
         method: "POST",
         auth: JWT,
-        body: { game: "memory", score: 4, nonce: "nonce-1" },
+        body: { game: "memory", score: 4, nonce: NONCE },
+      });
+      expect(status).toBe(409);
+      expect(body.error).toBe("run_token_expired");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un testigo de otro juego no vale", async () => {
+    mockRest(() => json([tokenRow({ game: "reactor" })]));
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: JWT,
+        body: { game: "memory", score: 4, nonce: NONCE },
       });
       expect(status).toBe(400);
       expect(body.error).toBe("run_token_game_mismatch");
