@@ -19,7 +19,6 @@ const OPENSKY_API = "https://opensky-network.org/api";
 const OPENSKY_TOKEN_URL =
   "https://auth.opensky-network.org/auth/realms/opensky-network/protocol/openid-connect/token";
 const ADSB_LOL_API = "https://api.adsb.lol/v2";
-const ADSB_BASE = { url: ADSB_LOL_API };
 
 /** Aircraft as the app consumes it: same shape whichever source answered. */
 interface Flight {
@@ -161,7 +160,7 @@ interface AdsbLolAircraft {
  * It is queried by centre + radius, so the returned area covers the requested
  * box rather than matching it exactly.
  */
-async function fetchAdsbLol(box: Box, maxRadiusNm = 250): Promise<Flight[]> {
+async function fetchAdsbLol(box: Box, maxRadiusNm = 250, base = ADSB_LOL_API): Promise<Flight[]> {
   const lat = (box.lamin + box.lamax) / 2;
   const lon = (box.lomin + box.lomax) / 2;
   const dLatNm = (box.lamax - box.lamin) * 60; // 1° of latitude ≈ 60 nm
@@ -169,7 +168,7 @@ async function fetchAdsbLol(box: Box, maxRadiusNm = 250): Promise<Flight[]> {
   const radiusNm = Math.min(maxRadiusNm, Math.max(25, Math.ceil(Math.hypot(dLatNm, dLonNm) / 2)));
 
   const response = await fetch(
-    `${ADSB_BASE.url}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
+    `${base}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
     { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) },
   );
   if (!response.ok) throw new Error(`ADSB.lol HTTP ${response.status}`);
@@ -226,7 +225,7 @@ Deno.serve(async (req) => {
 
   for (const [name, probe] of [
     ["opensky", fetchOpenSky],
-    ["adsb.lol", fetchAdsbLol],
+    ["adsb.lol", (b: Box) => fetchAdsbLol(b)],
     ["airplanes.live", fetchAirplanesLive],
   ] as const) {
     try {
@@ -276,11 +275,5 @@ function json(body: unknown, maxAge: number) {
 
 /** airplanes.live shares the ADSBexchange v2 schema; third fallback when the others throttle. */
 async function fetchAirplanesLive(box: Box): Promise<Flight[]> {
-  const prev = ADSB_BASE.url;
-  ADSB_BASE.url = "https://api.airplanes.live/v2";
-  try {
-    return await fetchAdsbLol(box);
-  } finally {
-    ADSB_BASE.url = prev;
-  }
+  return fetchAdsbLol(box, 250, "https://api.airplanes.live/v2");
 }
