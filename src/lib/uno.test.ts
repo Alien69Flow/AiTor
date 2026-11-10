@@ -20,7 +20,9 @@ describe("uno", () => {
 		const state = unoStart(11);
 		expect(state.hand).toHaveLength(UNO_HAND_SIZE);
 		expect(state.rival).toHaveLength(UNO_HAND_SIZE);
-		const ids = [...state.hand, ...state.rival, ...state.draw].map((card) => card.id);
+		// La carta abierta sale del mazo, así que la mesa entera (manos, mazo y
+		// descarte) tiene que sumar las 108 de la baraja, sin repetir.
+		const ids = [...state.hand, ...state.rival, ...state.draw, state.discard].map((card) => card.id);
 		expect(new Set(ids).size).toBe(ids.length);
 		expect(ids.length).toBe(buildDeck("uno").length);
 	});
