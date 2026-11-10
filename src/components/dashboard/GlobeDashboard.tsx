@@ -425,7 +425,7 @@ export function GlobeDashboard({ onOpenCamera }: GlobeDashboardProps = {}) {
             scale={viewScale}
             onZoomIn={() => zoomControlsRef.current?.zoomIn()}
             onZoomOut={() => zoomControlsRef.current?.zoomOut()}
-            className="absolute bottom-2 left-2 z-20 md:bottom-3 md:left-[3.25rem]"
+            className="absolute bottom-3 left-3 z-20 hidden md:block"
           />
         )}
 
