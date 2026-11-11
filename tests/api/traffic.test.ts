@@ -5,7 +5,7 @@ import {
   mapOpenSkyStates,
   normaliseHeading,
   normaliseSpeed,
-} from "./traffic";
+} from "../../api/traffic";
 
 /**
  * El proxy convierte dos formatos ajenos (adsb.lol y OpenSky) en la forma que ya

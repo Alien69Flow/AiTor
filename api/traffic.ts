@@ -14,10 +14,6 @@
  *  - Mar:   `meri.digitraffic.fi` (AIS abierto de la agencia finlandesa, CC BY
  *           4.0). Cubre el Báltico y se dice: no se extrapola al resto del mundo.
  *
- * Los dos feeds se cachean en memoria 90 s y reutilizan la última lectura real
- * hasta 15 min (`stale: true`) para no machacar a las fuentes comunitarias ni
- * dejar la capa vacía por un 429 puntual.
- *
  * Regla que no se negocia: si ninguna fuente responde, la respuesta lo dice
  * (`unavailable: true`) y devuelve una lista vacía. Nunca se rellena con barcos
  * ni aviones inventados.
@@ -26,13 +22,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 
 export const maxDuration = 30;
 
-/**
- * Tope de espera por fuente, el mismo para todas. Antes eran 12 s por sondeo y,
- * como el aire encadena adsb.lol y luego OpenSky, el peor caso se acercaba a los
- * 30 s de `maxDuration`. Con 8 s —el margen que ya usa la función edge— ninguna
- * fuente corta distinto y el total queda holgado.
- */
-const SOURCE_TIMEOUT_MS = 8_000;
+const TIMEOUT_MS = 12_000;
 
 interface Flight {
   icao24: string;
@@ -80,46 +70,6 @@ const ADS_B_CENTERS: { lat: number; lon: number; radiusNm: number }[] = [
 const MAX_FLIGHTS = 600;
 const MAX_SHIPS = 500;
 
-/**
- * Caché en memoria del feed aéreo. adsb.lol es una red ciudadana sin clave: si
- * cada visitante dispara ocho sondeos, su proxy nos frena con 429 y la capa se
- * queda vacía. Con 90 s de frescura, una ráfaga de visitas cuesta un solo
- * barrido; con 15 min de reutilización, un corte puntual de las fuentes no
- * borra los aviones que ya estaban pintados.
- */
-const AIR_FRESH_MS = 90_000;
-const AIR_STALE_MS = 15 * 60_000;
-
-/** Igual para el mar: Digitraffic sirve un catálogo grande y no hace falta por visita. */
-const MARINE_FRESH_MS = 90_000;
-const MARINE_STALE_MS = 15 * 60_000;
-
-interface AirPayload {
-  count: number;
-  flights: Flight[];
-  source: string | null;
-  unavailable: boolean;
-  reason: string | null;
-  /** La lectura sale de la caché, no de esta petición. */
-  cached?: boolean;
-  /** Se reutiliza la última lectura real porque ahora mismo no responde nadie. */
-  stale?: boolean;
-}
-
-interface MarinePayload {
-  count: number;
-  ships: Ship[];
-  source: string | null;
-  coverage: string | null;
-  unavailable: boolean;
-  reason: string | null;
-  cached?: boolean;
-  stale?: boolean;
-}
-
-let airCache: { at: number; body: AirPayload } | null = null;
-let marineCache: { at: number; body: MarinePayload } | null = null;
-
 interface AdsbAircraft {
   hex?: string;
   flight?: string;
@@ -156,7 +106,7 @@ async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: { "user-agent": "aitor-intel/1.0", ...(init?.headers ?? {}) },
-    signal: AbortSignal.timeout(SOURCE_TIMEOUT_MS),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`HTTP ${response.status} en ${url}`);
   return (await response.json()) as T;
@@ -272,39 +222,6 @@ async function fetchAir(): Promise<{ flights: Flight[]; source: string | null; r
   }
 }
 
-/**
- * Aire con caché: si hay una lectura de hace menos de 90 s se devuelve tal cual y
- * no se toca la red. Si las fuentes fallan y hay una lectura real de menos de
- * 15 min, se reutiliza marcada como `stale` — son posiciones que existieron, no
- * una lista inventada — para que un 429 puntual no deje la capa sin aviones.
- */
-async function getAir(): Promise<AirPayload> {
-  const hit = airCache;
-  if (hit && Date.now() - hit.at < AIR_FRESH_MS) {
-    return { ...hit.body, cached: true };
-  }
-
-  const { flights, source, reason } = await fetchAir();
-  const body: AirPayload = {
-    count: flights.length,
-    flights,
-    source,
-    unavailable: flights.length === 0,
-    reason,
-  };
-
-  if (flights.length > 0) {
-    airCache = { at: Date.now(), body };
-    return body;
-  }
-
-  if (hit && Date.now() - hit.at < AIR_STALE_MS) {
-    return { ...hit.body, stale: true, reason: reason ?? hit.body.reason };
-  }
-
-  return body;
-}
-
 interface DigitrafficLocation {
   mmsi?: number;
   geometry?: { coordinates?: [number, number] };
@@ -408,40 +325,6 @@ async function fetchMarine(): Promise<{
   }
 }
 
-/**
- * Mar con la misma política que el aire: 90 s de frescura y, si las fuentes
- * callan, la última lectura real hasta 15 min en vez de una capa vacía. Los
- * barcos que llegan así siguen siendo barcos que existieron; sólo se dice que la
- * lectura es antigua.
- */
-async function getMarine(): Promise<MarinePayload> {
-  const hit = marineCache;
-  if (hit && Date.now() - hit.at < MARINE_FRESH_MS) {
-    return { ...hit.body, cached: true };
-  }
-
-  const { ships, source, coverage, reason } = await fetchMarine();
-  const body: MarinePayload = {
-    count: ships.length,
-    ships,
-    source,
-    coverage,
-    unavailable: ships.length === 0,
-    reason,
-  };
-
-  if (ships.length > 0) {
-    marineCache = { at: Date.now(), body };
-    return body;
-  }
-
-  if (hit && Date.now() - hit.at < MARINE_STALE_MS) {
-    return { ...hit.body, stale: true, reason: reason ?? hit.body.reason };
-  }
-
-  return body;
-}
-
 function frameStamp(feature: DigitrafficLocation, fallback: string): string {
   const stamp = feature.properties?.timestampExternal;
   return typeof stamp === "number" ? new Date(stamp).toISOString() : fallback;
@@ -458,13 +341,28 @@ export default async function traffic(req: VercelRequest, res: VercelResponse) {
   const kind = String(req.query.kind ?? "air");
 
   if (kind === "air") {
-    const body = await getAir();
-    return json(res, { ...body, timestamp: new Date().toISOString() });
+    const { flights, source, reason } = await fetchAir();
+    return json(res, {
+      count: flights.length,
+      flights,
+      source,
+      unavailable: flights.length === 0,
+      reason,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   if (kind === "marine") {
-    const body = await getMarine();
-    return json(res, { ...body, timestamp: new Date().toISOString() });
+    const { ships, source, coverage, reason } = await fetchMarine();
+    return json(res, {
+      count: ships.length,
+      ships,
+      source,
+      coverage,
+      unavailable: ships.length === 0,
+      reason,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   return json(res, { error: "kind debe ser air o marine" }, 400);

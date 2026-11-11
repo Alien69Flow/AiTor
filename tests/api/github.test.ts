@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import handler, { encodeRepoPath, readUrl } from "./github";
+import handler, { encodeRepoPath, readUrl } from "../../api/github";
 
 /**
  * `/api/github` existe porque leer un repositorio **público** no debería costar

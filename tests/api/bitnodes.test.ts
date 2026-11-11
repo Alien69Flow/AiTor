@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { countByCountry } from "./bitnodes";
+import { countByCountry } from "../../api/bitnodes";
 
 const snapshot = (nodes: Record<string, unknown>) => ({ data: { nodes } });
 

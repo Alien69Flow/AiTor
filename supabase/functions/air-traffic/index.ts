@@ -169,7 +169,7 @@ async function fetchAdsbLol(box: Box, maxRadiusNm = 250, base = ADSB_LOL_API): P
 
   const response = await fetch(
     `${base}/point/${lat.toFixed(3)}/${lon.toFixed(3)}/${radiusNm}`,
-    { headers: { Accept: "application/json" }, signal: AbortSignal.timeout(8_000) },
+    { headers: { Accept: "application/json", "User-Agent": "AiTor-Tactical/1.0 (+https://aitor.alienflow.space)" }, signal: AbortSignal.timeout(8_000) },
   );
   if (!response.ok) throw new Error(`ADSB.lol HTTP ${response.status}`);
   const data = await response.json();
@@ -224,9 +224,12 @@ Deno.serve(async (req) => {
   let source: string | null = null;
 
   for (const [name, probe] of [
-    ["opensky", fetchOpenSky],
-    ["adsb.lol", (b: Box) => fetchAdsbLol(b)],
-  ] as const) {
+    // ADSB.lol answers in <1 s; anonymous OpenSky hangs from cloud IPs, so it
+    // only goes first when OAuth credentials are configured.
+    ...(Deno.env.get("OPENSKY_CLIENT_ID")
+      ? [["opensky", fetchOpenSky], ["adsb.lol", (b: Box) => fetchAdsbLol(b)]]
+      : [["adsb.lol", (b: Box) => fetchAdsbLol(b)], ["opensky", fetchOpenSky]]),
+  ] as [string, (b: Box) => Promise<Flight[]>][]) {
     try {
       const result = await probe(box);
       if (result.length) {
