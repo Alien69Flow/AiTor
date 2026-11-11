@@ -1,2 +1,5 @@
 tests/
 **/*.test.ts
+**/*.test.tsx
+# Helper re-exported only for local scripts; not an endpoint.
+api/_venues.ts

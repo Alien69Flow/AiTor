@@ -125,7 +125,7 @@ function Links({ palette, moving }: { palette: Palette; moving: boolean }) {
   });
   return <>
     <lineSegments geometry={geometry}><lineBasicMaterial color={palette.cyan} transparent opacity={0.45} /></lineSegments>
-    <instancedMesh ref={packets} args={[undefined, undefined, 5]}><octahedronGeometry args={[0.08]} /><meshBasicMaterial color={palette.gold} /></instancedMesh>
+    <instancedMesh ref={packets} args={[undefined, undefined, CITY_DISTRICTS.length - 1]}><octahedronGeometry args={[0.08]} /><meshBasicMaterial color={palette.gold} /></instancedMesh>
   </>;
 }
 
