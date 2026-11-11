@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import handler, { budgetToolResponse, compressToolResult } from "./mcp";
+import handler, { budgetToolResponse, compressToolResult } from "../../api/mcp";
 
 /**
  * `POST /api/mcp` es la puerta del agente en producción y no tenía pruebas.

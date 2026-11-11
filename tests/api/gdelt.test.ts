@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import handler, { gdeltUpstreamUrl, parseGdeltParams } from "./gdelt";
+import handler, { gdeltUpstreamUrl, parseGdeltParams } from "../../api/gdelt";
 
 /**
  * `/api/gdelt` nace de un diagnóstico que parecía CORS y no lo era: `DOC 2.0`
