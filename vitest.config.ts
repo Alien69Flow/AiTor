@@ -22,7 +22,7 @@ export default defineConfig({
     // directly, so their tests follow them out here.
     include: [
       "src/**/*.test.{ts,tsx}",
-      "api/**/*.test.{ts,tsx}",
+      "tests/**/*.test.{ts,tsx}",
       "scripts/**/*.test.mjs",
       // `_shared/` de las edge functions es TypeScript sin APIs de Deno a
       // propósito, así que se puede probar aquí (la sonda de oráculos vive ahí).
