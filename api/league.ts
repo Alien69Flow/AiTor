@@ -1,20 +1,28 @@
 /**
  * `GET|POST /api/league` — la clasificación real de la pestaña de juegos.
  *
- * Hasta ahora la liga vivía en `localStorage`: cada visitante veía su propia
- * lista y nadie competía con nadie. Aquí está el lado servidor: una fila por
- * partida en `game_scores`, tabla agregada por temporada en `game_season_table`
- * (ver `supabase/migrations/20261107210000_game_league.sql`).
+ * Una fila por partida en `game_scores`, agregada por temporada en
+ * `game_season_table` (ver `supabase/migrations/20261107210000_game_league.sql`).
  *
- * Dos reglas que no se negocian desde el navegador:
+ * Lo que el navegador NO decide, y por qué:
  *
  *  - La **temporada** la calcula el servidor en UTC. Si la mandara el cliente,
- *    cualquiera podría puntuar en la temporada que quisiera.
- *  - Los **puntos** también: del cliente sólo se acepta el juego y la marca, y
- *    la marca se recorta al máximo real de cada juego.
+ *    cualquiera puntuaría en la temporada que quisiera.
+ *  - Los **puntos** también: del cliente sólo se aceptan juego y marca, y la
+ *    marca se recorta al techo real de cada juego.
+ *  - El **reto del día**, que antes se creía a ciegas: ahora se compara la fecha
+ *    contra el reloj del servidor y el juego contra la rotación.
+ *  - Cada partida gasta un **nonce de un solo uso** emitido aquí. Sin nonce
+ *    gastado no hay fila: ni se reenvía la misma marca ni se fabrican diez
+ *    partidas con un POST repetido.
+ *
+ * El tope diario (60 partidas, 100 000 puntos) vive en Postgres, en el trigger
+ * `game_scores_guard` de la migración de antifraude, porque una política RLS no
+ * puede sumar filas vecinas. Aquí sólo se traduce su error a un 429 legible.
  *
  * Los ayudantes puros se exportan para poder probarlos sin red
- * (`api/league.test.ts`): validación, recorte, puntos y lectura del token.
+ * (`tests/api/league.test.ts`): validación, nonce, reto del día, recorte,
+ * puntos y lectura del token.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 
@@ -27,7 +35,6 @@ const AUTH_URL =
   process.env.AUTH_SUPABASE_URL ||
   process.env.VITE_AUTH_SUPABASE_URL ||
   "https://pnyigikagdxqaogbiift.supabase.co";
-
 const AUTH_KEY =
   process.env.AUTH_SUPABASE_PUBLISHABLE_KEY ||
   process.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY ||
@@ -63,6 +70,14 @@ export const LEAGUE_POINTS: Record<LeagueGame, (score: number) => number> = {
   reactor: (score) => Math.max(0, Math.round(score)),
 };
 
+/** Techo diario por jugador, en UTC. Espejo de `game_scores_guard`. */
+export const DAILY_RUN_CAP = 60;
+export const DAILY_POINTS_CAP = 100_000;
+/** Nonces que se pueden pedir al día: sin esto, pedir mil y elegir el mejor sale gratis. */
+export const DAILY_NONCE_CAP = 200;
+/** Vida de un nonce: lo que tarda una partida larga más el envío. */
+export const NONCE_TTL_SECONDS = 600;
+
 export function isLeagueGame(value: unknown): value is LeagueGame {
   return typeof value === "string" && (LEAGUE_GAMES as readonly string[]).includes(value);
 }
@@ -80,6 +95,44 @@ export function leaguePoints(game: LeagueGame, score: number): number {
 /** Temporada de una fecha, en UTC y por meses: `YYYY-MM`. */
 export function seasonOf(date: Date = new Date()): string {
   return date.toISOString().slice(0, 7);
+}
+
+/** Día en UTC, `YYYY-MM-DD`. El reto cambia a medianoche UTC, no por husos. */
+export function dayKey(date: Date = new Date()): string {
+  return date.toISOString().slice(0, 10);
+}
+
+/** Hash estable del día (FNV-1a de 32 bits), espejo de `dailySeed` en `games-hub`.
+ *  Sin aleatoriedad: el mismo día tiene que dar el mismo reto en cualquier
+ *  equipo y también aquí, en el servidor. */
+export function dailySeed(key: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < key.length; i += 1) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0;
+}
+
+/** Los juegos que pueden ser reto del día, en el mismo orden que la pestaña. */
+export const DAILY_ROTATION: readonly LeagueGame[] = ["impulse", "memory", "reactor"];
+
+/**
+ * Juego del reto para un día `YYYY-MM-DD`.
+ *
+ * Es la regla que el cliente usaba a solas: el hash del día elige juego del
+ * bucle. Repetirla aquí es lo que permite rechazar un `daily` inventado sin
+ * creerse lo que manda el navegador.
+ */
+export function dailyGameFor(day: string): LeagueGame {
+  return DAILY_ROTATION[dailySeed(day) % DAILY_ROTATION.length];
+}
+
+const NONCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** ¿Tiene forma de uuid v4 emitido por `start_game_run`? */
+export function isNonce(value: unknown): value is string {
+  return typeof value === "string" && NONCE_PATTERN.test(value);
 }
 
 /**
@@ -127,10 +180,16 @@ export interface Submission {
   score: number;
   points: number;
   daily: string | null;
+  /** Nonce gastado que autoriza esta fila. */
+  nonce: string;
 }
 
-/** Valida el cuerpo de una partida. Devuelve el motivo si algo no encaja. */
-export function validateSubmission(body: unknown): Submission | { error: string } {
+/**
+ * Valida el cuerpo de una partida. Devuelve el motivo si algo no encaja.
+ *
+ * `now` se inyecta para poder probar el cambio de día sin esperar a mañana.
+ */
+export function validateSubmission(body: unknown, now: Date = new Date()): Submission | { error: string } {
   const payload = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   if (!isLeagueGame(payload.game)) {
     return { error: `game debe ser uno de: ${LEAGUE_GAMES.join(", ")}` };
@@ -138,12 +197,29 @@ export function validateSubmission(body: unknown): Submission | { error: string 
   if (typeof payload.score !== "number" || !Number.isFinite(payload.score)) {
     return { error: "score debe ser un número" };
   }
-  const daily =
-    typeof payload.daily === "string" && /^\d{4}-\d{2}-\d{2}$/.test(payload.daily)
-      ? payload.daily
-      : null;
+  if (!isNonce(payload.nonce)) {
+    return { error: "falta el nonce: pide uno con POST /api/league {action:\"start\"}" };
+  }
+
+  const today = dayKey(now);
+  let daily: string | null = null;
+  if (payload.daily !== undefined && payload.daily !== null) {
+    if (typeof payload.daily !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(payload.daily)) {
+      return { error: "daily debe ser YYYY-MM-DD" };
+    }
+    // El reto se valida contra el reloj del servidor: ni ayer ni mañana.
+    if (payload.daily !== today) {
+      return { error: `daily debe ser el reto de hoy (${today})` };
+    }
+    const expected = dailyGameFor(today);
+    if (payload.game !== expected) {
+      return { error: `el reto de hoy es ${expected}` };
+    }
+    daily = payload.daily;
+  }
+
   const score = clampScore(payload.game, payload.score);
-  return { game: payload.game, score, points: leaguePoints(payload.game, score), daily };
+  return { game: payload.game, score, points: leaguePoints(payload.game, score), daily, nonce: payload.nonce };
 }
 
 function bearer(req: VercelRequest): string {
@@ -181,8 +257,49 @@ export function isMissingRelation(status: number, data: unknown): boolean {
   const text = typeof data === "string" ? data : JSON.stringify(data ?? "");
   return (
     (status === 404 || status === 400) &&
-    /(does not exist|no existe|undefined table|42P01|PGRST204)/i.test(text)
+    /(does not exist|no existe|undefined table|42P01|PGRST204|42883)/i.test(text)
   );
+}
+
+function errorText(data: unknown): string {
+  return typeof data === "string" ? data : JSON.stringify(data ?? "");
+}
+
+/**
+ * Traduce un fallo de las funciones de nonce a una respuesta concreta.
+ *
+ * Sin esto, un tope diario y una migración sin aplicar se verían los dos como
+ * un 502 genérico y el jugador no sabría si insistir mañana o avisar al dueño.
+ */
+function nonceFailure(
+  res: VercelResponse,
+  result: { ok: boolean; status: number; data: unknown },
+  phase: "start" | "consume",
+): VercelResponse {
+  if (isMissingRelation(result.status, result.data)) {
+    return res.status(503).json({
+      error: "league_table_missing",
+      hint: "Falta aplicar supabase/migrations/20261112150000_game_league_anticheat.sql",
+      phase,
+    });
+  }
+  const text = errorText(result.data);
+  if (/daily_nonce_cap/.test(text)) {
+    return res.status(429).json({ error: "daily_cap", unit: "nonces", limit: DAILY_NONCE_CAP });
+  }
+  if (/unauthorized/.test(text)) {
+    return res.status(401).json({ error: "unauthorized", hint: "Inicia sesión para puntuar" });
+  }
+  if (/unknown_game/.test(text)) {
+    return res.status(400).json({ error: `game debe ser uno de: ${LEAGUE_GAMES.join(", ")}` });
+  }
+  return res.status(502).json({ error: "league_nonce_failed", phase, status: result.status });
+}
+
+/** Info del reto del día tal como la ve el servidor. */
+function dailyNow(now: Date = new Date()) {
+  const id = dayKey(now);
+  return { id, game: dailyGameFor(id) };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -221,6 +338,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       season,
       // La temporada cierra a medianoche UTC del último día del mes.
       endsAt: `${season}-01T00:00:00.000Z`,
+      // El reto del día lo publica el servidor: así el cliente no puede elegir
+      // uno distinto del que se va a validar al enviar la partida.
+      daily: dailyNow(),
       rows: rows.map((row, index) => ({
         rank: index + 1,
         handle: String(row.handle ?? "jugador"),
@@ -252,8 +372,54 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const body = typeof req.body === "string" ? safeJson(req.body) : req.body;
-    const submission = validateSubmission(body);
+    const payload = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+
+    // Pedir nonce: paso previo obligatorio de cada partida.
+    if (payload.action === "start") {
+      if (!isLeagueGame(payload.game)) {
+        return res.status(400).json({ error: `game debe ser uno de: ${LEAGUE_GAMES.join(", ")}` });
+      }
+      const started = await rest("rpc/start_game_run", {
+        token,
+        method: "POST",
+        body: JSON.stringify({ p_game: payload.game }),
+      });
+      if (!started.ok) return nonceFailure(res, started, "start");
+
+      const row = (Array.isArray(started.data) ? started.data[0] : started.data) as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (!isNonce(row?.nonce)) {
+        return res.status(502).json({ error: "nonce_not_issued" });
+      }
+      return res.status(201).json({
+        nonce: row?.nonce,
+        expiresAt: row?.expires_at ?? null,
+        ttlSeconds: NONCE_TTL_SECONDS,
+        game: payload.game,
+        season: seasonOf(),
+        daily: dailyNow(),
+      });
+    }
+
+    const submission = validateSubmission(payload);
     if ("error" in submission) return res.status(400).json(submission);
+
+    // Se gasta antes de escribir: así un nonce no puede autorizar dos filas ni
+    // por carrera entre dos peticiones simultáneas.
+    const consumed = await rest("rpc/consume_game_run", {
+      token,
+      method: "POST",
+      body: JSON.stringify({ p_nonce: submission.nonce, p_game: submission.game }),
+    });
+    if (!consumed.ok) return nonceFailure(res, consumed, "consume");
+    if (consumed.data !== true) {
+      return res.status(409).json({
+        error: "nonce_invalid",
+        hint: "El nonce ya se usó, caducó o no es de este juego: pide otro antes de jugar",
+      });
+    }
 
     const season = seasonOf();
     const inserted = await rest("game_scores", {
@@ -268,16 +434,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         points: submission.points,
         season,
         daily: submission.daily,
+        run_nonce: submission.nonce,
       }),
     });
 
     if (!inserted.ok) {
+      const text = errorText(inserted.data);
       if (isMissingRelation(inserted.status, inserted.data)) {
         return res.status(503).json({
           error: "league_table_missing",
-          hint: "Falta aplicar supabase/migrations/20261107210000_game_league.sql",
+          hint: "Falta aplicar supabase/migrations/20261107210000_game_league.sql y la de antifraude",
           season,
         });
+      }
+      if (/daily_run_cap/.test(text)) {
+        return res.status(429).json({ error: "daily_cap", unit: "runs", limit: DAILY_RUN_CAP, season });
+      }
+      if (/daily_points_cap/.test(text)) {
+        return res
+          .status(429)
+          .json({ error: "daily_cap", unit: "points", limit: DAILY_POINTS_CAP, season });
+      }
+      if (/unknown_run_nonce|missing_run_nonce/.test(text)) {
+        return res.status(409).json({ error: "nonce_invalid", season });
       }
       return res.status(502).json({
         error: "league_write_failed",
@@ -287,8 +466,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(201).json({
-      entry: { ...submission, season },
+      entry: {
+        game: submission.game,
+        score: submission.score,
+        points: submission.points,
+        daily: submission.daily,
+        season,
+      },
       season,
+      daily: dailyNow(),
     });
   }
 
