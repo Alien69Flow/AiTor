@@ -1,0 +1,40 @@
+# CI manual, temporal.
+#
+# GitHub no crea runs de `pull_request` cuando la PR no puede fusionarse: sin
+# commit de fusión no hay `refs/pull/N/merge` y el evento no llega al workflow.
+# El `ci.yml` de verdad no tiene `workflow_dispatch`, así que mientras esta rama
+# tenga conflictos con `main` no hay forma de ejecutar las pruebas salvo esto.
+# Se borra en cuanto la rama vuelva a estar limpia.
+name: CI manual
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-manual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Aquí los tests SÍ bloquean: el objetivo es saber qué cae, no taparlo.
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
