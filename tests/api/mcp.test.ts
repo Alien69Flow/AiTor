@@ -257,6 +257,10 @@ describe("MCP en /api/mcp", () => {
   });
 
   it("sin clave del modelo el flujo no se abre: contesta 501 en JSON", async () => {
+    // La prueba no debe depender de que la máquina tenga una clave real.
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GOOGLE_API_KEY", "");
+    vi.stubEnv("GOOGLE_GENERATIVE_AI_API_KEY", "");
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string) => {
@@ -277,6 +281,7 @@ describe("MCP en /api/mcp", () => {
       expect(JSON.parse(result.body).error).toMatch(/GEMINI_API_KEY/);
     } finally {
       vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
     }
   });
 
