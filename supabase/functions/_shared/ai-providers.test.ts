@@ -21,7 +21,7 @@ import {
 const CLAVE_VALIDA = "AIzaSyDUMMYKEY1234567890abcdef";
 
 function envCon(claves: Record<string, string>) {
-  return (name: string) => claves[name] ?? process.env[name];
+  return (name: string): string | undefined => claves[name];
 }
 
 describe("sonda de oráculos del informe de salud", () => {

@@ -91,6 +91,12 @@ describe("patchGlobeFold", () => {
       return;
     }
 
+    // El rail ya nace plegado según el ancho de pantalla: en móvil y tablet
+    // arranca cerrado, que es justo lo que perseguía el parche.
+    if (/const \[controlsOpen, setControlsOpen\] = useState\(\(\) =>[^\n]*innerWidth >= \d+\)/.test(real)) {
+      return;
+    }
+
     // Sin aplicar todavía: las anclas tienen que seguir donde el parche las
     // espera, para que aplicarlo después no dependa de la suerte.
     expect(real).toContain("const [controlsOpen, setControlsOpen] = useState(true);");

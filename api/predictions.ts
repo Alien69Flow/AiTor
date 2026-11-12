@@ -406,11 +406,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(400).json({ error: "interval inválido; usa 1d, 1w o 1m" });
     return;
   }
+  const safeInterval: PredictionInterval | null = interval !== null && isSafeInterval(interval) ? interval : null;
 
   const limit = typeof query.limit === "string" ? Number(query.limit) : 25;
 
   try {
-    const result = await fetchVenue({ venue, limit, slug, token, interval });
+    const result = await fetchVenue({ venue, limit, slug, token, interval: safeInterval });
     res.setHeader("x-aitor-egress", result.egress);
     if (result.ok) {
       const size = byteLength(result.body);

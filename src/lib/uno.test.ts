@@ -1,91 +1,127 @@
 import { describe, expect, it } from "vitest";
 
-import { buildDeck } from "./decks";
-import {
-	UNO_COLORS,
-	UNO_HAND_SIZE,
-	UNO_WIN_BONUS,
-	baseRank,
-	unoBot,
-	unoDraw,
-	unoLegal,
-	unoPlay,
-	unoPlayable,
-	unoScore,
-	unoStart,
-} from "./uno";
+import type { PlayingCard } from "./decks";
+import { UNO_HAND, canPlay, createUno, drawUno, playUno } from "./uno";
+
+const card = (suit: string, rank: string): PlayingCard => ({
+	id: `uno:${suit}:${rank}`,
+	kind: "uno",
+	suit,
+	rank,
+});
+
+/** Mesa mínima: rojo arriba, turno del jugador 0. */
+const base = () => ({
+	...createUno(4),
+	hands: [
+		[card("rojo", "5a"), card("rojo", "9a")],
+		[card("verde", "7a")],
+	] as [PlayingCard[], PlayingCard[]],
+	discard: [card("rojo", "3a")],
+	color: "rojo" as const,
+	turn: 0 as const,
+});
 
 describe("uno", () => {
-	it("reparte cinco cartas a cada uno sin repetir ninguna", () => {
-		const state = unoStart(11);
-		expect(state.hand).toHaveLength(UNO_HAND_SIZE);
-		expect(state.rival).toHaveLength(UNO_HAND_SIZE);
-		// La carta abierta sale del mazo, así que la mesa entera (manos, mazo y
-		// descarte) tiene que sumar las 108 de la baraja, sin repetir.
-		const ids = [...state.hand, ...state.rival, ...state.draw, state.discard].map((card) => card.id);
-		expect(new Set(ids).size).toBe(ids.length);
-		expect(ids.length).toBe(buildDeck("uno").length);
+	it("reparte siete y no pierde cartas por el camino", () => {
+		const state = createUno(2);
+		expect(state.hands[0]).toHaveLength(UNO_HAND);
+		expect(state.hands[1]).toHaveLength(UNO_HAND);
+		expect(state.discard).toHaveLength(1);
+		const total =
+			state.hands[0].length + state.hands[1].length + state.drawPile.length + state.discard.length;
+		expect(total).toBe(108);
+		expect(state.discard[0].suit).not.toBe("comodin");
 	});
 
-	it("abre la mesa con un número, nunca con un comodín", () => {
-		for (let seed = 1; seed <= 20; seed += 1) {
-			const state = unoStart(seed);
-			expect(state.color).not.toBe("comodin");
-			expect((UNO_COLORS as readonly string[]).includes(state.color)).toBe(true);
-			expect(/^\d/.test(state.discard.rank)).toBe(true);
-		}
+	it("se juega a color o a número", () => {
+		expect(canPlay(card("rojo", "9a"), { color: "rojo" })).toBe(true);
+		expect(canPlay(card("azul", "5b"), { color: "rojo", top: card("rojo", "5a") })).toBe(true);
+		expect(canPlay(card("azul", "4a"), { color: "rojo", top: card("rojo", "5a") })).toBe(false);
+		expect(canPlay(card("comodin", "1"), { color: "azul" })).toBe(true);
 	});
 
-	it("sólo vale el color de la mesa, el mismo número o un comodín", () => {
-		const state = unoStart(7);
-		for (const card of state.hand) {
-			const expected =
-				card.suit === "comodin" ||
-				card.suit === "roba4" ||
-				card.suit === state.color ||
-				baseRank(card) === baseRank(state.discard);
-			expect(unoPlayable(state, card)).toBe(expected);
-		}
+	it("el comodín exige color y lo fija", () => {
+		const state = {
+			...base(),
+			hands: [[card("comodin", "1"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
+		// Sin color elegido no se juega.
+		expect(playUno(state, "uno:comodin:1")).toEqual(state);
+
+		const played = playUno(state, "uno:comodin:1", "azul");
+		expect(played.color).toBe("azul");
+		expect(played.hands[0]).toHaveLength(1);
+		expect(played.turn).toBe(1);
+		expect(played.winner).toBe(null);
 	});
 
-	it("una jugada ilegal no cambia nada y no lanza", () => {
-		const state = unoStart(3);
-		const illegal = state.hand.find((card) => !unoPlayable(state, card));
-		if (!illegal) return;
-		expect(unoPlay(state, illegal.id)).toBe(state);
-		expect(unoPlay(state, "no-existe")).toBe(state);
+	it("el roba dos roba al rival, le quita el turno y descuenta del mazo", () => {
+		const state = {
+			...base(),
+			hands: [[card("rojo", "roba2a"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
+		const played = playUno(state, "uno:rojo:roba2a");
+		expect(played.hands[1]).toHaveLength(3);
+		expect(played.drawPile).toHaveLength(state.drawPile.length - 2);
+		expect(played.turn).toBe(0);
+		expect(played.winner).toBe(null);
 	});
 
-	it("la carta jugada sale de la mano y el turno vuelve a ti", () => {
-		const state = unoStart(5);
-		const legal = unoLegal(state);
-		if (legal.length === 0) return;
-		const next = unoPlay(state, legal[0].id);
-		// El bot responde en la misma jugada, así que el descarte ya puede ser
-		// suyo; lo que no puede pasar es que la carta siga en tu mano.
-		expect(next.played).toBe(1);
-		expect(next.hand.some((card) => card.id === legal[0].id)).toBe(false);
-		expect(next.turn).toBe(0);
+	it("el salto con dos jugadores deja el turno en quien tiró", () => {
+		const state = {
+			...base(),
+			hands: [[card("rojo", "saltaa"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
+		const played = playUno(state, "uno:rojo:saltaa");
+		expect(played.turn).toBe(0);
+		expect(played.hands[1]).toHaveLength(1);
 	});
 
-	it("robar suma al menos una carta y deja el turno en el bot", () => {
-		const state = unoStart(9);
-		const next = unoDraw(state);
-		// Si el bot tira un roba-dos o un roba-cuatro, la mano crece más de una.
-		expect(next.hand.length).toBeGreaterThanOrEqual(state.hand.length + 1);
-		expect(next.draw.length).toBeLessThan(state.draw.length);
-		expect(next.turn).toBe(0);
+	it("quedarse sin cartas es ganar", () => {
+		const state = {
+			...base(),
+			hands: [[card("rojo", "5a")], [card("verde", "7a")]] as [PlayingCard[], PlayingCard[]],
+		};
+		const played = playUno(state, "uno:rojo:5a");
+		expect(played.winner).toBe(0);
+		expect(played.hands[0]).toHaveLength(0);
 	});
 
-	it("el bot no juega cuando no le toca", () => {
-		const state = unoStart(2);
-		expect(unoBot(state)).toBe(state);
+	it("una jugada ilegal no cambia el estado", () => {
+		const state = {
+			...base(),
+			hands: [[card("azul", "4a"), card("rojo", "9a")], [card("verde", "7a")]] as [
+				PlayingCard[],
+				PlayingCard[],
+			],
+		};
+		expect(playUno(state, "uno:azul:4a")).toEqual(state);
+		expect(playUno(state, "uno:rojo:99")).toEqual(state);
 	});
 
-	it("vaciar la mano cierra la partida con bonus", () => {
-		const state = unoStart(4);
-		expect(unoScore(state)).toBe(0);
-		expect(unoScore({ ...state, winner: 0 })).toBe(UNO_WIN_BONUS);
-		expect(unoScore({ ...state, played: 3 })).toBe(60);
+	it("robar suma una carta y pasa el turno", () => {
+		const state = base();
+		const drawn = drawUno(state);
+		expect(drawn.hands[0]).toHaveLength(state.hands[0].length + 1);
+		expect(drawn.drawPile).toHaveLength(state.drawPile.length - 1);
+		expect(drawn.turn).toBe(1);
+	});
+
+	it("es determinista con la misma semilla", () => {
+		const a = createUno(31);
+		const b = createUno(31);
+		expect(a.hands).toEqual(b.hands);
+		expect(a.drawPile).toEqual(b.drawPile);
+		expect(a.discard).toEqual(b.discard);
 	});
 });

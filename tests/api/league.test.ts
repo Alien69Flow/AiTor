@@ -9,7 +9,7 @@ import handler, {
   leaguePoints,
   seasonOf,
   validateSubmission,
-} from "./league";
+} from "../../api/league";
 
 /**
  * La liga del servidor es la primera cosa de la pestaña de juegos que decide

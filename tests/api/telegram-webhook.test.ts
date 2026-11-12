@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { splitForTelegram, toTelegramHtml } from "./telegram-webhook";
+import { splitForTelegram, toTelegramHtml } from "../../api/telegram-webhook";
 
 /**
  * El bot dejó de responder por la puerta de la firma, no por Telegram ni por el
@@ -31,7 +31,7 @@ async function load(env: Record<string, string>) {
   process.env.TELEGRAM_WEBHOOK_SECRET = env.TELEGRAM_WEBHOOK_SECRET ?? "";
   if (env.VERCEL_ENV) process.env.VERCEL_ENV = env.VERCEL_ENV;
   else delete process.env.VERCEL_ENV;
-  const module = await import("./telegram-webhook");
+  const module = await import("../../api/telegram-webhook");
   return module.default as unknown as (
     req: unknown,
     res: unknown,

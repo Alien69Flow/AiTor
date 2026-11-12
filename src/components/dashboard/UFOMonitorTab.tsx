@@ -20,6 +20,7 @@ import { HistoricCasesStrip, OfficialSourcesStrip } from "./OfficialSourcesStrip
 import { LIVE_STATUS_CHECKED_ON, signalLiveState } from "@/lib/live-status";
 import { markRevived, readRevived, writeRevived } from "@/lib/live-revived";
 import { toast } from "sonner";
+import { BroadcastDirectory } from "./BroadcastDirectory";
 
 /**
  * One row of the anomaly registry. The three feeds (the UAP table, the official
@@ -456,6 +457,7 @@ export function UFOMonitorTab({ cameraRequest = null }: UFOMonitorTabProps) {
           )}
         </section>
 
+        <BroadcastDirectory />
         {/* --- Anomaly feed ----------------------------------------------- */}
         <section aria-label="Registro de avistamientos" className="flex flex-col gap-2">
           <div className="flex flex-wrap items-center gap-2">

@@ -55,6 +55,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [], ti
       severity: q.magnitude >= 5 ? "CRITICAL" : q.magnitude >= 4 ? "HIGH" : "LOW",
       time: new Date(q.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       source: "USGS / EMSC",
+      lat: q.lat, lon: q.lon,
     });
   });
 
@@ -63,6 +64,7 @@ export function LiveTicker({ spaceWeather, earthquakes = [], nasaEvents = [], ti
       text: `${evt.category}: ${evt.title}`,
       severity: "HIGH",
       time: evt.date ? new Date(evt.date).toLocaleDateString([], { month: "short", day: "numeric" }) : "Active",
+      source: "NASA EONET", lat: evt.lat, lon: evt.lon,
     });
   });
 

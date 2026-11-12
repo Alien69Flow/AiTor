@@ -142,7 +142,7 @@ export default async function gdelt(req: VercelRequest, res: VercelResponse) {
   }
 
   const parsed = parseGdeltParams((req.query ?? {}) as Record<string, unknown>);
-  if (!parsed.ok) return fail(res, 400, parsed.reason);
+  if (parsed.ok === false) return fail(res, 400, parsed.reason);
 
   const upstream = gdeltUpstreamUrl(parsed.value);
   const cached = readCache(upstream);
