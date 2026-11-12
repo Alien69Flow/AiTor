@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FOLD_MARKER, patchGlobeFold } from "./globe-fold-patch";
 
 /** Recorte del panel con las tres anclas tal como están en `GlobeDashboard.tsx`. */
-const FIXTURE = `import { useState, useCallback } from "react";
+const FIXTURE = `import { useState, useCallback } from \"react\";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState(null);
@@ -30,6 +30,10 @@ export function GlobeDashboard() {
 }
 `;
 
+/** Declaración perezosa que trae hoy el panel real, atada al ancho de pantalla. */
+const LAZY_CONTROLS =
+  'const [controlsOpen, setControlsOpen] = useState(() => typeof window !== "undefined" && window.innerWidth >= 1280);';
+
 describe("patchGlobeFold", () => {
   it("abre el globo con el rail cerrado y las dos leyendas plegadas", () => {
     const { source, changed } = patchGlobeFold(FIXTURE);
@@ -49,6 +53,21 @@ describe("patchGlobeFold", () => {
     // El resto del panel sigue intacto.
     expect(source).toContain("const [feedOpen, setFeedOpen] = useState(true);");
     expect(source).toContain("const [mobilePanel, setMobilePanel] = useState(null);");
+  });
+
+  it("pliega también con el inicializador perezoso del panel real", () => {
+    const perezoso = FIXTURE.replace(
+      "const [controlsOpen, setControlsOpen] = useState(true);",
+      LAZY_CONTROLS,
+    );
+
+    const { source, changed } = patchGlobeFold(perezoso);
+
+    expect(changed).toBe(true);
+    expect(source).toContain("const [controlsOpen, setControlsOpen] = useState(false);");
+    expect(source).not.toContain("window.innerWidth");
+    expect(source).toContain("legend(undefined, true)");
+    expect(source).toContain("legend(() => setMobilePanel(null), true)");
   });
 
   it("es idempotente: la segunda pasada no cambia ni un byte", () => {
@@ -98,8 +117,10 @@ describe("patchGlobeFold", () => {
     }
 
     // Sin aplicar todavía: las anclas tienen que seguir donde el parche las
-    // espera, para que aplicarlo después no dependa de la suerte.
-    expect(real).toContain("const [controlsOpen, setControlsOpen] = useState(true);");
+    // espera, para que aplicarlo después no dependa de la suerte. La declaración
+    // del rail se comprueba por forma, igual que la reconoce el parche: hoy
+    // trae un inicializador perezoso y antes era `useState(true)`.
+    expect(real).toMatch(/const \[controlsOpen, setControlsOpen\] = useState\(.*\);/);
     expect(real).toContain("legend(undefined, false)");
     expect(real).toContain("legend(() => setMobilePanel(null), false)");
   });
