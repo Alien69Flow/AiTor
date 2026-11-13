@@ -21,7 +21,8 @@ import handler, {
  * algo con datos de otros: temporada, puntos y nombre visible. Lo que se fija
  * aquí son las reglas que el navegador no puede saltarse: temporada y puntos
  * los pone el servidor, el reto del día se compara con su reloj, y cada partida
- * gasta un nonce de un solo uso.
+ * se registra con una única llamada a `record_game_run`, que gasta el nonce y
+ * escribe la fila en la misma transacción.
  */
 
 interface Result {
@@ -29,15 +30,15 @@ interface Result {
   body: Record<string, unknown> & {
     rows?: { handle: string; rank: number }[];
     me?: unknown;
-    entry?: { points: number };
+    entry?: { points: number; season?: string };
     nonce?: string;
     unit?: string;
+    error?: string;
   };
 }
 
 type Req = Parameters<typeof handler>[0];
 type Res = Parameters<typeof handler>[1];
-
 /** Un uuid válido, del estilo que devuelve `start_game_run`. */
 const NONCE = "3f2504e0-4f89-41d3-9a0c-0305e82c3301";
 
@@ -106,7 +107,6 @@ describe("validación de una partida", () => {
     const missing = validateSubmission({ game: "impulse", score: 10 });
     expect("error" in missing).toBe(true);
     if ("error" in missing) expect(missing.error).toContain("nonce");
-
     const invented = validateSubmission({ game: "impulse", score: 10, nonce: "no-es-un-nonce" });
     expect("error" in invented).toBe(true);
     expect(isNonce(NONCE)).toBe(true);
@@ -233,10 +233,7 @@ describe("ruta de la liga", () => {
   });
 
   it("sin sesión la tabla es pública pero no hay fila propia", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })),
-    );
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify([]), { status: 200 })));
     try {
       const { body } = await call({ query: {} });
       expect(body.signedIn).toBe(false);
@@ -287,40 +284,37 @@ describe("ruta de la liga", () => {
     }
   });
 
-  it("gasta el nonce y guarda la fila con los puntos del servidor", async () => {
+  it("guarda la partida en UNA sola llamada a record_game_run", async () => {
     const jwt = token({ sub: "user-1", user_metadata: { full_name: "Aitor" } });
-    let sent: Record<string, unknown> | null = null;
-    let consumed = false;
+    const calls: { url: string; body: Record<string, unknown> }[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (url: string, init: RequestInit) => {
-        if (String(url).includes("rpc/consume_game_run")) {
-          consumed = JSON.parse(String(init.body)) as unknown as boolean;
-          return new Response("true", { status: 200 });
-        }
-        sent = JSON.parse(String(init.body));
-        return new Response(JSON.stringify([{ id: "row-1" }]), { status: 201 });
+        calls.push({ url: String(url), body: JSON.parse(String(init.body)) });
+        return new Response(
+          JSON.stringify([
+            { id: "row-1", game: "memory", score: 3, points: 480, daily: null, season: seasonOf() },
+          ]),
+          { status: 201 },
+        );
       }),
     );
     try {
-      const { status, body } = await call({
-        method: "POST",
-        auth: jwt,
-        body: { game: "memory", score: 3, nonce: NONCE },
-      });
+      const { status, body } = await call({ method: "POST", auth: jwt, body: { game: "memory", score: 3, nonce: NONCE } });
       expect(status).toBe(201);
-      expect(body.entry?.points).toBe(120);
-      expect(consumed).toEqual({ p_nonce: NONCE, p_game: "memory" });
-      expect(sent).toMatchObject({
-        user_id: "user-1",
-        handle: "Aitor",
-        game: "memory",
-        score: 3,
-        points: 120,
-        season: seasonOf(),
-        daily: null,
-        run_nonce: NONCE,
+      // Ni consume ni insert por separado: una sola puerta.
+      expect(calls).toHaveLength(1);
+      expect(calls[0].url).toContain("rpc/record_game_run");
+      expect(calls[0].body).toEqual({
+        p_nonce: NONCE,
+        p_game: "memory",
+        p_score: 3,
+        p_daily: null,
+        p_handle: "Aitor",
       });
+      // Los puntos que cuentan son los de la base, no los que calculó la ruta.
+      expect(body.entry?.points).toBe(480);
+      expect(body.entry?.season).toBe(seasonOf());
     } finally {
       vi.unstubAllGlobals();
     }
@@ -328,13 +322,12 @@ describe("ruta de la liga", () => {
 
   it("un nonce ya gastado es 409 y no escribe nada", async () => {
     const jwt = token({ sub: "user-1" });
-    let wrote = false;
+    let calls = 0;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (url: string) => {
-        if (String(url).includes("rpc/consume_game_run")) return new Response("false", { status: 200 });
-        wrote = true;
-        return new Response(JSON.stringify([{ id: "row-1" }]), { status: 201 });
+      vi.fn(async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ code: "23514", message: "nonce_invalid" }), { status: 400 });
       }),
     );
     try {
@@ -345,7 +338,27 @@ describe("ruta de la liga", () => {
       });
       expect(status).toBe(409);
       expect(body.error).toBe("nonce_invalid");
-      expect(wrote).toBe(false);
+      expect(calls).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("un nonce de otro juego también es 409", async () => {
+    const jwt = token({ sub: "user-1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: "23514", message: "unknown_run_nonce" }), { status: 400 }),
+      ),
+    );
+    try {
+      const { status } = await call({
+        method: "POST",
+        auth: jwt,
+        body: { game: "reactor", score: 10, nonce: NONCE },
+      });
+      expect(status).toBe(409);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -355,10 +368,9 @@ describe("ruta de la liga", () => {
     const jwt = token({ sub: "user-1" });
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (url: string) => {
-        if (String(url).includes("rpc/consume_game_run")) return new Response("true", { status: 200 });
-        return new Response(JSON.stringify({ code: "53400", message: "daily_run_cap" }), { status: 400 });
-      }),
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: "53400", message: "daily_run_cap" }), { status: 400 }),
+      ),
     );
     try {
       const { status, body } = await call({
@@ -368,6 +380,29 @@ describe("ruta de la liga", () => {
       });
       expect(status).toBe(429);
       expect(body).toMatchObject({ error: "daily_cap", unit: "runs", limit: DAILY_RUN_CAP });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("si falta la RPC, 503 con el nombre de la migración", async () => {
+    const jwt = token({ sub: "user-1" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(JSON.stringify({ code: "42883", message: "function public.record_game_run does not exist" }), {
+          status: 404,
+        }),
+      ),
+    );
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: jwt,
+        body: { game: "impulse", score: 10, nonce: NONCE },
+      });
+      expect(status).toBe(503);
+      expect(String(body.hint)).toContain("20261113120000");
     } finally {
       vi.unstubAllGlobals();
     }
