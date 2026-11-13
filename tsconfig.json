@@ -1,7 +1,7 @@
 {
   "compilerOptions": {
     "allowJs": true,
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "paths": {
