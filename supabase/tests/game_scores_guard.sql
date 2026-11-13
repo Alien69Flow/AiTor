@@ -60,14 +60,24 @@ insert into auth.users (id, email) values
   ('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'pgtap-12@example.test')
 on conflict (id) do nothing;
 
--- Emite un nonce ya gastado, que es lo que el trigger exige para dejar pasar
--- una fila. No se toca `expires_at`: el default del propio esquema (10 min).
+-- Nonce ya gastado: es lo que el trigger exige para dejar entrar una fila.
 create or replace function public.pgtap_issue_run(p_user uuid, p_game text)
 returns uuid
 language sql
 as $fn$
   insert into public.game_runs (user_id, game, used_at)
   values (p_user, p_game, now())
+  returning nonce;
+$fn$;
+
+-- Nonce recien emitido y sin gastar (`used_at` a null, caducidad por defecto de
+-- 10 minutos): hace falta para probar `consume_game_run`.
+create or replace function public.pgtap_new_run(p_user uuid, p_game text)
+returns uuid
+language sql
+as $fn$
+  insert into public.game_runs (user_id, game)
+  values (p_user, p_game)
   returning nonce;
 $fn$;
 
@@ -328,10 +338,10 @@ $do$;
 select ok(
   public.pgtap_consume_as(
     'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-    public.pgtap_issue_run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'memory'),
+    public.pgtap_new_run('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', 'memory'),
     'memory'
   ),
-  'un nonce recien emitido se puede gastar'
+  'un nonce recien emitido y sin gastar se puede gastar'
 );
 
 insert into public.game_runs (nonce, user_id, game, issued_at, expires_at)
