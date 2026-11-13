@@ -144,7 +144,6 @@ describe("reto del día en el servidor", () => {
   it("acepta el reto del día sólo si es hoy y del juego que toca", () => {
     const now = new Date(Date.UTC(2026, 10, 12, 10, 0));
     const game = dailyGameFor(day);
-
     const ok = validateSubmission({ game, score: 5, nonce: NONCE, daily: day }, now);
     expect("error" in ok).toBe(false);
     if (!("error" in ok)) expect(ok.daily).toBe(day);
@@ -359,6 +358,33 @@ describe("ruta de la liga", () => {
         body: { game: "reactor", score: 10, nonce: NONCE },
       });
       expect(status).toBe(409);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("los puntos que no cuadran son 409, no un 502", async () => {
+    const jwt = token({ sub: "user-1" });
+    let calls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        calls += 1;
+        return new Response(JSON.stringify({ code: "23514", message: "points_mismatch" }), { status: 400 });
+      }),
+    );
+    try {
+      const { status, body } = await call({
+        method: "POST",
+        auth: jwt,
+        body: { game: "memory", score: 3, nonce: NONCE },
+      });
+      // El trigger de la #85 rechaza la fila y el nonce ya está gastado: 409
+      // con salida concreta, no el 502 genérico de league_write_failed.
+      expect(status).toBe(409);
+      expect(body.error).toBe("points_mismatch");
+      expect(String(body.hint)).toContain("nonce");
+      expect(calls).toBe(1);
     } finally {
       vi.unstubAllGlobals();
     }
