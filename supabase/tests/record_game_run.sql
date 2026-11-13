@@ -47,14 +47,16 @@ on conflict (id) do nothing;
 -- ---------------------------------------------------------------------------
 -- Ayudantes. La RPC lee `auth.uid()`, asi que hay que ponerse en
 -- `authenticated` con las claims del jugador, igual que haria PostgREST.
+--
+-- Van SIN `security definer` a proposito: `SET ROLE` no se puede ejecutar
+-- dentro de una funcion de ese tipo. Como el fichero corre como `postgres`
+-- (superusuario), una funcion normal puede cambiar de rol y volver.
 -- ---------------------------------------------------------------------------
 
 -- Emite un nonce como lo haria el navegador: llama a `start_game_run`.
 create or replace function public.pgtap_start_as(p_user uuid, p_game text)
 returns uuid
 language plpgsql
-security definer
-set search_path = public
 as $fn$
 declare
   v_nonce uuid;
@@ -78,8 +80,6 @@ create or replace function public.pgtap_record_as(
 )
 returns table (points integer, score integer, season text)
 language plpgsql
-security definer
-set search_path = public
 as $fn$
 declare
   v_points integer;
@@ -108,8 +108,6 @@ create or replace function public.pgtap_record_state(
 )
 returns text
 language plpgsql
-security definer
-set search_path = public
 as $fn$
 declare
   v_state text;
@@ -136,8 +134,6 @@ $fn$;
 create or replace function public.pgtap_direct_insert_state(p_user uuid)
 returns text
 language plpgsql
-security definer
-set search_path = public
 as $fn$
 declare
   v_state text;
