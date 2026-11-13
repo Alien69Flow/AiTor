@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 import { FOLD_MARKER, patchGlobeFold } from "./globe-fold-patch";
 
 /** Recorte del panel con las tres anclas tal como están en `GlobeDashboard.tsx`. */
-const FIXTURE = `import { useState, useCallback } from \"react\";
+const FIXTURE = `import { useState, useCallback } from "react";
 
 export function GlobeDashboard() {
   const [selectedHotspot, setSelectedHotspot] = useState(null);
