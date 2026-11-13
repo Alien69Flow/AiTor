@@ -167,7 +167,7 @@ begin
        to_char(now() at time zone 'utc', 'YYYY-MM'), null,
        public.pgtap_issue_run('66666666-6666-4666-8666-666666666666', 'memory'));
   end loop;
-end
+end;
 $do$;
 
 select throws_ok(
@@ -187,9 +187,9 @@ select throws_ok(
   'la partida 61 del dia no entra aunque el nonce sea bueno'
 );
 
--- 7. Tope de 100 000 puntos por jugador y dia. Cinco partidas de 20 000
-dejan el dia justo en el techo; la sexta no cabe.
--- Ojo: se usa otra cuenta porque los topes se cuentan por jugador.
+-- 7. Tope de 100 000 puntos por jugador y dia: cinco partidas de 20 000 dejan
+--    el dia justo en el techo y la sexta ya no cabe. Se usa otra cuenta porque
+--    los topes se cuentan por jugador.
 do $do$
 declare
   v_i integer;
@@ -202,7 +202,7 @@ begin
        to_char(now() at time zone 'utc', 'YYYY-MM'), null,
        public.pgtap_issue_run('77777777-7777-4777-8777-777777777777', 'impulse'));
   end loop;
-end
+end;
 $do$;
 
 select throws_ok(
