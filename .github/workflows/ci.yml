@@ -1,8 +1,7 @@
 name: CI
 
-# Cuatro controles, tres de ellos nuevos como bloqueantes: tipos (tsc -b),
-# compilación, tests y lint. Sin secretos, así que nunca falla por claves que
-# falten.
+# Cuatro pasos, todos bloqueantes: tipos (tsc -b), compilación, tests y lint.
+# Sin secretos, así que nunca falla por claves que falten.
 #
 # Antes sólo el build bloqueaba: los tests y el lint eran informativos, y no
 # había typecheck. Como `vite build` usa SWC, que borra los tipos sin mirarlos,
@@ -37,9 +36,10 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      # `npm run typecheck` = `tsc -b` sobre tsconfig.app.json (src) y
-      # tsconfig.node.json (vite.config.ts). Va antes del build a propósito: el
-      # build no comprueba tipos, así que este es el único paso que los mira.
+      # `npm run typecheck` = `tsc -b`: compila el proyecto de `src` y el de
+      # `vite.config.ts`, y sigue sus imports aunque caigan fuera de `include`
+      # (api/, supabase/functions/). Va antes del build a propósito: el build no
+      # comprueba tipos, así que este es el único paso que los mira.
       - name: Typecheck
         run: npm run typecheck
 
