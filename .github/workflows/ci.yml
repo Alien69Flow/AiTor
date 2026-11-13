@@ -1,7 +1,11 @@
 name: CI
 
-# Única comprobación: instala, compila y prueba. Sin secretos, así que nunca
-# falla por claves que falten. Tests y lint son informativos (no bloquean).
+# Cuatro pasos, todos bloqueantes: tipos (tsc -b), compilación, tests y lint.
+# Sin secretos, así que nunca falla por claves que falten.
+#
+# Antes sólo el build bloqueaba: los tests y el lint eran informativos, y no
+# había typecheck. Como `vite build` usa SWC, que borra los tipos sin mirarlos,
+# un error de tipos llegaba a `main` con todo en verde.
 
 on:
   push:
@@ -32,13 +36,18 @@ jobs:
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
+      # `npm run typecheck` = `tsc -b`: compila el proyecto de `src` y el de
+      # `vite.config.ts`, y sigue sus imports aunque caigan fuera de `include`
+      # (api/, supabase/functions/). Va antes del build a propósito: el build no
+      # comprueba tipos, así que este es el único paso que los mira.
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Build
         run: npm run build
 
-      - name: Unit tests (advisory)
-        continue-on-error: true
+      - name: Unit tests
         run: npm test
 
-      - name: Lint (advisory)
-        continue-on-error: true
+      - name: Lint
         run: npm run lint
