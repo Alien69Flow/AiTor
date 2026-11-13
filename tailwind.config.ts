@@ -62,6 +62,26 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        /**
+         * Severidad: un solo eje para decir "esto salio bien", "esto avisa" o
+         * "esto fallo", en vez de que cada pantalla elija entre `accent` y
+         * `secondary` (que valen lo mismo). Mismos valores que los `--glow-*`
+         * de index.css. `<alpha-value>` mantiene funcionando `/10`, `/40`, etc.
+         */
+        severity: {
+          ok: "hsl(120 100% 50% / <alpha-value>)",
+          info: "hsl(187 100% 50% / <alpha-value>)",
+          warn: "hsl(43 100% 50% / <alpha-value>)",
+          critical: "hsl(0 100% 70% / <alpha-value>)",
+          unknown: "hsl(220 10% 55% / <alpha-value>)",
+        },
+        /** Estado del dato: ortogonal a la severidad. Un dato viejo no es un error. */
+        data: {
+          live: "hsl(120 100% 50% / <alpha-value>)",
+          stale: "hsl(43 100% 50% / <alpha-value>)",
+          fallback: "hsl(187 100% 50% / <alpha-value>)",
+          unavailable: "hsl(0 100% 70% / <alpha-value>)",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
