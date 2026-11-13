@@ -38,7 +38,6 @@ const AUTH_URL =
   process.env.AUTH_SUPABASE_URL ||
   process.env.VITE_AUTH_SUPABASE_URL ||
   "https://pnyigikagdxqaogbiift.supabase.co";
-
 const AUTH_KEY =
   process.env.AUTH_SUPABASE_PUBLISHABLE_KEY ||
   process.env.VITE_AUTH_SUPABASE_PUBLISHABLE_KEY ||
@@ -118,7 +117,6 @@ export function dailySeed(key: string): number {
   }
   return hash >>> 0;
 }
-
 /** Los juegos que pueden ser reto del día, en el mismo orden que la pestaña. */
 export const DAILY_ROTATION: readonly LeagueGame[] = ["impulse", "memory", "reactor"];
 
@@ -134,7 +132,6 @@ export function dailyGameFor(day: string): LeagueGame {
 }
 
 const NONCE_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /** ¿Tiene forma de uuid v4 emitido por `start_game_run`? */
 export function isNonce(value: unknown): value is string {
   return typeof value === "string" && NONCE_PATTERN.test(value);
@@ -203,7 +200,7 @@ export function validateSubmission(body: unknown, now: Date = new Date()): Submi
     return { error: "score debe ser un número" };
   }
   if (!isNonce(payload.nonce)) {
-    return { error: 'falta el nonce: pide uno con POST /api/league {action:"start"}' };
+    return { error: "falta el nonce: pide uno con POST /api/league {action:\"start\"}" };
   }
   const today = dayKey(now);
   let daily: string | null = null;
@@ -310,9 +307,14 @@ function leagueFailure(
     });
   }
   if (/points_mismatch/.test(text)) {
-    // No debería ocurrir: los puntos los pone la RPC. Si pasa, algo se saltó la
-    // función, así que se rechaza y se deja rastro en los logs de Vercel.
-    return res.status(409).json({ error: "points_mismatch", season });
+    // El trigger de `game_scores` sólo debería ver puntos que ya calculó la
+    // base. Si salta, el nonce ya está gastado y la fila no entró: se responde
+    // 409 con una salida concreta en vez del 502 mudo de antes.
+    return res.status(409).json({
+      error: "points_mismatch",
+      hint: "La partida no se ha contado: pide un nonce nuevo y vuelve a jugarla",
+      season,
+    });
   }
   if (/unauthorized/.test(text)) {
     return res.status(401).json({ error: "unauthorized", hint: "Inicia sesión para puntuar" });
