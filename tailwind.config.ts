@@ -75,13 +75,6 @@ export default {
           critical: "hsl(0 100% 70% / <alpha-value>)",
           unknown: "hsl(220 10% 55% / <alpha-value>)",
         },
-        /** Estado del dato: ortogonal a la severidad. Un dato viejo no es un error. */
-        data: {
-          live: "hsl(120 100% 50% / <alpha-value>)",
-          stale: "hsl(43 100% 50% / <alpha-value>)",
-          fallback: "hsl(187 100% 50% / <alpha-value>)",
-          unavailable: "hsl(0 100% 70% / <alpha-value>)",
-        },
       },
       borderRadius: {
         lg: "var(--radius)",

@@ -1,6 +1,6 @@
 import { AlertTriangle, Check, Cloud, Database, Github, Radar, Satellite, Wrench } from "lucide-react";
 import { resolveToolCard, type ToolIcon } from "@/lib/chat-cards";
-import { SEVERITY_CLASS, type Severity } from "@/components/SeverityBadge";
+import { SEVERITY_CLASS, type Severity } from "@/lib/severity";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<ToolIcon, typeof Cloud> = {
@@ -14,8 +14,6 @@ const ICONS: Record<ToolIcon, typeof Cloud> = {
 
 /** Lo que hoy manda `useChat` en `message.skills`. */
 export interface SkillReport {
-  /** Id de la herramienta, si llega. Sin el se resuelve por la etiqueta. */
-  tool?: string;
   label: string;
   ok?: boolean;
   error?: string | null;
@@ -29,15 +27,14 @@ export interface SkillReport {
  * en vez de romper el mensaje.
  */
 export function ToolCard({ skill }: { skill: SkillReport }) {
-  const card = resolveToolCard(skill.tool ?? skill.label);
+  const card = resolveToolCard(skill.label);
   const severity: Severity = skill.ok ? card.tone : "critical";
   const Icon = ICONS[card.icon];
 
   return (
     <span
       data-tool={card.id}
-      data-state={skill.ok ? "ok" : "error"}
-      title={skill.ok ? card.label : (card.emptyHint ? `${card.label}: ${skill.error ?? card.emptyHint}` : card.label)}
+      title={skill.ok ? card.label : `${card.label}: ${skill.error ?? card.emptyHint}`}
       className={cn(
         "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider",
         SEVERITY_CLASS[severity],

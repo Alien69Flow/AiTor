@@ -1,3 +1,5 @@
+import type { Severity } from "./severity";
+
 /**
  * Registro herramienta -> tarjeta del chat.
  *
@@ -6,10 +8,9 @@
  *
  * Antes `ChatMessage` decidia todo con `skill.ok`: un check o un triangulo. Eso
  * hacia indistinguibles una lectura de meteo y una de GitHub, y no habia sitio
- * donde annadir una herramienta nueva.
+ * donde anadir una herramienta nueva.
  */
 
-export type ToolTone = "ok" | "info" | "warn" | "critical" | "unknown";
 export type ToolIcon = "cloud" | "satellite" | "radar" | "github" | "database" | "wrench";
 
 export interface ToolCardMeta {
@@ -18,7 +19,8 @@ export interface ToolCardMeta {
   /** Nombres alternativos: ids namespaced, etiquetas en espanol, prefijos. */
   aliases: string[];
   icon: ToolIcon;
-  tone: ToolTone;
+  /** Tono cuando la fuente responde. Si falla, `ToolCard` pinta `critical`. */
+  tone: Severity;
   emptyHint: string;
 }
 
