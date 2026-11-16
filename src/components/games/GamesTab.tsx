@@ -37,6 +37,7 @@ import { HeadSoccerGame } from "./HeadSoccerGame";
 import { PartyGame } from "./PartyGame";
 import { RouletteGame } from "./RouletteGame";
 import { UnoGame } from "./UnoGame";
+import { LEAGUE_SEVERITY, LeagueEmpty, LeaguePanel, LeagueRow } from "./LeaguePanel";
 
 const GAME_NAME: Record<HubGame, string> = {
 	impulse: "Pulso orbital",
@@ -384,28 +385,23 @@ export function GamesTab() {
 							<Chip label="Últimas" value={`${ladder.length}/${HISTORY_LIMIT}`} />
 						</div>
 						{/* Clasificación real: la calcula el servidor, no el navegador. */}
-						<div className="rounded-xl border border-primary/30 bg-primary/5">
-							<header className="flex items-center gap-2 border-b border-primary/20 px-3 py-2">
-								<Swords className="h-3 w-3 text-primary" />
-								<h3 className="font-heading text-[10px] uppercase tracking-widest text-primary">
-									Clasificación · {league.status === "ready" ? league.season : seasonOf(today)}
-								</h3>
-								<span className="ml-auto font-mono text-[8px] uppercase tracking-wider text-muted-foreground/50">
-									servidor · {league.status}
-								</span>
-							</header>
+						<LeaguePanel
+							title={`Clasificación · ${league.status === "ready" ? league.season : seasonOf(today)}`}
+							meta={`servidor · ${league.status}`}
+							severity={LEAGUE_SEVERITY[league.status]}
+						>
 							{league.status === "loading" && (
 								<p className="px-3 py-4 font-mono text-[10px] text-muted-foreground/55">
 									Leyendo la tabla de la temporada…
 								</p>
 							)}
 							{league.status === "missing" && (
-								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-accent">
-									La tabla existe en código pero no en la base: falta aplicar
+								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-severity-warn">
+									La tabla existe en código pero no en la base: falta aplicar{" "}
 									<code className="mx-1 rounded bg-muted/40 px-1">
 										supabase/migrations/20261107210000_game_league.sql
 									</code>
-									. Mientras tanto se juega igual y manda la liga local de abajo.
+									. Mientras tanto se juega igual y manda el historial del navegador.
 								</p>
 							)}
 							{league.status === "anon" && (
@@ -414,69 +410,56 @@ export function GamesTab() {
 								</p>
 							)}
 							{league.status === "error" && (
-								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-destructive">
+								<p className="px-3 py-3 font-mono text-[9px] leading-relaxed text-severity-critical">
 									No se pudo leer la clasificación del servidor. Tu historial local sigue intacto.
 								</p>
 							)}
 							{league.status === "ready" &&
 								(league.rows.length === 0 ? (
-									<p className="px-3 py-4 font-mono text-[10px] text-muted-foreground/55">
+									<LeagueEmpty>
 										Nadie ha puntuado esta temporada: la primera partida abre la tabla.
-									</p>
+									</LeagueEmpty>
 								) : (
-									<ol className="divide-y divide-primary/10">
+									<ol className="divide-y divide-border/20">
 										{league.rows.map((row) => (
-											<li
+											<LeagueRow
 												key={`${row.rank}-${row.handle}`}
-												className="flex items-center gap-2 px-3 py-1.5 font-mono text-[10px]"
-											>
-												<span className="w-5 text-muted-foreground/40">{row.rank}</span>
-												<span className="min-w-0 flex-1 truncate text-foreground/85">
-													{row.handle}
-												</span>
-												<span className="text-muted-foreground/45">{row.runs} p</span>
-												<span className="w-14 text-right text-primary">{row.points} pts</span>
-											</li>
+												leading={row.rank}
+												label={row.handle}
+												aside={`${row.runs} p`}
+												value={`${row.points} pts`}
+												highlight={league.me?.rank === row.rank}
+											/>
 										))}
 									</ol>
 								))}
 							{league.status === "ready" && league.me && (
-								<p className="border-t border-primary/20 px-3 py-1.5 font-mono text-[9px] text-secondary">
+								<p className="border-t border-border/20 px-3 py-1.5 font-mono text-[9px] text-secondary">
 									Tú: puesto {league.me.rank} · {league.me.points} pts · mejor marca {league.me.best}
 								</p>
 							)}
-						</div>
+						</LeaguePanel>
 						<h3 className="font-heading text-[10px] uppercase tracking-widest text-muted-foreground/60">
 							Tu historial local
 						</h3>
 
-						{ladder.length === 0 ? (
-							<div className="rounded-xl border border-dashed border-border/50 p-6 text-center">
-								<Trophy className="mx-auto h-5 w-5 text-muted-foreground/40" />
-								<p className="mt-2 font-mono text-[10px] text-muted-foreground/60">
-									Sin partidas esta temporada. Juega una y aparece aquí.
-								</p>
-							</div>
-						) : (
-							<ol className="divide-y divide-border/40 rounded-xl border border-border/40 bg-card/40">
-								{ladder.map((run, index) => (
-									<li
-										key={`${run.at}-${index}`}
-										className="flex items-center gap-2 px-3 py-2 font-mono text-[10px]"
-									>
-										<span className="w-5 text-muted-foreground/40">{index + 1}</span>
-										<span className="min-w-0 flex-1 truncate text-foreground/80">
-											{GAME_NAME[run.game]}
-											{run.daily ? " · reto" : ""}
-										</span>
-										<span className="text-muted-foreground/50">
-											{new Date(run.at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
-										</span>
-										<span className="w-12 text-right text-primary">+{run.points}</span>
-									</li>
-								))}
-							</ol>
-						)}
+						<LeaguePanel title="Historial del navegador" meta="sin sesión" severity="unknown">
+							{ladder.length === 0 ? (
+								<LeagueEmpty>Sin partidas esta temporada. Juega una y aparece aquí.</LeagueEmpty>
+							) : (
+								<ol className="divide-y divide-border/40">
+									{ladder.map((run, index) => (
+										<LeagueRow
+											key={`${run.at}-${index}`}
+											leading={index + 1}
+											label={`${GAME_NAME[run.game]}${run.daily ? " · reto" : ""}`}
+											aside={new Date(run.at).toLocaleDateString("es-ES", { day: "2-digit", month: "short" })}
+											value={`+${run.points}`}
+										/>
+									))}
+								</ol>
+							)}
+						</LeaguePanel>
 						<p className="font-mono text-[9px] leading-relaxed text-muted-foreground/45">
 							Arriba manda la tabla del servidor (Postgres, una fila por partida). Abajo queda
 							tu historial del navegador, que funciona sin sesión. La competición del ecosistema
@@ -565,7 +548,8 @@ export function GamesTab() {
 							</h3>
 							<ul className="mt-2 space-y-1.5">
 								{DAOS.map((org) => (
-									<li key={org.id} className="flex flex-wrap items-center gap-2 font-mono text-[9px]">
+									<li
+										key={org.id} className="flex flex-wrap items-center gap-2 font-mono text-[9px]">
 										<span className="text-foreground/75">{org.name}</span>
 										<code className="rounded bg-muted/40 px-1 py-0.5 text-[8px] text-muted-foreground/70">
 											{org.address.slice(0, 6)}…{org.address.slice(-4)}
