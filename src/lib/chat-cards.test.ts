@@ -1,22 +1,37 @@
 import { describe, expect, it } from "vitest";
+import { SKILLS } from "./ai-skills";
 import { FALLBACK_CARD, TOOL_CARDS, normalizeToolKey, resolveToolCard } from "./chat-cards";
 
 describe("resolveToolCard", () => {
-  it("reconoce las cinco herramientas del MCP por su id", () => {
-    for (const id of ["weather", "satellites", "osint", "github", "database"]) {
-      expect(resolveToolCard(id).id).toBe(id);
+  it("resuelve el id de cada tarjeta del registro", () => {
+    for (const card of Object.values(TOOL_CARDS)) {
+      expect(resolveToolCard(card.id).id).toBe(card.id);
     }
   });
 
-  it("resuelve nombres namespaced por el token que conoce", () => {
-    expect(resolveToolCard("mcp__weather__get").id).toBe("weather");
-    expect(resolveToolCard("tools.github.search").id).toBe("github");
+  it("resuelve la etiqueta y el id de CADA skill real del chat", () => {
+    // Si alguién renombra una skill en ai-skills.ts, esto falla aqui en vez de
+    // degradar a la tarjeta gris en silencio.
+    for (const skill of SKILLS) {
+      expect(resolveToolCard(skill.label).id).toBe(skill.id);
+      expect(resolveToolCard(skill.id).id).toBe(skill.id);
+    }
   });
 
-  it("acepta la etiqueta en espanol y sin acentos", () => {
-    expect(resolveToolCard("Meteo").id).toBe("weather");
-    expect(resolveToolCard("satelites").id).toBe("satellites");
-    expect(resolveToolCard("  Base de datos ").id).toBe("database");
+  it("resuelve nombres namespaced y con guiones del agente", () => {
+    expect(resolveToolCard("mcp__weather__get").id).toBe("weather");
+    expect(resolveToolCard("tools.github.search").id).toBe("repo");
+    expect(resolveToolCard("noaa-space-weather").id).toBe("spaceWeather");
+  });
+
+  it("separa camelCase en los nombres de herramienta", () => {
+    expect(resolveToolCard("getWeather").id).toBe("weather");
+    expect(resolveToolCard("spaceWeather").id).toBe("spaceWeather");
+  });
+
+  it("distingue clima de superficie de clima espacial", () => {
+    expect(resolveToolCard("clima").id).toBe("weather");
+    expect(resolveToolCard("Clima espacial").id).toBe("spaceWeather");
   });
 
   it("no inventa: lo desconocido cae en la tarjeta generica", () => {
@@ -35,5 +50,6 @@ describe("resolveToolCard", () => {
 
   it("normaliza mayusculas, acentos y espacios", () => {
     expect(normalizeToolKey("  Satélites ")).toBe("satelites");
+    expect(normalizeToolKey("getWeather")).toBe("get weather");
   });
 });
