@@ -10,7 +10,7 @@ describe("resolveToolCard", () => {
   });
 
   it("resuelve la etiqueta y el id de CADA skill real del chat", () => {
-    // Si alguién renombra una skill en ai-skills.ts, esto falla aqui en vez de
+    // Si alguien renombra una skill en ai-skills.ts, esto falla aqui en vez de
     // degradar a la tarjeta gris en silencio.
     for (const skill of SKILLS) {
       expect(resolveToolCard(skill.label).id).toBe(skill.id);
