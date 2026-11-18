@@ -9,8 +9,8 @@
  *    caída y TTL en Redis (sobrevive al isolate).
  *  - `writeDataset` / `writeSeedMeta`: cada dato publicado deja su marca de
  *    frescura `seed-meta:<clave>`, que es lo que lee `/api/health`.
- *  - `getJsonStatus`: devuelve hit / miss / error por separado. Un fallo de
- *    Redis que se confunde con "no hay datos" es exactamente el bug que hace
+ *  - `getJsonStatus`: devuelve hit / negative / miss / error por separado.
+ *    Un fallo de Redis que se confunde con "no hay datos" es el bug que hace
  *    invisible una fuente muerta en un dashboard.
  *
  * Variables de entorno necesarias (Vercel → Settings → Environment Variables):
@@ -99,11 +99,17 @@ export async function redisPipeline<T = unknown>(
 }
 
 // ---------------------------------------------------------------------------
-// Lectura de JSON con tres estados
+// Lectura de JSON con cuatro estados
 // ---------------------------------------------------------------------------
 
+/**
+ * `negative` es distinto de `miss` a propósito: significa "hace poco que esta
+ * clave falló, no salgas a la red todavía". Colapsarlo con `miss` convertía la
+ * caché negativa en decorativa (#94).
+ */
 export type CacheRead<T> =
   | { status: "hit"; value: T }
+  | { status: "negative" }
   | { status: "miss" }
   | { status: "error"; error: unknown };
 
@@ -119,14 +125,14 @@ export async function getJsonStatus<T = unknown>(key: string, raw = false): Prom
     const stored = await redisCommand<string | null>(["GET", finalKey(key, raw)]);
     if (stored == null) return { status: "miss" };
     const parsed = JSON.parse(stored) as unknown;
-    if (isNullSentinel(parsed)) return { status: "miss" };
+    if (isNullSentinel(parsed)) return { status: "negative" };
     return { status: "hit", value: parsed as T };
   } catch (error) {
     return { status: "error", error };
   }
 }
 
-/** Atajo cómodo: null tanto en miss como en error. */
+/** Atajo cómodo: null en negative, miss y error. */
 export async function getJson<T = unknown>(key: string, raw = false): Promise<T | null> {
   const read = await getJsonStatus<T>(key, raw);
   return read.status === "hit" ? read.value : null;
@@ -157,10 +163,9 @@ export interface CachedFetchOpts {
 /**
  * Devuelve el JSON cacheado de `key`; si no está, ejecuta `fetcher` una sola vez.
  *
- * Esto NO es un `try/catch` que oculta errores. Con `onError: "throw"` el primer
- * llamante recibe la excepción y los siguientes, durante `negativeTtlSeconds`,
- * reciben null. Si necesitas saber siempre la verdad, usa `getJsonStatus` +
- * `setJson` a mano.
+ * Con `onError: "throw"` el primer llamante recibe la excepción y los siguientes,
+ * durante `negativeTtlSeconds`, reciben null SIN volver a salir a la red. Si
+ * necesitas saber siempre la verdad, usa `getJsonStatus` + `setJson` a mano.
  */
 export async function cachedFetchJson<T>(
   key: string,
@@ -173,6 +178,8 @@ export async function cachedFetchJson<T>(
 
   const cached = await getJsonStatus<T>(key);
   if (cached.status === "hit") return cached.value;
+  // Fallo reciente cacheado: degradar sin martillear la fuente.
+  if (cached.status === "negative") return null;
 
   const flightKey = opts.inflightKey ?? key;
   const pending = inFlight.get(flightKey);
