@@ -94,7 +94,7 @@ function stubFetch(chat: () => unknown) {
     vi.fn(async (url: string, init?: { body?: string }) => {
       const target = String(url);
       if (target.includes("sendMessage")) {
-        const body = JSON.parse(String(init?.body ?? "{}\"));
+        const body = JSON.parse(String(init?.body ?? "{}")) as { text?: string };
         sentToUser.push(String(body.text ?? ""));
         return response(200, '{"ok":true}');
       }
