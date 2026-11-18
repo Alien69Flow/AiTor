@@ -80,9 +80,15 @@ export function isWriteAction(action: string): boolean {
   return (WRITE_ACTIONS as readonly string[]).includes(action);
 }
 
-/** `owner`/`repo` tal como los acepta GitHub: sin barras ni espacios. */
+/**
+ * `owner`/`repo` tal como los acepta GitHub: sin barras ni espacios.
+ *
+ * La clase de caracteres evita `\\w` a propósito: un doble escape convierte el
+ * regex en "barra invertida o w" y rechaza nombres reales como `Alien69Flow`
+ * (fue un 400 real en el primer intento, cazado por el test).
+ */
 export function isSafeName(value: unknown): value is string {
-  return typeof value === "string" && /^[\\w.-]{1,100}$/.test(value);
+  return typeof value === "string" && /^[A-Za-z0-9._-]{1,100}$/.test(value);
 }
 
 /**
