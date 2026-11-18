@@ -58,6 +58,7 @@ const SUPABASE_ANON_KEY =
   (process.env.VITE_SUPABASE_ANON_KEY as string) ||
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8';
 
+
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
@@ -372,6 +373,213 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
 }
 
 // ---------------------------------------------------------------------------
+// Sonda real de la función `chat` (GET ?probe=1)
+// ---------------------------------------------------------------------------
+//
+// El GET normal mira un solo extremo: que Telegram apunte al webhook y que el
+// bot tenga token. El otro extremo, que es donde se rompe de verdad, quedaba a
+// ciegas: un 401 del gateway de Supabase y un 500 del proveedor de IA llegaban
+// al usuario como el mismo texto genérico, así que «el bot no responde» podía
+// ser cualquiera de las dos cosas y no había forma de saberlo sin entrar en
+// Vercel.
+//
+// La comprobación de salud de la función es gratis y va siempre. La llamada al
+// modelo cuesta cuota de IA, así que sólo se hace con `x-api-key: OPERATOR_KEY`.
+// Nunca se devuelve la clave: sólo su forma (`jwt`, `publishable`, `otra`,
+// `vacia`), y el texto del error pasa por un filtro que tapa credenciales.
+
+type KeyKind = "jwt" | "publishable" | "otra" | "vacia";
+
+interface ChatProbeAttempt {
+  via: string;
+  sent: string;
+  status: number | null;
+  ok: boolean;
+  ms: number | null;
+  contentType: string | null;
+  bytes: number | null;
+  /** Primeras letras del error, con cualquier credencial sustituida. */
+  errorHead: string | null;
+  hint: string;
+}
+
+interface ChatProbe {
+  host: string;
+  keyKind: KeyKind;
+  attempts: ChatProbeAttempt[];
+  conclusion: string;
+  cached: boolean;
+  note: string | null;
+}
+
+const PROBE_MESSAGE = "ping";
+const PROBE_TIMEOUT_MS = 12_000;
+/** Un sondeo gasta cuota: como mucho uno cada 30 s por variante e instancia. */
+const PROBE_CACHE_MS = 30_000;
+const PROBE_CACHE = new Map<string, { at: number; value: ChatProbe }>();
+
+/** Forma de la clave, nunca su valor. */
+function keyKind(key: string): KeyKind {
+  if (!key) return "vacia";
+  if (key.split(".").length === 3) return "jwt";
+  if (key.startsWith("sb_publishable_") || key.startsWith("sb_secret_")) return "publishable";
+  return "otra";
+}
+
+/** Tapa cualquier credencial que aparezca en un texto de error. */
+function scrub(text: string): string {
+  let out = text;
+  for (const secret of [SUPABASE_ANON_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET]) {
+    if (secret && secret.length >= 8) out = out.split(secret).join("[clave]");
+  }
+  return out.slice(0, 200);
+}
+
+function hintFor(
+  status: number | null,
+  ok: boolean,
+  produced: boolean,
+  healthOnly: boolean,
+): string {
+  if (status === null) return "sin respuesta: red, DNS o tiempo agotado";
+  if (status === 401) return "credencial rechazada: gateway de Supabase o clave del proveedor de IA";
+  if (status === 402) return "la clave del proveedor está sin créditos";
+  if (status === 403) return "prohibido: revisa verify_jwt de la función chat";
+  if (status === 404) return "la función chat no existe en ese proyecto";
+  if (status === 429) return "límite de peticiones del proveedor";
+  if (status >= 500) return "la función chat falló o el proveedor está caído";
+  if (healthOnly) return "la función chat vive y responde a su informe de salud";
+  return produced
+    ? "responde de verdad: el fallo está en el webhook, no en el chat"
+    : "200 pero sin texto: mira el modelo y el stream";
+}
+
+async function probeAttempt(
+  via: string,
+  sent: string,
+  headers: Record<string, string>,
+  healthOnly = false,
+): Promise<ChatProbeAttempt> {
+  const started = Date.now();
+  try {
+    const response = await fetch(healthOnly ? `${CHAT_URL}?health=1` : CHAT_URL, {
+      method: healthOnly ? "GET" : "POST",
+      headers,
+      ...(healthOnly
+        ? {}
+        : {
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "user", content: PROBE_MESSAGE }],
+            }),
+          }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    const text = await response.text().catch(() => "");
+    const produced = /"content"\s*:\s*"[^"]/.test(text);
+    return {
+      via,
+      sent,
+      status: response.status,
+      ok: response.ok,
+      ms: Date.now() - started,
+      contentType: response.headers.get("content-type"),
+      bytes: text.length,
+      errorHead: response.ok ? null : scrub(text),
+      hint: hintFor(response.status, response.ok, produced, healthOnly),
+    };
+  } catch (error) {
+    return {
+      via,
+      sent,
+      status: null,
+      ok: false,
+      ms: Date.now() - started,
+      contentType: null,
+      bytes: null,
+      errorHead: error instanceof Error ? scrub(error.message) : "error desconocido",
+      hint: hintFor(null, false, false, healthOnly),
+    };
+  }
+}
+
+function chatHost(): string {
+  try {
+    return new URL(CHAT_URL).host;
+  } catch {
+    return "url-invalida";
+  }
+}
+
+/**
+ * Comprobación gratuita + (si hay clave de operador) dos llamadas de verdad, en
+ * secuencia: primero la forma que usa hoy el webhook —`apikey` y
+ * `Authorization: Bearer`— y, si esa falla, sólo `apikey`. Con una clave
+ * publishable (`sb_publishable_…`) el Bearer no es un JWT y el gateway la
+ * rechaza antes de llegar a la función, y esa es la diferencia que interesa
+ * distinguir.
+ */
+async function runChatProbe(paid: boolean): Promise<ChatProbe> {
+  const cacheKey = paid ? "paid" : "free";
+  const hit = PROBE_CACHE.get(cacheKey);
+  if (hit && Date.now() - hit.at < PROBE_CACHE_MS) return { ...hit.value, cached: true };
+
+  const attempts: ChatProbeAttempt[] = [
+    await probeAttempt("salud", "GET ?health=1 (gratis)", {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    }, true),
+  ];
+
+  if (paid) {
+    const likeToday = await probeAttempt("como-hoy", "POST apikey + bearer", {
+      "Content-Type": "application/json",
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+    });
+    attempts.push(likeToday);
+    if (!likeToday.ok) {
+      attempts.push(
+        await probeAttempt("solo-apikey", "POST sólo apikey", {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+        }),
+      );
+    }
+  }
+
+  const health = attempts[0];
+  const paidAttempts = attempts.slice(1);
+  const working = paidAttempts.find((attempt) => attempt.ok);
+
+  const conclusion = working
+    ? `chat responde (${working.via}): el fallo está en el webhook, no en el chat`
+    : paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)
+      ? "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)"
+      : health.status === 401
+        ? "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale"
+        : health.ok && paidAttempts.length > 0
+          ? "chat vive pero no contesta al modelo: el fallo está dentro de la función"
+          : health.ok
+            ? "chat vive (comprobación gratuita): añade x-api-key para probar el modelo"
+            : "chat no responde: mira el estado y el error de la primera comprobación";
+
+  const value: ChatProbe = {
+    host: chatHost(),
+    keyKind: keyKind(SUPABASE_ANON_KEY),
+    attempts,
+    conclusion,
+    cached: false,
+    note: paid
+      ? null
+      : "sin x-api-key válida sólo se hace la comprobación gratuita; envía x-api-key: OPERATOR_KEY para llamar al modelo",
+  };
+
+  PROBE_CACHE.set(cacheKey, { at: Date.now(), value });
+  return value;
+}
+
+// ---------------------------------------------------------------------------
 // Default handler
 // ---------------------------------------------------------------------------
 
@@ -396,6 +604,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       telegramApi<TelegramWebhookInfo>("getWebhookInfo"),
     ]);
 
+    // La sonda del chat sólo se ejecuta si se pide: llamar al modelo en cada
+    // diagnóstico gastaría cuota sin motivo.
+    let chatProbe: ChatProbe | null = null;
+    const query = new URL(req.url || "/api/telegram-webhook", `https://${req.headers.host || "localhost"}`)
+      .searchParams;
+    if (query.get("probe") === "1") {
+      const operatorKey = process.env.OPERATOR_KEY || "";
+      const provided = String(req.headers["x-api-key"] || "");
+      const paid = Boolean(operatorKey) && safeEqual(provided, operatorKey);
+      chatProbe = await runChatProbe(paid);
+    }
+
     return res.status(200).json({
       ok: true,
       service: "telegram-webhook",
@@ -415,6 +635,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             lastErrorMessage: info.last_error_message ?? null,
           }
         : null,
+      chatProbe,
     });
   }
 
