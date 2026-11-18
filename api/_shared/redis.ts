@@ -4,27 +4,26 @@
  *
  * Caché y frescura sobre Upstash Redis (REST), sin SDK.
  *
- *  - `cachedFetchJson`: un solo fetch por clave fría aunque haya N peticiones
- *    concurrentes (coalescing), caché negativa para no martillear una fuente
- *    caída y TTL en Redis (sobrevive al isolate).
- *  - `writeDataset` / `writeSeedMeta`: cada dato publicado deja su marca de
- *    frescura `seed-meta:<clave>`, que es lo que lee `/api/health`.
- *  - `getJsonStatus`: devuelve hit / negative / miss / error por separado.
- *    Un fallo de Redis que se confunde con "no hay datos" es el bug que hace
- *    invisible una fuente muerta en un dashboard.
- *
- * Variables de entorno necesarias (Vercel → Settings → Environment Variables):
- *   UPSTASH_REDIS_REST_URL
- *   UPSTASH_REDIS_REST_TOKEN
+ * Variables de entorno: se aceptan los dos juegos de nombres.
+ *   Vercel → Storage → Upstash:  KV_REST_API_URL / KV_REST_API_TOKEN
+ *   Panel de Upstash:            UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN
  *
  * Si faltan, todo degrada a "sin caché": la web funciona, sólo que cada
  * petición va a la fuente. No lanza en import.
  */
 
-const REST_URL = (process.env.UPSTASH_REDIS_REST_URL || "").replace(/\/+$/, "");
-const REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || "";
+/** Primer valor no vacío de la lista: alias de entorno sin repetir código. */
+function firstEnv(...names: string[]): string {
+  for (const name of names) {
+    const value = (process.env[name] ?? "").trim();
+    if (value) return value;
+  }
+  return "";
+}
 
-/** Timeouts calibrados para Vercel ↔ Upstash en el mismo datacenter. */
+const REST_URL = firstEnv("UPSTASH_REDIS_REST_URL", "KV_REST_API_URL").replace(/\/+$/, "");
+const REST_TOKEN = firstEnv("UPSTASH_REDIS_REST_TOKEN", "KV_REST_API_TOKEN");
+
 export const REDIS_TIMEOUT_MS = positiveInt(process.env.REDIS_TIMEOUT_MS, 1_500);
 export const REDIS_PIPELINE_TIMEOUT_MS = positiveInt(process.env.REDIS_PIPELINE_TIMEOUT_MS, 4_000);
 
@@ -37,10 +36,6 @@ export function isRedisConfigured(): boolean {
   return Boolean(REST_URL && REST_TOKEN);
 }
 
-/**
- * Prefijo por entorno para que preview/development no pisen las claves de
- * producción cuando comparten instancia de Upstash.
- */
 function keyPrefix(): string {
   const env = process.env.VERCEL_ENV;
   if (!env || env === "production") return "";
@@ -48,14 +43,12 @@ function keyPrefix(): string {
   return `${env}:${sha}:`;
 }
 
-/** Claves de seed las escribe el publicador sin prefijo: léelas con `raw`. */
 function finalKey(key: string, raw: boolean): string {
   return raw ? key : `${keyPrefix()}${key}`;
 }
 
 type RedisReply<T> = { result?: T; error?: string };
 
-/** Un comando suelto. Lanza si Redis responde error o no hay configuración. */
 export async function redisCommand<T = unknown>(
   args: (string | number)[],
   timeoutMs: number = REDIS_TIMEOUT_MS,
@@ -77,7 +70,6 @@ export async function redisCommand<T = unknown>(
   return data.result as T;
 }
 
-/** Varios comandos en una sola ida y vuelta. */
 export async function redisPipeline<T = unknown>(
   commands: (string | number)[][],
   timeoutMs: number = REDIS_PIPELINE_TIMEOUT_MS,
@@ -98,14 +90,9 @@ export async function redisPipeline<T = unknown>(
   return rows.map((row) => (row?.error ? null : (row?.result ?? null)));
 }
 
-// ---------------------------------------------------------------------------
-// Lectura de JSON con cuatro estados
-// ---------------------------------------------------------------------------
-
 /**
  * `negative` es distinto de `miss` a propósito: significa "hace poco que esta
- * clave falló, no salgas a la red todavía". Colapsarlo con `miss` convertía la
- * caché negativa en decorativa (#94).
+ * clave falló, no salgas a la red todavía".
  */
 export type CacheRead<T> =
   | { status: "hit"; value: T }
@@ -132,7 +119,6 @@ export async function getJsonStatus<T = unknown>(key: string, raw = false): Prom
   }
 }
 
-/** Atajo cómodo: null en negative, miss y error. */
 export async function getJson<T = unknown>(key: string, raw = false): Promise<T | null> {
   const read = await getJsonStatus<T>(key, raw);
   return read.status === "hit" ? read.value : null;
@@ -144,19 +130,12 @@ export async function setJson(key: string, value: unknown, ttlSeconds: number, r
   await redisCommand(["SET", finalKey(key, raw), JSON.stringify(value), "EX", String(ttl)]);
 }
 
-// ---------------------------------------------------------------------------
-// cachedFetchJson: coalescing + caché negativa
-// ---------------------------------------------------------------------------
-
 /** Peticiones en vuelo por isolate: la segunda espera a la primera. */
 const inFlight = new Map<string, Promise<unknown>>();
 
 export interface CachedFetchOpts {
-  /** TTL del fallo cacheado. 0 desactiva la caché negativa. */
   negativeTtlSeconds?: number;
-  /** "null" (por defecto) degrada; "throw" propaga el error al llamante. */
   onError?: "null" | "throw";
-  /** Clave para el coalescing si quieres compartir vuelo entre claves distintas. */
   inflightKey?: string;
 }
 
@@ -164,8 +143,7 @@ export interface CachedFetchOpts {
  * Devuelve el JSON cacheado de `key`; si no está, ejecuta `fetcher` una sola vez.
  *
  * Con `onError: "throw"` el primer llamante recibe la excepción y los siguientes,
- * durante `negativeTtlSeconds`, reciben null SIN volver a salir a la red. Si
- * necesitas saber siempre la verdad, usa `getJsonStatus` + `setJson` a mano.
+ * durante `negativeTtlSeconds`, reciben null SIN volver a salir a la red.
  */
 export async function cachedFetchJson<T>(
   key: string,
@@ -178,7 +156,6 @@ export async function cachedFetchJson<T>(
 
   const cached = await getJsonStatus<T>(key);
   if (cached.status === "hit") return cached.value;
-  // Fallo reciente cacheado: degradar sin martillear la fuente.
   if (cached.status === "negative") return null;
 
   const flightKey = opts.inflightKey ?? key;
@@ -214,15 +191,9 @@ export async function cachedFetchJson<T>(
   return work;
 }
 
-// ---------------------------------------------------------------------------
-// Publicación de datasets + frescura
-// ---------------------------------------------------------------------------
-
 export interface SeedMeta {
-  /** ISO-8601 del momento en que la fuente se leyó correctamente. */
   fetchedAt: string;
   recordCount: number;
-  /** Campo libre para diagnóstico (versión de la fuente, ventana, etc.). */
   [extra: string]: unknown;
 }
 
@@ -230,7 +201,6 @@ export function seedMetaKey(dataKey: string): string {
   return `seed-meta:${dataKey}`;
 }
 
-/** Escribe dato + marca de frescura en una sola ida y vuelta. */
 export async function writeDataset(
   dataKey: string,
   data: unknown,
@@ -243,8 +213,6 @@ export async function writeDataset(
     recordCount: opts.recordCount ?? (Array.isArray(data) ? data.length : 0),
     ...(opts.extra ?? {}),
   };
-  // La meta caduca con el dato: si el publicador muere, el health lo ve vacío
-  // en lugar de mostrar una frescura eterna.
   await redisPipeline([
     ["SET", finalKey(dataKey, false), JSON.stringify(data), "EX", String(ttl)],
     ["SET", seedMetaKey(dataKey), JSON.stringify(meta), "EX", String(ttl)],
@@ -268,7 +236,6 @@ export async function writeSeedMeta(
   ]);
 }
 
-/** Lee varias marcas de frescura en una sola llamada (MGET). */
 export async function readSeedMetas(keys: string[]): Promise<Map<string, SeedMeta | null>> {
   const out = new Map<string, SeedMeta | null>();
   if (keys.length === 0) return out;

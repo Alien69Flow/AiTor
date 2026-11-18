@@ -36,8 +36,20 @@ async function loadModule(): Promise<RedisModule> {
   return (await import("./redis")) as RedisModule;
 }
 
+const ENV_KEYS = [
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
+];
+
+function clearEnv(): void {
+  for (const name of ENV_KEYS) delete process.env[name];
+}
+
 beforeEach(() => {
   store.clear();
+  clearEnv();
   process.env.UPSTASH_REDIS_REST_URL = "https://redis.test";
   process.env.UPSTASH_REDIS_REST_TOKEN = "test-token";
   vi.stubGlobal("fetch", fakeRedisFetch());
@@ -45,8 +57,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  delete process.env.UPSTASH_REDIS_REST_URL;
-  delete process.env.UPSTASH_REDIS_REST_TOKEN;
+  clearEnv();
 });
 
 describe("cachedFetchJson", () => {
@@ -93,6 +104,27 @@ describe("cachedFetchJson", () => {
     });
 
     await expect(redis.cachedFetchJson("k4", 60, fetcher, { onError: "throw" })).rejects.toThrow("boom");
+  });
+});
+
+describe("configuración", () => {
+  it("sin ninguna variable, la caché está desactivada y no lanza", async () => {
+    clearEnv();
+    const redis = await loadModule();
+    expect(redis.isRedisConfigured()).toBe(false);
+  });
+
+  it("acepta el par UPSTASH_* del panel de Upstash", async () => {
+    const redis = await loadModule();
+    expect(redis.isRedisConfigured()).toBe(true);
+  });
+
+  it("acepta el par KV_REST_API_* que inyecta Vercel", async () => {
+    clearEnv();
+    process.env.KV_REST_API_URL = "https://kv.test";
+    process.env.KV_REST_API_TOKEN = "kv-token";
+    const redis = await loadModule();
+    expect(redis.isRedisConfigured()).toBe(true);
   });
 });
 
