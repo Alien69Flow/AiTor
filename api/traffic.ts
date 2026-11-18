@@ -17,12 +17,24 @@
  * Regla que no se negocia: si ninguna fuente responde, la respuesta lo dice
  * (`unavailable: true`) y devuelve una lista vacía. Nunca se rellena con barcos
  * ni aviones inventados.
+ *
+ * Desde la Fase 1 hay caché compartida: sin ella, cada visitante lanzaba ocho
+ * sondeos ADS-B y una descarga del catálogo AIS completo (varios MB). Ver
+ * `docs/fase1-cache-frescura.md`.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { applyCors } from "./_shared/cors.js";
+import { sendError, sendJson } from "./_shared/http.js";
+import { checkRateLimit } from "./_shared/rate-limit.js";
+import { cachedFetchJson } from "./_shared/redis.js";
 
 export const maxDuration = 30;
 
 const TIMEOUT_MS = 12_000;
+
+/** Las posiciones cambian en segundos; la marca de tiempo vive en el payload. */
+const CACHE_TTL_SECONDS = 30;
+const NEGATIVE_TTL_SECONDS = 30;
 
 interface Flight {
   icao24: string;
@@ -90,16 +102,6 @@ interface AdsbAircraft {
  */
 export function isFabricatedId(id: string | null | undefined): boolean {
   return typeof id === "string" && /^mock/i.test(id.trim());
-}
-
-function json(res: VercelResponse, body: unknown, status = 200) {
-  res.status(status);
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  // Es un proxy de datos públicos y el navegador lo llama desde el mismo
-  // origen; el comodín sólo evita sorpresas si algún día se sirve aparte.
-  res.setHeader("access-control-allow-origin", "*");
-  res.setHeader("cache-control", "public, max-age=30, s-maxage=30");
-  res.send(JSON.stringify(body));
 }
 
 async function getJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -330,40 +332,81 @@ function frameStamp(feature: DigitrafficLocation, fallback: string): string {
   return typeof stamp === "number" ? new Date(stamp).toISOString() : fallback;
 }
 
-export default async function traffic(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    res.status(204);
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-methods", "GET, OPTIONS");
-    return res.end();
-  }
-
-  const kind = String(req.query.kind ?? "air");
-
+/**
+ * Cuerpo de la respuesta para un `kind`. La marca de tiempo se genera aquí, es
+ * decir, dentro del valor cacheado: si se pusiera al responder, el ETag de dos
+ * peticiones seguidas nunca coincidiría y no habría 304.
+ */
+async function payloadFor(kind: "air" | "marine"): Promise<unknown> {
   if (kind === "air") {
     const { flights, source, reason } = await fetchAir();
-    return json(res, {
+    return {
       count: flights.length,
       flights,
       source,
       unavailable: flights.length === 0,
       reason,
       timestamp: new Date().toISOString(),
-    });
+    };
   }
 
-  if (kind === "marine") {
-    const { ships, source, coverage, reason } = await fetchMarine();
-    return json(res, {
-      count: ships.length,
-      ships,
-      source,
-      coverage,
-      unavailable: ships.length === 0,
-      reason,
-      timestamp: new Date().toISOString(),
-    });
+  const { ships, source, coverage, reason } = await fetchMarine();
+  return {
+    count: ships.length,
+    ships,
+    source,
+    coverage,
+    unavailable: ships.length === 0,
+    reason,
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export default async function traffic(req: VercelRequest, res: VercelResponse) {
+  // Responde OPTIONS y rechaza orígenes no permitidos. ACAO *: son datos
+  // públicos, y con el origen ecoado la CDN guardaría una copia por visitante.
+  if (applyCors(req, res, { publicRead: true })) return;
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return sendError(
+      res,
+      405,
+      { error: "sólo GET", code: "method_not_allowed" },
+      { Allow: "GET, HEAD, OPTIONS" },
+    );
   }
 
-  return json(res, { error: "kind debe ser air o marine" }, 400);
+  // Cada llamada cuesta hasta nueve peticiones a terceros; sin caché caliente,
+  // este límite es lo que impide que un bucle del cliente los multiplique.
+  if (!(await checkRateLimit(req, res, { name: "traffic", limit: 120, windowSec: 60 }))) return;
+
+  const kind = String(req.query.kind ?? "air");
+  if (kind !== "air" && kind !== "marine") {
+    return sendError(res, 400, { error: "kind debe ser air o marine", code: "bad_kind" });
+  }
+
+  try {
+    const payload = await cachedFetchJson<unknown>(
+      `traffic:${kind}:v1`,
+      CACHE_TTL_SECONDS,
+      () => payloadFor(kind),
+      { negativeTtlSeconds: NEGATIVE_TTL_SECONDS },
+    );
+
+    if (payload == null) {
+      return sendError(res, 502, {
+        error: "ninguna fuente de tráfico respondió",
+        code: "traffic_unavailable",
+        retryAfterSeconds: NEGATIVE_TTL_SECONDS,
+      });
+    }
+
+    // `unavailable: true` es una respuesta correcta con lista vacía: se devuelve
+    // 200 y se cachea igual, para no repetir los nueve sondeos por visitante.
+    sendJson(req, res, 200, payload, { cache: "realtime" });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "fetch failed";
+    console.error("[traffic] fallo:", message);
+    sendError(res, 502, { error: `tráfico inaccesible: ${message}`, code: "traffic_error" });
+  }
 }

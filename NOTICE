@@ -1,0 +1,16 @@
+AiTor incluye código portado de World Monitor
+(https://github.com/koala73/worldmonitor), Copyright (C) 2026 Elie Habib,
+distribuido bajo GNU AGPL-3.0-only.
+
+Los ficheros derivados llevan la cabecera SPDX correspondiente. A fecha de
+este commit:
+
+  api/_shared/types.ts
+  api/_shared/cors.ts
+  api/_shared/http.ts
+  api/_shared/rate-limit.ts
+  api/_shared/redis.ts
+  api/health.ts
+  src/hooks/useSmartPoll.ts
+
+El resto de AiTor se distribuye bajo GPL-3.0 (ver LICENSE).

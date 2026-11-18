@@ -23,14 +23,17 @@
  * tono) y la clasificación se hace en el cliente.
  *
  * No es un proxy abierto: destino fijo, `theme` limitado a un token de tema de
- * GDELT, ventana de 1 a 24 h y 500 filas como tope. Y como el servidor de GDELT
- * limita a una petición cada 5 s, la respuesta se cachea cinco minutos: la capa
- * sondea cada diez y varias pestañas comparten la misma descarga.
+ * GDELT, ventana de 1 a 24 h y 500 filas como tope.
  *
- * Autocontenido, como `api/github.ts`: el runtime de Vercel ya falló resolviendo
- * imports hermanos, así que sólo se importan tipos.
+ * Desde la Fase 1 la caché es compartida (`api/_shared/redis.ts`), no una `Map`
+ * por isolate: sobrevive a los deploys, la comparten todos los isolates y varias
+ * pestañas no repiten la descarga. Ver `docs/fase1-cache-frescura.md`.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { applyCors } from "./_shared/cors.js";
+import { sendJson } from "./_shared/http.js";
+import { checkRateLimit } from "./_shared/rate-limit.js";
+import { cachedFetchJson } from "./_shared/redis.js";
 
 export const maxDuration = 25;
 
@@ -39,8 +42,10 @@ const TIMEOUT_MS = 20_000;
 /** GKG devuelve hasta 45 000 filas; la capa dibuja 120 como mucho. */
 const MAX_ROWS = 500;
 const MAX_HOURS = 24;
-const CACHE_TTL_MS = 5 * 60_000;
-const CACHE_ENTRIES = 8;
+/** GDELT limita a una petición cada 5 s; cinco minutos los respeta de sobra. */
+const CACHE_TTL_SECONDS = 300;
+/** Tras un fallo, no se vuelve a salir a GDELT durante este tiempo. */
+const NEGATIVE_TTL_SECONDS = 60;
 
 export interface GkgQuery {
   theme: string;
@@ -93,99 +98,83 @@ export function gdeltUpstreamUrl(value: GkgQuery): string {
   return `${GDELT_GKG}?${params.toString()}`;
 }
 
-interface CacheEntry {
-  at: number;
-  body: string;
-}
+/** Fallo propio del upstream, para no perder el código HTTP al propagarlo. */
+class UpstreamError extends Error {
+  status: number;
+  retryAfter?: string;
 
-/** Caché por isolate del cuerpo ya validado como JSON. */
-const cache = new Map<string, CacheEntry>();
-
-function readCache(key: string): string | null {
-  const hit = cache.get(key);
-  if (!hit) return null;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
-    cache.delete(key);
-    return null;
+  constructor(status: number, message: string, retryAfter?: string) {
+    super(message);
+    this.status = status;
+    this.retryAfter = retryAfter;
   }
-  return hit.body;
 }
 
-function writeCache(key: string, body: string): void {
-  cache.set(key, { at: Date.now(), body });
-  while (cache.size > CACHE_ENTRIES) {
-    const oldest = cache.keys().next().value;
-    if (oldest === undefined) break;
-    cache.delete(oldest);
+async function fetchUpstream(upstream: string): Promise<unknown> {
+  const response = await fetch(upstream, {
+    headers: { accept: "application/geo+json, application/json", "user-agent": "aitor-intel/1.0" },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+
+  if (response.status === 429) {
+    throw new UpstreamError(429, "GDELT está limitando peticiones (una cada 5 s); reintenta en unos segundos", "20");
+  }
+  if (!response.ok) throw new UpstreamError(502, `GDELT respondió ${response.status}`);
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    // GKG contesta en HTML cuando la consulta no le encaja.
+    throw new UpstreamError(502, "GDELT no devolvió JSON (¿tema inexistente?)");
   }
 }
 
 const fail = (res: VercelResponse, status: number, reason: string) => {
-  res.status(status);
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("access-control-allow-origin", "*");
   res.setHeader("cache-control", "no-store");
-  res.send(JSON.stringify({ error: reason, timestamp: new Date().toISOString() }));
+  res.status(status).json({ error: reason, timestamp: new Date().toISOString() });
 };
 
 export default async function gdelt(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    res.status(204);
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-methods", "GET, OPTIONS");
-    res.setHeader("access-control-allow-headers", "content-type");
-    return res.end();
-  }
+  // Responde OPTIONS y bloquea orígenes no permitidos. ACAO * para datos
+  // públicos: con el origen ecoado la CDN guardaría una copia por origen.
+  if (applyCors(req, res, { publicRead: true })) return;
+
   if (req.method !== "GET") {
     res.setHeader("allow", "GET, OPTIONS");
     return fail(res, 405, "sólo GET");
   }
 
+  if (!(await checkRateLimit(req, res, { name: "gdelt", limit: 60, windowSec: 60 }))) return;
+
   const parsed = parseGdeltParams((req.query ?? {}) as Record<string, unknown>);
   if (parsed.ok === false) return fail(res, 400, parsed.reason);
 
-  const upstream = gdeltUpstreamUrl(parsed.value);
-  const cached = readCache(upstream);
-  if (cached) {
-    res.status(200);
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("x-aitor-cache", "hit");
-    res.setHeader("cache-control", "public, max-age=120, s-maxage=300");
-    return res.send(cached);
-  }
+  const { theme, hours, maxrows } = parsed.value;
+  // La clave lleva los TRES parámetros que cambian la respuesta. Con la URL
+  // sola también valdría, pero así el nombre es legible en Upstash.
+  const cacheKey = `osint:gdelt:v1:${theme}:${hours}:${maxrows}`;
 
   try {
-    const response = await fetch(upstream, {
-      headers: { accept: "application/geo+json, application/json", "user-agent": "aitor-intel/1.0" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    const payload = await cachedFetchJson<unknown>(
+      cacheKey,
+      CACHE_TTL_SECONDS,
+      () => fetchUpstream(gdeltUpstreamUrl(parsed.value)),
+      { negativeTtlSeconds: NEGATIVE_TTL_SECONDS, onError: "throw" },
+    );
 
-    if (response.status === 429) {
-      res.setHeader("retry-after", "20");
-      return fail(res, 429, "GDELT está limitando peticiones (una cada 5 s); reintenta en unos segundos");
-    }
-    if (!response.ok) return fail(res, 502, `GDELT respondió ${response.status}`);
-
-    const text = await response.text();
-    let body: unknown;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      // GKG contesta en HTML cuando la consulta no le encaja.
-      return fail(res, 502, "GDELT no devolvió JSON (¿tema inexistente?)");
+    if (payload == null) {
+      return fail(res, 502, "GDELT sin datos (el último intento falló; reintentando en unos segundos)");
     }
 
-    const serialised = JSON.stringify(body);
-    writeCache(upstream, serialised);
-    res.status(200);
-    // Se reetiqueta como JSON: GKG sirve `application/vnd.geo+json`, que algunos
-    // intermediarios no reconocen, y el cliente sólo necesita un cuerpo JSON.
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("cache-control", "public, max-age=120, s-maxage=300");
-    res.send(serialised);
+    // Reetiqueta como JSON: GKG sirve `application/vnd.geo+json`, que algunos
+    // intermediarios no reconocen. sendJson añade ETag, 304 y caché de CDN.
+    sendJson(req, res, 200, payload, { cache: "fast" });
   } catch (error) {
+    if (error instanceof UpstreamError) {
+      if (error.retryAfter) res.setHeader("retry-after", error.retryAfter);
+      return fail(res, error.status, error.message);
+    }
     const message = error instanceof Error ? error.message : "fetch failed";
     fail(res, 502, `GDELT inaccesible: ${message}`);
   }

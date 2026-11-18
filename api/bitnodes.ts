@@ -19,13 +19,23 @@
  * Se dice en el globo lo que es: un punto por país con su recuento, no la
  * posición exacta de cada nodo. Inventar una coordenada por nodo sería mentir
  * con más píxeles.
+ *
+ * Desde la Fase 1 el resultado se cachea 15 min: Blockchair limita por IP y el
+ * recuento no cambia de un minuto a otro.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { applyCors } from "./_shared/cors.js";
+import { sendError, sendJson } from "./_shared/http.js";
+import { checkRateLimit } from "./_shared/rate-limit.js";
+import { cachedFetchJson } from "./_shared/redis.js";
 
 export const maxDuration = 25;
 
 const SOURCE_URL = "https://api.blockchair.com/bitcoin/nodes?limit=20000";
 const TIMEOUT_MS = 18_000;
+const CACHE_TTL_SECONDS = 900;
+/** Un fallo se recuerda un minuto: suficiente para dejar de martillear. */
+const NEGATIVE_TTL_SECONDS = 60;
 
 export interface BitcoinCountryCount {
   /** Código ISO-3166 alfa-2. */
@@ -75,54 +85,73 @@ export function countByCountry(snapshot: unknown): {
   return { total, countries };
 }
 
-function send(res: VercelResponse, body: BitcoinNodesPayload, status = 200) {
-  res.status(status);
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("access-control-allow-origin", "*");
-  // Los nodos cambian despacio; no hay razón para pedirlo por visitante.
-  res.setHeader("cache-control", "public, max-age=600, s-maxage=1800");
-  res.send(JSON.stringify(body));
+/**
+ * Descarga y agrega. Lanza si la fuente falla o no trae países, para que
+ * `cachedFetchJson` active la caché negativa en vez de guardar un vacío 15 min.
+ */
+async function fetchNodes(): Promise<BitcoinNodesPayload> {
+  const response = await fetch(SOURCE_URL, {
+    headers: { "user-agent": "aitor-intel/1.0" },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`Blockchair respondió ${response.status}`);
+
+  const { total, countries } = countByCountry(await response.json());
+  if (countries.length === 0) throw new Error("Blockchair no trajo países");
+
+  return {
+    total,
+    countries,
+    unavailable: false,
+    reason: null,
+    timestamp: new Date().toISOString(),
+  };
 }
 
 export default async function bitnodes(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    res.status(204);
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-methods", "GET, OPTIONS");
-    return res.end();
+  if (applyCors(req, res, { publicRead: true })) return;
+
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return sendError(
+      res,
+      405,
+      { error: "sólo GET", code: "method_not_allowed" },
+      { Allow: "GET, HEAD, OPTIONS" },
+    );
   }
 
+  if (!(await checkRateLimit(req, res, { name: "bitnodes", limit: 60, windowSec: 60 }))) return;
+
   try {
-    const response = await fetch(SOURCE_URL, {
-      headers: { "user-agent": "aitor-intel/1.0" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!response.ok) {
-      return send(res, {
-        total: 0,
-        countries: [],
-        unavailable: true,
-        reason: `Blockchair respondió ${response.status}`,
-        timestamp: new Date().toISOString(),
-      });
+    const payload = await cachedFetchJson<BitcoinNodesPayload>(
+      "bitcoin:bitnodes:v1",
+      CACHE_TTL_SECONDS,
+      fetchNodes,
+      { negativeTtlSeconds: NEGATIVE_TTL_SECONDS },
+    );
+
+    if (payload == null) {
+      // Se mantiene el contrato de la ruta: 200 con `unavailable: true` y lista
+      // vacía, nunca datos inventados. El cliente ya lo pinta así.
+      return sendJson(
+        req,
+        res,
+        200,
+        {
+          total: 0,
+          countries: [],
+          unavailable: true,
+          reason: "Blockchair no respondió (reintentando en un minuto)",
+          timestamp: new Date().toISOString(),
+        },
+        { cache: "realtime" },
+      );
     }
 
-    const { total, countries } = countByCountry(await response.json());
-    send(res, {
-      total,
-      countries,
-      unavailable: countries.length === 0,
-      reason: countries.length === 0 ? "la fuente no trajo países" : null,
-      timestamp: new Date().toISOString(),
-    });
+    sendJson(req, res, 200, payload, { cache: "slow" });
   } catch (error) {
     const message = error instanceof Error ? error.message : "upstream fetch failed";
-    send(res, {
-      total: 0,
-      countries: [],
-      unavailable: true,
-      reason: `Blockchair inaccesible: ${message}`,
-      timestamp: new Date().toISOString(),
-    });
+    console.error("[bitnodes] fallo:", message);
+    sendError(res, 502, { error: `Blockchair inaccesible: ${message}`, code: "bitnodes_error" });
   }
 }
