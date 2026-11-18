@@ -16,6 +16,7 @@
     "api/health.ts",
     "api/gdelt.ts",
     "api/traffic.ts",
-    "api/bitnodes.ts"
+    "api/bitnodes.ts",
+    "api/github.ts"
   ]
 }

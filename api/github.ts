@@ -18,11 +18,20 @@
  * obligatorio** y nunca sale en la respuesta. Un 403 `rate limit` se traduce a
  * un mensaje que lo dice, en vez de un «Forbidden» mudo.
  *
+ * Desde la Fase 1 cada lectura se cachea 60 s en Redis (`getJsonStatus` /
+ * `setJson`), que es lo que hace que 60 peticiones/hora den para navegar un
+ * árbol de ficheros. Sólo se cachean los 200: un 403 de cuota o un 404 de ruta
+ * llegan al cliente sin tocar la caché.
+ *
  * Autocontenido a propósito: el runtime de Vercel ya falló resolviendo un
  * import hermano (`api/predictions.ts` lo documenta), así que este fichero no
- * importa nada del proyecto salvo los tipos.
+ * importa nada del proyecto salvo los helpers compartidos, siempre con `.js`.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { applyCors } from "./_shared/cors.js";
+import { sendError, sendJson } from "./_shared/http.js";
+import { checkRateLimit } from "./_shared/rate-limit.js";
+import { getJsonStatus, setJson } from "./_shared/redis.js";
 
 export const maxDuration = 20;
 
@@ -30,6 +39,8 @@ const GITHUB_API = "https://api.github.com";
 const TIMEOUT_MS = 12_000;
 const DEFAULT_OWNER = "Alien69Flow";
 const DEFAULT_REPO = "AiTor";
+/** El árbol de un repo cambia al hacer push; un minuto es suficiente. */
+const CACHE_TTL_SECONDS = 60;
 
 /** Lecturas que la API pública atiende sin token ni sesión. */
 export const READ_ACTIONS = [
@@ -71,7 +82,7 @@ export function isWriteAction(action: string): boolean {
 
 /** `owner`/`repo` tal como los acepta GitHub: sin barras ni espacios. */
 export function isSafeName(value: unknown): value is string {
-  return typeof value === "string" && /^[\w.-]{1,100}$/.test(value);
+  return typeof value === "string" && /^[\\w.-]{1,100}$/.test(value);
 }
 
 /**
@@ -158,62 +169,67 @@ export function readParams(req: VercelRequest): ReadParams {
   };
 }
 
-function json(res: VercelResponse, body: unknown, status = 200) {
-  res.status(status);
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  // Es una lectura pública del mismo origen; el comodín sólo evita sorpresas
-  // si algún día se sirve aparte.
-  res.setHeader("access-control-allow-origin", "*");
-  // GitHub limita a 60 peticiones/hora por IP en modo anónimo, así que la
-  // caché no es un lujo: es lo que mantiene la herramienta usable.
-  res.setHeader("cache-control", status === 200 ? "public, max-age=60, s-maxage=300" : "no-store");
-  res.send(JSON.stringify(body));
+/** Clave de caché: incluye cada parámetro que cambia la respuesta. */
+export function cacheKeyFor(params: ReadParams): string {
+  const path = params.path ?? "";
+  const ref = params.ref ?? params.branch ?? "main";
+  return `github:v1:${params.owner}/${params.repo}:${params.action}:${ref}:${params.state ?? ""}:${path}`;
 }
 
 export default async function github(req: VercelRequest, res: VercelResponse) {
-  if (req.method === "OPTIONS") {
-    res.status(204);
-    res.setHeader("access-control-allow-origin", "*");
-    res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
-    res.setHeader("access-control-allow-headers", "content-type");
-    return res.end();
-  }
+  // Lecturas públicas: ACAO * para que la CDN guarde una sola entrada.
+  if (applyCors(req, res, { methods: "GET, POST, OPTIONS", publicRead: true })) return;
 
   if (req.method !== "GET" && req.method !== "POST") {
-    return json(res, { error: "Sólo GET y POST" }, 405);
+    return sendError(res, 405, { error: "Sólo GET y POST", code: "method_not_allowed" }, { Allow: "GET, POST, OPTIONS" });
   }
+
+  // El límite protege la cuota de GitHub (60/h por IP) y la propia función.
+  if (!(await checkRateLimit(req, res, { name: "github", limit: 60, windowSec: 60 }))) return;
 
   let params: ReadParams;
   try {
     params = readParams(req);
   } catch {
-    return json(res, { error: "El cuerpo no es JSON válido" }, 400);
+    return sendError(res, 400, { error: "El cuerpo no es JSON válido", code: "bad_json" });
   }
 
   if (isWriteAction(params.action)) {
-    return json(
+    return sendError(
       res,
+      501,
       {
         error:
           "Escribir en GitHub no se hace desde esta ruta: necesita un token con permiso y el " +
           "rol admin, y eso vive en github-proxy (Supabase). Esta función sólo lee repositorios públicos.",
+        code: "read_only",
         action: params.action,
         readOnly: true,
       },
-      501,
     );
   }
 
   if (!isReadAction(params.action)) {
-    return json(res, { error: `Acción desconocida: ${params.action}` }, 400);
+    return sendError(res, 400, { error: `Acción desconocida: ${params.action}`, code: "unknown_action" });
   }
 
   if (!isSafeName(params.owner) || !isSafeName(params.repo)) {
-    return json(res, { error: "Repositorio inválido: owner y repo deben ser nombres de GitHub" }, 400);
+    return sendError(res, 400, {
+      error: "Repositorio inválido: owner y repo deben ser nombres de GitHub",
+      code: "bad_repo",
+    });
   }
 
   if (params.path?.includes("..")) {
-    return json(res, { error: "La ruta no puede salirse del repositorio" }, 400);
+    return sendError(res, 400, { error: "La ruta no puede salirse del repositorio", code: "bad_path" });
+  }
+
+  const cacheKey = cacheKeyFor(params);
+
+  // Acierto cacheado: ni se toca GitHub ni se gasta cuota.
+  const cached = await getJsonStatus<unknown>(cacheKey);
+  if (cached.status === "hit") {
+    return sendJson(req, res, 200, cached.value, { cache: "fast" });
   }
 
   const url = readUrl(params);
@@ -248,7 +264,17 @@ export default async function github(req: VercelRequest, res: VercelResponse) {
       | { message?: string }
       | unknown[];
 
-    if (response.ok) return json(res, payload);
+    if (response.ok) {
+      // Un fallo de Redis no puede tumbar una lectura correcta.
+      if (CACHE_TTL_SECONDS > 0) {
+        try {
+          await setJson(cacheKey, payload, CACHE_TTL_SECONDS);
+        } catch {
+          /* sin caché se sigue sirviendo la respuesta */
+        }
+      }
+      return sendJson(req, res, 200, payload, { cache: "fast" });
+    }
 
     const detail =
       payload && !Array.isArray(payload) && typeof payload.message === "string"
@@ -259,29 +285,23 @@ export default async function github(req: VercelRequest, res: VercelResponse) {
       response.status === 429 ||
       (response.status === 403 && /rate limit/i.test(detail));
 
-    return json(
-      res,
-      {
-        error: rateLimited
-          ? `GitHub alcanzó su límite de lecturas anónimas (60/hora por IP). ${token ? "" : "Configura GITHUB_TOKEN para ampliarlo."}`.trim()
-          : `GitHub respondió ${response.status}: ${detail}`,
-        action: params.action,
-        repository: `${params.owner}/${params.repo}`,
-        ...(rateLimited ? { rateLimited: true } : {}),
-      },
-      response.status,
-    );
+    return sendError(res, response.status, {
+      error: rateLimited
+        ? `GitHub alcanzó su límite de lecturas anónimas (60/hora por IP). ${token ? "" : "Configura GITHUB_TOKEN para ampliarlo."}`.trim()
+        : `GitHub respondió ${response.status}: ${detail}`,
+      code: rateLimited ? "github_rate_limited" : "github_error",
+      action: params.action,
+      repository: `${params.owner}/${params.repo}`,
+      ...(rateLimited ? { rateLimited: true } : {}),
+    });
   } catch (error) {
-    return json(
-      res,
-      {
-        error: `No pude hablar con la API de GitHub: ${
-          error instanceof Error ? error.message : "error de red"
-        }`,
-        action: params.action,
-        repository: `${params.owner}/${params.repo}`,
-      },
-      502,
-    );
+    return sendError(res, 502, {
+      error: `No pude hablar con la API de GitHub: ${
+        error instanceof Error ? error.message : "error de red"
+      }`,
+      code: "github_unreachable",
+      action: params.action,
+      repository: `${params.owner}/${params.repo}`,
+    });
   }
 }

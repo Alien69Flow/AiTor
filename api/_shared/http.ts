@@ -105,10 +105,15 @@ export interface ApiErrorBody {
   retryAfterSeconds?: number;
 }
 
+/**
+ * Los errores llevan campos libres además de la forma estable: por ejemplo
+ * `repository` o `rateLimited` en `/api/github`. Los nombres fijos evitan que
+ * cada handler invente su propia forma.
+ */
 export function sendError(
   res: ApiResponse,
   status: number,
-  body: ApiErrorBody,
+  body: ApiErrorBody & Record<string, unknown>,
   headers: Record<string, string> = {},
 ): void {
   for (const [name, value] of Object.entries(headers)) res.setHeader(name, value);
