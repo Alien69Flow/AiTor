@@ -2,6 +2,9 @@
  * `/api/health` sin Vercel ni red real: las sondas de upstream se prueban con
  * `fetch` simulado, porque lo que hay que garantizar no es "responde 200" sino
  * "dice la verdad sin filtrar el token".
+ *
+ * Se consulta la vista completa (`/api/health`), no `?compact=1`: la compacta
+ * omite `detail` a propósito.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import handler from "./health";
@@ -36,7 +39,7 @@ function mockRes() {
   return { res, snap: () => ({ status, body, headers }) };
 }
 
-const req = (url = "/api/health?compact=1") =>
+const req = (url = "/api/health") =>
   ({ method: "GET", headers: { host: "localhost" }, url }) as never;
 
 const ENV_KEYS = [
