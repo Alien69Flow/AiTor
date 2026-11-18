@@ -28,13 +28,17 @@ import { header } from "./types.js";
 import { applyCors } from "./cors.js";
 import { checkRateLimit, type RateLimitPolicy } from "./rate-limit.js";
 
-export type CacheTier = "fast" | "medium" | "slow" | "static" | "daily" | "no-store";
+export type CacheTier = "realtime" | "fast" | "medium" | "slow" | "static" | "daily" | "no-store";
 
 /**
  * `s-maxage` = CDN. `max-age=0, must-revalidate` deja que el navegador
  * revalide con ETag en lugar de servir datos viejos de la pestaña.
+ *
+ * `realtime` es para datos que caducan en segundos (posiciones de tráfico):
+ * el `fast` de 300 s dejaba aviones de hace cinco minutos en la CDN.
  */
 export const CACHE_TIERS: Record<CacheTier, { cacheControl: string; cdn: string }> = {
+  realtime: { cacheControl: "public, max-age=0, must-revalidate", cdn: "public, s-maxage=30, stale-while-revalidate=30, stale-if-error=120" },
   fast: { cacheControl: "public, max-age=0, must-revalidate", cdn: "public, s-maxage=300, stale-while-revalidate=120, stale-if-error=900" },
   medium: { cacheControl: "public, max-age=0, must-revalidate", cdn: "public, s-maxage=600, stale-while-revalidate=300, stale-if-error=1800" },
   slow: { cacheControl: "public, max-age=0, must-revalidate", cdn: "public, s-maxage=1800, stale-while-revalidate=600, stale-if-error=3600" },
