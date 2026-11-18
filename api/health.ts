@@ -146,6 +146,58 @@ function env(...names: string[]): string {
 }
 
 /**
+ * Tapa cualquier credencial que se haya colado en un mensaje ajeno. El detalle
+ * se sirve por HTTP: un JWT o una publishable en el cuerpo de un error de
+ * Supabase no debe acabar en la respuesta.
+ */
+export function scrubError(text: string): string {
+  return text
+    .replace(/eyJ[A-Za-z0-9._-]{20,}/g, "[clave]")
+    .replace(/sb_[a-z]+_[A-Za-z0-9_-]{8,}/g, "[clave]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+}
+
+/**
+ * Por qué falló el chat, en una frase.
+ *
+ * Un 401 pelado no distingue las dos causas que desde fuera se ven iguales: el
+ * gateway de Supabase rechazando la clave con la que llamamos, o la función
+ * contestando que el proveedor de IA rechazó la suya. El cuerpo sí las
+ * distingue, y la diferencia decide qué variable hay que tocar.
+ */
+export function explainChatFailure(status: number, rawBody: string): string {
+  const body = scrubError(rawBody);
+  const text = body.toLowerCase();
+
+  if (status === 401 || status === 403) {
+    if (
+      text.includes("invalid api key") ||
+      text.includes("no api key") ||
+      text.includes("invalid jwt") ||
+      text.includes("double check the provided api key")
+    ) {
+      return `HTTP ${status}: Supabase rechaza la clave con la que se llama a chat (Invalid API key) — revisa VITE_SUPABASE_ANON_KEY / VITE_SUPABASE_PUBLISHABLE_KEY en Vercel`;
+    }
+    if (
+      text.includes("provider authentication failed") ||
+      text.includes("incorrect api key") ||
+      text.includes("unauthorized")
+    ) {
+      return `HTTP ${status}: la clave del proveedor de IA fue rechazada (Provider authentication failed) — revisa LOVABLE_API_KEY en Supabase`;
+    }
+    return `HTTP ${status}: chat rechaza la credencial y el cuerpo no dice cuál (${body || "sin cuerpo"})`;
+  }
+
+  if (status === 402) return "HTTP 402: la clave del proveedor está sin créditos";
+  if (status === 404) return "HTTP 404: no existe la función chat en ese proyecto de Supabase";
+  if (status === 429) return "HTTP 429: límite de peticiones del proveedor";
+  if (status >= 500) return `HTTP ${status}: la función chat falló (${body || "sin cuerpo"})`;
+  return `HTTP ${status}${body ? `: ${body}` : ""}`;
+}
+
+/**
  * `getMe` sin el token en la respuesta. El token va en la URL que se pide a
  * Telegram, así que el `detail` se construye a mano y nunca lo incluye.
  */
@@ -192,8 +244,8 @@ export async function probeTelegram(): Promise<Upstream> {
 
 /**
  * Pregunta a la función `chat` de Supabase por su propio informe. Un 401 aquí
- * es la pista más útil del sistema: significa que la función vive pero la
- * clave del proveedor de IA no vale, y el bot contestará su mensaje genérico.
+ * es la pista más útil del sistema: significa que la función vive pero no se
+ * la puede llamar, y el bot contestará su mensaje genérico.
  */
 export async function probeChat(): Promise<Upstream> {
   const base = env("SUPABASE_URL", "VITE_SUPABASE_URL").replace(/\/+$/, "");
@@ -210,6 +262,7 @@ export async function probeChat(): Promise<Upstream> {
       headers: { apikey: key, Authorization: `Bearer ${key}` },
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
+    const rawBody = await response.text().catch(() => "");
     const ms = Date.now() - started;
     if (!response.ok) {
       return {
@@ -217,15 +270,15 @@ export async function probeChat(): Promise<Upstream> {
         label: "Chat (Supabase)",
         status: "DOWN",
         ms,
-        detail:
-          response.status === 401
-            ? "HTTP 401: la función chat rechaza la clave del proveedor de IA (revisa LOVABLE_API_KEY en Supabase)"
-            : `HTTP ${response.status}`,
+        detail: explainChatFailure(response.status, rawBody),
       };
     }
-    const body = (await response.json().catch(() => null)) as
-      | { status?: string; models?: { available?: boolean }[] }
-      | null;
+    let body: { status?: string; models?: { available?: boolean }[] } | null = null;
+    try {
+      body = JSON.parse(rawBody) as { status?: string; models?: { available?: boolean }[] };
+    } catch {
+      body = null;
+    }
     if (!body || typeof body.status !== "string") {
       return { key: "chat", label: "Chat (Supabase)", status: "OK", ms, detail: "responde, sin informe de salud (redesplegar chat)" };
     }
