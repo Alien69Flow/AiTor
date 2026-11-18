@@ -4,7 +4,17 @@ export interface AIModel {
   provider: string;
   description: string;
   supportsVision: boolean;
-  available: boolean;
+  /**
+   * `false` sólo cuando la función `chat` no tiene ruta para este modelo
+   * (ChainGPT y Chainlink todavía no están enrutados). Es un hecho del
+   * catálogo, no una promesa de que responda.
+   *
+   * Aquí no hay campo `available`: si un modelo puede contestar lo dice el
+   * servidor en `chat?health=1` y lo cruza `resolveOracles()`. Un
+   * `available: true` escrito a mano era una afirmación sin evidencia, y con
+   * una clave revocada el modelo seguía apareciendo vivo.
+   */
+  routable?: boolean;
   oracleType?: 'primary' | 'advanced' | 'blockchain' | 'external';
   oracleIcon?: string;
   contextWindow?: string;
@@ -19,7 +29,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "ΔlieπFlΦw",
     description: "Oráculo principal, rápido y multimodal",
     supportsVision: true,
-    available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
     contextWindow: '1M',
@@ -32,7 +41,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "ΔlieπFlΦw",
     description: "Razonamiento cuántico avanzado",
     supportsVision: true,
-    available: true,
     oracleType: 'advanced',
     oracleIcon: '👽',
     contextWindow: '1M',
@@ -44,7 +52,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "ΔlieπFlΦw",
     description: "Nueva generación, velocidad y potencia",
     supportsVision: true,
-    available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
     contextWindow: '1M',
@@ -56,7 +63,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "ΔlieπFlΦw",
     description: "Ultra rápido, tareas simples",
     supportsVision: false,
-    available: true,
     oracleType: 'primary',
     oracleIcon: '⚡',
     contextWindow: '1M',
@@ -68,7 +74,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "Lovable AI",
     description: "Máxima precisión, razonamiento profundo",
     supportsVision: true,
-    available: true,
     oracleType: 'advanced',
     oracleIcon: '🧠',
     contextWindow: '128K',
@@ -80,7 +85,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "Lovable AI",
     description: "Balance velocidad/rendimiento",
     supportsVision: true,
-    available: true,
     oracleType: 'primary',
     oracleIcon: '🧠',
     contextWindow: '128K',
@@ -92,7 +96,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "Lovable AI",
     description: "Ultra rápido y económico",
     supportsVision: false,
-    available: true,
     oracleType: 'primary',
     oracleIcon: '🧠',
     contextWindow: '128K',
@@ -104,7 +107,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "xAI",
     description: "IA con acceso a X (Twitter)",
     supportsVision: true,
-    available: true,
     oracleType: 'external',
     oracleIcon: '🚀',
     contextWindow: '128K',
@@ -116,7 +118,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "ChainGPT",
     description: "IA especializada en Web3 y cripto",
     supportsVision: false,
-    available: false,
+    routable: false,
     oracleType: 'blockchain',
     oracleIcon: '🔗',
     contextWindow: '32K',
@@ -128,7 +130,7 @@ export const AI_MODELS: AIModel[] = [
     provider: "Chainlink",
     description: "Datos on-chain verificados",
     supportsVision: false,
-    available: false,
+    routable: false,
     oracleType: 'blockchain',
     oracleIcon: '⛓️',
     contextWindow: '—',
@@ -140,7 +142,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "DeepSeek",
     description: "Código abierto de última generación",
     supportsVision: false,
-    available: true,
     oracleType: 'external',
     oracleIcon: '🌊',
     contextWindow: '64K',
@@ -152,7 +153,6 @@ export const AI_MODELS: AIModel[] = [
     provider: "Anthropic",
     description: "Creatividad y razonamiento avanzado",
     supportsVision: true,
-    available: true,
     oracleType: 'external',
     oracleIcon: '🎭',
     contextWindow: '200K',
@@ -160,5 +160,4 @@ export const AI_MODELS: AIModel[] = [
   },
 ];
 
-export const getAvailableModels = () => AI_MODELS.filter(m => m.available);
 export const DEFAULT_MODEL = "google/gemini-2.5-flash";

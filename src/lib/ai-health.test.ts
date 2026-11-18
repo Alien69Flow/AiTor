@@ -52,10 +52,28 @@ const byId = (oracles: ReturnType<typeof resolveOracles>, id: string) => {
   return found;
 };
 
+describe("catálogo de modelos", () => {
+  it("no declara disponibilidad a mano: eso lo dice el servidor", () => {
+    for (const model of AI_MODELS) {
+      expect(Object.prototype.hasOwnProperty.call(model, "available")).toBe(false);
+    }
+  });
+
+  it("sólo los no enrutados se marcan como tales en el catálogo", () => {
+    expect(AI_MODELS.filter((model) => model.routable === false).map((model) => model.id)).toEqual([
+      "chaingpt/oracle",
+      "chainlink/oracle",
+    ]);
+  });
+});
+
 describe("resolveOracles", () => {
-  it("sin informe respeta el catálogo estático y no desactiva nada", () => {
+  it("sin informe no afirma disponibilidad: queda sin verificar", () => {
     const oracles = resolveOracles(AI_MODELS, null);
-    expect(byId(oracles, "google/gemini-2.5-flash")).toMatchObject({ availability: "ready", available: true });
+
+    expect(oracles.every((oracle) => oracle.availability === "unknown" || oracle.availability === "no-route")).toBe(true);
+    // Seleccionable, pero nunca presentado como "listo".
+    expect(byId(oracles, "google/gemini-2.5-flash")).toMatchObject({ availability: "unknown", available: true });
     expect(byId(oracles, "chaingpt/oracle")).toMatchObject({ availability: "no-route", available: false });
   });
 
@@ -75,11 +93,17 @@ describe("resolveOracles", () => {
     });
   });
 
-  it("trata como próxima entrega lo que el servidor no enruta", () => {
-    expect(byId(resolveOracles(AI_MODELS, health), "chainlink/oracle")).toMatchObject({
+  it("bloquea lo que el catálogo ofrece pero el servidor no enruta", () => {
+    // `openai/gpt-5` está en el catálogo y no aparece en el informe: antes se
+    // ofrecía como disponible por el `available: true` escrito a mano.
+    expect(byId(resolveOracles(AI_MODELS, health), "openai/gpt-5")).toMatchObject({
       availability: "no-route",
       available: false,
       envVar: null,
+    });
+    expect(byId(resolveOracles(AI_MODELS, health), "chainlink/oracle")).toMatchObject({
+      availability: "no-route",
+      available: false,
     });
   });
 
@@ -129,7 +153,9 @@ describe("loadChatHealth", () => {
   it("devuelve null si la función no responde, sin desactivar el catálogo", async () => {
     fetchMock.mockRejectedValue(new Error("paused"));
     expect(await loadChatHealth()).toBeNull();
-    expect(resolveOracles(AI_MODELS, peekChatHealth()).every((oracle) => oracle.availability !== "missing-key")).toBe(true);
+    const oracles = resolveOracles(AI_MODELS, peekChatHealth());
+    expect(oracles.every((oracle) => oracle.availability !== "missing-key")).toBe(true);
+    expect(byId(oracles, "xai/grok-2").availability).toBe("unknown");
   });
 
   it("no repite la sonda cuando el despliegue no publica la ruta de salud", async () => {
