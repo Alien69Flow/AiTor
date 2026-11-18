@@ -1,15 +1,16 @@
 /**
  * Qué oráculos pueden contestar de verdad.
  *
- * El catálogo (`ai-models.ts`) declaraba `available: true` por diseño, no por
- * evidencia: un modelo sin clave seguía apareciendo vivo y fallaba al elegirlo.
- * La función `chat` publica ahora `?health=1` con el estado de cada proveedor
- * (solo si la clave existe y si parece real, nunca su valor) y aquí se cruza con
- * el catálogo para desactivar —no esconder— lo que no tiene credencial.
+ * El catálogo (`ai-models.ts`) no declara disponibilidad: sólo qué modelos
+ * existen y cuáles tienen ruta en la función `chat`. La evidencia viene de
+ * `chat?health=1`, que publica el estado de cada proveedor (si la clave existe
+ * y si parece real, nunca su valor), y aquí se cruza con el catálogo para
+ * desactivar —no esconder— lo que no puede responder.
  *
  * Cuando el informe no se puede leer, no se desactiva nada: una red caída no
- * debe dejar el selector sin modelos. En ese caso se cae al `available` estático
- * y la UI lo marca como "sin verificar".
+ * debe dejar el selector sin modelos. Pero tampoco se afirma que estén listos:
+ * quedan "sin verificar", que es distinto de "listo" y distinto de "sin
+ * clave".
  */
 import { useEffect, useState } from "react";
 import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/integrations/supabase/client";
@@ -17,7 +18,13 @@ import type { AIModel } from "./ai-models";
 
 export type ChatProviderId = "lovable" | "xai" | "anthropic" | "deepseek";
 export type ChatKeyState = "ok" | "missing" | "placeholder";
-export type ModelSignal = "ready" | "missing-key" | "placeholder-key" | "no-route";
+export type ModelSignal =
+  | "ready"
+  | "missing-key"
+  | "placeholder-key"
+  | "no-route"
+  /** Sin informe del servidor: no se puede afirmar ni negar. */
+  | "unknown";
 
 export interface ChatProviderHealth {
   id: ChatProviderId;
@@ -33,7 +40,7 @@ export interface ChatModelHealth {
   id: string;
   provider: ChatProviderId;
   available: boolean;
-  reason: Exclude<ModelSignal, "no-route">;
+  reason: Exclude<ModelSignal, "no-route" | "unknown">;
 }
 
 export interface ChatHealth {
@@ -49,7 +56,11 @@ export interface ChatHealth {
 export interface ResolvedOracle {
   model: AIModel;
   availability: ModelSignal;
-  /** `true` solo cuando un modelo de este catálogo puede contestar. */
+  /**
+   * `true` cuando el modelo se puede elegir: el servidor dice que está listo o
+   * todavía no hay informe. `availability` distingue los dos casos; lo que
+   * nunca hace es dar por bueno lo que el servidor ha desmentido.
+   */
   available: boolean;
   /** Etiqueta del proveedor según el informe (o la del catálogo). */
   providerLabel: string;
@@ -64,6 +75,7 @@ export const AVAILABILITY_LABEL: Record<ModelSignal, string> = {
   "missing-key": "sin clave",
   "placeholder-key": "clave inválida",
   "no-route": "próximamente",
+  unknown: "sin verificar",
 };
 
 export function availabilityHint(oracle: ResolvedOracle): string {
@@ -74,6 +86,8 @@ export function availabilityHint(oracle: ResolvedOracle): string {
       return `Falta ${oracle.envVar ?? "la clave del proveedor"} · ${oracle.where ?? "secrets del proyecto"}`;
     case "placeholder-key":
       return `${oracle.envVar ?? "La clave"} existe pero no parece válida · ${oracle.where ?? "secrets del proyecto"}`;
+    case "unknown":
+      return "Sin informe del servidor: no se ha podido confirmar que tenga clave";
     default:
       return "Sin ruta en la función chat: todavía no se puede seleccionar";
   }
@@ -83,6 +97,9 @@ export function availabilityHint(oracle: ResolvedOracle): string {
  * Cruza el catálogo con el informe de salud. Los modelos que el servidor no
  * menciona no están enrutados (ChainGPT, Chainlink): se quedan como
  * "próximamente" en vez de desaparecer.
+ *
+ * Sin informe no se lee ninguna disponibilidad del catálogo, porque el catálogo
+ * ya no la tiene: lo enrutable queda "sin verificar" y lo demás "próximamente".
  */
 export function resolveOracles(models: readonly AIModel[], health: ChatHealth | null): ResolvedOracle[] {
   return models.map((model) => {
@@ -92,13 +109,12 @@ export function resolveOracles(models: readonly AIModel[], health: ChatHealth | 
       envVar: null as string | null,
       where: null as string | null,
     };
+    const routable = model.routable !== false;
 
     if (!health) {
-      return {
-        ...base,
-        availability: (model.available ? "ready" : "no-route") as ModelSignal,
-        available: model.available,
-      };
+      return routable
+        ? { ...base, availability: "unknown" as ModelSignal, available: true }
+        : { ...base, availability: "no-route" as ModelSignal, available: false };
     }
 
     const entry = health.models.find((candidate) => candidate.id === model.id);
