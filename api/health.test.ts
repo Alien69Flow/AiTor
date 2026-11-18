@@ -6,7 +6,7 @@
  * que `?compact=1` no filtre detalle, y que el token del bot no salga nunca.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import handler, { __resetUpstreamCacheForTest } from "./health";
+import handler, { __resetUpstreamCacheForTest, explainChatFailure } from "./health";
 
 function mockRes() {
   const headers: Record<string, string> = {};
@@ -78,16 +78,61 @@ type UpstreamView = { key: string; status: string; detail?: string | null };
 
 const upstreamsOf = (body: unknown) => (body as { upstreams?: UpstreamView[] }).upstreams ?? [];
 
-const telegramOk = () => ({
-  ok: true,
-  status: 200,
-  json: async () => ({ ok: true, result: { username: "aitor_bot" } }),
+const asText = (payload: unknown) => JSON.stringify(payload);
+
+const telegramOk = () => {
+  const payload = { ok: true, result: { username: "aitor_bot" } };
+  return { ok: true, status: 200, json: async () => payload, text: async () => asText(payload) };
+};
+
+const chatReport = (available = 2) => {
+  const payload = { status: "ok", models: Array.from({ length: available }, () => ({ available: true })) };
+  return { ok: true, status: 200, json: async () => payload, text: async () => asText(payload) };
+};
+
+/** Respuesta de error del chat: lo que importa es el cuerpo, que ahora se lee. */
+const chatError = (status: number, payload: unknown) => ({
+  ok: false,
+  status,
+  json: async () => payload,
+  text: async () => asText(payload),
 });
 
-const chatReport = (available = 2) => ({
-  ok: true,
-  status: 200,
-  json: async () => ({ status: "ok", models: Array.from({ length: available }, () => ({ available: true })) }),
+describe("explainChatFailure", () => {
+  it("el cuerpo del gateway se atribuye a la clave de Supabase, no a la del proveedor", () => {
+    const detail = explainChatFailure(
+      401,
+      '{"message":"Invalid API key","hint":"Double check the provided API key for typos."}',
+    );
+    expect(detail).toContain("Supabase rechaza la clave");
+    expect(detail).toContain("VITE_SUPABASE_");
+    expect(detail).not.toContain("LOVABLE_API_KEY");
+  });
+
+  it("el cuerpo del proveedor se atribuye a LOVABLE_API_KEY", () => {
+    const detail = explainChatFailure(401, '{"error":"Provider authentication failed."}');
+    expect(detail).toContain("proveedor de IA");
+    expect(detail).toContain("LOVABLE_API_KEY");
+    expect(detail).not.toContain("VITE_SUPABASE_");
+  });
+
+  it("si el cuerpo no aclara nada, se devuelve el recorte y no se inventa la causa", () => {
+    const detail = explainChatFailure(401, "nope");
+    expect(detail).toContain("no dice cuál");
+    expect(detail).toContain("nope");
+  });
+
+  it("un JWT que venga en el cuerpo sale tapado", () => {
+    const token = "eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJzdXBhYmFzZSJ9.firmafirmafirma";
+    const detail = explainChatFailure(500, `boom ${token}`);
+    expect(detail).toContain("[clave]");
+    expect(detail).not.toContain(token);
+  });
+
+  it("un 402 y un 429 se explican con su causa, sin cuerpo", () => {
+    expect(explainChatFailure(402, "")).toContain("sin créditos");
+    expect(explainChatFailure(429, "")).toContain("límite de peticiones");
+  });
 });
 
 describe("/api/health · puerta de operador", () => {
@@ -182,13 +227,18 @@ describe("/api/health · upstreams", () => {
     expect(JSON.stringify(result.body)).not.toContain(token);
   });
 
-  it("un 401 del chat explica que la clave del proveedor está mal", async () => {
+  it("un 401 del gateway de Supabase se explica como clave de Supabase (el caso de producción)", async () => {
     process.env.SUPABASE_URL = "https://proyecto.supabase.co";
-    process.env.SUPABASE_ANON_KEY = "anon-de-prueba";
+    process.env.SUPABASE_ANON_KEY = "sb_publishable_de_prueba";
 
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ ok: false, status: 401, json: async () => ({ error: "Provider authentication failed." }) })),
+      vi.fn(async () =>
+        chatError(401, {
+          message: "Invalid API key",
+          hint: "Double check the provided API key for typos. This API key might also be owned by another Supabase project.",
+        }),
+      ),
     );
 
     const { res, snap } = mockRes();
@@ -196,6 +246,24 @@ describe("/api/health · upstreams", () => {
     const chat = upstreamsOf(snap().body).find((entry) => entry.key === "chat");
 
     expect(chat?.status).toBe("DOWN");
+    expect(chat?.detail).toContain("Invalid API key");
+    expect(chat?.detail).toContain("VITE_SUPABASE_");
+    expect(chat?.detail).not.toContain("LOVABLE_API_KEY");
+    expect(JSON.stringify(snap().body)).not.toContain("sb_publishable_de_prueba");
+  });
+
+  it("un 401 del proveedor se explica como LOVABLE_API_KEY", async () => {
+    process.env.SUPABASE_URL = "https://proyecto.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "anon-de-prueba";
+
+    vi.stubGlobal("fetch", vi.fn(async () => chatError(401, { error: "Provider authentication failed." })));
+
+    const { res, snap } = mockRes();
+    await handler(authed(), res as never);
+    const chat = upstreamsOf(snap().body).find((entry) => entry.key === "chat");
+
+    expect(chat?.status).toBe("DOWN");
+    expect(chat?.detail).toContain("proveedor de IA");
     expect(chat?.detail).toContain("LOVABLE_API_KEY");
   });
 
@@ -203,7 +271,8 @@ describe("/api/health · upstreams", () => {
     process.env.SUPABASE_URL = "https://proyecto.supabase.co";
     process.env.SUPABASE_ANON_KEY = "anon-de-prueba";
 
-    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ error: "not found" }) })));
+    const payload = { error: "not found" };
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: true, status: 200, json: async () => payload, text: async () => asText(payload) })));
 
     const { res, snap } = mockRes();
     await handler(authed(), res as never);
