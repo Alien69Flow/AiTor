@@ -50,6 +50,9 @@ describe("ruleta", () => {
 	it("el marcador nunca queda en negativo", () => {
 		expect(afterSpin(5, "rojo", 2, 50)).toBe(0);
 		expect(afterSpin(100, "rojo", 1, 10)).toBe(110);
-		expect(afterSpin(-20, "par", 2, 10)).toBe(0);
+		// Las fichas negativas se clampean a cero antes de jugar: perdiendo el
+		// marcador queda en cero (nunca negativo) y ganando paga desde ese cero.
+		expect(afterSpin(-20, "par", 3, 10)).toBe(0);
+		expect(afterSpin(-20, "par", 2, 10)).toBe(10);
 	});
 });
