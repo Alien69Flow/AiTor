@@ -3,10 +3,15 @@
  * Vercel falsa: sin esto, la migración a la caché compartida sólo estaba
  * comprobada por tipos.
  *
+ * El reloj se congela a propósito. Sin Redis cada llamada genera un `timestamp`
+ * nuevo, el ETag cambia y el 304 nunca se produce: el caso sólo era
+ * reproducible de milagro (dos llamadas en el mismo milisegundo). Con Redis, el
+ * payload está cacheado y el ETag es estable durante el TTL.
+ *
  * Ambiente node (no jsdom): el handler no toca el DOM.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import handler from "./traffic.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import handler from "./traffic";
 
 function mockRes() {
   const headers: Record<string, string> = {};
@@ -51,6 +56,8 @@ const adsbReply = (ac: unknown[]) => ({
 });
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date("2026-11-18T12:00:00.000Z"));
   vi.stubGlobal(
     "fetch",
     vi.fn(async () =>
@@ -59,6 +66,11 @@ beforeEach(() => {
       ]),
     ),
   );
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 describe("/api/traffic", () => {
