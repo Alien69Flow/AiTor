@@ -4,10 +4,6 @@
  *
  * `GET /api/health` — frescura de datos, no solo "el servidor responde".
  *
- * El /health del backend devuelve un texto fijo: dice que el proceso vive, no
- * que los datos estén al día. Este endpoint responde la otra pregunta, que es
- * la que rompe dashboards: ¿qué fuente dejó de publicar, y desde cuándo?
- *
  * Contrato:
  *  - Cuatro estados por dataset: OK, STALE (publicó, pero hace demasiado),
  *    EMPTY (no hay marca de frescura), ERROR (Redis no se pudo leer).
@@ -15,11 +11,14 @@
  *  - El veredicto va en el JSON (`status`), no en el código HTTP: un monitor
  *    HTTP no debe parpadear porque un seeder va 10 minutos tarde. Solo un
  *    Redis inalcanzable devuelve 503.
- *  - `?compact=1` es público (uptime monitors). El detalle con claves y
- *    umbrales exige `x-api-key: OPERATOR_KEY`.
+ *  - **Puerta de operador**: la vista completa exige `x-api-key: OPERATOR_KEY`
+ *    SIEMPRE, haya o no Redis. Antes la comprobación estaba después del
+ *    retorno "UNCONFIGURED" y, sin Upstash, el detalle (usuario del bot,
+ *    estado del chat) se servía a cualquiera.
+ *  - `?compact=1` es público: sin `detail`, sin claves, sin umbrales.
  *  - `upstreams` dice si Telegram y la función `chat` están vivos. Va SIEMPRE,
  *    también sin Redis: es la información que hace falta para depurar el bot.
- *  - Nunca se cachea.
+ *  - Nunca se cachea la respuesta; las sondas sí se cachean unos segundos.
  */
 
 import { sendError, sendJson } from "./_shared/http.js";
@@ -32,10 +31,8 @@ export const maxDuration = 15;
 type Criticality = "critical" | "standard";
 
 interface Dataset {
-  /** Clave del dato; la marca se lee de `seed-meta:<key>`. */
   key: string;
   label: string;
-  /** Minutos tras los cuales el dato se considera viejo. */
   maxStaleMin: number;
   criticality: Criticality;
 }
@@ -126,6 +123,20 @@ export interface Upstream {
 /** Corto a propósito: health se consulta a menudo y no puede colgarse. */
 export const UPSTREAM_TIMEOUT_MS = 2_500;
 
+/**
+ * Las sondas se repiten como mucho cada 10 s. Un monitor de uptime llama cada
+ * minuto y no hay razón para pedirle `getMe` a Telegram en cada petición; a la
+ * vez, 10 s es suficientemente corto para ver un cambio al recargar.
+ */
+export const UPSTREAM_CACHE_MS = 10_000;
+
+let upstreamCache: { at: number; value: Upstream[] } | null = null;
+
+/** Solo para tests: vacía la caché de sondas del isolate. */
+export function __resetUpstreamCacheForTest(): void {
+  upstreamCache = null;
+}
+
 function env(...names: string[]): string {
   for (const name of names) {
     const value = (process.env[name] ?? "").trim();
@@ -180,9 +191,9 @@ export async function probeTelegram(): Promise<Upstream> {
 }
 
 /**
- * Pregunta a la función `chat` de Supabase por su propio informe. Si contesta
- * con el informe, el camino del bot (webhook → chat → proveedor) está a medias
- * resuelto: al menos la función vive y sabe qué claves tiene.
+ * Pregunta a la función `chat` de Supabase por su propio informe. Un 401 aquí
+ * es la pista más útil del sistema: significa que la función vive pero la
+ * clave del proveedor de IA no vale, y el bot contestará su mensaje genérico.
  */
 export async function probeChat(): Promise<Upstream> {
   const base = env("SUPABASE_URL", "VITE_SUPABASE_URL").replace(/\/+$/, "");
@@ -201,14 +212,21 @@ export async function probeChat(): Promise<Upstream> {
     });
     const ms = Date.now() - started;
     if (!response.ok) {
-      return { key: "chat", label: "Chat (Supabase)", status: "DOWN", ms, detail: `HTTP ${response.status}` };
+      return {
+        key: "chat",
+        label: "Chat (Supabase)",
+        status: "DOWN",
+        ms,
+        detail:
+          response.status === 401
+            ? "HTTP 401: la función chat rechaza la clave del proveedor de IA (revisa LOVABLE_API_KEY en Supabase)"
+            : `HTTP ${response.status}`,
+      };
     }
     const body = (await response.json().catch(() => null)) as
       | { status?: string; models?: { available?: boolean }[] }
       | null;
     if (!body || typeof body.status !== "string") {
-      // La función desplegada puede ser anterior a `?health=1`: responde, pero
-      // no con un informe. Se dice tal cual en vez de inventar un estado.
       return { key: "chat", label: "Chat (Supabase)", status: "OK", ms, detail: "responde, sin informe de salud (redesplegar chat)" };
     }
     const ready = Array.isArray(body.models) ? body.models.filter((model) => model.available).length : null;
@@ -230,9 +248,13 @@ export async function probeChat(): Promise<Upstream> {
   }
 }
 
-/** Las dos sondas en paralelo; ninguna lanza. */
-export async function probeUpstreams(): Promise<Upstream[]> {
-  return Promise.all([probeTelegram(), probeChat()]);
+/** Las dos sondas en paralelo; ninguna lanza. Con caché de unos segundos. */
+export async function probeUpstreams(opts: { maxAgeMs?: number } = {}): Promise<Upstream[]> {
+  const maxAge = opts.maxAgeMs ?? UPSTREAM_CACHE_MS;
+  if (upstreamCache && Date.now() - upstreamCache.at < maxAge) return upstreamCache.value;
+  const value = await Promise.all([probeTelegram(), probeChat()]);
+  upstreamCache = { at: Date.now(), value };
+  return value;
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse) {
@@ -243,7 +265,21 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const compact = url.searchParams.get("compact") === "1";
   const checkedAt = new Date().toISOString();
 
-  // Siempre, con o sin Redis: es lo que dice por qué el bot no contesta.
+  // La puerta va PRIMERO: sin esto, el retorno por falta de Redis dejaba el
+  // detalle (usuario del bot, estado del chat) abierto a cualquiera.
+  const operatorKey = process.env.OPERATOR_KEY || "";
+  const provided = String(req.headers["x-api-key"] || "");
+  if (!compact && (!operatorKey || provided !== operatorKey)) {
+    sendError(res, 401, {
+      error: "operator key required for detailed health",
+      code: "unauthorized",
+      hint: "usa ?compact=1 para la vista pública o envía x-api-key",
+    });
+    return;
+  }
+
+  // Solo se sondcan los llamantes autorizados: no se gasta la cuota de Telegram
+  // a peticiones anónimas.
   const upstreams = await probeUpstreams();
   const upstreamView = compact
     ? upstreams.map(({ key, label, status }) => ({ key, label, status }))
@@ -257,13 +293,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       detail: "UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (o KV_REST_API_*) no están definidas",
       upstreams: upstreamView,
     });
-    return;
-  }
-
-  const operatorKey = process.env.OPERATOR_KEY || "";
-  const provided = String(req.headers["x-api-key"] || "");
-  if (!compact && (!operatorKey || provided !== operatorKey)) {
-    sendError(res, 401, { error: "operator key required for detailed health", code: "unauthorized" });
     return;
   }
 
@@ -285,7 +314,6 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const verdict = verdictOf(checks);
 
   if (compact) {
-    // Público: solo lo accionable, sin claves internas ni umbrales.
     sendJson(req, res, 200, {
       status: verdict.status,
       dataStatus: verdict.dataStatus,
