@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { timingSafeEqual } from 'crypto';
+import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -311,9 +312,13 @@ async function getAiTorResponse(userMessage: string): Promise<string> {
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Error from Ai Tor chat:", response.status, errorText);
-      return "Mi núcleo cuántico está recalibrando frecuencias. Inténtalo de nuevo en unos momentos.";
+      // Antes se contestaba "Mi núcleo cuántico está recalibrando frecuencias"
+      // pasara lo que pasara: un texto amable que escondía una clave inválida
+      // durante días. Ahora se dice qué falló y el detalle va al log.
+      const errorText = await response.text().catch(() => "");
+      const failure = classifyChatFailure(response.status, errorText);
+      console.error("[telegram] chat rechazó el turno", failure.kind, response.status, failure.snippet);
+      return chatFailureMessage(failure);
     }
 
     // Parse the SSE stream
@@ -336,8 +341,9 @@ async function getAiTorResponse(userMessage: string): Promise<string> {
 
     return fullResponse || "Señal recibida pero sin datos. Reintenta la transmisión.";
   } catch (error) {
+    // Sin respuesta no hay código: red caída o tiempo agotado.
     console.error("Error calling Ai Tor:", error);
-    return "Error en la conexión con el campo cuántico. Reintenta.";
+    return chatFailureMessage(classifyChatFailure(null, error instanceof Error ? error.message : ""));
   }
 }
 
