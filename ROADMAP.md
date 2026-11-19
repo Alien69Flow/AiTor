@@ -161,7 +161,7 @@ el bot, y queda registro de quién aprobó qué y cuándo.
 ## Fase 11 — Globo: capas con fuente y fecha
 
 - [x] Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente *(en la app web, no en el bot)*
-- [ ] Mareas (dirección, velocidad, altura) con fuente oceánica pública
+- [x] Mareas (dirección, velocidad, altura) con fuente oceánica pública — tarjeta `TidesCard` sobre el globo con Open-Meteo Marine (nivel del mar y corriente superficial), fuente, cobertura y hora a la vista; sin dato dice «sin cobertura» o «la fuente no responde» — #114 *(en la app web, no en el bot)*
 - [ ] Vista orbital: Sol, Luna, planetas, asteroides y satélites
 - [ ] Controles de tiempo y altitud: superficie, atmósfera, órbita
 - [ ] DeFi TVL, adopción cripto, mapa regulatorio, minas y exchanges
@@ -214,5 +214,6 @@ con un límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-19 | Mareas en el globo: tarjeta con nivel del mar y corriente superficial de Open-Meteo Marine (sin clave) para 24 puertos de referencia, en una sola petición. Dice fuente, cobertura, naturaleza del dato y hora; sin dato pone «sin cobertura» o «la fuente no responde», nunca cero. Probado contra la API real (23/24 estaciones con dato; Shanghái, sin cobertura). **No** sustituye a las boyas NOAA del ticker. |
 | 2026-11-19 | La reserva del `update_id` baja de 24 h a 10 min: el reintento que importa llega en segundos o minutos, y 24 h sólo llenaba el Redis de caché. Con su prueba de punta a punta. Sigue en 🟡: sin Redis configurado no deduplica. |
 | 2026-11-19 | Este fichero pasa a ser la única fuente de verdad. Se retira el roadmap duplicado de `AGENTS.md`. Las fases del bot (1–8) reflejan PRs #102–#110; la memoria del hilo, las alertas y el dedupe quedan en 🟡 porque dependen de despliegues y variables que aún no están. |
