@@ -151,7 +151,7 @@ describe("hilo de Telegram", () => {
     const thread = captured.chat?.body.thread as { surface: string; externalId: string };
     expect(thread.surface).toBe("telegram");
     expect(thread.externalId).toMatch(/^tg_[0-9a-f]{32}$/);
-    expect(thread.externalId).not.toContain("7");
+    // El chat_id 7 no aparece como valor suelto en lo que se envía al chat.
     expect(JSON.stringify(captured.chat?.body)).not.toContain('"7"');
   });
 

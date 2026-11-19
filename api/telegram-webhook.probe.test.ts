@@ -135,7 +135,10 @@ describe("GET /api/telegram-webhook?probe=1", () => {
       "como-hoy",
       "solo-apikey",
     ]);
-    expect(body.chatProbe.keyKind).toBe("publishable");
+    // Con una publicable en el entorno y ninguna JWT, se usa la JWT del
+    // repositorio: es justo el arreglo. Antes se informaba `publishable` y el
+    // bot se quedaba mudo.
+    expect(body.chatProbe.keyKind).toBe("jwt");
     expect(body.chatProbe.conclusion).toContain("rechaza la credencial");
     expect(JSON.stringify(body)).not.toContain(PUBLISHABLE);
   });
