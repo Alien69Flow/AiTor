@@ -188,6 +188,8 @@ describe("GET /api/cron/price-alerts", () => {
     const payload = JSON.parse(String(sent[0].body));
     expect(payload.chat_id).toBe(CHAT);
     expect(payload.text).toContain("BTC");
+    // El aviso lleva el precio de ahora, no el umbral: 120.000 en es-ES.
+    expect(payload.text).toContain("120.000");
 
     // Una alerta de precio es de un solo uso: ya no está.
     expect(redis.hash.has(THREAD)).toBe(false);
