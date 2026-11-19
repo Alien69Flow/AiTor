@@ -11,6 +11,7 @@ import {
   MetricCard,
   SectionTitle,
 } from "./GlassPanels";
+import { TidesCard } from "./TidesCard";
 
 const TYPE_COLORS: Record<string, string> = {
   conflict: "#f87171",
@@ -162,6 +163,9 @@ export function GlobeOverlay({
           </div>
         )}
       </div>
+
+      {/* Mareas: la tarjeta dice siempre su fuente, su cobertura y si no hay dato. */}
+      <TidesCard />
 
       {/* Detail Popup */}
       {selectedHotspot && (
