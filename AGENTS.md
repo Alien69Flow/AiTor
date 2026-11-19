@@ -2,6 +2,12 @@
 
 ## Arquitectura de Agentes
 
+> **Ojo:** los agentes de `backend/` están escritos, pero hoy **nada los
+despliega** (ni `package.json`, ni `vercel.json`, ni un Dockerfile los arrancan).
+> Lo que responde en producción es el webhook de Telegram
+> (`api/telegram-webhook.ts`) contra la función `chat` de Supabase. El estado
+> real, fase a fase, está en [ROADMAP.md](ROADMAP.md).
+
 ### Swarms de Agentes
 
 ```
@@ -294,29 +300,13 @@ interface SystemStats {
 }
 ```
 
-## Roadmap de Features
+## Estado y roadmap
 
-### Fase 1 ✅
-- [x] Supervisor Agent
-- [x] Manus Agent
-- [x] RAG Physics + DAO
-- [x] Thread Memory
-- [x] Monetization Loop
+El roadmap vive en **[ROADMAP.md](ROADMAP.md)** y es la única fuente de verdad:
+✅ desplegado y comprobado con una sonda, 🟡 en `main` pero sin servir, ⬜ pendiente.
 
-### Fase 2 ✅
-- [x] Social Media Manager
-- [x] Proposal Queue
-- [x] Security Agent
-- [x] Social Knowledge RAG
-
-### Fase 3 🚧
-- [ ] Integración real con APIs de redes sociales
-- [ ] Dashboard de métricas
-- [ ] Notificaciones push
-- [ ] Analytics de engagement
-
-### Fase 4 📋
-- [ ] Auto-posting con aprobación
-- [ ] A/B testing de contenido
-- [ ] Predicción de engagement
-- [ ] Integración con CRM
+Este fichero tenía antes su propio roadmap («Fase 1 ✅ … Fase 4 📋») que
+contradecía al de `ROADMAP.md` y marcaba con ✅ cosas que nunca llegaron a
+producción: la memoria del hilo (hoy `POST /functions/v1/chat-thread` responde
+404) y el bucle de monetización. Se retiró para que no haya dos listas: la buena
+es la de `ROADMAP.md`.

@@ -1,410 +1,216 @@
-# 🚀 AiTor v69.5+ - ROADMAP COMPLETO
+# Roadmap de AiTor
 
-## 📊 Estado Actual v69.4
+**Única fuente de verdad.** `AGENTS.md` describe la arquitectura; aquí está qué
+está hecho, qué está desplegado y qué falta. Si los dos ficheros discrepan, manda
+este.
 
-### ✅ IMPLEMENTADO:
-- **AGENTS**: Supervisor, Manus, SocialMediaManager, SecurityAgent
-- **RAG**: Physics, DAO, SocialMedia Knowledge
-- **LOOPS**: SocialAutomation, Security Scans
-- **SKILLS**: social-media-manager, security-auditor
+**Última verificación: 19 de noviembre de 2026**, contra
+`https://aitor.alienflow.space` y el proyecto Supabase `wkdtvrxavkhbifjtvvdw`.
 
-### 🔲 POR IMPLEMENTAR:
+## Cómo se lee
 
----
+| Marca | Significa |
+|---|---|
+| ✅ | **Desplegado y comprobado.** Mergeado en `main` *y* respondiendo en producción; al lado va la comprobación que lo demuestra. |
+| 🟡 | **En `main`, pero no sirviendo.** Falta desplegar o faltan variables. No cuenta como hecho. |
+| ⬜ | **Pendiente.** No hay código. |
 
-## 🎯 FASE 1: AGENTS MEJORADOS
+Un ✅ pide las dos cosas a la vez. Que el fichero exista en el repo no es estar en
+producción: `backend/` entero está en ese caso (nada lo arranca: ni `package.json`,
+ni `vercel.json`, ni un Dockerfile).
 
-### 1.1 Agents de Mercado (Markets Agents) 🔴 PRIORIDAD ALTA
-```
-backend/agents/
-├── marketAnalyzer.ts      # Análisis técnico/fundamental
-├── portfolioManager.ts    # Gestión de portfolio
-├── tradingSignals.ts     # Señales de trading
-├── defiAnalyzer.ts       # Análisis DeFi protocols
-└── tokenTracker.ts       # Tracking de tokens
-```
+## Comprobarlo tú mismo
 
-**Features:**
-- Análisis técnico automatizado (soportes, resistencias, patrones)
-- Alertas de precio personalizadas
-- Tracking de wallet addresses
-- Análisis de TVL, volumen, holders
-
-### 1.2 Agent de OSINT
-```
-backend/agents/osintAgent.ts
-```
-- Monitoreo de redes sociales
-- Búsqueda de noticias relevantes
-- Alertas de sentimiento
-- Track de KOLs
-
-### 1.3 Agent de Comunicación Inter-Agente
-```
-backend/agents/commHub.ts
-```
-- Comunicación entre agentes
-- Compartir contexto
-- Coordinar acciones
-
----
-
-## 🔄 FASE 2: AGENTIC WORKFLOWS
-
-### 2.1 Workflow de Trading (Semi-Automatizado)
-```
-backend/workflows/tradingWorkflow.ts
-```
-
-```typescript
-// FLUJO:
-1. MarketAgent detecta señal (precio, volumen, patrón)
-2. → Notifica al usuario con análisis
-3. → Usuario decide (aprobar/rechazar)
-4. → Si aprobado: ejecuta orden via API
-5. → Reporting post-trade
-```
-
-### 2.2 Workflow de Investigación
-```
-backend/workflows/researchWorkflow.ts
-```
-
-```typescript
-// FLUJO:
-1. Usuario pide investigación
-2. OSINT Agent busca información
-3. Market Agent analiza datos
-4. Manus Agent genera reporte
-5. Social Agent prepara comunicado
-```
-
-### 2.3 Workflow de Crisis
-```
-backend/workflows/crisisWorkflow.ts
-```
-
-```typescript
-// FLUJO:
-1. Detectar caída >X% o exploit
-2. Alertar inmediatamente
-3. Analizar impacto
-4. Generar estrategia de respuesta
-5. Preparar comunicados
-6. Sugerir acciones de mitigación
-```
-
----
-
-## 🛠️ FASE 3: SKILLS MEJORADAS
-
-### 3.1 Skills por Domain
-```
-.agents/skills/
-├── market-analysis.md      # Análisis técnico
-├── defi-protocols.md      # DeFi protocols
-├── trading-signals.md      # Señales
-├── osint-search.md         # OSINT
-├── dao-governance.md       # Governance
-└── technical-analysis.md    # TA patterns
-```
-
-### 3.2 Skills Multimodales
-```
-├── image-generation.md     # Generar imágenes
-├── video-generation.md     # Generar videos
-├── audio-generation.md      # TTS/voice
-└── code-generation.md       # Código
-```
-
-### 3.3 Skills de Integración
-```
-├── github-actions.md       # CI/CD automation
-├── supabase-integration.md # DB ops
-├── telegram-advanced.md     # Telegram bot
-└── webhook-handler.md      # Webhooks
-```
-
----
-
-## 📚 FASE 4: RAG EXPANSION
-
-### 4.1 Knowledge Bases Adicionales
-```
-backend/rag/
-├── marketKnowledge.ts      # Datos de mercado
-├── defiKnowledge.ts       # Protocolos DeFi
-├── technicalKnowledge.ts   # Análisis técnico
-├── newsKnowledge.ts        # News feeds
-├── socialSentiment.ts      # Sentimiento
-└── communityKnowledge.ts   # Comunidad
-```
-
-### 4.2 Vector DB Integration
-```typescript
-// Opcional: Supabase pgvector
-// Para búsqueda semántica más potente
-```
-
----
-
-## 🔄 FASE 5: LOOPS MEJORADOS
-
-### 5.1 Market Loops
-```
-backend/workflows/marketLoops.ts
-├── priceAlertLoop()        // Monitoreo de precios
-├── tvlTrackingLoop()       // TVL de protocols
-├── whaleAlertLoop()         // Movimientos grandes
-└── newsScanLoop()          // News scanning
-```
-
-### 5.2 Community Loops
-```
-backend/workflows/communityLoops.ts
-├── engagementLoop()        // Engagement metrics
-├── followerGrowthLoop()    // Followers
-├── sentimentLoop()          // Sentiment analysis
-└── competitorLoop()         // Competitor monitoring
-```
-
-### 5.3 DAO Governance Loops
-```
-backend/workflows/governanceLoops.ts
-├── proposalAlertLoop()     // Nuevas proposals
-├── votingReminderLoop()     // Recordatorios
-├── treasuryReportLoop()     // Reportes de tesorería
-└── delegateTrackingLoop()   // Delegations
-```
-
----
-
-## 🌍 FASE 6: GLOBE MEJORAS
-
-### 6.0 Capas en preparación
-- [x] Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente
-- [ ] Mareas: dirección, velocidad y altura desde una fuente oceánica pública verificable
-- [ ] Vista orbital ampliada: Sol, Luna, planetas, asteroides y satélites con efemérides compartidas con COSMOS
-- [ ] Controles de tiempo y altitud para separar superficie, atmósfera y órbita
-
-### 6.1 Capas de Datos Adicionales
-```
-GlobeDashboard.tsx
-├── Layer: DeFi TVL by country
-├── Layer: Crypto adoption index
-├── Layer: Regulatory heatmap
-├── Layer: Mining sites
-├── Layer: Exchange locations
-├── Layer: Whale wallet distribution
-└── Layer: NFT activity
-```
-
-### 6.2 Interactividad
-```
-├── Click: Drill-down por país
-├── Hover: Tooltip con stats
-├── Time slider: Ver evolución temporal
-├── Filters: Por sector, token, metric
-└── Export: Screenshots, data
-```
-
-### 6.3 3D Enhancements
-```
-├── Orbital mechanics simulation
-├── Layered atmosphere rendering
-├── Particle effects para datos
-└── Smooth camera transitions
-```
-
----
-
-## 📈 FASE 7: MARKETS TAB MEJORAS
-
-### 7.1 Trading View Integration
-```
-MarketsSection.tsx
-├── TradingView charts
-├── Technical indicators
-├── Drawing tools
-└── Price alerts
-```
-
-### 7.2 Portfolio Dashboard
-```
-PortfolioTab.tsx
-├── Wallet tracking
-├── P&L calculations
-├── Allocation breakdown
-├── Historical performance
-└── Tax reporting
-```
-
-### 7.3 DeFi Dashboard
-```
-├── TVL tracking
-├── Yield comparison
-├── Protocol analytics
-├── Gas tracker
-└── MEV alerts
-```
-
----
-
-## 👽 FASE 8: ALIEN TAB MEJORAS
-
-### 8.1 UFO Monitor 2.0
-```
-UFOMonitorTab.tsx
-├── Real UFO sighting feeds
-├── NASA data visualization
-├── Cosmic event tracking
-└── Alien signal detection (SETI-style)
-```
-
-### 8.2 Neural Console
-```
-├── Brain-computer interface simulation
-├── Neural network visualization
-├── AI thought process display
-└── Quantum state display
-```
-
-### 8.3 Alien Community Hub
-```
-├── AlienArmy leaderboard
-├── Contribution tracking
-├── NFT minting
-└── Exclusive content
-```
-
----
-
-## ⚙️ FASE 9: SYSTEM TAB MEJORAS
-
-### 9.1 Dashboard de Agentes
-```
-SystemTab.tsx
-├── Agent status monitor
-├── Request queue visualization
-├── Response time metrics
-├── Error tracking
-└── Credit usage
-```
-
-### 9.2 Configuration Panel
-```
-├── API keys management
-├── Notification preferences
-├── Theme customization
-├── Automation scheduler
-└── Log viewer
-```
-
-### 9.3 System Health
-```
-├── Uptime monitoring
-├── API latency
-├── Error rates
-├── Memory/CPU usage
-└── Cost tracking
-```
-
----
-
-## 🔮 FASE 10: INTEGRACIONES AVANZADAS
-
-### 10.1 Blockchain Integrations
-```
-├── Ethereum (ethers.js)
-├── Solana (web3.js)
-├── Bitcoin (bitcoinjs)
-├── Layer 2s (Arbitrum, Optimism)
-└── Bridges (Across, Stargate)
-```
-
-### 10.2 DEX Integration
-```
-├── Uniswap/Sushiswap
-├── Raydium
-├── 1inch API
-├── 0x Protocol
-└── DEX aggregators
-```
-
-### 10.3 Data Providers
-```
-├── CoinGecko Pro
-├── CoinMarketCap
-├── Messari
-├── Dune Analytics
-├── Nansen
-└── DeFiLlama
-```
-
----
-
-## 🎯 PRIORIDADES SUGERIDAS
-
-### Inmediato (Esta semana):
-1. 🔴 Market Agents básicos (precio + alertas)
-2. 🔴 Integrar Social Media Manager en frontend
-3. 🟠 Mejorar Markets tab con charts
-
-### Corto plazo (Este mes):
-4. 🟠 Trading workflow básico
-5. 🟠 Globe layer de DeFi
-6. 🟡 RAG de mercado
-
-### Medio plazo (3 meses):
-7. 🟡 Full trading automation
-8. 🟡 DAO governance loops
-9. 🟢 Alien tab completo
-10. 🟢 System monitoring dashboard
-
----
-
-## 📝 NOTES
-
-### Globo LIVE, emisiones y cobros (plan aprobado)
-- [ ] Clima: ampliar ciudades, coexistencia de lecturas, unidades y datos ausentes.
-- [ ] Mercados: quitar respaldo inventado y mostrar frescura; ampliar fuentes verificables.
-- [ ] Alertas: mareas costeras y datos orbitales con fuente y fecha.
-- [ ] Cámaras: ampliar catálogo oficial sin falsos LIVE ni ubicación ficticia.
-- [ ] Recuperar avances GitHub/Vercel, modelos de aviones y escalas cósmicas.
-- [ ] DAO City: ampliar espacios, agentes, Skills, RAG y Workflows con acciones verificables.
-- [ ] Migración a backend propio: verificar acceso al destino y traslado seguro de funciones y secretos, sin borrar Cloud.
-- [ ] Synapse: verificar destinos y alta comercial antes de habilitar BTC/tarjeta y nuevas redes.
-
-### DAO City
-- [x] Sustituir Neural por ciudad holográfica 3D con distritos seleccionables.
-- [x] Conectar AI Tor y encargos por distrito al chat existente con entregables reales.
-- [ ] Formación con evaluaciones y graduación persistente: pendiente de definir criterios de acreditación con la DAO.
-- [ ] Trabajo autónomo y ciudad multiusuario: pendiente de definir permisos y aprobación de acciones externas.
-
-### Para implementar cada feature:
-1. Crear agent/workflow en `/backend/agents/` o `/backend/workflows/`
-2. Añadir skill en `/backend/rag/` si necesita knowledge base
-3. Crear skill file en `/.agents/skills/`
-4. Integrar en `orchestrator.ts` si necesita routing
-5. Añadir UI component si necesita frontend
-6. Documentar en `AGENTS.md`
-
-### Dependencias necesarias:
 ```bash
-# Markets
-npm install @tradingview/charts @tradingview/lightweight-charts
+# 1. El webhook vive, Telegram apunta donde debe y el bot se identifica
+curl -s https://aitor.alienflow.space/api/telegram-webhook | jq '{secretConfigured, webhook, bot}'
 
-# Blockchain
-npm install ethers @solana/web3.js bitcoinjs-lib
+# 2. La función de chat y su clave de proveedor
+curl -s 'https://aitor.alienflow.space/api/telegram-webhook?probe=1' | jq .chatProbe.conclusion
 
-# Data
-npm install @supabase/supabase-js
-
-# Visualization
-npm install three @react-three/fiber globe.gl
+# 3. La memoria del hilo: 404 = no desplegada
+curl -s -o /dev/null -w '%{http_code}\n' -X POST \
+  https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/chat-thread
 ```
 
 ---
 
-*"Bless Financial Freedom for the Free Earth"*
-**ΔlieπFlΦw $pac€ DAO | AiTor v69.5+** 🚀
+# Parte A · El bot (fases cerradas y a medio cerrar)
+
+## Fase 1 — Decir la verdad cuando algo falla ✅
+
+Antes cualquier fallo se contestaba con una frase amable («mi núcleo está
+recalibrando frecuencias»), así que una clave inválida podía durar días sin que
+nadie lo supiera.
+
+- [x] Clasificar el fallo (credencial, cuota, red, proveedor, tiempo agotado) y decir cuál es — #102, #108
+- [x] Sonda `GET /api/telegram-webhook?probe=1`: comprobación gratuita siempre y, con `x-api-key`, una llamada real al modelo — #102, #105
+- [x] El webhook ya no contesta 200 mudo: un fallo deja rastro en los logs de Vercel
+
+**Comprobado:** `?probe=1` responde con `salud → 200` y una conclusión que nombra
+el extremo que falla (hoy: «chat vive»).
+
+## Fase 2 — La credencial correcta ✅
+
+- [x] `pickSupabaseKey` prefiere una JWT anon y descarta la `sb_publishable_…`, que el gateway rechaza con 401 — #103
+- [x] La clave no se imprime nunca: sólo su procedencia y su forma
+
+**Comprobado:** la función `chat` contesta `200` a su informe de salud a través
+del webhook desplegado.
+
+## Fase 3 — Memoria del hilo 🟡
+
+El bot recuerda la conversación anterior. Está escrito, mergeado y con migración,
+pero **la función no está desplegada**: `POST /functions/v1/chat-thread` devuelve
+`404 NOT_FOUND`.
+
+- [x] Migración `supabase/migrations/20261118190000_chat_memory.sql`
+- [x] Función `supabase/functions/chat-thread` (lee y guarda turnos con la service key)
+- [x] El webhook la llama con un identificador opaco: HMAC del `chat_id`, no el `chat_id` — #103
+- [ ] Aplicar la migración
+- [ ] Desplegar la función
+
+**Para cerrarla:**
+
+```bash
+supabase db push --project-ref pnyigikagdxqaogbiift
+supabase functions deploy chat-thread --project-ref pnyigikagdxqaogbiift
+```
+
+**Criterio de hecho:** la sonda 3 deja de dar 404 y, hablando con el bot, el
+segundo mensaje recuerda el primero. Si el turno quedara duplicado, falta la
+Fase 6.
+
+## Fase 4 — Conocimiento curado ✅
+
+- [x] `api/_shared/knowledge.ts`: sólo se inyecta lo que cae en el dominio (física 3-6-9, DAO, tokenómica) y el modelo recibe la orden de citarlo — #104
+- [x] Se pasa como `context` en el turno, no como texto pegado al prompt
+
+**Comprobado:** desplegado con el webhook (una pregunta fuera de dominio no lo
+recibe). No hay sonda específica: se verifica preguntando.
+
+## Fase 5 — Alertas de precio 🟡
+
+`/alerta BTC > 95000` existe en el bot y el cron está declarado en `vercel.json`
+(`/api/cron/price-alerts`, `17 9 * * *`), pero **está inerte**: sin `CRON_SECRET`
+responde 401, y sin Redis no puede guardar ni leer avisos.
+
+- [x] Comando `/alerta` con formato claro, tope de avisos por chat y símbolos acotados — #105
+- [x] Endpoint de cron protegido por secreto
+- [ ] Redis en Vercel (`KV_REST_API_URL`, `KV_REST_API_TOKEN`)
+- [ ] `CRON_SECRET` puesto y cron probado de punta a punta
+
+**Criterio de hecho:** crear un aviso desde el bot, forzar el cron con
+`Authorization: Bearer $CRON_SECRET` y recibir el mensaje cuando se cruza el
+precio.
+
+## Fase 6 — Deduplicar entregas de Telegram 🟡
+
+Si Telegram reintenta una entrega, el usuario recibía la respuesta dos veces y el
+turno se guardaba duplicado.
+
+- [x] `update_id` reservado en Redis (`SET … NX EX 86400`) **antes** de procesar — #109
+- [x] Clave con prefijo de entorno: una preview no gasta updates reales
+- [x] Sin Redis se procesa igual y se avisa en el log (mejor respuesta doble que silencio)
+- [ ] Redis configurado (el mismo de la Fase 5)
+
+**Criterio de hecho:** con Redis puesto, dos peticiones con el mismo `update_id`
+producen una sola respuesta y un solo turno guardado.
+
+## Fase 7 — La CI no miente ✅
+
+- [x] `api/**` dentro de la suite de Vitest (#107) y tests/lint bloqueantes en el workflow (#110)
+- [x] Los cinco fallos que estaban ocultos, arreglados: `chat-thread` declarada en `config.toml`, marcador de ruleta, `localStorage` en jsdom, dos errores de lint
+
+**Comprobado:** 121 ficheros, 1072 tests en verde; `eslint` sin errores; job de
+CI en verde en el commit mergeado `9944670`.
+
+## Fase 8 — Webhook firmado 🟡
+
+Hoy `secretConfigured: false`: se aceptan actualizaciones sin firmar con cuota por
+IP (30/min). Funciona, pero cualquiera puede gastar cuota de modelo.
+
+- [x] Verificación en tiempo constante cuando el secreto existe
+- [ ] `TELEGRAM_WEBHOOK_SECRET` en Vercel y re-registrar el webhook con `node scripts/telegram-webhook.mjs --set`
+
+**Criterio de hecho:** `secretConfigured: true` y el bot sigue respondiendo.
+
+---
+
+# Parte B · Producto (⬜ pendiente)
+
+Nada de esta parte está desplegado. El código de `backend/` (agentes, workflows,
+RAG, loops) existe pero **nada lo arranca**, así que aquí no cuenta como hecho.
+
+## Fase 9 — Agentes de mercado
+
+Análisis técnico, señales, seguimiento de cartera y DeFi.
+
+**Criterio de hecho:** un comando del bot devuelve una señal con fuente, hora y
+precio verificables, y desde `backend/` desplegado (no desde el portátil).
+
+## Fase 10 — Workflows con aprobación humana
+
+Trading semi-automatizado, investigación multi-agente y respuesta a crisis. Nada
+se ejecuta sin que una persona apruebe.
+
+**Criterio de hecho:** una propuesta llega al usuario, se aprueba o rechaza desde
+el bot, y queda registro de quién aprobó qué y cuándo.
+
+## Fase 11 — Globo: capas con fuente y fecha
+
+- [x] Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente *(en la app web, no en el bot)*
+- [ ] Mareas (dirección, velocidad, altura) con fuente oceánica pública
+- [ ] Vista orbital: Sol, Luna, planetas, asteroides y satélites
+- [ ] Controles de tiempo y altitud: superficie, atmósfera, órbita
+- [ ] DeFi TVL, adopción cripto, mapa regulatorio, minas y exchanges
+- [ ] Frescura visible y ninguna capa con respaldo inventado
+
+**Criterio de hecho:** cada capa dice su fuente y la hora del dato; si el dato no
+llega, se ve vacío en vez de relleno.
+
+## Fase 12 — DAO City
+
+- [x] Ciudad holográfica 3D con distritos seleccionables *(en la app web)*
+- [x] Encargos por distrito conectados al chat con entregables reales *(en la app web)*
+- [ ] Formación con evaluaciones y graduación persistente (faltan criterios de acreditación)
+- [ ] Trabajo autónomo y ciudad multiusuario (faltan permisos y aprobación de acciones externas)
+
+**Criterio de hecho:** un encargo produce un entregable que se puede abrir, y el
+progreso sobrevive a recargar la página.
+
+## Fase 13 — Mercados y sistema, dentro de la app
+
+TradingView, cartera con P&L, DeFi (TVL, yields, gas) e infraestructura de
+observabilidad (cola, latencia, errores, coste).
+
+**Criterio de hecho:** cada panel declara su fuente y su frescura; ninguno
+inventa un número cuando la fuente calla.
+
+## Fase 14 — Integraciones avanzadas
+
+Blockchain (Ethereum, Solana, Bitcoin, L2), DEX y proveedores de datos
+(CoinGecko, DeFiLlama, Dune…). Sólo con clave propia y cuota conocida.
+
+**Criterio de hecho:** una integración nueva entra con prueba de que responde y
+con un límite de gasto escrito.
+
+---
+
+# Cómo trabajar esto
+
+1. **Una fase a la vez.** Se abre rama, se hace el cambio, se verifica y sólo
+   entonces se mergea.
+2. **✅ sólo cuando responde en producción**, con la sonda al lado. Un merge no
+   es un despliegue.
+3. **Si falta una variable o un despliegue, se dice en la fase** (🟡 con los pasos
+   exactos), no se marca como hecha.
+4. **Cada fase nueva entra aquí con su criterio de hecho**: qué se ejecuta para
+   saber que está terminada. Si no se puede comprobar, no es una fase, es una
+   idea.
+
+## Registro
+
+| Fecha | Cambio |
+|---|---|
+| 2026-11-19 | Este fichero pasa a ser la única fuente de verdad. Se retira el roadmap duplicado de `AGENTS.md`. Las fases del bot (1–8) reflejan PRs #102–#110; la memoria del hilo, las alertas y el dedupe quedan en 🟡 porque dependen de despliegues y variables que aún no están. |
