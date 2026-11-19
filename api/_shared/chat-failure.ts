@@ -80,6 +80,37 @@ export function classifyChatFailure(status: number | null, rawBody = ""): ChatFa
 }
 
 /**
+ * El mismo fallo, contado para quien opera el despliegue.
+ *
+ * `chatFailureMessage` habla al usuario del bot; esto dice que variable hay que
+ * tocar y acompana al `detail` de `/api/health`. Las dos lecturas salen de la
+ * MISMA clasificacion: antes habia una copia en cada sitio y se desincronizaron.
+ */
+export function chatFailureDetail(failure: ChatFailure): string {
+  const snippet = failure.snippet || "sin cuerpo";
+  switch (failure.kind) {
+    case "network":
+      return "sin respuesta de chat (red caída o tiempo agotado)";
+    case "gateway-key":
+      return `HTTP ${failure.status}: Supabase rechaza la clave con la que se llama a chat (Invalid API key) — revisa VITE_SUPABASE_ANON_KEY / VITE_SUPABASE_PUBLISHABLE_KEY en Vercel`;
+    case "provider-key":
+      return `HTTP ${failure.status}: la clave del proveedor de IA fue rechazada (Provider authentication failed) — revisa LOVABLE_API_KEY en Supabase`;
+    case "auth":
+      return `HTTP ${failure.status}: chat rechaza la credencial y el cuerpo no dice cuál (${snippet})`;
+    case "credits":
+      return "HTTP 402: la clave del proveedor está sin créditos";
+    case "not-found":
+      return "HTTP 404: no existe la función chat en ese proyecto de Supabase";
+    case "rate-limit":
+      return "HTTP 429: límite de peticiones del proveedor";
+    case "server":
+      return `HTTP ${failure.status}: la función chat falló (${snippet})`;
+    default:
+      return `HTTP ${failure.status ?? "sin estado"}${failure.snippet ? `: ${failure.snippet}` : ""}`;
+  }
+}
+
+/**
  * Lo que lee el usuario del bot. Sin jerga de despliegue y sin culparlo a el:
  * cada frase dice que pasa y si puede hacer algo.
  */

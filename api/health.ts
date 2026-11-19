@@ -24,6 +24,7 @@
 import { sendError, sendJson } from "./_shared/http.js";
 import { isRedisConfigured, readSeedMetas } from "./_shared/redis.js";
 import { applyCors } from "./_shared/cors.js";
+import { chatFailureDetail, classifyChatFailure } from "./_shared/chat-failure.js";
 import type { ApiRequest, ApiResponse } from "./_shared/types.js";
 
 export const maxDuration = 15;
@@ -146,55 +147,15 @@ function env(...names: string[]): string {
 }
 
 /**
- * Tapa cualquier credencial que se haya colado en un mensaje ajeno. El detalle
- * se sirve por HTTP: un JWT o una publishable en el cuerpo de un error de
- * Supabase no debe acabar en la respuesta.
- */
-export function scrubError(text: string): string {
-  return text
-    .replace(/eyJ[A-Za-z0-9._-]{20,}/g, "[clave]")
-    .replace(/sb_[a-z]+_[A-Za-z0-9_-]{8,}/g, "[clave]")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 180);
-}
-
-/**
- * Por qué falló el chat, en una frase.
+ * Por qué falló el chat, en una frase, con la variable que hay que tocar.
  *
- * Un 401 pelado no distingue las dos causas que desde fuera se ven iguales: el
- * gateway de Supabase rechazando la clave con la que llamamos, o la función
- * contestando que el proveedor de IA rechazó la suya. El cuerpo sí las
- * distingue, y la diferencia decide qué variable hay que tocar.
+ * La heurística —401 del gateway, 401 del proveedor, red, créditos, cuota— vive
+ * en `_shared/chat-failure.ts`, la misma que usa el bot al contestar al usuario.
+ * Aquí solo cambia el registro, que es de operador, no la clasificación: tener
+ * dos copias fue exactamente cómo se desincronizaron.
  */
 export function explainChatFailure(status: number, rawBody: string): string {
-  const body = scrubError(rawBody);
-  const text = body.toLowerCase();
-
-  if (status === 401 || status === 403) {
-    if (
-      text.includes("invalid api key") ||
-      text.includes("no api key") ||
-      text.includes("invalid jwt") ||
-      text.includes("double check the provided api key")
-    ) {
-      return `HTTP ${status}: Supabase rechaza la clave con la que se llama a chat (Invalid API key) — revisa VITE_SUPABASE_ANON_KEY / VITE_SUPABASE_PUBLISHABLE_KEY en Vercel`;
-    }
-    if (
-      text.includes("provider authentication failed") ||
-      text.includes("incorrect api key") ||
-      text.includes("unauthorized")
-    ) {
-      return `HTTP ${status}: la clave del proveedor de IA fue rechazada (Provider authentication failed) — revisa LOVABLE_API_KEY en Supabase`;
-    }
-    return `HTTP ${status}: chat rechaza la credencial y el cuerpo no dice cuál (${body || "sin cuerpo"})`;
-  }
-
-  if (status === 402) return "HTTP 402: la clave del proveedor está sin créditos";
-  if (status === 404) return "HTTP 404: no existe la función chat en ese proyecto de Supabase";
-  if (status === 429) return "HTTP 429: límite de peticiones del proveedor";
-  if (status >= 500) return `HTTP ${status}: la función chat falló (${body || "sin cuerpo"})`;
-  return `HTTP ${status}${body ? `: ${body}` : ""}`;
+  return chatFailureDetail(classifyChatFailure(status, rawBody));
 }
 
 /**
