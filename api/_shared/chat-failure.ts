@@ -87,7 +87,10 @@ export function classifyChatFailure(status: number | null, rawBody = ""): ChatFa
  * MISMA clasificación: antes había una copia en cada sitio y se desincronizaron.
  */
 export function chatFailureDetail(failure: ChatFailure): string {
-  const snippet = failure.snippet || "sin cuerpo";
+  // Se vuelve a limpiar aquí a propósito: este texto acaba en el `detail` de
+  // /api/health y en logs, y la función no puede fiarse de que quien construyó
+  // el fallo haya pasado por `classifyChatFailure`.
+  const snippet = scrubError(failure.snippet) || "sin cuerpo";
   switch (failure.kind) {
     case "network":
       return "sin respuesta de chat (red caída o tiempo agotado)";
@@ -106,7 +109,7 @@ export function chatFailureDetail(failure: ChatFailure): string {
     case "server":
       return `HTTP ${failure.status}: la función chat falló (${snippet})`;
     default:
-      return `HTTP ${failure.status ?? "sin estado"}${failure.snippet ? `: ${failure.snippet}` : ""}`;
+      return `HTTP ${failure.status ?? "sin estado"}${snippet === "sin cuerpo" ? "" : `: ${snippet}`}`;
   }
 }
 
