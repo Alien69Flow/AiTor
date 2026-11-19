@@ -478,3 +478,490 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
     }
     console.error("Manus task creation failed:", data);
     return { ok: false };
+
+  } catch (error) {
+    console.error("Error calling Manus API:", error);
+    return { ok: false };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sonda real de la función `chat` (GET ?probe=1)
+// ---------------------------------------------------------------------------
+//
+// El GET normal mira un solo extremo: que Telegram apunte al webhook y que el
+// bot tenga token. El otro extremo, que es donde se rompe de verdad, quedaba a
+// ciegas: un 401 del gateway de Supabase y un 500 del proveedor de IA llegaban
+// al usuario como el mismo texto genérico, así que «el bot no responde» podía
+// ser cualquiera de las dos cosas y no había forma de saberlo sin entrar en
+// Vercel.
+//
+// La comprobación de salud de la función es gratis y va siempre. La llamada al
+// modelo cuesta cuota de IA, así que sólo se hace con `x-api-key: OPERATOR_KEY`.
+// Nunca se devuelve la clave: sólo su forma (`jwt`, `publishable`, `otra`,
+// `vacia`), y el texto del error pasa por un filtro que tapa credenciales.
+
+type KeyKind = "jwt" | "publishable" | "otra" | "vacia";
+
+interface ChatProbeAttempt {
+  via: string;
+  sent: string;
+  status: number | null;
+  ok: boolean;
+  ms: number | null;
+  contentType: string | null;
+  bytes: number | null;
+  /** Primeras letras del error, con cualquier credencial sustituida. */
+  errorHead: string | null;
+  hint: string;
+}
+
+interface ChatProbe {
+  host: string;
+  keyKind: KeyKind;
+  attempts: ChatProbeAttempt[];
+  conclusion: string;
+  cached: boolean;
+  note: string | null;
+}
+
+const PROBE_MESSAGE = "ping";
+const PROBE_TIMEOUT_MS = 12_000;
+/** Un sondeo gasta cuota: como mucho uno cada 30 s por variante e instancia. */
+const PROBE_CACHE_MS = 30_000;
+const PROBE_CACHE = new Map<string, { at: number; value: ChatProbe }>();
+
+/** Forma de la clave, nunca su valor. */
+function keyKind(key: string): KeyKind {
+  if (!key) return "vacia";
+  if (key.split(".").length === 3) return "jwt";
+  if (key.startsWith("sb_publishable_") || key.startsWith("sb_secret_")) return "publishable";
+  return "otra";
+}
+
+/** Tapa cualquier credencial que aparezca en un texto de error. */
+function scrub(text: string): string {
+  let out = text;
+  for (const secret of [SUPABASE_ANON_KEY, TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_SECRET]) {
+    if (secret && secret.length >= 8) out = out.split(secret).join("[clave]");
+  }
+  return out.slice(0, 200);
+}
+
+function hintFor(
+  status: number | null,
+  ok: boolean,
+  produced: boolean,
+  healthOnly: boolean,
+): string {
+  if (status === null) return "sin respuesta: red, DNS o tiempo agotado";
+  if (status === 401) return "credencial rechazada: gateway de Supabase o clave del proveedor de IA";
+  if (status === 402) return "la clave del proveedor está sin créditos";
+  if (status === 403) return "prohibido: revisa verify_jwt de la función chat";
+  if (status === 404) return "la función chat no existe en ese proyecto";
+  if (status === 429) return "límite de peticiones del proveedor";
+  if (status >= 500) return "la función chat falló o el proveedor está caído";
+  if (healthOnly) return "la función chat vive y responde a su informe de salud";
+  return produced
+    ? "responde de verdad: el fallo está en el webhook, no en el chat"
+    : "200 pero sin texto: mira el modelo y el stream";
+}
+
+async function probeAttempt(
+  via: string,
+  sent: string,
+  headers: Record<string, string>,
+  healthOnly = false,
+): Promise<ChatProbeAttempt> {
+  const started = Date.now();
+  try {
+    const response = await fetch(healthOnly ? `${CHAT_URL}?health=1` : CHAT_URL, {
+      method: healthOnly ? "GET" : "POST",
+      headers,
+      ...(healthOnly
+        ? {}
+        : {
+            body: JSON.stringify({
+              model: "google/gemini-2.5-flash",
+              messages: [{ role: "user", content: PROBE_MESSAGE }],
+            }),
+          }),
+      signal: AbortSignal.timeout(PROBE_TIMEOUT_MS),
+    });
+    const text = await response.text().catch(() => "");
+    const produced = /"content"\s*:\s*"[^"]/.test(text);
+    return {
+      via,
+      sent,
+      status: response.status,
+      ok: response.ok,
+      ms: Date.now() - started,
+      contentType: response.headers.get("content-type"),
+      bytes: text.length,
+      errorHead: response.ok ? null : scrub(text),
+      hint: hintFor(response.status, response.ok, produced, healthOnly),
+    };
+  } catch (error) {
+    return {
+      via,
+      sent,
+      status: null,
+      ok: false,
+      ms: Date.now() - started,
+      contentType: null,
+      bytes: null,
+      errorHead: error instanceof Error ? scrub(error.message) : "error desconocido",
+      hint: hintFor(null, false, false, healthOnly),
+    };
+  }
+}
+
+function chatHost(): string {
+  try {
+    return new URL(CHAT_URL).host;
+  } catch {
+    return "url-invalida";
+  }
+}
+
+/**
+ * Comprobación gratuita + (si hay clave de operador) dos llamadas de verdad, en
+ * secuencia: primero la forma que usa hoy el webhook —`apikey` y
+ * `Authorization: Bearer`— y, si esa falla, sólo `apikey`. Con una clave
+ * publishable (`sb_publishable_…`) el Bearer no es un JWT y el gateway la
+ * rechaza antes de llegar a la función, y esa es la diferencia que interesa
+ * distinguir.
+ */
+async function runChatProbe(paid: boolean): Promise<ChatProbe> {
+  const cacheKey = paid ? "paid" : "free";
+  const hit = PROBE_CACHE.get(cacheKey);
+  if (hit && Date.now() - hit.at < PROBE_CACHE_MS) return { ...hit.value, cached: true };
+
+  const attempts: ChatProbeAttempt[] = [
+    await probeAttempt("salud", "GET ?health=1 (gratis)", supabaseAuthHeaders(SUPABASE_ANON_KEY), true),
+  ];
+
+  if (paid) {
+    const likeToday = await probeAttempt("como-hoy", "POST apikey + bearer", {
+      "Content-Type": "application/json",
+      ...supabaseAuthHeaders(SUPABASE_ANON_KEY),
+    });
+    attempts.push(likeToday);
+    if (!likeToday.ok) {
+      attempts.push(
+        await probeAttempt("solo-apikey", "POST sólo apikey", {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+        }),
+      );
+    }
+  }
+
+  const health = attempts[0];
+  const paidAttempts = attempts.slice(1);
+  const working = paidAttempts.find((attempt) => attempt.ok);
+
+  const conclusion = working
+    ? `chat responde (${working.via}): el fallo está en el webhook, no en el chat`
+    : paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)
+      ? "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)"
+      : health.status === 401
+        ? "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale"
+        : health.ok && paidAttempts.length > 0
+          ? "chat vive pero no contesta al modelo: el fallo está dentro de la función"
+          : health.ok
+            ? "chat vive (comprobación gratuita): añade x-api-key para probar el modelo"
+            : "chat no responde: mira el estado y el error de la primera comprobación";
+
+  const value: ChatProbe = {
+    host: chatHost(),
+    keyKind: keyKind(SUPABASE_ANON_KEY),
+    attempts,
+    conclusion,
+    cached: false,
+    note: paid
+      ? null
+      : "sin x-api-key válida sólo se hace la comprobación gratuita; envía x-api-key: OPERATOR_KEY para llamar al modelo",
+  };
+
+  PROBE_CACHE.set(cacheKey, { at: Date.now(), value });
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// Default handler
+// ---------------------------------------------------------------------------
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // --- Diagnóstico (GET) ---
+  //
+  // Verificación sin sacar el token de Vercel: la función consulta a Telegram
+  // con su propio token y devuelve el estado real del webhook. No expone
+  // secretos (ni el token ni el secret_token, que Telegram no devuelve).
+  if (req.method === "GET") {
+    if (!TELEGRAM_BOT_TOKEN) {
+      return res.status(500).json({
+        ok: false,
+        service: "telegram-webhook",
+        error: "TELEGRAM_BOT_TOKEN no está configurado en este despliegue",
+      });
+    }
+
+    const registrationState = await registerWebhookOnce();
+    const [me, info] = await Promise.all([
+      telegramApi<{ id: number; username?: string; first_name?: string }>("getMe"),
+      telegramApi<TelegramWebhookInfo>("getWebhookInfo"),
+    ]);
+
+    // La sonda del chat sólo se ejecuta si se pide: llamar al modelo en cada
+    // diagnóstico gastaría cuota sin motivo.
+    let chatProbe: ChatProbe | null = null;
+    const query = new URL(req.url || "/api/telegram-webhook", `https://${req.headers.host || "localhost"}`)
+      .searchParams;
+    if (query.get("probe") === "1") {
+      const operatorKey = process.env.OPERATOR_KEY || "";
+      const provided = String(req.headers["x-api-key"] || "");
+      const paid = Boolean(operatorKey) && safeEqual(provided, operatorKey);
+      chatProbe = await runChatProbe(paid);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      service: "telegram-webhook",
+      vercelEnv: process.env.VERCEL_ENV ?? null,
+      secretConfigured: Boolean(TELEGRAM_WEBHOOK_SECRET),
+      expectedUrl: WEBHOOK_URL,
+      registration: registrationState,
+      bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
+      webhook: info
+        ? {
+            url: info.url || null,
+            matchesExpected: info.url === WEBHOOK_URL,
+            pendingUpdates: info.pending_update_count ?? 0,
+            lastErrorAt: info.last_error_date
+              ? new Date(info.last_error_date * 1000).toISOString()
+              : null,
+            lastErrorMessage: info.last_error_message ?? null,
+          }
+        : null,
+      chatProbe,
+    });
+  }
+
+  if (req.method !== "POST") {
+    return res.status(405).send("Method Not Allowed");
+  }
+
+  // Auto-registro al recibir la primera actualización de la instancia. Sólo en
+  // producción y sin bloquear la respuesta: si Telegram llegara a firmar con
+  // otro secreto, reintenta por su cuenta en cuanto el registro queda bien.
+  if (process.env.VERCEL_ENV === "production") {
+    void registerWebhookOnce().catch(() => undefined);
+  }
+
+  // --- Verificación de la firma del webhook ---
+  //
+  // Con `TELEGRAM_WEBHOOK_SECRET` configurado se exige coincidencia exacta: el
+  // endpoint es público y consume cuota de IA y de Manus, así que una petición
+  // sin firmar se rechaza en vez de gastarse.
+  //
+  // Sin el secreto configurado se acepta la actualización, con límite por IP.
+  // Antes se respondía 401 en ese caso y el efecto era el peor posible: el bot
+  // dejaba de responder **sin que nadie lo supiera**, porque Telegram recibía
+  // 401 en cada entrega y el usuario sólo veía silencio. Si quieres cerrarlo
+  // del todo, define el secreto y registra el webhook con el mismo valor:
+  //   node scripts/telegram-webhook.mjs --set
+  const expectedSecret = TELEGRAM_WEBHOOK_SECRET;
+  const providedSecret = req.headers["x-telegram-bot-api-secret-token"] as
+    | string
+    | undefined;
+
+  if (!expectedSecret) {
+    const forwarded = req.headers["x-forwarded-for"];
+    const ip =
+      (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0].trim() ||
+      req.socket?.remoteAddress ||
+      "unknown";
+    if (!withinAnonQuota(ip)) {
+      console.error("[telegram] límite por IP alcanzado en la ruta sin firmar");
+      return res.status(429).send("Too Many Requests");
+    }
+    console.warn(
+      "[telegram] TELEGRAM_WEBHOOK_SECRET no está configurado: se aceptan actualizaciones sin firmar con límite por IP. Configúralo y re-registra el webhook con --set para cerrar el endpoint.",
+    );
+  } else if (typeof providedSecret !== "string" || !safeEqual(providedSecret, expectedSecret)) {
+    console.error(
+      "[telegram] rejected update: x-telegram-bot-api-secret-token is missing or does not match TELEGRAM_WEBHOOK_SECRET. Re-register with: node scripts/telegram-webhook.mjs --set",
+    );
+    return res.status(401).send("Unauthorized");
+  }
+
+  if (!TELEGRAM_BOT_TOKEN) {
+    // 500 (not 200) so Telegram records the failure in getWebhookInfo instead
+    // of the bot going silently deaf.
+    console.error("[telegram] TELEGRAM_BOT_TOKEN is not configured — cannot answer.");
+    return res.status(500).send("Bot token not configured");
+  }
+
+  // Vercel parses JSON bodies, but a request with a non-JSON content type
+  // arrives as a raw string. Unwrapping it here keeps "message is undefined"
+  // from being answered with a silent 200 OK that Telegram won't retry.
+  let body = req.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      console.error("[telegram] cuerpo no parseable como JSON");
+      return res.status(400).send("Bad Request");
+    }
+  }
+
+  // Telegram reintenta la entrega si el webhook tarda o si la respuesta le
+  // parece un fallo. Sin reserva por `update_id` el mismo mensaje se contesta
+  // dos veces, se cobra dos veces al modelo y, con la memoria del hilo, deja
+  // el turno duplicado. Se reserva antes de procesar; `claimUpdate` no lanza.
+  const updateId = (body as TelegramUpdate | undefined)?.update_id;
+  if (typeof updateId === "number" && !(await claimUpdate(updateId))) {
+    console.warn(`[telegram] update ${updateId} ya procesado: se ignora el reintento`);
+    return res.status(200).send("OK");
+  }
+
+  const message = (body as TelegramUpdate | undefined)?.message;
+  if (!message?.chat?.id || typeof message.text !== "string") {
+    // Edits, joins, stickers…: acknowledge so Telegram stops retrying.
+    return res.status(200).send("OK");
+  }
+
+  const chatId = message.chat.id;
+  const text = message.text.trim();
+  // "/start@Alien69Bot" (grupos) se normaliza a "/start"
+  const command = text.split(" ")[0].toLowerCase().split("@")[0];
+
+  try {
+    // === FIXED COMMANDS ===
+
+    if (command === "/start") {
+      await sendTelegramMessage(
+        chatId,
+        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n<b>Comandos disponibles:</b>\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/alerta - Aviso de precio\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
+        BRIDGE_KEYBOARD,
+        { html: true },
+      );
+    } else if (command === "/web") {
+      await sendTelegramMessage(
+        chatId,
+        "🌐 <b>Terminal web</b>\n\nContinúa en aitor.alienflow.space. El puente mantiene el contexto entre superficies: desde la web puedes retomar aquí y desde aquí vuelves allí.",
+        BRIDGE_KEYBOARD,
+        { html: true },
+      );
+    } else if (command === "/app") {
+      await sendTelegramMessage(chatId, '🎮 Accede a la Mini App:\nhttps://t.me/Alien69Bot/app');
+    } else if (command === "/dao") {
+      await sendTelegramMessage(
+        chatId,
+        `🌌 <b>AlienFlow DAO</b>\n\nOrganización autónoma descentralizada dedicada a la exploración de nuevas fronteras en tecnología y consciencia.\n\n<i>«El universo no es solo lo que ves, es lo que eres capaz de procesar y transmutar.»</i>\n\n<b>Campos:</b> Web3 · Web4 · Web5 · Alquimia · Física Cuántica\n<b>Frecuencia:</b> 3-6-9 Hz\n<b>Colectivo:</b> ΔlieπFlΦw DAO Synapse`,
+        undefined,
+        { html: true },
+      );
+    } else if (command === "/help") {
+      await sendTelegramMessage(
+        chatId,
+        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        undefined,
+        { html: true },
+      );
+    }
+    // === ALERTAS DE PRECIO ===
+    else if (command === "/alerta") {
+      const parsed = parseAlertCommand(text);
+      const thread = telegramThread(chatId);
+      const symbols = Object.keys(SYMBOL_IDS).join(", ");
+
+      if (!parsed) {
+        await sendTelegramMessage(
+          chatId,
+          `Formato: <code>/alerta BTC &gt; 95000</code>\nTambién vale <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code> y <code>95k</code>.\nSímbolos: ${symbols}.`,
+          undefined,
+          { html: true },
+        );
+      } else if (!thread) {
+        await sendTelegramMessage(chatId, "No puedo crear alertas: falta el token del bot en este despliegue.");
+      } else {
+        const result = await addAlert(thread.externalId, {
+          chatId,
+          symbol: parsed.symbol,
+          direction: parsed.direction,
+          price: parsed.price,
+          createdAt: new Date().toISOString(),
+        });
+        if (result.ok) {
+          const arrow = parsed.direction === "above" ? "≥" : "≤";
+          await sendTelegramMessage(
+            chatId,
+            `✅ Aviso creado: ${parsed.symbol} ${arrow} $${parsed.price.toLocaleString("es-ES")}. Te escribo cuando lo cruce.`,
+          );
+        } else if (result.reason === "demasiadas") {
+          await sendTelegramMessage(
+            chatId,
+            `Ya tienes ${MAX_ALERTS_PER_CHAT} avisos, que es el máximo. No he creado este.`,
+          );
+        } else {
+          await sendTelegramMessage(
+            chatId,
+            "No puedo guardar alertas: falta Redis en este despliegue (KV_REST_API_URL / KV_REST_API_TOKEN).",
+          );
+        }
+      }
+    }
+    // === MANUS COMMANDS ===
+    else if (command === "/manus" || command === "/investigar" || command === "/analizar") {
+      const prompt = text.substring(text.indexOf(" ") + 1).trim();
+      if (!prompt || prompt === command) {
+        await sendTelegramMessage(
+          chatId,
+          'Necesito un texto para procesar. Ejemplo:\n/manus analiza las tendencias crypto de esta semana'
+        );
+        return res.status(200).send("OK");
+      }
+
+      if (!MANUS_API_KEY) {
+        console.error("[telegram] /manus sin MANUS_API_KEY configurada");
+        await sendTelegramMessage(
+          chatId,
+          "🛠 <b>Manus AI no está configurado</b>\n\nFalta <code>MANUS_API_KEY</code> en las variables de Vercel. Puedo responder aquí mientras tanto: escríbeme sin comando.",
+          undefined,
+          { html: true },
+        );
+        return res.status(200).send("OK");
+      }
+
+      const result = await createManusTask(chatId, prompt);
+      if (result.ok) {
+        await sendTelegramMessage(
+          chatId,
+          `⚡ <b>Tarea enviada a Manus AI</b>\n\nEstoy procesando tu solicitud. Recibirás los resultados aquí cuando estén listos (puede tardar unos minutos).\n\n📋 Task: <code>${result.taskId}</code>`,
+          undefined,
+          { html: true },
+        );
+      } else {
+        await sendTelegramMessage(chatId, "❌ Error al crear la tarea en Manus. Inténtalo de nuevo.");
+      }
+    }
+    // === NORMAL MESSAGES → AI TOR ===
+    else {
+      await sendTypingAction(chatId);
+      const thread = telegramThread(chatId);
+      const history = thread ? await loadThreadHistory(thread) : [];
+      const reply = await getAiTorResponse(chatId, text, history);
+      await sendTelegramMessage(chatId, reply.text);
+      // Sólo se memoriza lo que salió bien: guardar un mensaje de error como
+      // respuesta del bot envenenaría el hilo de las siguientes preguntas.
+      if (thread && reply.ok) await saveTurn(thread, text, reply.text);
+    }
+  } catch (error) {
+    console.error("Error processing message:", error);
+    await sendTelegramMessage(chatId, "Error en el procesamiento. Reintenta.");
+  }
+
+  return res.status(200).send("OK");
+}
