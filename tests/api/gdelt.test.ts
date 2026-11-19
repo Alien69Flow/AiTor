@@ -20,7 +20,11 @@ interface Result {
   headers: Record<string, string>;
 }
 
-function call(query: Record<string, string>, method = "GET"): Promise<Result> {
+function call(
+  query: Record<string, string>,
+  method = "GET",
+  target: typeof handler = handler,
+): Promise<Result> {
   return new Promise((resolve) => {
     const headers: Record<string, string> = {};
     const req = { method, query, headers: {} };
@@ -47,7 +51,7 @@ function call(query: Record<string, string>, method = "GET"): Promise<Result> {
         resolve({ status: this.statusCode, body: "", headers });
       },
     };
-    void (handler as unknown as (req: unknown, res: unknown) => Promise<void>)(req, res);
+    void (target as unknown as (req: unknown, res: unknown) => Promise<void>)(req, res);
   });
 }
 
@@ -124,16 +128,35 @@ describe("respuesta del proxy", () => {
   });
 
   it("la segunda llamada idéntica sale de caché", async () => {
+    // El handler delega la caché en Redis (`cachedFetchJson`). Sin Upstash todo
+    // es un fallo, así que aquí se sustituye por uno en memoria con la misma
+    // forma: sólo se prueba el camino «hit», que es lo que fija esta prueba.
+    vi.resetModules();
+    const store = new Map<string, unknown>();
+    vi.doMock("../../api/_shared/redis.js", async (importOriginal) => ({
+      ...(await importOriginal<Record<string, unknown>>()),
+      cachedFetchJson: async (key: string, _ttl: number, fetcher: () => Promise<unknown>) => {
+        if (store.has(key)) return store.get(key);
+        const fresh = await fetcher();
+        store.set(key, fresh);
+        return fresh;
+      },
+    }));
+    const { default: cachedHandler } = await import("../../api/gdelt");
+
     const fetchMock = vi.fn(async () => new Response(geoJson, { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
 
     const query = { theme: "ARMEDCONFLICT", hours: "4", maxrows: "20" };
-    const first = await call(query);
-    const second = await call(query);
+    const first = await call(query, "GET", cachedHandler);
+    const second = await call(query, "GET", cachedHandler);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    expect(second.headers["x-aitor-cache"]).toBe("hit");
+    // La prueba de que salió de caché es que GDELT se llamó una sola vez.
     expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.doUnmock("../../api/_shared/redis.js");
+    vi.resetModules();
   });
 
   it("un 429 se explica y no se cachea", async () => {

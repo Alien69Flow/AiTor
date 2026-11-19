@@ -115,8 +115,11 @@ describe("GET/POST /api/github", () => {
     expect(JSON.parse(body)).toEqual([{ name: "src" }]);
     expect(seen.headers?.authorization).toBeUndefined();
     expect(seen.url).toBe("https://api.github.com/repos/Alien69Flow/AiTor/contents/src");
-    // La caché es lo que mantiene usable la cuota anónima de 60/hora.
-    expect(headers["cache-control"]).toMatch(/s-maxage/);
+    // La caché es lo que mantiene usable la cuota anónima de 60/hora. `sendJson`
+    // deja el `s-maxage` en `CDN-Cache-Control` y hace que el navegador revalide
+    // con el ETag en vez de servir datos viejos de la pestaña.
+    expect(headers["cdn-cache-control"]).toMatch(/s-maxage/);
+    expect(headers["etag"]).toBeTruthy();
   });
 
   /**
