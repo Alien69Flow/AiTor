@@ -3,6 +3,11 @@ project_id = "pnyigikagdxqaogbiift"
 [functions.chat]
 verify_jwt = false
 
+# Memoria del hilo: el webhook de Telegram la llama con la JWT anon del
+# despliegue y ella escribe con la service key.
+[functions.chat-thread]
+verify_jwt = false
+
 [functions.ufo-feed]
 verify_jwt = false
 

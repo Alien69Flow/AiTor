@@ -17,6 +17,14 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // jsdom sirve el documento en un origen opaco salvo que se le dé una URL, y
+    // en un origen opaco no existe `localStorage`. Los tests que guardan una
+    // marca del arcade o que marcan un vídeo como revivido se encontraban
+    // `window.localStorage === undefined` y fallaban por el entorno, no por el
+    // código. Con una URL real el almacenamiento se comporta como en el navegador.
+    environmentOptions: { jsdom: { url: "http://localhost/" } },
+    // Node tapa con su propio `localStorage` el de jsdom; ahí está el arreglo.
+    setupFiles: ["./vitest.setup.ts"],
     // `scripts/` is included for the checks that are plain Node modules (the CI
     // gates): they cannot live in src because the Node 22 runner imports them
     // directly, so their tests follow them out here.

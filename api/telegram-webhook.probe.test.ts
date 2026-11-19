@@ -9,9 +9,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
+type ProbeAttemptView = { via: string; status?: number | null };
+type ProbeView = {
+  keyKind: string;
+  conclusion: string;
+  note: string | null;
+  attempts: ProbeAttemptView[];
+};
+type ProbeBody = { chatProbe: ProbeView | null };
+
 function mockRes() {
   let status = 0;
-  let body: any = null;
+  let body: ProbeBody | null = null;
   let sent: string | null = null;
   const res = {
     statusCode: 200,
@@ -21,7 +30,7 @@ function mockRes() {
       return res;
     },
     json(payload: unknown) {
-      body = payload;
+      body = payload as ProbeBody;
       return res;
     },
     send(payload: unknown) {
@@ -112,12 +121,12 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     const { res, snap } = mockRes();
 
     await handler(req("/api/telegram-webhook?probe=1"), res);
-    const body = snap().body;
+    const body = snap().body!;
 
     expect(snap().status).toBe(200);
-    expect(body.chatProbe.attempts).toHaveLength(1);
-    expect(body.chatProbe.attempts[0].via).toBe("salud");
-    expect(body.chatProbe.note).toContain("OPERATOR_KEY");
+    expect(body.chatProbe!.attempts).toHaveLength(1);
+    expect(body.chatProbe!.attempts[0].via).toBe("salud");
+    expect(body.chatProbe!.note).toContain("OPERATOR_KEY");
     // Sólo GET al chat: ninguna llamada al modelo.
     expect(calls.filter((call) => call.startsWith("POST") && call.includes("functions/v1/chat"))).toHaveLength(0);
   });
@@ -128,9 +137,9 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     const { res, snap } = mockRes();
 
     await handler(req("/api/telegram-webhook?probe=1", { "x-api-key": OPERATOR }), res);
-    const body = snap().body;
+    const body = snap().body!;
 
-    expect(body.chatProbe.attempts.map((attempt: { via: string }) => attempt.via)).toEqual([
+    expect(body.chatProbe!.attempts.map((attempt) => attempt.via)).toEqual([
       "salud",
       "como-hoy",
       "solo-apikey",
@@ -138,8 +147,8 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     // Con una publicable en el entorno y ninguna JWT, se usa la JWT del
     // repositorio: es justo el arreglo. Antes se informaba `publishable` y el
     // bot se quedaba mudo.
-    expect(body.chatProbe.keyKind).toBe("jwt");
-    expect(body.chatProbe.conclusion).toContain("rechaza la credencial");
+    expect(body.chatProbe!.keyKind).toBe("jwt");
+    expect(body.chatProbe!.conclusion).toContain("rechaza la credencial");
     expect(JSON.stringify(body)).not.toContain(PUBLISHABLE);
   });
 
@@ -150,7 +159,7 @@ describe("GET /api/telegram-webhook?probe=1", () => {
 
     await handler(req("/api/telegram-webhook?probe=1", { "x-api-key": OPERATOR }), res);
 
-    expect(snap().body.chatProbe.conclusion).toContain("el fallo está en el webhook");
+    expect(snap().body!.chatProbe!.conclusion).toContain("el fallo está en el webhook");
   });
 
   it("sin ?probe=1 no se sonda nada", async () => {
@@ -160,7 +169,7 @@ describe("GET /api/telegram-webhook?probe=1", () => {
 
     await handler(req("/api/telegram-webhook"), res);
 
-    expect(snap().body.chatProbe).toBeNull();
+    expect(snap().body?.chatProbe).toBeNull();
     expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
   });
 });
