@@ -82,9 +82,9 @@ export function classifyChatFailure(status: number | null, rawBody = ""): ChatFa
 /**
  * El mismo fallo, contado para quien opera el despliegue.
  *
- * `chatFailureMessage` habla al usuario del bot; esto dice que variable hay que
- * tocar y acompana al `detail` de `/api/health`. Las dos lecturas salen de la
- * MISMA clasificacion: antes habia una copia en cada sitio y se desincronizaron.
+ * `chatFailureMessage` habla al usuario del bot; esto dice qué variable hay que
+ * tocar y acompaña al `detail` de `/api/health`. Las dos lecturas salen de la
+ * MISMA clasificación: antes había una copia en cada sitio y se desincronizaron.
  */
 export function chatFailureDetail(failure: ChatFailure): string {
   const snippet = failure.snippet || "sin cuerpo";
