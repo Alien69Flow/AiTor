@@ -36,6 +36,13 @@ function call(query: Record<string, string>, method = "GET"): Promise<Result> {
       send(payload: string) {
         resolve({ status: this.statusCode, body: payload, headers });
       },
+      // `sendJson`/`sendError` escriben con `status(...).json(...)`: sin esto el
+      // handler revienta con «json is not a function» y el test falla por el
+      // mock, no por el comportamiento.
+      json(payload: unknown) {
+        resolve({ status: this.statusCode, body: JSON.stringify(payload), headers });
+        return this;
+      },
       end() {
         resolve({ status: this.statusCode, body: "", headers });
       },

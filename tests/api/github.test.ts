@@ -46,6 +46,12 @@ function call(
       send(payload: string) {
         resolve({ status: this.statusCode, body: payload, headers });
       },
+      // `sendJson`/`sendError` escriben con `status(...).json(...)`; sin `json()`
+      // el handler revienta y el test falla por el mock, no por el código.
+      json(payload: unknown) {
+        resolve({ status: this.statusCode, body: JSON.stringify(payload), headers });
+        return this;
+      },
       end() {
         resolve({ status: this.statusCode, body: "", headers });
       },
