@@ -19,8 +19,16 @@
 
 import { isRedisConfigured, redisCommand, scopedKey } from "./redis.js";
 
-/** Telegram reintenta durante horas; 24 h cubre cualquier reintento real. */
-export const UPDATE_TTL_SECONDS = 86_400;
+/**
+ * Ventana de la reserva: 10 minutos.
+ *
+ * Corta a propósito. El reintento que importa llega en segundos o en un par de
+ * minutos, mientras la primera entrega sigue en vuelo; para entonces la clave
+ * está viva y el reintento se descarta. Veinticuatro horas no evitaban ningún
+ * duplicado más y dejaban una clave por mensaje durante un día entero en un
+ * Redis que también guarda caché y avisos.
+ */
+export const UPDATE_TTL_SECONDS = 600;
 
 const UPDATE_KEY_PREFIX = "aitor:tg:update:";
 

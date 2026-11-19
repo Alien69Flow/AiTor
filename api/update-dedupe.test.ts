@@ -70,6 +70,13 @@ describe("claimUpdate", () => {
     expect(state.calls).toHaveLength(0);
   });
 
+  it("la reserva caduca en minutos, no en un día", () => {
+    // Telegram reintenta en segundos o minutos: la ventana cubre eso y no deja
+    // una clave por mensaje durante 24 h en el Redis de caché.
+    expect(UPDATE_TTL_SECONDS).toBe(600);
+    expect(UPDATE_TTL_SECONDS).toBeLessThanOrEqual(15 * 60);
+  });
+
   it("la clave lleva el prefijo del entorno", () => {
     expect(updateKey(7)).toBe("preview:abc12345:aitor:tg:update:7");
   });

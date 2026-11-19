@@ -109,10 +109,11 @@ precio.
 Si Telegram reintenta una entrega, el usuario recibía la respuesta dos veces y el
 turno se guardaba duplicado.
 
-- [x] `update_id` reservado en Redis (`SET … NX EX 86400`) **antes** de procesar — #109
+- [x] `update_id` reservado en Redis (`SET … NX EX 600`, diez minutos) **antes** de procesar — #109
 - [x] Clave con prefijo de entorno: una preview no gasta updates reales
 - [x] Sin Redis se procesa igual y se avisa en el log (mejor respuesta doble que silencio)
-- [ ] Redis configurado (el mismo de la Fase 5)
+- [x] Prueba de punta a punta: dos entregas con el mismo `update_id` → un solo mensaje y una sola reserva; con `update_id` nuevo → se contesta
+- [ ] Redis configurado (el mismo de la Fase 5) — hoy `GET /api/health?compact=1` responde `UNCONFIGURED`
 
 **Criterio de hecho:** con Redis puesto, dos peticiones con el mismo `update_id`
 producen una sola respuesta y un solo turno guardado.
@@ -213,4 +214,5 @@ con un límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-19 | La reserva del `update_id` baja de 24 h a 10 min: el reintento que importa llega en segundos o minutos, y 24 h sólo llenaba el Redis de caché. Con su prueba de punta a punta. Sigue en 🟡: sin Redis configurado no deduplica. |
 | 2026-11-19 | Este fichero pasa a ser la única fuente de verdad. Se retira el roadmap duplicado de `AGENTS.md`. Las fases del bot (1–8) reflejan PRs #102–#110; la memoria del hilo, las alertas y el dedupe quedan en 🟡 porque dependen de despliegues y variables que aún no están. |
