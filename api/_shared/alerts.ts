@@ -2,15 +2,20 @@
  * Alertas de precio: lógica y almacén.
  *
  * Por qué Redis y no Postgres: una alerta es un aviso temporal, no memoria del
- * usuario. Caduca sola (30 días) y no necesita RLS ni migración; además el
- * endpoint del cron corre en Vercel, donde ya está el cliente de Redis.
+ * usuario. Caduca sola y no necesita RLS ni migración; además el cron corre en
+ * Vercel, donde ya está el cliente de Redis.
  *
- * La clave usa el mismo token opaco que el hilo (`tg_…`), así que no lleva el
- * chat_id. El valor sí lo lleva: sin él no hay a quién avisar. Se dice claro
- * aquí porque es la única pieza que guarda el id del chat.
+ * Almacén: **un solo hash**, `aitor:alerts`, con el token del hilo como campo
+ * y el JSON de sus alertas como valor. Un SCAN por prefijo habría necesitado
+ * el prefijo de preview; un hash se lee entero con `HGETALL` y no hay claves
+ * sueltas que se queden huérfanas.
+ *
+ * El campo es el token opaco del hilo, así que la clave no lleva el chat_id.
+ * El valor sí lo lleva: sin él no hay a quién avisar. Es la única pieza del
+ * proyecto que guarda el id del chat, y se dice aquí para que no sorprenda.
  */
 
-import { getJson, isRedisConfigured, setJson } from "./redis.js";
+import { isRedisConfigured, redisCommand } from "./redis.js";
 
 export type AlertDirection = "above" | "below";
 
@@ -26,6 +31,7 @@ export interface Alert {
 export const MAX_ALERTS_PER_CHAT = 10;
 /** Un mes: el aviso no es eterno. */
 export const ALERTS_TTL_SECONDS = 30 * 24 * 3_600;
+const ALERTS_KEY = "aitor:alerts";
 
 /** Símbolos con id en CoinGecko. Sin id no hay precio, y sin precio no hay aviso. */
 export const SYMBOL_IDS: Record<string, string> = {
@@ -75,7 +81,7 @@ export function isDue(alert: Pick<Alert, "direction" | "price">, current: number
   return alert.direction === "above" ? current >= alert.price : current <= alert.price;
 }
 
-/** Las que toca avisar ahora, en orden de creación. */
+/** Las que toca avisar ahora, en el orden en que se crearon. */
 export function dueAlerts(alerts: Alert[], prices: Record<string, number | null>): Alert[] {
   return alerts.filter((alert) => isDue(alert, prices[alert.symbol] ?? null));
 }
@@ -86,17 +92,8 @@ export function formatAlert(alert: Alert, current: number): string {
   return `🔔 ${alert.symbol} está en $${current.toLocaleString("es-ES")} (aviso: ${arrow} $${alert.price.toLocaleString("es-ES")}).`;
 }
 
-export function alertsKey(threadToken: string): string {
-  return `aitor:alerts:${threadToken}`;
-}
-
-/**
- * Lee las alertas del chat y descarta lo que no tenga forma de alerta: Redis es
- * compartido y no se fía de lo que encuentre.
- */
-export async function loadAlerts(threadToken: string): Promise<Alert[]> {
-  if (!isRedisConfigured()) return [];
-  const stored = await getJson<unknown>(alertsKey(threadToken));
+/** Descarta lo que no tenga forma de alerta: Redis no es de fiar. */
+export function sanitizeAlerts(stored: unknown): Alert[] {
   if (!Array.isArray(stored)) return [];
   return stored.filter((item): item is Alert => {
     const alert = item as Partial<Alert>;
@@ -111,13 +108,51 @@ export async function loadAlerts(threadToken: string): Promise<Alert[]> {
   });
 }
 
-export async function saveAlerts(threadToken: string, alerts: Alert[]): Promise<boolean> {
-  if (!isRedisConfigured()) return false;
-  const response = await setJson(alertsKey(threadToken), alerts, ALERTS_TTL_SECONDS);
-  return response !== false;
+export async function loadAlerts(threadToken: string): Promise<Alert[]> {
+  if (!isRedisConfigured()) return [];
+  try {
+    const raw = await redisCommand<string | null>(["HGET", ALERTS_KEY, threadToken]);
+    return raw ? sanitizeAlerts(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
 }
 
-/** Añade una alerta respetando el tope. Devuelve el motivo si no se pudo. */
+/** Guarda (o vacía) las alertas de un chat. Devuelve `false` si Redis falló. */
+export async function saveAlerts(threadToken: string, alerts: Alert[]): Promise<boolean> {
+  if (!isRedisConfigured()) return false;
+  try {
+    if (alerts.length === 0) {
+      await redisCommand(["HDEL", ALERTS_KEY, threadToken]);
+    } else {
+      await redisCommand(["HSET", ALERTS_KEY, threadToken, JSON.stringify(alerts)]);
+      await redisCommand(["EXPIRE", ALERTS_KEY, String(ALERTS_TTL_SECONDS)]);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Todas las alertas de todos los chats, para el cron. */
+export async function allAlerts(): Promise<Array<{ token: string; alerts: Alert[] }>> {
+  if (!isRedisConfigured()) return [];
+  try {
+    const flat = await redisCommand<string[] | null>(["HGETALL", ALERTS_KEY]);
+    if (!Array.isArray(flat)) return [];
+    const entries: Array<{ token: string; alerts: Alert[] }> = [];
+    for (let index = 0; index + 1 < flat.length; index += 2) {
+      const token = flat[index];
+      const alerts = sanitizeAlerts(JSON.parse(flat[index + 1]));
+      if (token && alerts.length > 0) entries.push({ token, alerts });
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
+
+/** Añade una alerta respetando el tope. */
 export async function addAlert(
   threadToken: string,
   alert: Alert,
@@ -127,11 +162,4 @@ export async function addAlert(
   if (alerts.length >= MAX_ALERTS_PER_CHAT) return { ok: false, reason: "demasiadas" };
   const saved = await saveAlerts(threadToken, [...alerts, alert]);
   return saved ? { ok: true, total: alerts.length + 1 } : { ok: false, reason: "sin-redis" };
-}
-
-/** Borra las alertas disparadas y conserva el resto. */
-export async function dropAlerts(threadToken: string, fired: Alert[]): Promise<void> {
-  if (fired.length === 0) return;
-  const remaining = (await loadAlerts(threadToken)).filter((alert) => !fired.includes(alert));
-  await saveAlerts(threadToken, remaining);
 }
