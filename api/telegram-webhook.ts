@@ -3,7 +3,14 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import { retrieveKnowledge } from "./_shared/knowledge.js";
-import { addAlert, MAX_ALERTS_PER_CHAT, parseAlertCommand, SYMBOL_IDS } from "./_shared/alerts.js";
+import {
+  addAlert,
+  buildAlert,
+  formatCreated,
+  MAX_ALERTS_PER_CHAT,
+  parseAlertCommand,
+  SYMBOL_IDS,
+} from "./_shared/alerts.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
 
 /**
@@ -866,7 +873,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (command === "/help") {
       await sendTelegramMessage(
         chatId,
-        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/alerta BTC +5% - Aviso si se mueve ese porcentaje en 24 h\n/alerta sismos 5.5 - Aviso si hay un sismo de esa magnitud o más\n/alerta gdelt ARMEDCONFLICT - Aviso si aparece un evento nuevo del tema\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
         undefined,
         { html: true },
       );
@@ -880,26 +887,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!parsed) {
         await sendTelegramMessage(
           chatId,
-          `Formato: <code>/alerta BTC &gt; 95000</code>\nTambién vale <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code> y <code>95k</code>.\nSímbolos: ${symbols}.`,
+          `Formato: <code>/alerta BTC &gt; 95000</code>\nTambién vale <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code> y <code>95k</code>.\nMovimiento: <code>/alerta BTC +5%</code> (o <code>-5%</code>).\nSismos: <code>/alerta sismos 5.5</code>.\nNoticias: <code>/alerta gdelt ARMEDCONFLICT</code>.\nSímbolos: ${symbols}.`,
           undefined,
           { html: true },
         );
       } else if (!thread) {
         await sendTelegramMessage(chatId, "No puedo crear alertas: falta el token del bot en este despliegue.");
       } else {
-        const result = await addAlert(thread.externalId, {
-          chatId,
-          symbol: parsed.symbol,
-          direction: parsed.direction,
-          price: parsed.price,
-          createdAt: new Date().toISOString(),
-        });
+        const alert = buildAlert(parsed, chatId);
+        const result = await addAlert(thread.externalId, alert);
         if (result.ok) {
-          const arrow = parsed.direction === "above" ? "≥" : "≤";
-          await sendTelegramMessage(
-            chatId,
-            `✅ Aviso creado: ${parsed.symbol} ${arrow} $${parsed.price.toLocaleString("es-ES")}. Te escribo cuando lo cruce.`,
-          );
+          await sendTelegramMessage(chatId, formatCreated(alert));
         } else if (result.reason === "demasiadas") {
           await sendTelegramMessage(
             chatId,
