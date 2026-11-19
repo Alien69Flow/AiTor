@@ -1,11 +1,11 @@
 /**
- * Conocimiento curado que el chat inyecta como bloque de contexto.
+ * Conocimiento curado que el bot inyecta como bloque de contexto.
  *
  * Origen: `backend/rag/knowledge.ts` (la doctrina de la DAO y la física
  * unificada del proyecto). Se duplica aquí porque el RAG del backend sólo lo
  * lee un orquestador Express que no está desplegado, y el chat de producción
  * corre en Supabase: el conocimiento tiene que viajar al sitio donde se
- * responde.
+ * responde, y quien lo manda es el webhook.
  *
  * Reglas:
  *  - Se enruta por palabras clave, no por embeddings: cero dependencias y cero

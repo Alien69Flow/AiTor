@@ -4,7 +4,7 @@ import {
   normalize,
   retrieveKnowledge,
   scoreBlocks,
-} from "../../supabase/functions/_shared/knowledge";
+} from "../../api/_shared/knowledge";
 
 describe("normalize", () => {
   it("quita acentos, mayúsculas y signos", () => {
