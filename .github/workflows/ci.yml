@@ -1,7 +1,8 @@
 name: CI
 
-# Única comprobación: instala, compila y prueba. Sin secretos, así que nunca
-# falla por claves que falten. Tests y lint son informativos (no bloquean).
+# Instala, compila y prueba. Sin secretos, así que nunca falla por claves que
+# falten. Build, tests y lint bloquean: un rojo de verdad tiene que verse en la
+# CI, no quedarse dentro de un job que termina en verde.
 
 on:
   push:
@@ -35,10 +36,8 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Unit tests (advisory)
-        continue-on-error: true
+      - name: Unit tests
         run: npm test
 
-      - name: Lint (advisory)
-        continue-on-error: true
+      - name: Lint
         run: npm run lint

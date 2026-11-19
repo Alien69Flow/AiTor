@@ -70,5 +70,7 @@ export function spinNet(bet: RouletteBet, pocket: number, stake: number): number
 /** Marcador tras la tirada: nunca baja de cero. */
 export function afterSpin(chips: number, bet: RouletteBet, pocket: number, stake: number): number {
 	const current = Math.max(0, Math.floor(chips));
+	// Sin fichas no hay apuesta: no se puede cobrar lo que no se puso.
+	if (current === 0) return 0;
 	return Math.max(0, current + spinNet(bet, pocket, stake));
 }
