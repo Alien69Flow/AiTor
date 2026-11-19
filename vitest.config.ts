@@ -23,6 +23,10 @@ export default defineConfig({
     include: [
       "src/**/*.test.{ts,tsx}",
       "tests/**/*.test.{ts,tsx}",
+      // Los handlers de `api/` vivían fuera de la suite: se comprobaban a mano
+      // y una migración a `sendJson` pudo romper sus mocks sin que nadie lo
+      // viera. Aquí entran con el resto.
+      "api/**/*.test.{ts,tsx}",
       "scripts/**/*.test.mjs",
       // `_shared/` de las edge functions es TypeScript sin APIs de Deno a
       // propósito, así que se puede probar aquí (la sonda de oráculos vive ahí).
