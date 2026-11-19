@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { timingSafeEqual } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
+import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -54,13 +55,29 @@ const SUPABASE_URL =
   process.env.SUPABASE_URL ||
   process.env.VITE_SUPABASE_URL ||
   'https://wkdtvrxavkhbifjtvvdw.supabase.co';
-const SUPABASE_ANON_KEY =
-  (process.env.VITE_SUPABASE_PUBLISHABLE_KEY as string) ||
-  (process.env.VITE_SUPABASE_ANON_KEY as string) ||
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8';
 
+/**
+ * Qué clave se usa para hablar con el gateway y con la función de chat.
+ *
+ * El orden importa y era el bug: antes ganaba `VITE_SUPABASE_PUBLISHABLE_KEY`,
+ * donde este despliegue tiene una `sb_publishable_…` que el gateway contesta
+ * con 401. `pickSupabaseKey` prefiere una JWT anon y, si no hay ninguna, la
+ * JWT pública del repositorio. La clave nunca se imprime: sólo su procedencia.
+ */
+const SUPABASE_KEY = pickSupabaseKey(
+  process.env,
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8',
+);
+const SUPABASE_ANON_KEY = SUPABASE_KEY.key;
+
+if (SUPABASE_KEY.kind !== 'jwt') {
+  console.warn(
+    `[telegram] la clave de Supabase viene de ${SUPABASE_KEY.source} (${SUPABASE_KEY.kind}); el gateway puede rechazarla. Define VITE_SUPABASE_ANON_KEY con la JWT anon.`,
+  );
+}
 
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
+const THREAD_URL = `${SUPABASE_URL}/functions/v1/chat-thread`;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 /**
@@ -142,6 +159,72 @@ function registerWebhookOnce(): Promise<string> {
     });
   }
   return registration;
+}
+
+// --- Memoria del hilo ---
+//
+// El webhook no puede escribir en `chat_turns` (RLS cerrado a `anon`), así que
+// la memoria vive en la función `chat-thread`, que sí tiene la service key.
+// Aquí sólo se pide y se guarda, con un tope de tiempo corto: si la memoria
+// tarda o falla, el mensaje sigue su camino como si no existiera.
+type ThreadRef = { surface: "telegram"; externalId: string };
+type HistoryMessage = { role: "user" | "assistant"; content: string };
+const THREAD_TIMEOUT_MS = 4_000;
+
+/**
+ * Token opaco del hilo: HMAC(token del bot, chat_id) en 16 bytes.
+ *
+ * Así el `chat_id` no se guarda en la base y nadie sin el token del bot puede
+ * adivinar el hilo de otra persona. Es estable entre reinicios, que es justo lo
+ * que el `Map` en RAM no hacía.
+ */
+function telegramThread(chatId: number): ThreadRef | null {
+  if (!TELEGRAM_BOT_TOKEN) return null;
+  const signature = createHmac("sha256", TELEGRAM_BOT_TOKEN)
+    .update(`aitor-thread:${chatId}`)
+    .digest("hex")
+    .slice(0, 32);
+  return { surface: "telegram", externalId: `tg_${signature}` };
+}
+
+async function loadThreadHistory(thread: ThreadRef): Promise<HistoryMessage[]> {
+  try {
+    const url = `${THREAD_URL}?surface=${thread.surface}&thread=${encodeURIComponent(thread.externalId)}`;
+    const response = await fetch(url, {
+      headers: supabaseAuthHeaders(SUPABASE_ANON_KEY),
+      signal: AbortSignal.timeout(THREAD_TIMEOUT_MS),
+    });
+    if (!response.ok) return [];
+    const data = (await response.json().catch(() => null)) as { messages?: unknown } | null;
+    if (!Array.isArray(data?.messages)) return [];
+    return data.messages
+      .filter((item): item is HistoryMessage => {
+        const msg = item as { role?: unknown; content?: unknown };
+        return (
+          (msg.role === "user" || msg.role === "assistant") &&
+          typeof msg.content === "string" &&
+          msg.content.length > 0
+        );
+      })
+      // La ventana ya viene recortada; el tope de aquí es sólo una red de
+      // seguridad por si la función devolviera más de lo que debe.
+      .slice(-9);
+  } catch {
+    return [];
+  }
+}
+
+async function saveTurn(thread: ThreadRef, user: string, assistant: string): Promise<void> {
+  try {
+    await fetch(THREAD_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...supabaseAuthHeaders(SUPABASE_ANON_KEY) },
+      body: JSON.stringify({ thread, user, assistant }),
+      signal: AbortSignal.timeout(THREAD_TIMEOUT_MS),
+    });
+  } catch {
+    // La memoria es un extra: se pierde el turno, no la conversación.
+  }
 }
 
 // --- Puente web <-> Telegram ---
@@ -292,22 +375,33 @@ async function sendTypingAction(chatId: number) {
 // AI Tor response via Supabase Edge Function (chat stream)
 // ---------------------------------------------------------------------------
 
-async function getAiTorResponse(userMessage: string): Promise<string> {
+interface ChatTurnResult {
+  text: string;
+  /** `false` cuando el texto es un motivo de fallo y no una respuesta. */
+  ok: boolean;
+}
+
+async function getAiTorResponse(
+  chatId: number,
+  userMessage: string,
+  history: HistoryMessage[] = [],
+): Promise<ChatTurnResult> {
+  const thread = telegramThread(chatId);
   try {
-    // Build messages array from a single user message
-    const messages = [{ role: "user", content: userMessage }];
+    // El turno actual va detrás de la memoria del hilo: el modelo ve la
+    // conversación entera, no un mensaje suelto.
+    const messages = [...history, { role: "user", content: userMessage }];
 
     const response = await fetch(CHAT_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        // Use the anon key as bearer; the chat edge function has verify_jwt=false
-        Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-        apikey: SUPABASE_ANON_KEY,
+        ...supabaseAuthHeaders(SUPABASE_ANON_KEY),
       },
       body: JSON.stringify({
         model: "google/gemini-2.5-flash",
         messages,
+        ...(thread ? { thread } : {}),
       }),
     });
 
@@ -318,7 +412,7 @@ async function getAiTorResponse(userMessage: string): Promise<string> {
       const errorText = await response.text().catch(() => "");
       const failure = classifyChatFailure(response.status, errorText);
       console.error("[telegram] chat rechazó el turno", failure.kind, response.status, failure.snippet);
-      return chatFailureMessage(failure);
+      return { text: chatFailureMessage(failure), ok: false };
     }
 
     // Parse the SSE stream
@@ -339,11 +433,15 @@ async function getAiTorResponse(userMessage: string): Promise<string> {
       }
     }
 
-    return fullResponse || "Señal recibida pero sin datos. Reintenta la transmisión.";
+    return {
+      text: fullResponse || "Señal recibida pero sin datos. Reintenta la transmisión.",
+      ok: Boolean(fullResponse),
+    };
   } catch (error) {
     // Sin respuesta no hay código: red caída o tiempo agotado.
     console.error("Error calling Ai Tor:", error);
-    return chatFailureMessage(classifyChatFailure(null, error instanceof Error ? error.message : ""));
+    const failure = classifyChatFailure(null, error instanceof Error ? error.message : "");
+    return { text: chatFailureMessage(failure), ok: false };
   }
 }
 
@@ -531,17 +629,13 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
   if (hit && Date.now() - hit.at < PROBE_CACHE_MS) return { ...hit.value, cached: true };
 
   const attempts: ChatProbeAttempt[] = [
-    await probeAttempt("salud", "GET ?health=1 (gratis)", {
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-    }, true),
+    await probeAttempt("salud", "GET ?health=1 (gratis)", supabaseAuthHeaders(SUPABASE_ANON_KEY), true),
   ];
 
   if (paid) {
     const likeToday = await probeAttempt("como-hoy", "POST apikey + bearer", {
       "Content-Type": "application/json",
-      apikey: SUPABASE_ANON_KEY,
-      Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+      ...supabaseAuthHeaders(SUPABASE_ANON_KEY),
     });
     attempts.push(likeToday);
     if (!likeToday.ok) {
@@ -795,8 +889,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // === NORMAL MESSAGES → AI TOR ===
     else {
       await sendTypingAction(chatId);
-      const aiResponse = await getAiTorResponse(text);
-      await sendTelegramMessage(chatId, aiResponse);
+      const thread = telegramThread(chatId);
+      const history = thread ? await loadThreadHistory(thread) : [];
+      const reply = await getAiTorResponse(chatId, text, history);
+      await sendTelegramMessage(chatId, reply.text);
+      // Sólo se memoriza lo que salió bien: guardar un mensaje de error como
+      // respuesta del bot envenenaría el hilo de las siguientes preguntas.
+      if (thread && reply.ok) await saveTurn(thread, text, reply.text);
     }
   } catch (error) {
     console.error("Error processing message:", error);
