@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from 'crypto';
 import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import { retrieveKnowledge } from "./_shared/knowledge.js";
+import { addAlert, MAX_ALERTS_PER_CHAT, parseAlertCommand, SYMBOL_IDS } from "./_shared/alerts.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -830,7 +831,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (command === "/start") {
       await sendTelegramMessage(
         chatId,
-        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n<b>Comandos disponibles:</b>\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
+        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n<b>Comandos disponibles:</b>\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/alerta - Aviso de precio\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
         BRIDGE_KEYBOARD,
         { html: true },
       );
@@ -853,10 +854,52 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (command === "/help") {
       await sendTelegramMessage(
         chatId,
-        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
         undefined,
         { html: true },
       );
+    }
+    // === ALERTAS DE PRECIO ===
+    else if (command === "/alerta") {
+      const parsed = parseAlertCommand(text);
+      const thread = telegramThread(chatId);
+      const symbols = Object.keys(SYMBOL_IDS).join(", ");
+
+      if (!parsed) {
+        await sendTelegramMessage(
+          chatId,
+          `Formato: <code>/alerta BTC &gt; 95000</code>\nTambién vale <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code> y <code>95k</code>.\nSímbolos: ${symbols}.`,
+          undefined,
+          { html: true },
+        );
+      } else if (!thread) {
+        await sendTelegramMessage(chatId, "No puedo crear alertas: falta el token del bot en este despliegue.");
+      } else {
+        const result = await addAlert(thread.externalId, {
+          chatId,
+          symbol: parsed.symbol,
+          direction: parsed.direction,
+          price: parsed.price,
+          createdAt: new Date().toISOString(),
+        });
+        if (result.ok) {
+          const arrow = parsed.direction === "above" ? "≥" : "≤";
+          await sendTelegramMessage(
+            chatId,
+            `✅ Aviso creado: ${parsed.symbol} ${arrow} $${parsed.price.toLocaleString("es-ES")}. Te escribo cuando lo cruce.`,
+          );
+        } else if (result.reason === "demasiadas") {
+          await sendTelegramMessage(
+            chatId,
+            `Ya tienes ${MAX_ALERTS_PER_CHAT} avisos, que es el máximo. No he creado este.`,
+          );
+        } else {
+          await sendTelegramMessage(
+            chatId,
+            "No puedo guardar alertas: falta Redis en este despliegue (KV_REST_API_URL / KV_REST_API_TOKEN).",
+          );
+        }
+      }
     }
     // === MANUS COMMANDS ===
     else if (command === "/manus" || command === "/investigar" || command === "/analizar") {
