@@ -4,6 +4,7 @@ import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import { retrieveKnowledge } from "./_shared/knowledge.js";
 import { addAlert, MAX_ALERTS_PER_CHAT, parseAlertCommand, SYMBOL_IDS } from "./_shared/alerts.js";
+import { claimUpdate } from "./_shared/update-dedupe.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -233,7 +234,7 @@ async function saveTurn(thread: ThreadRef, user: string, assistant: string): Pro
 // La web abre la Mini App con `?startapp=web` y el terminal vuelve a la web con
 // `?source=telegram`; estos botones inline son la salida hacia la web desde el bot.
 type TelegramInlineButton = { text: string; url: string };
-type TelegramUpdate = { message?: { chat?: { id: number }; text?: string } };
+type TelegramUpdate = { update_id?: number; message?: { chat?: { id: number }; text?: string } };
 type TelegramReplyMarkup = { inline_keyboard: TelegramInlineButton[][] };
 
 const BRIDGE_KEYBOARD: TelegramReplyMarkup = {
@@ -477,6 +478,7 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
     }
     console.error("Manus task creation failed:", data);
     return { ok: false };
+
   } catch (error) {
     console.error("Error calling Manus API:", error);
     return { ok: false };
@@ -812,6 +814,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       console.error("[telegram] cuerpo no parseable como JSON");
       return res.status(400).send("Bad Request");
     }
+  }
+
+  // Telegram reintenta la entrega si el webhook tarda o si la respuesta le
+  // parece un fallo. Sin reserva por `update_id` el mismo mensaje se contesta
+  // dos veces, se cobra dos veces al modelo y, con la memoria del hilo, deja
+  // el turno duplicado. Se reserva antes de procesar; `claimUpdate` no lanza.
+  const updateId = (body as TelegramUpdate | undefined)?.update_id;
+  if (typeof updateId === "number" && !(await claimUpdate(updateId))) {
+    console.warn(`[telegram] update ${updateId} ya procesado: se ignora el reintento`);
+    return res.status(200).send("OK");
   }
 
   const message = (body as TelegramUpdate | undefined)?.message;

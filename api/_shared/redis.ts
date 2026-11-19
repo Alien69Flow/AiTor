@@ -47,6 +47,15 @@ function finalKey(key: string, raw: boolean): string {
   return raw ? key : `${keyPrefix()}${key}`;
 }
 
+/**
+ * Clave con el prefijo del entorno: una preview no debe ver ni pisar las
+ * claves de producción. Para quien escribe Redis con `redisCommand` directo,
+ * que no pasa por `finalKey`.
+ */
+export function scopedKey(key: string): string {
+  return finalKey(key, false);
+}
+
 type RedisReply<T> = { result?: T; error?: string };
 
 export async function redisCommand<T = unknown>(
