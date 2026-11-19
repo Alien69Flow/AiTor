@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
+import { retrieveKnowledge } from "./_shared/knowledge.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -392,6 +393,10 @@ async function getAiTorResponse(
     // conversación entera, no un mensaje suelto.
     const messages = [...history, { role: "user", content: userMessage }];
 
+    // Conocimiento curado: sólo si la pregunta es de su dominio. La función
+    // `chat` lo inyecta como datos del turno y le dice al modelo que lo cite.
+    const knowledge = retrieveKnowledge(userMessage);
+
     const response = await fetch(CHAT_URL, {
       method: "POST",
       headers: {
@@ -402,6 +407,7 @@ async function getAiTorResponse(
         model: "google/gemini-2.5-flash",
         messages,
         ...(thread ? { thread } : {}),
+        ...(knowledge ? { context: [knowledge] } : {}),
       }),
     });
 
