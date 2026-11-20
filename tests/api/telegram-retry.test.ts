@@ -101,11 +101,19 @@ function fakeRedis(): Set<string> {
     isRedisConfigured: () => true,
     scopedKey: (key: string) => key,
     redisCommand: async (args: (string | number)[]) => {
+      const name = String(args[0]).toUpperCase();
       const key = String(args[1] ?? "");
-      if (claimed.has(key)) return null;
-      claimed.add(key);
-      return "OK";
+      // Sólo la reserva del update es un SET. La memoria del hilo lee y escribe
+      // con HGETALL/HSET, que no deben contar como reservas.
+      if (name === "SET") {
+        if (claimed.has(key)) return null;
+        claimed.add(key);
+        return "OK";
+      }
+      if (name === "HGETALL") return {};
+      return 1;
     },
+    redisPipeline: async (commands: (string | number)[][]) => commands.map(() => 1),
   }));
   return claimed;
 }

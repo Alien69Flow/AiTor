@@ -112,19 +112,19 @@ describe("cron", () => {
 });
 
 describe("memoria", () => {
-  it("sin service key no se inventa un verde: queda sin verificar", () => {
+  it("sin Redis configurado no se inventa un verde: queda sin verificar", () => {
     const result = interpretMemory({ configured: false, statuses: [] });
     expect(result.status).toBe("skip");
-    expect(result.detail).toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(result.detail).toContain("UPSTASH_REDIS_REST_URL");
   });
 
-  it("una tabla que no existe (404) es fallo con el nombre del paso", () => {
+  it("un comando que falla (500) es fallo con el nombre del paso", () => {
     const result = interpretMemory({
       configured: true,
-      statuses: [{ name: "alta del hilo", status: 404 }],
+      statuses: [{ name: "guardar capas", status: 500 }],
     });
     expect(result.status).toBe("fail");
-    expect(result.detail).toContain("alta del hilo");
+    expect(result.detail).toContain("guardar capas");
   });
 
   it("guardar sin poder leer de vuelta no es memoria", () => {
@@ -138,7 +138,7 @@ describe("memoria", () => {
     expect(result.status).toBe("fail");
   });
 
-  it("ida y vuelta limpia y borrada es verde", () => {
+  it("ida y vuelta de las tres capas, borrada, es verde", () => {
     const result = interpretMemory({
       configured: true,
       statuses: [],
@@ -146,7 +146,22 @@ describe("memoria", () => {
       readBack: true,
       cleaned: true,
     });
-    expect(result).toEqual({ status: "ok", detail: "ida y vuelta de 2 turnos, y borrada" });
+    expect(result).toEqual({
+      status: "ok",
+      detail: "título, resumen y evidencia de ida y vuelta, y borrada",
+    });
+  });
+
+  it("un borrado que no borra no se da por bueno", () => {
+    const result = interpretMemory({
+      configured: true,
+      statuses: [],
+      saved: true,
+      readBack: true,
+      cleaned: false,
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("aitor:thread");
   });
 });
 

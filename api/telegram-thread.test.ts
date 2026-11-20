@@ -1,13 +1,16 @@
 /**
  * El hilo, de punta a punta.
  *
- * Tres cosas se comprueban aquí y no en un test unitario del helper:
+ * Cuatro cosas se comprueban aquí y no en un test unitario del helper:
  *  1. Con qué clave se llama al chat (la JWT, nunca la publicable).
  *  2. Que la memoria del hilo va delante del mensaje nuevo en el prompt.
  *  3. Que el turno se guarda sólo cuando la respuesta salió bien.
+ *  4. Que el hilo se guarda en Redis bajo el token opaco `tg_…`, sin tocar
+ *     Postgres ni pedir ninguna migración.
  *
- * La memoria vive en Postgres y se lee por PostgREST con la service key, así
- * que el `fetch` simulado distingue `/rest/v1/` (tablas) de la función `chat`.
+ * El `fetch` simulado sólo atiende Telegram y la función `chat`: si el webhook
+ * intentara leer PostgREST, esas llamadas aparecerían como una URL inesperada.
+ * Redis es un objeto en memoria con la semántica de comandos que usa el módulo.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,6 +19,61 @@ type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 const JWT =
   "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.firma-de-prueba-suficientemente-larga";
 const PUBLISHABLE = "sb_publishable_abc123";
+
+interface FakeRedis {
+  hashes: Map<string, Record<string, string>>;
+  expires: Array<{ key: string; seconds: number }>;
+  reads: string[];
+  writes: Array<{ key: string; fields: Record<string, string> }>;
+  configured: boolean;
+  fail: boolean;
+}
+
+const fake = vi.hoisted(() => {
+  const state: FakeRedis = {
+    hashes: new Map(),
+    expires: [],
+    reads: [],
+    writes: [],
+    configured: true,
+    fail: false,
+  };
+
+  const apply = (command: (string | number)[]): unknown => {
+    if (state.fail) throw new Error("Redis caído");
+    const name = String(command[0]).toUpperCase();
+    const key = String(command[1]);
+
+    if (name === "HGETALL") {
+      state.reads.push(key);
+      return { ...(state.hashes.get(key) ?? {}) };
+    }
+    if (name === "HSET") {
+      const fields: Record<string, string> = {};
+      const pairs = command.slice(2);
+      for (let index = 0; index < pairs.length; index += 2) {
+        fields[String(pairs[index])] = String(pairs[index + 1]);
+      }
+      state.hashes.set(key, { ...(state.hashes.get(key) ?? {}), ...fields });
+      state.writes.push({ key, fields });
+      return Object.keys(fields).length;
+    }
+    if (name === "EXPIRE") {
+      state.expires.push({ key, seconds: Number(command[2]) });
+      return 1;
+    }
+    return null;
+  };
+
+  return { state, apply };
+});
+
+vi.mock("./_shared/redis.js", () => ({
+  isRedisConfigured: () => fake.state.configured,
+  scopedKey: (key: string) => key,
+  redisCommand: async (args: (string | number)[]) => fake.apply(args),
+  redisPipeline: async (commands: (string | number)[][]) => commands.map((command) => fake.apply(command)),
+}));
 
 const ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
@@ -43,6 +101,12 @@ beforeEach(() => {
   // La que rompía el bot: presente, y no debe usarse.
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY = PUBLISHABLE;
   process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
+  fake.state.hashes.clear();
+  fake.state.expires.length = 0;
+  fake.state.reads.length = 0;
+  fake.state.writes.length = 0;
+  fake.state.configured = true;
+  fake.state.fail = false;
   vi.resetModules();
 });
 
@@ -81,53 +145,17 @@ const OK_STREAM = 'data: {"choices":[{"delta":{"content":"El mercado sube."}}]}\
 
 interface Captured {
   chat?: { headers: Record<string, string>; body: Record<string, unknown> };
-  /** Filas insertadas en `chat_turns`. */
-  turns: Array<{ role: string; content: string }>;
-  /** Peticiones hechas a PostgREST, para probar que la memoria está apagada. */
-  rest: string[];
+  /** Todo lo que no sea Telegram ni la función `chat`. */
+  unexpected: string[];
 }
 
-/** Telegram acepta todo; el chat y Postgres responden lo que pida el caso. */
+/** Telegram acepta todo; el chat responde lo que pida el caso. */
 function stubFetch(chat: () => unknown): Captured {
-  const captured: Captured = { turns: [], rest: [] };
+  const captured: Captured = { unexpected: [] };
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: string, init?: { method?: string; body?: string; headers?: Record<string, string> }) => {
+    vi.fn(async (url: string, init?: { body?: string; headers?: Record<string, string> }) => {
       const target = String(url);
-      const method = init?.method ?? "GET";
-
-      if (target.includes("/rest/v1/")) {
-        captured.rest.push(`${method} ${target}`);
-
-        if (target.includes("/rest/v1/chat_threads")) {
-          if (method === "POST") return reply(201, JSON.stringify([{ id: "hilo-1" }]));
-          return reply(
-            200,
-            JSON.stringify([
-              { id: "hilo-1", summary: null, last_active_at: new Date().toISOString() },
-            ]),
-          );
-        }
-
-        if (target.includes("/rest/v1/chat_turns")) {
-          if (method === "POST") {
-            captured.turns.push(
-              ...(JSON.parse(String(init?.body ?? "[]")) as Array<{ role: string; content: string }>),
-            );
-            return reply(201, "[]");
-          }
-          // PostgREST devuelve los últimos en orden descendente.
-          return reply(
-            200,
-            JSON.stringify([
-              { role: "assistant", content: "encantado, Ana" },
-              { role: "user", content: "me llamo Ana" },
-            ]),
-          );
-        }
-
-        return reply(200, "[]");
-      }
 
       if (target.includes("/functions/v1/chat")) {
         captured.chat = {
@@ -140,20 +168,25 @@ function stubFetch(chat: () => unknown): Captured {
       if (target.includes("sendMessage") || target.includes("sendChatAction")) {
         return reply(200, '{"ok":true}');
       }
+      if (target.includes("api.telegram.org")) return reply(200, '{"ok":true,"result":{}}');
+
+      captured.unexpected.push(target);
       return reply(200, '{"ok":true,"result":{}}');
     }),
   );
   return captured;
 }
 
-const update = { message: { chat: { id: 7 }, text: "y el mercado?" } };
+function update(text = "y el mercado?") {
+  return { message: { chat: { id: 7 }, text } };
+}
 
-async function run(updateBody: unknown = update): Promise<void> {
+async function run(body: unknown = update()): Promise<void> {
   const handler = (await import("./telegram-webhook")).default as unknown as Handler;
   await handler(
     {
       method: "POST",
-      body: updateBody,
+      body,
       headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "203.0.113.9" },
     },
@@ -168,7 +201,7 @@ describe("hilo de Telegram", () => {
 
     expect(captured.chat?.headers.Authorization).toBe(`Bearer ${JWT}`);
     expect(captured.chat?.headers.apikey).toBe(JWT);
-    // La service key es sólo para Postgres: nunca viaja al gateway del chat.
+    // La service key ya no la usa la memoria: no debe viajar a ningún sitio.
     expect(JSON.stringify(captured.chat?.headers)).not.toContain("clave-de-servicio");
   });
 
@@ -183,69 +216,60 @@ describe("hilo de Telegram", () => {
     expect(JSON.stringify(captured.chat?.body)).not.toContain('"7"');
   });
 
-  it("antepone la memoria del hilo al mensaje nuevo", async () => {
+  it("lee el hilo de Redis bajo el token opaco, no de PostgREST", async () => {
     const captured = stubFetch(() => reply(200, OK_STREAM));
     await run();
 
-    const messages = captured.chat?.body.messages as Array<{ role: string; content: string }>;
-    expect(messages).toHaveLength(3);
-    expect(messages[0]).toEqual({ role: "user", content: "me llamo Ana" });
-    expect(messages[1].content).toContain("encantado");
-    expect(messages[2]).toEqual({ role: "user", content: "y el mercado?" });
+    expect(fake.state.reads[0]).toMatch(/^aitor:thread:tg_[0-9a-f]{32}$/);
+    expect(captured.unexpected).toEqual([]);
   });
 
-  it("lee el hilo por PostgREST con la service key y el token opaco", async () => {
-    const captured = stubFetch(() => reply(200, OK_STREAM));
-    await run();
+  it("guarda el turno en Redis y lo devuelve como memoria en el siguiente", async () => {
+    stubFetch(() => reply(200, OK_STREAM));
+    await run(update("me llamo Ana"));
 
-    const head = captured.rest.find((call) => call.includes("chat_threads"));
-    expect(head).toContain("surface=eq.telegram");
-    expect(head).toContain("external_id=eq.tg_");
-    expect(captured.rest.some((call) => call.includes("chat_turns") && call.includes("order=id.desc"))).toBe(true);
-  });
-
-  it("guarda el turno cuando la respuesta sale bien", async () => {
-    const captured = stubFetch(() => reply(200, OK_STREAM));
-    await run();
-
-    expect(captured.turns).toEqual([
-      { thread_id: "hilo-1", role: "user", content: "y el mercado?" },
-      { thread_id: "hilo-1", role: "assistant", content: "El mercado sube." },
+    const clave = fake.state.writes[0]?.key;
+    expect(clave).toMatch(/^aitor:thread:tg_[0-9a-f]{32}$/);
+    const guardado = fake.state.hashes.get(clave!)!;
+    expect(guardado.title).toBe("me llamo Ana");
+    expect(JSON.parse(guardado.evidence)).toEqual([
+      { role: "user", content: "me llamo Ana" },
+      { role: "assistant", content: "El mercado sube." },
     ]);
-    expect(captured.chat?.body.thread).toMatchObject({ surface: "telegram" });
+    expect(fake.state.expires.at(-1)?.seconds).toBeGreaterThan(0);
+
+    // Segundo mensaje: la memoria del hilo va delante del mensaje nuevo.
+    const segundo = stubFetch(() => reply(200, OK_STREAM));
+    await run(update("y el mercado?"));
+
+    const messages = segundo.chat?.body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0].content).toContain("Título del hilo: me llamo Ana");
+    expect(messages.some((message) => message.content === "me llamo Ana")).toBe(true);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "y el mercado?" });
   });
 
   it("no guarda nada si el chat falla", async () => {
-    const captured = stubFetch(() => reply(401, '{"message":"Invalid API key"}'));
+    stubFetch(() => reply(401, '{"message":"Invalid API key"}'));
     await run();
 
-    expect(captured.turns).toHaveLength(0);
+    expect(fake.state.writes).toHaveLength(0);
   });
 
-  it("sin la service key la memoria está apagada y el chat sigue", async () => {
-    delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  it("sin Redis la memoria está apagada y el chat sigue", async () => {
+    fake.state.configured = false;
     const captured = stubFetch(() => reply(200, OK_STREAM));
     await run();
 
-    expect(captured.rest).toHaveLength(0);
+    expect(fake.state.reads).toHaveLength(0);
+    expect(fake.state.writes).toHaveLength(0);
     expect((captured.chat?.body.messages as unknown[]).length).toBe(1);
   });
 
-  it("si la memoria no responde, el chat sigue funcionando sin historial", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
-        const target = String(url);
-        if (target.includes("/rest/v1/")) throw new Error("memoria caída");
-        if (target.includes("/functions/v1/chat")) {
-          const capturedBody = JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>;
-          expect((capturedBody.messages as unknown[]).length).toBe(1);
-          return reply(200, OK_STREAM);
-        }
-        return reply(200, '{"ok":true}');
-      }),
-    );
-
+  it("si Redis falla, el chat sigue funcionando sin historial", async () => {
+    fake.state.fail = true;
+    const captured = stubFetch(() => reply(200, OK_STREAM));
     await run();
+
+    expect((captured.chat?.body.messages as unknown[]).length).toBe(1);
   });
 });

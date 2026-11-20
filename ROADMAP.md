@@ -29,9 +29,9 @@ cuatro comprobaciones y nunca imprime claves:
   pendientes, y dice si la firma está activa.
 - **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
   si falta Redis o si Telegram/chat están caídos.
-- **memoria** — ida y vuelta real en `chat_threads` / `chat_turns` por PostgREST
-  con la service key y un token de usar y tirar; el hilo de prueba se borra
-  siempre. Sin `SUPABASE_SERVICE_ROLE_KEY` queda en ⏭, no en verde.
+- **memoria** — ida y vuelta real de las tres capas (título, resumen y
+  evidencia) en el hash de Redis del token, con un hilo de usar y tirar; la
+  sonda se borra siempre. Sin las variables de Upstash queda en ⏭, no en verde.
 - **cron** — sin `Authorization` tiene que dar 401. Con `--run-cron` y
   `CRON_SECRET` se ejecuta de verdad; `sin-redis` cuenta como fallo, porque sin
   almacén no puede disparar nada.
@@ -42,7 +42,7 @@ cuatro comprobaciones y nunca imprime claves:
 |---|---|---|
 | 1 · Decir la verdad al fallar | `npm run verify:prod -- --only=webhook` | El webhook responde y la conclusión del chat nombra el extremo que falla, no una frase amable. |
 | 2 · La credencial correcta | `npm run verify:prod -- --only=health` | El detalle no dice `chat DOWN`: la función `chat` contesta con la JWT. |
-| 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Ida y vuelta de 2 turnos y borrada (no ⏭: hace falta la service key). |
+| 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
 | 4 · Conocimiento curado | `npx vitest run api/telegram-knowledge.test.ts` | Verde, y una pregunta de la DAO en el bot cita la fuente. |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
 | 6 · Deduplicar entregas | `npm run verify:prod -- --only=health` + `npx vitest run tests/api/telegram-retry.test.ts` | Health no dice «falta Redis» y el test de reintentos está verde. |
@@ -78,16 +78,17 @@ aparece `OK`; si aparece `DOWN`, el detalle de la sonda no basta y hay que mirar
 
 ## Fase 3 — Memoria del hilo
 
-El bot recuerda la conversación anterior. El webhook ya no llama a la función
-`chat-thread` (nunca desplegada, 404): lee y guarda `chat_threads` /
-`chat_turns` por PostgREST con la service key y el mismo token opaco `tg_…`.
+El bot recuerda la conversación anterior. El webhook no llama a ninguna función
+de Supabase para esto: guarda el hilo en Redis, en un hash por token con tres
+capas —título, resumen y evidencia— bajo el mismo token opaco `tg_…`. No hace
+falta aplicar migraciones ni dar service key al webhook.
 
-- Migración `supabase/migrations/20261118190000_chat_memory.sql` — #103, #119
-- Almacén `api/_shared/thread-memory.ts` (ventana de 8 mensajes, caducidad de 6 h) — #119
-- **Pendiente:** aplicar la migración y poner `SUPABASE_SERVICE_ROLE_KEY` en Vercel
+- Almacén `api/_shared/thread-memory.ts` (tres capas, ventana de 8 mensajes de evidencia, caducidad de 6 h y TTL de 30 días)
+- La migración `20261118190000_chat_memory.sql` sigue en el repositorio para la ruta de la función `chat`, que no es la del bot
+- **Pendiente:** poner `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` en Vercel
 
-**Comprobación:** `npm run verify:prod -- --only=memoria`. Hoy da ⏭ o ❌: sin la
-migración aplicada y sin la clave en Vercel, el bot funciona pero no recuerda.
+**Comprobación:** `npm run verify:prod -- --only=memoria`. Sin las variables de
+Upstash da ⏭: el bot funciona pero no recuerda.
 
 ## Fase 4 — Conocimiento curado
 
