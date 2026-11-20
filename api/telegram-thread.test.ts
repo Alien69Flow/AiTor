@@ -42,6 +42,7 @@ beforeEach(() => {
   process.env.VITE_SUPABASE_ANON_KEY = JWT;
   // La que rompía el bot: presente, y no debe usarse.
   process.env.VITE_SUPABASE_PUBLISHABLE_KEY = PUBLISHABLE;
+  process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
   vi.resetModules();
 });
 
@@ -153,7 +154,7 @@ async function run(updateBody: unknown = update): Promise<void> {
     {
       method: "POST",
       body: updateBody,
-      headers: { host: "localhost" },
+      headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "203.0.113.9" },
     },
     mockRes(),

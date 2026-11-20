@@ -2,15 +2,19 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { splitForTelegram, toTelegramHtml } from "../../api/telegram-webhook";
 
 /**
- * El bot dejó de responder por la puerta de la firma, no por Telegram ni por el
- * modelo: con `TELEGRAM_WEBHOOK_SECRET` sin configurar el handler respondía 401
- * a cada entrega y el usuario sólo veía silencio. Estas pruebas fijan el
- * contrato real:
+ * Contrato del webhook, cerrado por defecto:
  *
- *   - sin secreto configurado → se atiende (con cuota por IP)
- *   - con secreto configurado → sólo pasa la firma exacta
+ *   - sin `TELEGRAM_WEBHOOK_SECRET` válido → 401 y no se gasta nada
+ *   - con el secreto → sólo pasa `x-telegram-bot-api-secret-token` exacto
+ *   - con secreto se re-registra el webhook (una vez por instancia) para que
+ *     un alta antigua sin firma empiece a firmar
  *   - la respuesta del modelo llega al chat como mensaje de Telegram
+ *
+ * Antes se atendía sin secreto «para que el bot no quedara mudo»; el precio era
+ * que cualquiera con la URL gastaba cuota de IA y de Manus.
  */
+const SECRET = "s3cr3t";
+const FIRMA = { "x-telegram-bot-api-secret-token": SECRET };
 
 const SSE = [
   'data: {"choices":[{"delta":{"content":"hola desde el núcleo"}}]}',
@@ -157,9 +161,9 @@ describe("webhook de Telegram", () => {
       "",
     ].join("\n");
     const fetchMock = stubNetwork(undefined, sse);
-    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
+    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: SECRET });
 
-    await invoke(handler, update("hola"));
+    await invoke(handler, update("hola"), FIRMA);
 
     const sent = fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
     const [, init] = sent[0] as unknown as [string, RequestInit];
@@ -171,18 +175,15 @@ describe("webhook de Telegram", () => {
     expect(payload.text).not.toContain("**");
   });
 
-  it("sin secreto configurado el bot sigue respondiendo", async () => {
+  it("sin secreto configurado no se procesa ninguna entrega", async () => {
     const fetchMock = stubNetwork();
     const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
 
-    const { status } = await invoke(handler, update("hola"));
+    // Aunque llegue una firma, sin secreto configurado no hay con qué compararla.
+    const { status } = await invoke(handler, update("hola"), { "x-telegram-bot-api-secret-token": "" });
 
-    expect(status).toBe(200);
-    const sent = fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
-    expect(sent.length).toBeGreaterThan(0);
-    const payload = JSON.parse(String((sent[0][1] as RequestInit).body));
-    expect(payload.chat_id).toBe(4242);
-    expect(payload.text).toContain("hola desde el núcleo");
+    expect(status).toBe(401);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("con secreto configurado, una entrega sin firma se rechaza sin gastar cuota", async () => {
@@ -220,9 +221,9 @@ describe("webhook de Telegram", () => {
 
   it("/start contesta sin llamar al modelo", async () => {
     const fetchMock = stubNetwork();
-    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
+    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: SECRET });
 
-    const { status } = await invoke(handler, update("/start"));
+    const { status } = await invoke(handler, update("/start"), FIRMA);
 
     expect(status).toBe(200);
     // Sólo sendMessage: el saludo es texto fijo, no consume IA.
@@ -245,7 +246,9 @@ describe("webhook de Telegram", () => {
     expect(payload.bot.username).toBe("Alien69Bot");
     expect(payload.secretConfigured).toBe(true);
     expect(payload.webhook.matchesExpected).toBe(true);
-    expect(payload.registration).toBe("ya-registrado");
+    // Con secreto se vuelve a registrar a propósito: `getWebhookInfo` no dice
+    // con qué `secret_token` se dio de alta.
+    expect(payload.registration).toBe("registrado-con-secreto");
     expect(body).not.toContain("test-token");
     expect(body).not.toContain("s3cr3t");
   });

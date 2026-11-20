@@ -58,6 +58,7 @@ function clearEnv(): void {
 beforeEach(() => {
   clearEnv();
   process.env.TELEGRAM_BOT_TOKEN = "123:token-de-prueba";
+  process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
   process.env.SUPABASE_URL = "https://proyecto.supabase.co";
   process.env.VITE_SUPABASE_ANON_KEY = "anon-de-prueba";
   vi.resetModules();
@@ -82,7 +83,7 @@ const req = () =>
   ({
     method: "POST",
     body: update,
-    headers: { host: "localhost" },
+    headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
     socket: { remoteAddress: "203.0.113.5" },
   }) as never;
 
@@ -170,5 +171,42 @@ describe("el bot explica el fallo del chat", () => {
     await handler(req(), mockRes().res);
 
     expect(sent[0]).toContain("El mercado sube.");
+  });
+
+  it("sin el token de Telegram responde 401 y no gasta cuota", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        calls.push(String(url));
+        return response(200, '{"ok":true}');
+      }),
+    );
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(
+      { method: "POST", body: update, headers: { host: "localhost" } },
+      res,
+    );
+
+    expect(snap().status).toBe(401);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("con un token distinto tampoco", async () => {
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(
+      {
+        method: "POST",
+        body: update,
+        headers: { host: "localhost", "x-telegram-bot-api-secret-token": "otro-secreto" },
+      },
+      res,
+    );
+
+    expect(snap().status).toBe(401);
   });
 });
