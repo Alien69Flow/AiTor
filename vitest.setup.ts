@@ -12,7 +12,8 @@
  * navegador, y este fichero sólo lo carga Vitest.
  */
 
-function memoryStorage(): Storage {
+/** Almacén en memoria con la API de `Storage`, para un test que quiera el suyo. */
+export function createMemoryStorage(): Storage {
   const data = new Map<string, string>();
   return {
     get length() {
@@ -36,11 +37,39 @@ function memoryStorage(): Storage {
   };
 }
 
+/**
+ * Instala un almacén limpio y propio en `window` y en `globalThis`, y devuelve
+ * cómo deshacerlo.
+ *
+ * Un test que comprueba lo que se guarda no debe depender de que jsdom tenga un
+ * origen válido ni de qué `localStorage` global resuelva Node: pide el suyo.
+ * Así el mismo test es verde en cualquier runner y en cualquier versión de Node.
+ */
+export function useMemoryStorage(): () => void {
+  const storage = createMemoryStorage();
+  const previous = new Map<object, PropertyDescriptor | undefined>();
+  const targets = [window as unknown as object, globalThis as unknown as object];
+  for (const target of targets) {
+    previous.set(target, Object.getOwnPropertyDescriptor(target, "localStorage"));
+    Object.defineProperty(target, "localStorage", {
+      value: storage,
+      configurable: true,
+      writable: true,
+    });
+  }
+  return () => {
+    for (const [target, descriptor] of previous) {
+      if (descriptor) Object.defineProperty(target, "localStorage", descriptor);
+      else Reflect.deleteProperty(target, "localStorage");
+    }
+  };
+}
+
 function installLocalStorage(): void {
   if (typeof window === "undefined") return;
   if (window.localStorage) return;
 
-  const storage = memoryStorage();
+  const storage = createMemoryStorage();
   for (const target of [window as unknown as object, globalThis as unknown as object]) {
     try {
       Object.defineProperty(target, "localStorage", {
