@@ -1,0 +1,139 @@
+diff --git a/api/_shared/update-dedupe.ts b/api/_shared/update-dedupe.ts
+index 0ce024e..b60d600 100644
+--- a/api/_shared/update-dedupe.ts
++++ b/api/_shared/update-dedupe.ts
+@@ -12,12 +12,18 @@
+  * reintentos llegan a la vez, sólo uno gana la reserva. La reserva caduca sola
+  * para no llenar Redis con el histórico de Telegram.
+  *
+- * Si Redis no está configurado o falla, se procesa igual. Es preferible
+- * contestar dos veces a dejar a alguien sin respuesta: la deduplicación es una
+- * mejora, no un requisito para que el bot hable.
++ * Sin Redis, la reserva se pide a Postgres (`telegram_update_reservations`,
++ * ver `update-dedupe-supabase.ts`): producción lleva tiempo sin Upstash y los
++ * reintentos seguían duplicando respuesta, modelo y turno. Con Redis presente
++ * el camino no cambia: es el que tiene la clave ya caliente.
++ *
++ * Si no hay ni Redis ni forma de reservar, o el almacén falla, se procesa
++ * igual. Es preferible contestar dos veces a dejar a alguien sin respuesta: la
++ * deduplicación es una mejora, no un requisito para que el bot hable.
+  */
+ 
+ import { isRedisConfigured, redisCommand, scopedKey } from "./redis.js";
++import { claimUpdateInSupabase } from "./update-dedupe-supabase.js";
+ 
+ /**
+  * Ventana de la reserva: 10 minutos.
+@@ -49,7 +55,11 @@ export async function claimUpdate(
+   if (!Number.isInteger(updateId) || updateId <= 0) return true;
+ 
+   if (!isRedisConfigured()) {
+-    console.warn("[telegram] sin Redis no se deduplican los updates: se procesa igual");
++    // Respaldo: la misma clave natural y la misma ventana, en Postgres. `null`
++    // significa que tampoco hay Supabase con el que decidir.
++    const claimedInSupabase = await claimUpdateInSupabase(updateId, ttlSeconds);
++    if (claimedInSupabase !== null) return claimedInSupabase;
++    console.warn("[telegram] sin Redis ni reserva en Supabase: se procesa igual");
+     return true;
+   }
+ 
+diff --git a/api/telegram-webhook.ts b/api/telegram-webhook.ts
+index 6a65c7e..3ab9bd3 100644
+--- a/api/telegram-webhook.ts
++++ b/api/telegram-webhook.ts
+@@ -12,6 +12,7 @@ import {
+   SYMBOL_IDS,
+ } from "./_shared/alerts.js";
+ import { claimUpdate } from "./_shared/update-dedupe.js";
++import { isSupabaseDedupeConfigured } from "./_shared/update-dedupe-supabase.js";
+ import { isRedisConfigured } from "./_shared/redis.js";
+ import {
+   historyMessages,
+@@ -740,12 +741,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
+       vercelEnv: process.env.VERCEL_ENV ?? null,
+       secretConfigured: Boolean(webhookSecret()),
+       // ¿Hay Redis en este despliegue? Decide dos cosas que el operador no
+-      // podía ver desde aquí: si el dedupe por `update_id` reserva la entrega
+-      // (`claimUpdate` deja pasar los reintentos sin almacén) y si la memoria
+-      // del hilo y las alertas tienen dónde guardar. Sólo booleanos: ni la URL
+-      // ni el token salen nunca en el informe.
++      // podía ver desde aquí: si la memoria del hilo y las alertas tienen dónde
++      // guardar, y si el dedupe por `update_id` reserva la entrega. El dedupe
++      // cuenta también el respaldo en Supabase, que es el que actúa cuando no
++      // hay Redis. Sólo booleanos: ni la URL ni el token salen nunca en el
++      // informe.
+       redis: { configured: isRedisConfigured() },
+-      dedupe: { active: isRedisConfigured() },
++      dedupe: { active: isRedisConfigured() || isSupabaseDedupeConfigured() },
+       expectedUrl: WEBHOOK_URL,
+       registration: registrationState,
+       bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
+diff --git a/tests/api/telegram-retry.test.ts b/tests/api/telegram-retry.test.ts
+index 7d1179c..bde07dc 100644
+--- a/tests/api/telegram-retry.test.ts
++++ b/tests/api/telegram-retry.test.ts
+@@ -121,9 +121,36 @@ function fakeRedis(): Set<string> {
+ const sentMessages = (fetchMock: ReturnType<typeof stubNetwork>) =>
+   fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
+ 
++/**
++ * Supabase de mentira con la misma semántica que `reserve_telegram_update`: la
++ * primera reserva de un `update_id` devuelve `true`, la segunda `false`.
++ */
++function fakeSupabaseReservations() {
++  const claimed = new Set<number>();
++  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
++    if (String(url).includes("/rest/v1/rpc/reserve_telegram_update")) {
++      const body = JSON.parse(String(init?.body ?? "{}")) as { p_update_id?: number };
++      const id = Number(body.p_update_id);
++      if (claimed.has(id)) {
++        return new Response(JSON.stringify(false), { status: 200 });
++      }
++      claimed.add(id);
++      return new Response(JSON.stringify(true), { status: 200 });
++    }
++    if (String(url).includes("/sendMessage") || String(url).includes("/sendChatAction")) {
++      return TELEGRAM_OK(true);
++    }
++    return new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } });
++  });
++  vi.stubGlobal("fetch", fetchMock);
++  return { claimed, fetchMock };
++}
++
+ afterEach(() => {
+   vi.doUnmock("../../api/_shared/redis.js");
+   vi.unstubAllGlobals();
++  delete process.env.SUPABASE_URL;
++  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+ });
+ 
+ describe("reintentos de Telegram", () => {
+@@ -156,7 +183,26 @@ describe("reintentos de Telegram", () => {
+     expect(sentMessages(fetchMock)).toHaveLength(2);
+   });
+ 
+-  it("sin Redis se procesa igual: mejor respuesta doble que silencio", async () => {
++  it("sin Redis, la reserva la hace Postgres y el reintento no se contesta", async () => {
++    // Producción lleva tiempo sin Upstash: sin este respaldo, cada reintento
++    // contestaba otra vez y duplicaba el turno del hilo.
++    process.env.SUPABASE_URL = "https://proyecto.supabase.co";
++    process.env.SUPABASE_SERVICE_ROLE_KEY = "clave-de-servicio";
++    const { claimed, fetchMock } = fakeSupabaseReservations();
++    const handler = await load();
++
++    const first = await invoke(handler, update("hola"));
++    const retry = await invoke(handler, update("hola"));
++
++    expect(first.status).toBe(200);
++    expect(retry.status).toBe(200);
++    // Una respuesta y una sola reserva, con la clave natural del update.
++    expect(sentMessages(fetchMock)).toHaveLength(1);
++    expect(claimed.size).toBe(1);
++    expect([...claimed][0]).toBe(1);
++  });
++
++  it("sin Redis ni Supabase se procesa igual: mejor respuesta doble que silencio", async () => {
+     const fetchMock = stubNetwork();
+     const handler = await load();
+ 
