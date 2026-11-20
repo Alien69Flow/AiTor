@@ -12,6 +12,12 @@ import {
   SYMBOL_IDS,
 } from "./_shared/alerts.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
+import {
+  historyMessages,
+  loadThread,
+  saveTurn,
+  type HistoryMessage,
+} from "./_shared/thread-memory.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -87,7 +93,6 @@ if (SUPABASE_KEY.kind !== 'jwt') {
 }
 
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
-const THREAD_URL = `${SUPABASE_URL}/functions/v1/chat-thread`;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 /**
@@ -173,13 +178,11 @@ function registerWebhookOnce(): Promise<string> {
 
 // --- Memoria del hilo ---
 //
-// El webhook no puede escribir en `chat_turns` (RLS cerrado a `anon`), así que
-// la memoria vive en la función `chat-thread`, que sí tiene la service key.
-// Aquí sólo se pide y se guarda, con un tope de tiempo corto: si la memoria
-// tarda o falla, el mensaje sigue su camino como si no existiera.
+// Los turnos viven en Postgres (`chat_threads` / `chat_turns`) y se leen por
+// PostgREST con la service key: ni Redis (el despliegue no lo tiene) ni la
+// función `chat-thread` (nunca se desplegó). Si la memoria tarda o falla, el
+// mensaje sigue su camino como si no existiera.
 type ThreadRef = { surface: "telegram"; externalId: string };
-type HistoryMessage = { role: "user" | "assistant"; content: string };
-const THREAD_TIMEOUT_MS = 4_000;
 
 /**
  * Token opaco del hilo: HMAC(token del bot, chat_id) en 16 bytes.
@@ -195,46 +198,6 @@ function telegramThread(chatId: number): ThreadRef | null {
     .digest("hex")
     .slice(0, 32);
   return { surface: "telegram", externalId: `tg_${signature}` };
-}
-
-async function loadThreadHistory(thread: ThreadRef): Promise<HistoryMessage[]> {
-  try {
-    const url = `${THREAD_URL}?surface=${thread.surface}&thread=${encodeURIComponent(thread.externalId)}`;
-    const response = await fetch(url, {
-      headers: supabaseAuthHeaders(SUPABASE_ANON_KEY),
-      signal: AbortSignal.timeout(THREAD_TIMEOUT_MS),
-    });
-    if (!response.ok) return [];
-    const data = (await response.json().catch(() => null)) as { messages?: unknown } | null;
-    if (!Array.isArray(data?.messages)) return [];
-    return data.messages
-      .filter((item): item is HistoryMessage => {
-        const msg = item as { role?: unknown; content?: unknown };
-        return (
-          (msg.role === "user" || msg.role === "assistant") &&
-          typeof msg.content === "string" &&
-          msg.content.length > 0
-        );
-      })
-      // La ventana ya viene recortada; el tope de aquí es sólo una red de
-      // seguridad por si la función devolviera más de lo que debe.
-      .slice(-9);
-  } catch {
-    return [];
-  }
-}
-
-async function saveTurn(thread: ThreadRef, user: string, assistant: string): Promise<void> {
-  try {
-    await fetch(THREAD_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...supabaseAuthHeaders(SUPABASE_ANON_KEY) },
-      body: JSON.stringify({ thread, user, assistant }),
-      signal: AbortSignal.timeout(THREAD_TIMEOUT_MS),
-    });
-  } catch {
-    // La memoria es un extra: se pierde el turno, no la conversación.
-  }
 }
 
 // --- Puente web <-> Telegram ---
@@ -949,7 +912,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     else {
       await sendTypingAction(chatId);
       const thread = telegramThread(chatId);
-      const history = thread ? await loadThreadHistory(thread) : [];
+      const history = thread ? historyMessages(await loadThread(thread)) : [];
       const reply = await getAiTorResponse(chatId, text, history);
       await sendTelegramMessage(chatId, reply.text);
       // Sólo se memoriza lo que salió bien: guardar un mensaje de error como
