@@ -18,7 +18,12 @@ type ProbeView = {
 };
 type KnowledgeSample = { question: string; expected: string; matched: string | null };
 type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
-type ProbeBody = { chatProbe: ProbeView | null; knowledgeProbe?: KnowledgeView | null };
+type ProbeBody = {
+  chatProbe: ProbeView | null;
+  knowledgeProbe?: KnowledgeView | null;
+  redis?: { configured: boolean };
+  dedupe?: { active: boolean };
+};
 
 function mockRes() {
   let status = 0;
@@ -66,6 +71,10 @@ const ENV_KEYS = [
   "VITE_SUPABASE_PUBLISHABLE_KEY",
   "VITE_SUPABASE_ANON_KEY",
   "VERCEL_ENV",
+  "KV_REST_API_URL",
+  "KV_REST_API_TOKEN",
+  "UPSTASH_REDIS_REST_URL",
+  "UPSTASH_REDIS_REST_TOKEN",
 ];
 
 function clearEnv(): void {
@@ -192,5 +201,40 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     expect(snap().body?.chatProbe).toBeNull();
     expect(snap().body?.knowledgeProbe).toBeNull();
     expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
+  });
+
+  it("sin Redis el informe dice que el dedupe no está actuando", async () => {
+    stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    // Sin `?probe=1`: el estado de Redis se informa siempre, es gratis.
+    await handler(req("/api/telegram-webhook"), res);
+    const body = snap().body!;
+
+    expect(snap().status).toBe(200);
+    expect(body.redis).toEqual({ configured: false });
+    // Sin almacén `claimUpdate` deja pasar el reintento a propósito: el dato
+    // tiene que decirlo, no dejar creer que la entrega se reservó.
+    expect(body.dedupe).toEqual({ active: false });
+  });
+
+  it("con las variables de Upstash informa del dedupe sin filtrar sus valores", async () => {
+    const redisUrl = "https://redis-de-prueba.upstash.io";
+    const redisToken = "token-de-prueba-no-debe-salir";
+    process.env.KV_REST_API_URL = redisUrl;
+    process.env.KV_REST_API_TOKEN = redisToken;
+    stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook"), res);
+    const body = snap().body!;
+
+    expect(body.redis).toEqual({ configured: true });
+    expect(body.dedupe).toEqual({ active: true });
+    const json = JSON.stringify(body);
+    expect(json).not.toContain(redisUrl);
+    expect(json).not.toContain(redisToken);
   });
 });
