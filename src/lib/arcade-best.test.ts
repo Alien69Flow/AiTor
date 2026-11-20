@@ -1,8 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { useMemoryStorage } from "../../vitest.setup";
 import { arcadeBestKey, readArcadeBest, saveArcadeBest } from "./arcade-best";
 
 describe("marcas del arcade extendido", () => {
+	// El almacén lo pone el test: sin esto la marca dependía de que jsdom tuviera
+	// un origen válido y de qué `localStorage` resolviera Node.
+	let restoreStorage: () => void;
+	beforeEach(() => {
+		restoreStorage = useMemoryStorage();
+	});
+	afterEach(() => {
+		restoreStorage();
+	});
+
 	it("usa una clave por juego", () => {
 		expect(arcadeBestKey("escalera-orbital")).toBe("aitor.arcade.escalera-orbital");
 		expect(arcadeBestKey("ovni-flappy")).not.toBe(arcadeBestKey("kart-orbital"));

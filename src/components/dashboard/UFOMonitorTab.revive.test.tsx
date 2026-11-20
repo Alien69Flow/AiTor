@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useMemoryStorage } from "../../../vitest.setup";
 import { LIVE_CATEGORIES, LIVE_SIGNALS } from "@/lib/live-signals";
 import { LIVE_REVIVED_STORAGE_KEY } from "@/lib/live-revived";
 import { UFOMonitorTab } from "./UFOMonitorTab";
@@ -49,8 +50,18 @@ vi.mock("./LiveStage", () => ({
 }));
 
 describe("Monitor UAP · cámara que vuelve a emitir", () => {
+  // El almacén es del test: la marca de «revivido» se escribía en el
+  // `localStorage` que resolviera el entorno, y un global de Node sin jsdom
+  // detrás dejaba el test en «Cannot read properties of undefined».
+  let restoreStorage: () => void;
+
   beforeEach(() => {
+    restoreStorage = useMemoryStorage();
     localStorage.clear();
+  });
+
+  afterEach(() => {
+    restoreStorage();
   });
 
   it("retira la marca de sin emisión en cuanto el reproductor arranca", async () => {
