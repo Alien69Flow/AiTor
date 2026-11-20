@@ -47,9 +47,6 @@ function stubFetch(messages: string[]): { chatBodies: Array<Record<string, unkno
     "fetch",
     vi.fn(async (url: string, init?: { method?: string; body?: string }) => {
       const target = String(url);
-      if (target.includes("/functions/v1/chat-thread")) {
-        return reply(200, JSON.stringify({ messages: [] }));
-      }
       if (target.includes("/functions/v1/chat")) {
         chatBodies.push(JSON.parse(String(init?.body ?? "{}")) as Record<string, unknown>);
         return reply(200, OK_STREAM);
