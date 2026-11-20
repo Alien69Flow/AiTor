@@ -1,0 +1,35 @@
+diff --git a/src/lib/chat-prefs.ts b/src/lib/chat-prefs.ts
+index 91c12b4..05ccd8e 100644
+--- a/src/lib/chat-prefs.ts
++++ b/src/lib/chat-prefs.ts
+@@ -12,7 +12,10 @@ export type ChatWorkspace = "chat" | "neural" | "city" | "connections";
+ export function readPreferredModel(): string {
+   try {
+     const stored = localStorage.getItem(MODEL_KEY);
+-    if (stored && AI_MODELS.some((model) => model.id === stored && model.available)) {
++    // Se acepta el guardado si el catálogo puede enrutarlo. Que esté vivo lo
++    // dice el servidor (`chat?health=1`); aquí sólo se evita arrancar en un
++    // modelo sin ruta.
++    if (stored && AI_MODELS.some((model) => model.id === stored && model.routable !== false)) {
+       return stored;
+     }
+   } catch {
+diff --git a/src/lib/neural-core-model.ts b/src/lib/neural-core-model.ts
+index 52b275e..7fb1105 100644
+--- a/src/lib/neural-core-model.ts
++++ b/src/lib/neural-core-model.ts
+@@ -208,8 +208,12 @@ export function routeById(id: RouteId): WorkflowRoute {
+   return WORKFLOW_ROUTES.find((route) => route.id === id) ?? WORKFLOW_ROUTES[WORKFLOW_ROUTES.length - 1];
+ }
+ 
+-/** Oracles that are actually selectable right now. */
+-export const ACTIVE_ORACLES = AI_MODELS.filter((model) => model.available);
++/**
++ * Oracles the catalog can route to. Not "they are alive right now": that comes
++ * from the server (`chat?health=1`) through `resolveOracles()`. All this drops is
++ * the models with no route at all (ChainGPT, Chainlink).
++ */
++export const ACTIVE_ORACLES = AI_MODELS.filter((model) => model.routable !== false);
+ 
+ export const CORE_META = {
+   name: MOLTBOOK_AGENT.name,
