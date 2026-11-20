@@ -12,12 +12,18 @@
  * reintentos llegan a la vez, sólo uno gana la reserva. La reserva caduca sola
  * para no llenar Redis con el histórico de Telegram.
  *
- * Si Redis no está configurado o falla, se procesa igual. Es preferible
- * contestar dos veces a dejar a alguien sin respuesta: la deduplicación es una
- * mejora, no un requisito para que el bot hable.
+ * Sin Redis, la reserva se pide a Postgres (`telegram_update_reservations`,
+ * ver `update-dedupe-supabase.ts`): producción lleva tiempo sin Upstash y los
+ * reintentos seguían duplicando respuesta, modelo y turno. Con Redis presente
+ * el camino no cambia: es el que tiene la clave ya caliente.
+ *
+ * Si no hay ni Redis ni forma de reservar, o el almacén falla, se procesa
+ * igual. Es preferible contestar dos veces a dejar a alguien sin respuesta: la
+ * deduplicación es una mejora, no un requisito para que el bot hable.
  */
 
 import { isRedisConfigured, redisCommand, scopedKey } from "./redis.js";
+import { claimUpdateInSupabase } from "./update-dedupe-supabase.js";
 
 /**
  * Ventana de la reserva: 10 minutos.
@@ -49,7 +55,11 @@ export async function claimUpdate(
   if (!Number.isInteger(updateId) || updateId <= 0) return true;
 
   if (!isRedisConfigured()) {
-    console.warn("[telegram] sin Redis no se deduplican los updates: se procesa igual");
+    // Respaldo: la misma clave natural y la misma ventana, en Postgres. `null`
+    // significa que tampoco hay Supabase con el que decidir.
+    const claimedInSupabase = await claimUpdateInSupabase(updateId, ttlSeconds);
+    if (claimedInSupabase !== null) return claimedInSupabase;
+    console.warn("[telegram] sin Redis ni reserva en Supabase: se procesa igual");
     return true;
   }
 
