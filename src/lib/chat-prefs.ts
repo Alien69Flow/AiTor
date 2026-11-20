@@ -12,7 +12,10 @@ export type ChatWorkspace = "chat" | "neural" | "city" | "connections";
 export function readPreferredModel(): string {
   try {
     const stored = localStorage.getItem(MODEL_KEY);
-    if (stored && AI_MODELS.some((model) => model.id === stored && model.available)) {
+    // Se acepta el guardado si el catálogo puede enrutarlo. Que esté vivo lo
+    // dice el servidor (`chat?health=1`); aquí sólo se evita arrancar en un
+    // modelo sin ruta.
+    if (stored && AI_MODELS.some((model) => model.id === stored && model.routable !== false)) {
       return stored;
     }
   } catch {

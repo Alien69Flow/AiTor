@@ -208,8 +208,12 @@ export function routeById(id: RouteId): WorkflowRoute {
   return WORKFLOW_ROUTES.find((route) => route.id === id) ?? WORKFLOW_ROUTES[WORKFLOW_ROUTES.length - 1];
 }
 
-/** Oracles that are actually selectable right now. */
-export const ACTIVE_ORACLES = AI_MODELS.filter((model) => model.available);
+/**
+ * Oracles the catalog can route to. Not "they are alive right now": that comes
+ * from the server (`chat?health=1`) through `resolveOracles()`. All this drops is
+ * the models with no route at all (ChainGPT, Chainlink).
+ */
+export const ACTIVE_ORACLES = AI_MODELS.filter((model) => model.routable !== false);
 
 export const CORE_META = {
   name: MOLTBOOK_AGENT.name,
