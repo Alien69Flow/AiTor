@@ -66,7 +66,8 @@
     "mcp:key:check": "node scripts/vercel-gemini-key.mjs --check",
     "mcp:key:verify": "node scripts/vercel-gemini-key.mjs --verify",
     "deploy:all": "node scripts/deploy-all.mjs",
-    "deploy:verify": "node scripts/deploy-all.mjs --verify"
+    "deploy:verify": "node scripts/deploy-all.mjs --verify",
+    "verify:prod": "node scripts/verify-production.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

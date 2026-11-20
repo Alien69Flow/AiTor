@@ -1,219 +1,218 @@
 # Roadmap de AiTor
 
 **Única fuente de verdad.** `AGENTS.md` describe la arquitectura; aquí está qué
-está hecho, qué está desplegado y qué falta. Si los dos ficheros discrepan, manda
-este.
+falta y **cómo se comprueba**. Si los dos ficheros discrepan, manda este.
 
-**Última verificación: 19 de noviembre de 2026**, contra
-`https://aitor.alienflow.space` y el proyecto Supabase `wkdtvrxavkhbifjtvvdw`.
+Aquí no hay ✅ escritos a mano. Cada fase dice qué comando la comprueba y qué
+tiene que salir; el estado de producción lo imprime la sonda, no una memoria de
+la última vez que alguien miró.
 
-## Cómo se lee
-
-| Marca | Significa |
-|---|---|
-| ✅ | **Desplegado y comprobado.** Mergeado en `main` *y* respondiendo en producción; al lado va la comprobación que lo demuestra. |
-| 🟡 | **En `main`, pero no sirviendo.** Falta desplegar o faltan variables. No cuenta como hecho. |
-| ⬜ | **Pendiente.** No hay código. |
-
-Un ✅ pide las dos cosas a la vez. Que el fichero exista en el repo no es estar en
-producción: `backend/` entero está en ese caso (nada lo arranca: ni `package.json`,
-ni `vercel.json`, ni un Dockerfile).
-
-## Comprobarlo tú mismo
+## Cómo se comprueba
 
 ```bash
-# 1. El webhook vive, Telegram apunta donde debe y el bot se identifica
-curl -s https://aitor.alienflow.space/api/telegram-webhook | jq '{secretConfigured, webhook, bot}'
-
-# 2. La función de chat y su clave de proveedor
-curl -s 'https://aitor.alienflow.space/api/telegram-webhook?probe=1' | jq .chatProbe.conclusion
-
-# 3. La memoria del hilo: 404 = no desplegada
-curl -s -o /dev/null -w '%{http_code}\n' -X POST \
-  https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/chat-thread
+npm run verify:prod                      # webhook, salud, memoria y cron de una pasada
+npm run verify:prod -- --only=memoria    # una sola cosa
+npm run verify:prod -- --run-cron        # ejecuta el cron de verdad (puede enviar avisos)
+npm run verify:prod -- --json            # para máquinas
 ```
+
+| Código | Significa |
+|---|---|
+| `0` | Todo lo comprobado responde. Los avisos no lo impiden. |
+| `1` | Algún fallo: producción no cumple el criterio de alguna fase. |
+| `2` | Nada falló, pero algo quedó **sin verificar** (por ejemplo, falta una clave local). |
+
+La sonda ([`scripts/verify-production.mjs`](scripts/verify-production.mjs)) hace
+cuatro comprobaciones y nunca imprime claves:
+
+- **webhook** — vive, identifica al bot, apunta a la URL buena, sin entregas
+  pendientes, y dice si la firma está activa.
+- **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
+  si falta Redis o si Telegram/chat están caídos.
+- **memoria** — ida y vuelta real en `chat_threads` / `chat_turns` por PostgREST
+  con la service key y un token de usar y tirar; el hilo de prueba se borra
+  siempre. Sin `SUPABASE_SERVICE_ROLE_KEY` queda en ⏭, no en verde.
+- **cron** — sin `Authorization` tiene que dar 401. Con `--run-cron` y
+  `CRON_SECRET` se ejecuta de verdad; `sin-redis` cuenta como fallo, porque sin
+  almacén no puede disparar nada.
+
+## Fase → comprobación
+
+| Fase | Comando | Verde cuando |
+|---|---|---|
+| 1 · Decir la verdad al fallar | `npm run verify:prod -- --only=webhook` | El webhook responde y la conclusión del chat nombra el extremo que falla, no una frase amable. |
+| 2 · La credencial correcta | `npm run verify:prod -- --only=health` | El detalle no dice `chat DOWN`: la función `chat` contesta con la JWT. |
+| 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Ida y vuelta de 2 turnos y borrada (no ⏭: hace falta la service key). |
+| 4 · Conocimiento curado | `npx vitest run api/telegram-knowledge.test.ts` | Verde, y una pregunta de la DAO en el bot cita la fuente. |
+| 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
+| 6 · Deduplicar entregas | `npm run verify:prod -- --only=health` + `npx vitest run tests/api/telegram-retry.test.ts` | Health no dice «falta Redis» y el test de reintentos está verde. |
+| 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
+| 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
+| 9–14 · Producto | Ver el criterio de cada fase | Hoy no hay sonda automática: el criterio es un observable concreto. |
 
 ---
 
-# Parte A · El bot (fases cerradas y a medio cerrar)
+# Parte A · El bot
 
-## Fase 1 — Decir la verdad cuando algo falla ✅
+## Fase 1 — Decir la verdad cuando algo falla
 
 Antes cualquier fallo se contestaba con una frase amable («mi núcleo está
 recalibrando frecuencias»), así que una clave inválida podía durar días sin que
 nadie lo supiera.
 
-- [x] Clasificar el fallo (credencial, cuota, red, proveedor, tiempo agotado) y decir cuál es — #102, #108
-- [x] Sonda `GET /api/telegram-webhook?probe=1`: comprobación gratuita siempre y, con `x-api-key`, una llamada real al modelo — #102, #105
-- [x] El webhook ya no contesta 200 mudo: un fallo deja rastro en los logs de Vercel
+- Clasificar el fallo (credencial, cuota, red, proveedor, tiempo agotado) y decir cuál es — #102, #108
+- Sonda `GET /api/telegram-webhook?probe=1`: comprobación gratuita siempre y, con `x-api-key`, una llamada real al modelo — #102, #105
+- El webhook ya no contesta 200 mudo: un fallo deja rastro en los logs de Vercel
 
-**Comprobado:** `?probe=1` responde con `salud → 200` y una conclusión que nombra
-el extremo que falla (hoy: «chat vive»).
+**Comprobación:** `npm run verify:prod -- --only=webhook` (el detalle incluye la
+conclusión de la sonda) y `npx vitest run api/_shared/chat-failure.test.ts`.
 
-## Fase 2 — La credencial correcta ✅
+## Fase 2 — La credencial correcta
 
-- [x] `pickSupabaseKey` prefiere una JWT anon y descarta la `sb_publishable_…`, que el gateway rechaza con 401 — #103
-- [x] La clave no se imprime nunca: sólo su procedencia y su forma
+- `pickSupabaseKey` prefiere una JWT anon y descarta la `sb_publishable_…`, que el gateway rechaza con 401 — #103
+- La clave no se imprime nunca: sólo su procedencia y su forma
 
-**Comprobado:** la función `chat` contesta `200` a su informe de salud a través
-del webhook desplegado.
+**Comprobación:** `npm run verify:prod -- --only=health`. Verde cuando el chat
+aparece `OK`; si aparece `DOWN`, el detalle de la sonda no basta y hay que mirar
+`/api/telegram-webhook?probe=1`.
 
-## Fase 3 — Memoria del hilo 🟡
+## Fase 3 — Memoria del hilo
 
-El bot recuerda la conversación anterior. Está escrito, mergeado y con migración,
-pero **la función no está desplegada**: `POST /functions/v1/chat-thread` devuelve
-`404 NOT_FOUND`.
+El bot recuerda la conversación anterior. El webhook ya no llama a la función
+`chat-thread` (nunca desplegada, 404): lee y guarda `chat_threads` /
+`chat_turns` por PostgREST con la service key y el mismo token opaco `tg_…`.
 
-- [x] Migración `supabase/migrations/20261118190000_chat_memory.sql`
-- [x] Función `supabase/functions/chat-thread` (lee y guarda turnos con la service key)
-- [x] El webhook la llama con un identificador opaco: HMAC del `chat_id`, no el `chat_id` — #103
-- [ ] Aplicar la migración
-- [ ] Desplegar la función
+- Migración `supabase/migrations/20261118190000_chat_memory.sql` — #103, #119
+- Almacén `api/_shared/thread-memory.ts` (ventana de 8 mensajes, caducidad de 6 h) — #119
+- **Pendiente:** aplicar la migración y poner `SUPABASE_SERVICE_ROLE_KEY` en Vercel
 
-**Para cerrarla:**
+**Comprobación:** `npm run verify:prod -- --only=memoria`. Hoy da ⏭ o ❌: sin la
+migración aplicada y sin la clave en Vercel, el bot funciona pero no recuerda.
 
-```bash
-supabase db push --project-ref pnyigikagdxqaogbiift
-supabase functions deploy chat-thread --project-ref pnyigikagdxqaogbiift
-```
+## Fase 4 — Conocimiento curado
 
-**Criterio de hecho:** la sonda 3 deja de dar 404 y, hablando con el bot, el
-segundo mensaje recuerda el primero. Si el turno quedara duplicado, falta la
-Fase 6.
+- `api/_shared/knowledge.ts`: sólo se inyecta lo que cae en el dominio (física 3-6-9, DAO, tokenómica) y el modelo recibe la orden de citarlo — #104
+- Se pasa como `context` en el turno, no como texto pegado al prompt
 
-## Fase 4 — Conocimiento curado ✅
+**Comprobación:** `npx vitest run api/telegram-knowledge.test.ts` y, en el bot,
+una pregunta de la DAO seguida de otra de mercados: la primera cita la fuente y
+la segunda no lleva contexto inventado. No hay sonda remota para esto.
 
-- [x] `api/_shared/knowledge.ts`: sólo se inyecta lo que cae en el dominio (física 3-6-9, DAO, tokenómica) y el modelo recibe la orden de citarlo — #104
-- [x] Se pasa como `context` en el turno, no como texto pegado al prompt
-
-**Comprobado:** desplegado con el webhook (una pregunta fuera de dominio no lo
-recibe). No hay sonda específica: se verifica preguntando.
-
-## Fase 5 — Alertas de precio 🟡
+## Fase 5 — Alertas de precio
 
 `/alerta BTC > 95000` existe en el bot y el cron está declarado en `vercel.json`
-(`/api/cron/price-alerts`, `17 9 * * *`), pero **está inerte**: sin `CRON_SECRET`
-responde 401, y sin Redis no puede guardar ni leer avisos.
+(`/api/cron/price-alerts`, `17 9 * * *`). Sin Redis no guarda avisos; sin
+`CRON_SECRET` responde 401 y no ejecuta.
 
-- [x] Comando `/alerta` con formato claro, tope de avisos por chat y símbolos acotados — #105
-- [x] Endpoint de cron protegido por secreto
-- [ ] Redis en Vercel (`KV_REST_API_URL`, `KV_REST_API_TOKEN`)
-- [ ] `CRON_SECRET` puesto y cron probado de punta a punta
+- Comando `/alerta` con formato claro, tope de avisos por chat y símbolos acotados — #105, #113, #118
+- Endpoint de cron protegido por secreto
+- **Pendiente:** Redis en Vercel (`KV_REST_API_URL`, `KV_REST_API_TOKEN`) y `CRON_SECRET`
 
-**Criterio de hecho:** crear un aviso desde el bot, forzar el cron con
-`Authorization: Bearer $CRON_SECRET` y recibir el mensaje cuando se cruza el
-precio.
+**Comprobación:** `npm run verify:prod -- --only=cron --run-cron`. Verde cuando
+la puerta da 401 sin secreto, la ejecución responde 200 y el cuerpo no dice
+`sin-redis` ni trae `failures`. Después, un aviso real: crearlo con `/alerta`,
+cruzarlo y recibir el mensaje.
 
-## Fase 6 — Deduplicar entregas de Telegram 🟡
+## Fase 6 — Deduplicar entregas de Telegram
 
-Si Telegram reintenta una entrega, el usuario recibía la respuesta dos veces y el
-turno se guardaba duplicado.
+- `update_id` reservado en Redis (`SET … NX EX 600`) **antes** de procesar — #109
+- Clave con prefijo de entorno: una preview no gasta updates reales
+- Sin Redis se procesa igual y se avisa en el log
 
-- [x] `update_id` reservado en Redis (`SET … NX EX 600`, diez minutos) **antes** de procesar — #109
-- [x] Clave con prefijo de entorno: una preview no gasta updates reales
-- [x] Sin Redis se procesa igual y se avisa en el log (mejor respuesta doble que silencio)
-- [x] Prueba de punta a punta: dos entregas con el mismo `update_id` → un solo mensaje y una sola reserva; con `update_id` nuevo → se contesta
-- [ ] Redis configurado (el mismo de la Fase 5) — hoy `GET /api/health?compact=1` responde `UNCONFIGURED`
+**Comprobación:** `npm run verify:prod -- --only=health` (sin «falta Redis») y
+`npx vitest run tests/api/telegram-retry.test.ts`. La prueba de punta a punta es
+dos entregas con el mismo `update_id`: una respuesta y una reserva.
 
-**Criterio de hecho:** con Redis puesto, dos peticiones con el mismo `update_id`
-producen una sola respuesta y un solo turno guardado.
+## Fase 7 — La CI no miente
 
-## Fase 7 — La CI no miente ✅
+- `api/**` dentro de la suite de Vitest (#107) y tests/lint bloqueantes en el workflow (#110)
+- Los cinco fallos que estaban ocultos, arreglados: `chat-thread` declarada en `config.toml`, marcador de ruleta, `localStorage` en jsdom, dos errores de lint
 
-- [x] `api/**` dentro de la suite de Vitest (#107) y tests/lint bloqueantes en el workflow (#110)
-- [x] Los cinco fallos que estaban ocultos, arreglados: `chat-thread` declarada en `config.toml`, marcador de ruleta, `localStorage` en jsdom, dos errores de lint
+**Comprobación:** `npm test && npm run lint && npm run typecheck`, y el check
+`build` en verde en el head que se mergea. Un merge con `build` rojo no es una
+fase hecha.
 
-**Comprobado:** 121 ficheros, 1072 tests en verde; `eslint` sin errores; job de
-CI en verde en el commit mergeado `9944670`.
+## Fase 8 — Webhook firmado
 
-## Fase 8 — Webhook firmado 🟡
+- Verificación en tiempo constante cuando el secreto existe
+- **Pendiente:** `TELEGRAM_WEBHOOK_SECRET` en Vercel y re-registrar con `node scripts/telegram-webhook.mjs --set`
 
-Hoy `secretConfigured: false`: se aceptan actualizaciones sin firmar con cuota por
-IP (30/min). Funciona, pero cualquiera puede gastar cuota de modelo.
-
-- [x] Verificación en tiempo constante cuando el secreto existe
-- [ ] `TELEGRAM_WEBHOOK_SECRET` en Vercel y re-registrar el webhook con `node scripts/telegram-webhook.mjs --set`
-
-**Criterio de hecho:** `secretConfigured: true` y el bot sigue respondiendo.
+**Comprobación:** `npm run verify:prod -- --only=webhook`. Hoy da aviso («sin
+firma»); verde cuando diga `firma activa` y el bot siga respondiendo.
 
 ---
 
-# Parte B · Producto (⬜ pendiente)
+# Parte B · Producto
 
 Nada de esta parte está desplegado. El código de `backend/` (agentes, workflows,
-RAG, loops) existe pero **nada lo arranca**, así que aquí no cuenta como hecho.
+RAG, loops) existe pero **nada lo arranca**, así que no cuenta como hecho.
 
 ## Fase 9 — Agentes de mercado
 
-Análisis técnico, señales, seguimiento de cartera y DeFi.
-
-**Criterio de hecho:** un comando del bot devuelve una señal con fuente, hora y
-precio verificables, y desde `backend/` desplegado (no desde el portátil).
+**Criterio:** un comando del bot devuelve una señal con fuente, hora y precio
+verificables, servida desde `backend/` desplegado (no desde el portátil).
+**Comprobación:** manual, con el comando y la URL de la fuente al lado. Cuando
+haya endpoint, entra aquí con su `--only`.
 
 ## Fase 10 — Workflows con aprobación humana
 
-Trading semi-automatizado, investigación multi-agente y respuesta a crisis. Nada
-se ejecuta sin que una persona apruebe.
-
-**Criterio de hecho:** una propuesta llega al usuario, se aprueba o rechaza desde
-el bot, y queda registro de quién aprobó qué y cuándo.
+**Criterio:** una propuesta llega al usuario, se aprueba o rechaza desde el bot,
+y queda registro de quién aprobó qué y cuándo.
+**Comprobación:** manual: aprobar una propuesta y verla en el registro; rechazar
+otra y comprobar que no se ejecutó.
 
 ## Fase 11 — Globo: capas con fuente y fecha
 
-- [x] Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente *(en la app web, no en el bot)*
-- [x] Mareas (dirección, velocidad, altura) con fuente oceánica pública — tarjeta `TidesCard` sobre el globo con Open-Meteo Marine (nivel del mar y corriente superficial), fuente, cobertura y hora a la vista; sin dato dice «sin cobertura» o «la fuente no responde» — #114 *(en la app web, no en el bot)*
-- [ ] Vista orbital: Sol, Luna, planetas, asteroides y satélites
-- [ ] Controles de tiempo y altitud: superficie, atmósfera, órbita
-- [ ] DeFi TVL, adopción cripto, mapa regulatorio, minas y exchanges
-- [ ] Frescura visible y ninguna capa con respaldo inventado
+- Temperatura, humedad, presión/isobaras, precipitación y viento con telemetría independiente *(en la app web, no en el bot)*
+- Mareas (dirección, velocidad, altura) con fuente oceánica pública — `TidesCard` con Open-Meteo Marine, fuente, cobertura y hora; sin dato dice «sin cobertura» — #114 *(en la app web)*
+- **Pendiente:** vista orbital, controles de tiempo y altitud, DeFi TVL, mapa regulatorio, frescura visible
 
-**Criterio de hecho:** cada capa dice su fuente y la hora del dato; si el dato no
-llega, se ve vacío en vez de relleno.
+**Criterio:** cada capa dice su fuente y la hora del dato; si el dato no llega,
+se ve vacío en vez de relleno.
+**Comprobación:** manual sobre el globo, capa por capa: fuente visible, hora
+visible y estado vacío al cortar la fuente.
 
 ## Fase 12 — DAO City
 
-- [x] Ciudad holográfica 3D con distritos seleccionables *(en la app web)*
-- [x] Encargos por distrito conectados al chat con entregables reales *(en la app web)*
-- [ ] Formación con evaluaciones y graduación persistente (faltan criterios de acreditación)
-- [ ] Trabajo autónomo y ciudad multiusuario (faltan permisos y aprobación de acciones externas)
+- Ciudad holográfica 3D con distritos seleccionables *(en la app web)*
+- Encargos por distrito conectados al chat con entregables reales *(en la app web)*
+- **Pendiente:** formación con acreditación y ciudad multiusuario
 
-**Criterio de hecho:** un encargo produce un entregable que se puede abrir, y el
-progreso sobrevive a recargar la página.
+**Criterio:** un encargo produce un entregable que se puede abrir, y el progreso
+sobrevive a recargar la página.
+**Comprobación:** manual: abrir el entregable y recargar.
 
 ## Fase 13 — Mercados y sistema, dentro de la app
 
-TradingView, cartera con P&L, DeFi (TVL, yields, gas) e infraestructura de
-observabilidad (cola, latencia, errores, coste).
-
-**Criterio de hecho:** cada panel declara su fuente y su frescura; ninguno
-inventa un número cuando la fuente calla.
+**Criterio:** cada panel declara su fuente y su frescura; ninguno inventa un
+número cuando la fuente calla.
+**Comprobación:** manual: cortar una fuente y ver que el panel queda vacío con
+aviso, no con un cero.
 
 ## Fase 14 — Integraciones avanzadas
 
-Blockchain (Ethereum, Solana, Bitcoin, L2), DEX y proveedores de datos
-(CoinGecko, DeFiLlama, Dune…). Sólo con clave propia y cuota conocida.
-
-**Criterio de hecho:** una integración nueva entra con prueba de que responde y
-con un límite de gasto escrito.
+**Criterio:** una integración nueva entra con prueba de que responde y con un
+límite de gasto escrito.
+**Comprobación:** manual: la prueba de respuesta y el límite, en el PR.
 
 ---
 
 # Cómo trabajar esto
 
-1. **Una fase a la vez.** Se abre rama, se hace el cambio, se verifica y sólo
-   entonces se mergea.
-2. **✅ sólo cuando responde en producción**, con la sonda al lado. Un merge no
-   es un despliegue.
-3. **Si falta una variable o un despliegue, se dice en la fase** (🟡 con los pasos
-   exactos), no se marca como hecha.
-4. **Cada fase nueva entra aquí con su criterio de hecho**: qué se ejecuta para
-   saber que está terminada. Si no se puede comprobar, no es una fase, es una
-   idea.
+1. **Una fase a la vez.** Rama, cambio, verificación, merge.
+2. **El estado no se escribe a mano.** Si una fase no tiene un comando en la
+   tabla de arriba, todavía no está terminada: le falta criterio.
+3. **Si falta una variable o un despliegue, se dice en la fase** con los pasos
+   exactos; no se maquilla de hecho.
+4. **Cada fase nueva entra con su `--only`** en `verify-production.mjs`. Si no
+   se puede comprobar desde fuera, no es una fase, es una idea.
 
 ## Registro
 
 | Fecha | Cambio |
 |---|---|
-| 2026-11-19 | Mareas en el globo: tarjeta con nivel del mar y corriente superficial de Open-Meteo Marine (sin clave) para 24 puertos de referencia, en una sola petición. Dice fuente, cobertura, naturaleza del dato y hora; sin dato pone «sin cobertura» o «la fuente no responde», nunca cero. Probado contra la API real (23/24 estaciones con dato; Shanghái, sin cobertura). **No** sustituye a las boyas NOAA del ticker. |
-| 2026-11-19 | La reserva del `update_id` baja de 24 h a 10 min: el reintento que importa llega en segundos o minutos, y 24 h sólo llenaba el Redis de caché. Con su prueba de punta a punta. Sigue en 🟡: sin Redis configurado no deduplica. |
-| 2026-11-19 | Este fichero pasa a ser la única fuente de verdad. Se retira el roadmap duplicado de `AGENTS.md`. Las fases del bot (1–8) reflejan PRs #102–#110; la memoria del hilo, las alertas y el dedupe quedan en 🟡 porque dependen de despliegues y variables que aún no están. |
+| 2026-11-20 | La memoria del hilo pasa de la función `chat-thread` (404) a Postgres por PostgREST, sin CLI de Supabase ni Redis. Sigue pendiente aplicar la migración y poner la service key en Vercel; la sonda lo dice en ⏭/❌, no en verde. |
+| 2026-11-20 | `npm run verify:prod` comprueba webhook, salud, memoria y cron de una pasada, con códigos 0/1/2. El ROADMAP deja de llevar ✅ escritos a mano: cada fase apunta a su comprobación. |
+| 2026-11-19 | Mareas en el globo: tarjeta con nivel del mar y corriente superficial de Open-Meteo Marine (sin clave) para 24 puertos de referencia. Dice fuente, cobertura y hora; sin dato pone «sin cobertura» o «la fuente no responde», nunca cero. **No** sustituye a las boyas NOAA del ticker. |
+| 2026-11-19 | La reserva del `update_id` baja de 24 h a 10 min: el reintento que importa llega en segundos o minutos. Sigue pendiente Redis configurado. |
+| 2026-11-19 | Este fichero pasa a ser la única fuente de verdad. Se retira el roadmap duplicado de `AGENTS.md`. |
