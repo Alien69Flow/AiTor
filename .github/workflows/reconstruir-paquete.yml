@@ -1,0 +1,47 @@
+name: reconstruir-paquete
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --whitespace=nowarn .github/f6a.patch
+          git apply --index --whitespace=nowarn .github/f6b.patch
+
+          check() {
+            actual=$(git hash-object "$1")
+            if [ "$actual" != "$2" ]; then
+              echo "hash no coincide en $1"
+              echo "  esperado $2"
+              echo "  actual   $actual"
+              exit 1
+            fi
+            echo "ok $1"
+          }
+
+          check api/_shared/update-dedupe.ts b60d6005465d01cd3db05f35af0bd1b7c5b83e5d
+          check api/telegram-webhook.ts 3ab9bd3e65c6fe112376ec2f1f4238ccd638d5d5
+          check tests/api/telegram-retry.test.ts bde07dc97c945a1727257a010a6f632399574b6d
+          check ROADMAP.md f57400e33cde760d5013793da7db91e2cefba04d
+          check api/_shared/update-dedupe-supabase.ts d8a5499ea9f1e109297fb63feb54e571781c52b6
+          check api/update-dedupe-supabase.test.ts 69fe684c4e3a2ab9248bff900cb06264c2c1f76f
+          check supabase/migrations/20261120193000_telegram_update_reservations.sql 5774fd3e8835e830158870b1bddd2767ed94b0d6
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/f6a.patch .github/f6b.patch .github/workflows/reconstruir-paquete.yml
+          git commit -m "feat(dedupe): reserva del update_id en Supabase como respaldo de Redis"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
