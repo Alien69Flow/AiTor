@@ -1,0 +1,34 @@
+name: reconstruir-paquete
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --whitespace=nowarn .github/pq.patch
+          esperado=1fe152af2256ae5ff5e0925f25f822cdfa7f49a9
+          actual=$(git hash-object ROADMAP.md)
+          if [ "$actual" != "$esperado" ]; then
+            echo "hash no coincide en ROADMAP.md: $actual != $esperado"
+            exit 1
+          fi
+          echo "ok ROADMAP.md $actual"
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/pq.patch .github/workflows/reconstruir-paquete.yml
+          git commit -m "docs(roadmap): la fase 5 enlaza su runbook"
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
