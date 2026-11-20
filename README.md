@@ -7,10 +7,13 @@ Agentics WorkFlows RAG | Neural Intelligence Core
 
 Este es el núcleo cerebral de **AlienFlowSpace DAO**. Una inteligencia neuronal híbrida diseñada para gestionar la DAO, analizar flujos financieros y unificar la física de neutrinos con la Web 3-4-5.
 
+> El estado real de cada pieza, y lo que falta para que cuente como hecho, está en
+> [ROADMAP.md](ROADMAP.md). Este README describe la arquitectura.
+
 ## 🧠 Arquitectura Técnica
 - **Core:** React + TypeScript + Vite.
 - **Neural UI:** Shadcn-UI + Tailwind (Alien Design System).
-- **Memory Engine:** Supabase PostgREST + Realtime.
+- **Memory Engine:** Supabase PostgREST + Realtime *(código escrito; la migración y la service key siguen pendientes — ROADMAP fase 3)*.
 - **Logic Layers:** Tesla 3-6-9 Pattern Integration.
 
 ## 🔭 Módulos en Desarrollo

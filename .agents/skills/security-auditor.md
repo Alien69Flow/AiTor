@@ -3,6 +3,10 @@
 ## Descripción
 Agente especializado en auditoría de seguridad del repositorio AiTor y AlienFlowSpace DAO.
 
+> **No programado:** `backend/agents/securityAgent.ts` sabe ejecutar `npm audit`,
+> pero nada lo dispara a diario ni semanalmente. Ver
+> [ROADMAP.md](../../ROADMAP.md).
+
 ## Escaneos Disponibles
 
 ### Escaneo Rápido

@@ -39,6 +39,9 @@ despliega** (ni `package.json`, ni `vercel.json`, ni un Dockerfile los arrancan)
 
 ## Agentes Disponibles
 
+Ninguno tiene comando en el bot ni proceso que lo arranque: lo de abajo es el
+diseño de `backend/`, no algo que responda hoy (ROADMAP fases 9–10).
+
 ### 1. Supervisor Agent
 **Rol**: Director de tráfico - decide qué agente procesa cada request
 
@@ -161,6 +164,10 @@ User Request
 ## Loops de Automatización
 
 ### Social Media Loops
+
+`start()` sólo tiene sentido dentro de `backend/server.ts`, que no está
+desplegado; nada lo llama.
+
 ```typescript
 SocialAutomationLoops.initialize();
 SocialAutomationLoops.start();
@@ -179,6 +186,9 @@ SocialAutomationLoops.start();
 - Mensual: Reporte a GitHub
 
 ## APIs de Redes Sociales
+
+Los adaptadores están en `backend/socialPublisher.ts` y necesitan credenciales;
+sin proceso desplegado no publican nada.
 
 ### Configuración Requerida
 
@@ -211,6 +221,9 @@ GITHUB_TOKEN=
 ```
 
 ## Comandos del Sistema
+
+El bot de Telegram hoy entiende `/alerta` y las preguntas de chat; los comandos
+de abajo son el diseño del supervisor y no existen en producción.
 
 ### Redes Sociales
 ```

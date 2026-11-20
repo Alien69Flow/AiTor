@@ -250,6 +250,7 @@ límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-20 | `README.md`, `AUTOMATIONS.md`, `Skill.md`, `AGENTS.md` y las skills de `.agents/skills/` dejan de presentar como hechos el swarm de `backend/`, la publicación en redes y los escaneos de seguridad: código escrito, nada desplegado (parte B, fases 9–10). La tabla de plataformas pierde su ✅ falso y la cola de propuestas avisa de que guarda en memoria. |
 | 2026-11-20 | Fase 4 en ✅ con la pasada real del #131: `2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto`. El ✅ sale de esa sonda, no de que el código esté mergeado. |
 | 2026-11-20 | Un solo significado para el estado de cada fase (✅ demostrado hoy contra producción · 🟡 en `main` sin demostrar · ⏭ sin sonda), y la fila de cada fase lleva el suyo. La sonda de conocimiento gana una pregunta de control: fuera de dominio no se recupera ningún bloque. Fase 4 queda en 🟡 hasta que esa sonda salga verde contra producción. |
 | 2026-11-20 | La memoria del hilo pasa de la función `chat-thread` (404) a Postgres por PostgREST, sin CLI de Supabase ni Redis. Sigue pendiente aplicar la migración y poner la service key en Vercel; la sonda lo dice en ⏭/❌, no en verde. |
