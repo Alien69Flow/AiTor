@@ -1,0 +1,22 @@
+diff --git a/ROADMAP.md b/ROADMAP.md
+index 92b242d..1fe152a 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -158,6 +158,9 @@ la puerta da 401 sin secreto, la ejecución responde 200 y el cuerpo no dice
+ `sin-redis` ni trae `failures`. Después, un aviso real: crearlo con `/alerta`,
+ cruzarlo y recibir el mensaje.
+ 
++Paso a paso, con los nombres exactos de las variables y lo que devuelve cada
++orden: [`docs/fase5-cron-punta-a-punta.md`](docs/fase5-cron-punta-a-punta.md).
++
+ ## Fase 6 — Deduplicar entregas de Telegram
+ 
+ - `update_id` reservado en Redis (`SET … NX EX 600`) **antes** de procesar — #109
+@@ -263,6 +266,7 @@ límite de gasto escrito.
+ 
+ | Fecha | Cambio |
+ |---|---|
++| 2026-11-20 | Fase 5 lista para cerrarse: `docs/fase5-cron-punta-a-punta.md` dice qué tres variables crear en Vercel, cómo generar `CRON_SECRET` sin copiarlo de ningún sitio, y la prueba de punta a punta con dos avisos (uno que cruza y otro que no) que demuestra disparo selectivo, entrega y borrado del aviso usado. |
+ | 2026-11-20 | Guardia semanal de producción: el workflow repite `--only=health` y `--only=conocimiento` sin secretos, y un test cruza los bloques de conocimiento con las preguntas de la sonda para que no pierda cobertura en silencio. El ✅ deja de depender de que alguien mire. |
+ | 2026-11-20 | Fase 7 en ✅: `tsc --noEmit` entra en la CI antes del build y los dos `TS2339` se arreglan con `routable !== false`, no con un `available` inventado. Pasada del head `ea6d935`: 0 errores de tipos, 0 de lint, 1269 tests y `build` verde. |
+ | 2026-11-20 | `README.md`, `AUTOMATIONS.md`, `Skill.md`, `AGENTS.md` y las skills de `.agents/skills/` dejan de presentar como hechos el swarm de `backend/`, la publicación en redes y los escaneos de seguridad: código escrito, nada desplegado (parte B, fases 9–10). La tabla de plataformas pierde su ✅ falso y la cola de propuestas avisa de que guarda en memoria. |
