@@ -4,12 +4,20 @@ import {
   normalize,
   retrieveKnowledge,
   scoreBlocks,
+  tokenize,
 } from "../../api/_shared/knowledge";
 
 describe("normalize", () => {
   it("quita acentos, mayúsculas y signos", () => {
     expect(normalize("¿Física Unificada?")).toBe("fisica unificada");
     expect(normalize("Tokenómica")).toBe("tokenomica");
+  });
+});
+
+describe("tokenize", () => {
+  it("deja palabras significativas, sin plural y sin ruido de la pregunta", () => {
+    expect(tokenize("¿cómo son las propuestas de la DAO?")).toEqual(["propuesta", "dao"]);
+    expect(tokenize("hola")).toEqual([]);
   });
 });
 
@@ -42,6 +50,24 @@ describe("retrieveKnowledge", () => {
     // "dao" dentro de otra palabra no debe contar.
     expect(retrieveKnowledge("claudao")).toBeNull();
   });
+
+  it("entiende sinónimos y otro idioma", () => {
+    // Sin la palabra "áurea" ni "física": sólo el sinónimo en inglés.
+    expect(retrieveKnowledge("¿qué es el golden ratio de este colectivo?")).toContain(
+      "física unificada",
+    );
+    expect(retrieveKnowledge("how does the governance work?")).toContain("AlienFlowSpace DAO");
+  });
+
+  it("tolera el plural y las palabras clave sueltas", () => {
+    expect(retrieveKnowledge("propuestas de tesorería")).toContain("AlienFlowSpace DAO");
+    expect(retrieveKnowledge("tesla")).toContain("física unificada");
+  });
+
+  it("sigue sin inyectar nada en preguntas generales", () => {
+    expect(retrieveKnowledge("dame un resumen del clima en Madrid")).toBeNull();
+    expect(retrieveKnowledge("resume este texto, por favor")).toBeNull();
+  });
 });
 
 describe("scoreBlocks", () => {
@@ -49,5 +75,10 @@ describe("scoreBlocks", () => {
     const scored = scoreBlocks("tesla y la dao");
     expect(scored[0].score).toBeGreaterThan(0);
     expect(scored.every((entry) => entry.score >= 0)).toBe(true);
+  });
+
+  it("prefiere el bloque cuyas palabras clave aparecen de verdad", () => {
+    expect(scoreBlocks("gobernanza y tesorería")[0].block.id).toBe("dao");
+    expect(scoreBlocks("golden ratio")[0].block.id).toBe("physics");
   });
 });
