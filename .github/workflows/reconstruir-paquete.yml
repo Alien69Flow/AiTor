@@ -1,0 +1,53 @@
+name: reconstruir-paquete
+
+on:
+  push:
+    paths:
+      - ".aitor-verificacion/**"
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "¿Llegó el paquete completo?"
+        id: check
+        run: |
+          if [ -f .aitor-verificacion/part-04 ]; then
+            echo ok=1 >> "$GITHUB_OUTPUT"
+          else
+            echo ok=0 >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reconstruir y comprobar
+        if: steps.check.outputs.ok == '1'
+        run: |
+          set -euo pipefail
+          cat .aitor-verificacion/part-* | base64 -d | xz -dc | tar xf - -C .
+          cat > /tmp/esperado.txt <<'EOF'
+          332517a49b24fcab3d4c67f97eabfa9ba0fb2376 supabase/functions/_shared/chat-routing.ts
+          f66fcdb42621328b31f55741f7bc79c3fd736c01 supabase/functions/_shared/chat-routing.test.ts
+          a99c939df92c6f31d4565b059cc17233394413e3 supabase/functions/chat/index.ts
+          EOF
+          fallo=0
+          while read -r sha ruta; do
+            real=$(git hash-object "$ruta")
+            echo "$ruta $real"
+            if [ "$real" != "$sha" ]; then echo "MISMATCH en $ruta"; fallo=1; fi
+          done < /tmp/esperado.txt
+          exit $fallo
+
+      - name: Commit y push
+        if: steps.check.outputs.ok == '1'
+        run: |
+          set -euo pipefail
+          rm -rf .aitor-verificacion .github/workflows/reconstruir-paquete.yml
+          git config user.name "aitor-bot"
+          git config user.email "bot@alienflow.space"
+          git add -A
+          git commit -m "feat(chat): enrutar por coste y caer a otra clave"
+          git push origin HEAD:feat/chat-coste
