@@ -1,9 +1,10 @@
 import { cn } from "@/lib/utils";
 import type { Message } from "@/hooks/useChat";
-import { User, Copy, Check, Cpu, AlertTriangle } from "lucide-react";
+import { User, Copy, Check, Cpu } from "lucide-react";
 import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { ReasoningBlock } from "./ReasoningBlock";
+import { ToolCard } from "./ToolCard";
 
 interface ChatMessageProps {
   message: Message;
@@ -62,25 +63,14 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
             </span>
           </div>
 
-          {/* What this turn consulted. A failed source stays visible in amber:
+          {/* What this turn consulted. A failed source stays visible in red:
               a silent gap is how a broken integration looks like a thoughtful
-              answer. */}
+              answer. Each tool has its own icon, so weather and GitHub are no
+              longer the same chip. */}
           {isUser && message.skills && message.skills.length > 0 && (
             <div className="mb-2 flex flex-wrap items-center gap-1.5" aria-label="Fuentes consultadas">
-              {message.skills.map((skill) => (
-                <span
-                  key={skill.label}
-                  title={skill.ok ? "Datos consultados en este turno" : `Sin datos: ${skill.error ?? "fuente no disponible"}`}
-                  className={cn(
-                    "flex items-center gap-1 rounded border px-1.5 py-0.5 text-[9px] font-mono uppercase tracking-wider",
-                    skill.ok
-                      ? "border-secondary/40 bg-secondary/10 text-secondary"
-                      : "border-accent/50 bg-accent/10 text-accent",
-                  )}
-                >
-                  {skill.ok ? <Check className="h-2.5 w-2.5" /> : <AlertTriangle className="h-2.5 w-2.5" />}
-                  {skill.label}
-                </span>
+              {message.skills.map((skill, index) => (
+                <ToolCard key={`${skill.label}-${index}`} skill={skill} />
               ))}
             </div>
           )}
@@ -91,13 +81,15 @@ export function ChatMessage({ message, streaming = false }: ChatMessageProps) {
 
           {message.imageData && (
             <div className="mb-3 overflow-hidden rounded-lg border border-border max-w-xs">
-              <img src={message.imageData} alt="Uploaded" className="max-h-[200px] w-auto object-contain" />
+              <img
+                src={message.imageData} alt="Uploaded" className="max-h-[200px] w-auto object-contain" />
             </div>
           )}
 
           <div className={cn(
             "text-[13.5px] leading-6 sm:text-sm sm:leading-7 font-mono",
-            isUser ? "whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-foreground/90" : "text-muted-foreground prose-terminal"
+            isUser ?
+              "whitespace-pre-wrap break-words rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-foreground/90" : "text-muted-foreground prose-terminal"
           )}>
             {isUser ? (
               message.content
