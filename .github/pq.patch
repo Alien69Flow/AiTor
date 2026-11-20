@@ -1,0 +1,27 @@
+diff --git a/.agents/skills/security-auditor.md b/.agents/skills/security-auditor.md
+index c874876..2e1a464 100644
+--- a/.agents/skills/security-auditor.md
++++ b/.agents/skills/security-auditor.md
+@@ -3,6 +3,10 @@
+ ## Descripción
+ Agente especializado en auditoría de seguridad del repositorio AiTor y AlienFlowSpace DAO.
+ 
++> **No programado:** `backend/agents/securityAgent.ts` sabe ejecutar `npm audit`,
++> pero nada lo dispara a diario ni semanalmente. Ver
++> [ROADMAP.md](../../ROADMAP.md).
++
+ ## Escaneos Disponibles
+ 
+ ### Escaneo Rápido
+@@ -3,6 +7,10 @@
+ Skill especializado para la gestión automatizada de redes sociales de AlienFlowSpace DAO. Genera propuestas de contenido, las presenta para aprobación y ejecuta tras confirmación.
+ 
++> **No desplegado:** el agente y el publicador existen en `backend/` y nada los
++> arranca. Los comandos de abajo son el diseño, no algo que responda en el bot;
++> ver [ROADMAP.md](../../ROADMAP.md) fases 9–10.
++
+ ## Funcionalidades
+ 
+ ### Generación de Contenido
+-- 
++
