@@ -78,7 +78,7 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 4 | ✅ | `--only=conocimiento`: `2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto` |
 | 5 | 🟡 | sólo está comprobada la puerta (401); sin `CRON_SECRET` no hay ejecución real |
 | 6 | 🟡 | health dice que falta Redis: el dedupe no está actuando |
-| 7 | 🟡 | `npm run typecheck` falla con 2 errores y no es un paso del workflow |
+| 7 | ✅ | `typecheck` 0 errores · `lint` 0 · 1269 tests · `build` verde en `ea6d935` |
 | 8 | 🟡 | `sin firma`: falta `TELEGRAM_WEBHOOK_SECRET` |
 | 9–14 | ⏭ | sin sonda: criterio manual |
 
@@ -166,10 +166,17 @@ dos entregas con el mismo `update_id`: una respuesta y una reserva.
 
 - `api/**` dentro de la suite de Vitest (#107) y tests/lint bloqueantes en el workflow (#110)
 - Los cinco fallos que estaban ocultos, arreglados: `chat-thread` declarada en `config.toml`, marcador de ruleta, `localStorage` en jsdom, dos errores de lint
+- `tsc --noEmit` como paso propio del workflow, **antes** del build (#134): Vite compila sin comprobar tipos, y por eso un TS2339 vivía en `main` con la CI en verde
+- Los dos `TS2339` (`model.available` en `chat-prefs.ts` y `neural-core-model.ts`) arreglados cruzando con `routable !== false`, la misma regla de `ai-health.ts`
 
 **Comprobación:** `npm test && npm run lint && npm run typecheck`, y el check
 `build` en verde en el head que se mergea. Un merge con `build` rojo no es una
 fase hecha.
+
+**Estado:** ✅ — el 2026-11-20, sobre `ea6d935`: `typecheck` 0 errores, `lint` 0
+errores, 1269 tests y el check `build` (que ya ejecuta los tipos) en verde. Si
+`typecheck` vuelve a fallar, la CI corta antes del build y la fase baja a 🟡 el
+mismo día.
 
 ## Fase 8 — Webhook firmado
 
@@ -250,6 +257,7 @@ límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-20 | Fase 7 en ✅: `tsc --noEmit` entra en la CI antes del build y los dos `TS2339` se arreglan con `routable !== false`, no con un `available` inventado. Pasada del head `ea6d935`: 0 errores de tipos, 0 de lint, 1269 tests y `build` verde. |
 | 2026-11-20 | `README.md`, `AUTOMATIONS.md`, `Skill.md`, `AGENTS.md` y las skills de `.agents/skills/` dejan de presentar como hechos el swarm de `backend/`, la publicación en redes y los escaneos de seguridad: código escrito, nada desplegado (parte B, fases 9–10). La tabla de plataformas pierde su ✅ falso y la cola de propuestas avisa de que guarda en memoria. |
 | 2026-11-20 | Fase 4 en ✅ con la pasada real del #131: `2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto`. El ✅ sale de esa sonda, no de que el código esté mergeado. |
 | 2026-11-20 | Un solo significado para el estado de cada fase (✅ demostrado hoy contra producción · 🟡 en `main` sin demostrar · ⏭ sin sonda), y la fila de cada fase lleva el suyo. La sonda de conocimiento gana una pregunta de control: fuera de dominio no se recupera ningún bloque. Fase 4 queda en 🟡 hasta que esa sonda salga verde contra producción. |
