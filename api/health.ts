@@ -25,6 +25,7 @@ import { sendError, sendJson } from "./_shared/http.js";
 import { isRedisConfigured, readSeedMetas } from "./_shared/redis.js";
 import { applyCors } from "./_shared/cors.js";
 import { chatFailureDetail, classifyChatFailure } from "./_shared/chat-failure.js";
+import { AITOR_ANON_JWT, pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import type { ApiRequest, ApiResponse } from "./_shared/types.js";
 
 export const maxDuration = 15;
@@ -207,10 +208,18 @@ export async function probeTelegram(): Promise<Upstream> {
  * Pregunta a la función `chat` de Supabase por su propio informe. Un 401 aquí
  * es la pista más útil del sistema: significa que la función vive pero no se
  * la puede llamar, y el bot contestará su mensaje genérico.
+ *
+ * La clave sale del mismo selector que usa el webhook (`pickSupabaseKey`): una
+ * JWT anon antes que una `sb_publishable_…`, y la JWT pública del repositorio
+ * si el despliegue no tiene ninguna válida. Antes health leía la variable
+ * directamente y mandaba la publishable como `Bearer`, así que reportaba
+ * `chat DOWN` con el bot respondiendo: dos criterios para lo mismo.
  */
 export async function probeChat(): Promise<Upstream> {
   const base = env("SUPABASE_URL", "VITE_SUPABASE_URL").replace(/\/+$/, "");
-  const key = env("SUPABASE_ANON_KEY", "VITE_SUPABASE_ANON_KEY");
+  const picked = pickSupabaseKey(process.env, AITOR_ANON_JWT);
+  const key = picked.key;
+  const otorgada = picked.kind === "jwt" ? "" : ` · clave ${picked.source} (${picked.kind})`;
   const missing = [base ? null : "SUPABASE_URL", key ? null : "SUPABASE_ANON_KEY"].filter(
     (name): name is string => Boolean(name),
   );
@@ -220,7 +229,7 @@ export async function probeChat(): Promise<Upstream> {
   const started = Date.now();
   try {
     const response = await fetch(`${base}/functions/v1/chat?health=1`, {
-      headers: { apikey: key, Authorization: `Bearer ${key}` },
+      headers: supabaseAuthHeaders(key),
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     const rawBody = await response.text().catch(() => "");
@@ -241,7 +250,7 @@ export async function probeChat(): Promise<Upstream> {
       body = null;
     }
     if (!body || typeof body.status !== "string") {
-      return { key: "chat", label: "Chat (Supabase)", status: "OK", ms, detail: "responde, sin informe de salud (redesplegar chat)" };
+      return { key: "chat", label: "Chat (Supabase)", status: "OK", ms, detail: `responde, sin informe de salud (redesplegar chat)${otorgada}` };
     }
     const ready = Array.isArray(body.models) ? body.models.filter((model) => model.available).length : null;
     return {
@@ -249,7 +258,7 @@ export async function probeChat(): Promise<Upstream> {
       label: "Chat (Supabase)",
       status: "OK",
       ms,
-      detail: ready === null ? body.status : `${body.status}: ${ready} modelos con clave`,
+      detail: `${ready === null ? body.status : `${body.status}: ${ready} modelos con clave`}${otorgada}`,
     };
   } catch (error) {
     return {
