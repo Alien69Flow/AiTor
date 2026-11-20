@@ -1,0 +1,76 @@
+name: reconstruir-paquete
+
+on:
+  push:
+    paths:
+      - ".aitor-verificacion/**"
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: "¿Llegó el paquete completo?"
+        id: check
+        run: |
+          if [ -f .aitor-verificacion/part-05 ]; then
+            echo ok=1 >> "$GITHUB_OUTPUT"
+          else
+            echo ok=0 >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reconstruir y comprobar
+        if: steps.check.outputs.ok == '1'
+        run: |
+          set -euo pipefail
+          cat .aitor-verificacion/part-* | base64 -d | xz -dc | tar xf - -C .
+          cat > /tmp/esperado.txt <<'EOF'
+          6a5fbab9bc0ea659b4bc2b50aa4324bc9ed1b4f2 api/_shared/thread-memory.ts
+          b1cc0de15ae1c913d65fc96e69e0fefba93b0fad api/_shared/thread-memory.test.ts
+          9aa4514b610d0b1b4a7f89331efb23de2785ed2c api/telegram-thread.test.ts
+          7d1179ce9f43c3b7bc5ddc0124bdfb2c1c1a6c8e tests/api/telegram-retry.test.ts
+          25f3c5eccfd65b0cbca3211e2e6438f2c638f2e3 scripts/verify-production.mjs
+          91155eb9800eb44f9fd2ea11dd95d68b345f01d4 scripts/verify-production.test.mjs
+          b2e4f76614392b09a3f1bcd14fada5a38f030f22 ROADMAP.md
+          EOF
+          fallo=0
+          while read -r sha ruta; do
+            real=$(git hash-object "$ruta")
+            echo "$ruta $real"
+            if [ "$real" != "$sha" ]; then echo "MISMATCH en $ruta"; fallo=1; fi
+          done < /tmp/esperado.txt
+          python3 - <<'PY'
+          from pathlib import Path
+          ruta = Path("api/telegram-webhook.ts")
+          texto = ruta.read_text()
+          viejo = """// Los turnos viven en Postgres (`chat_threads` / `chat_turns`) y se leen por
+          // PostgREST con la service key: ni Redis (el despliegue no lo tiene) ni la
+          // función `chat-thread` (nunca se desplegó). Si la memoria tarda o falla, el
+          // mensaje sigue su camino como si no existiera."""
+          nuevo = """// El hilo vive en Redis, en un hash por token con tres capas (título, resumen
+          // y evidencia). No hay que aplicar ninguna migración ni dar la service key al
+          // webhook: sin Upstash la memoria queda apagada y el mensaje sigue su camino
+          // como si no existiera."""
+          if viejo not in texto:
+              raise SystemExit("comentario del webhook no encontrado")
+          ruta.write_text(texto.replace(viejo, nuevo, 1))
+          PY
+          real=$(git hash-object api/telegram-webhook.ts)
+          echo "api/telegram-webhook.ts $real"
+          if [ "$real" != "7253b11db20ca53f9bbb738f98f080b393919647" ]; then echo "MISMATCH en api/telegram-webhook.ts"; fallo=1; fi
+          exit $fallo
+
+      - name: Commit y push
+        if: steps.check.outputs.ok == '1'
+        run: |
+          set -euo pipefail
+          rm -rf .aitor-verificacion .github/workflows/reconstruir-paquete.yml
+          git config user.name "aitor-bot"
+          git config user.email "bot@alienflow.space"
+          git add -A
+          git commit -m "feat(memoria): hilo por capas en Redis sin migraciones"
+          git push origin HEAD:feat/memoria-redis-capas
