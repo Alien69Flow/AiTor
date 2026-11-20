@@ -18,6 +18,15 @@
 
 export type SupabaseKeyKind = "jwt" | "publishable" | "other" | "empty";
 
+/**
+ * La JWT anon del proyecto de AiTor. Es pública por diseño (viaja en el bundle
+ * web) y es el último recurso cuando Vercel no tiene ninguna JWT válida. Vive
+ * aquí, y no en cada endpoint, para que no vuelvan a aparecer dos copias que se
+ * desincronicen: el webhook y `/api/health` tienen que elegir la misma clave.
+ */
+export const AITOR_ANON_JWT =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndrZHR2cnhhdmtoYmlmanR2dmR3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUzMDAzMjgsImV4cCI6MjA4MDg3NjMyOH0.9L-59tbpbK564ZaObEtgF70IUKwL6IR2VF2VLYBhSt8";
+
 /** Una JWT tiene tres partes y es larga; una `sb_publishable_…`, no. */
 export function isJwt(key: string): boolean {
   if (!key) return false;

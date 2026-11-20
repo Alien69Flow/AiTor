@@ -51,6 +51,8 @@ const ENV_KEYS = [
   "SUPABASE_ANON_KEY",
   "VITE_SUPABASE_URL",
   "VITE_SUPABASE_ANON_KEY",
+  "SUPABASE_PUBLISHABLE_KEY",
+  "VITE_SUPABASE_PUBLISHABLE_KEY",
   "UPSTASH_REDIS_REST_URL",
   "UPSTASH_REDIS_REST_TOKEN",
   "KV_REST_API_URL",
@@ -208,6 +210,32 @@ describe("/api/health · upstreams", () => {
 
     expect(upstreams.find((entry) => entry.key === "telegram")).toMatchObject({ status: "OK", detail: "@aitor_bot" });
     expect(upstreams.find((entry) => entry.key === "chat")?.detail).toContain("2 modelos con clave");
+  });
+
+  it("con una publishable en el entorno prueba el chat con la JWT del repo, no como Bearer", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "123:token-de-prueba";
+    process.env.SUPABASE_URL = "https://proyecto.supabase.co";
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_de_prueba";
+
+    const calls: { url: string; headers: Record<string, string> }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { headers?: Record<string, string> }) => {
+        calls.push({ url: String(url), headers: { ...(init?.headers ?? {}) } });
+        return String(url).includes("api.telegram.org") ? telegramOk() : chatReport();
+      }),
+    );
+
+    const { res, snap } = mockRes();
+    await handler(authed(), res as never);
+
+    const chatCall = calls.find((call) => call.url.includes("/functions/v1/chat"));
+    const key = chatCall?.headers.apikey ?? "";
+
+    // Una JWT tiene tres partes; una `sb_publishable_…` no.
+    expect(key.split(".")).toHaveLength(3);
+    expect(chatCall?.headers.Authorization).toBe(`Bearer ${key}`);
+    expect(upstreamsOf(snap().body).find((entry) => entry.key === "chat")?.status).toBe("OK");
   });
 
   it("un token rechazado es DOWN y el token no sale en la respuesta", async () => {
