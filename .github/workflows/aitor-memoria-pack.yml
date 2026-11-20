@@ -1,0 +1,36 @@
+name: aitor-memoria-pack
+
+on:
+  push:
+    branches: [feat/memoria-hilo-postgres]
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruir y verificar
+        run: |
+          set -euo pipefail
+          test -d .aitor-memoria
+          test "$(ls .aitor-memoria/part-* | wc -l)" -eq 5
+          cat .aitor-memoria/part-* | base64 -d > /tmp/files.txz
+          xz -dc /tmp/files.txz | tar xf - -C .
+          test "$(git hash-object api/_shared/thread-memory.ts)" = "415c158b1231b0e0798aee8d2fed69095898bf9c"
+          test "$(git hash-object api/_shared/thread-memory.test.ts)" = "b4ce254702a1e67fd1764c69176d4e0d58b9fb98"
+          test "$(git hash-object api/telegram-webhook.ts)" = "b35397501d9fba659b5120350687022317b8f3d8"
+          test "$(git hash-object api/telegram-thread.test.ts)" = "0ee30da593e35889972b615346b0173a597ccb41"
+          test "$(git hash-object api/telegram-knowledge.test.ts)" = "6f5be850c7dc40a4b2e1cdc7a60213ba65bd9600"
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/_shared/thread-memory.ts api/_shared/thread-memory.test.ts api/telegram-webhook.ts api/telegram-thread.test.ts api/telegram-knowledge.test.ts
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "feat(memoria): guardar el hilo en Postgres sin CLI de Supabase"
+          git push
