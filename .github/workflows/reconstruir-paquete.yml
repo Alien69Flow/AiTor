@@ -1,0 +1,54 @@
+name: reconstruir-paquete
+
+# Temporal: aplica el parche revisado desde .github/pq-*.patch, comprueba que los
+# ficheros resultantes son byte a byte los probados en local (por su hash de git)
+# y borra los ficheros de acarreo en el mismo commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .github/pq-1.patch .github/pq-2.patch .github/pq-3.patch > /tmp/c.patch
+          wc -c /tmp/c.patch
+          git apply --index --whitespace=nowarn /tmp/c.patch
+
+          printf '%s\n' \
+            "2e1a464a0d3df914d6444ed663884bf467d23948 .agents/skills/security-auditor.md" \
+            "c4908c29044f2062f082acd31279af5600c4534a .agents/skills/social-media-manager.md" \
+            "55b4dd0119a103c8aac64e21cf16e118656ac7e0 AGENTS.md" \
+            "f25cb7bf1b321be77f380a1d606f22f8cbbd9e61 AUTOMATIONS.md" \
+            "09a7887bd808151ba0af7c3aadf12ac028a27929 README.md" \
+            "26001bf7358d50d2f3dab5653bcdbb1ecc0f49e8 ROADMAP.md" \
+            "d203761df19554361a10b4257bcf197b013e40c3 Skill.md" \
+            > /tmp/manifiesto
+
+          while read -r esperado ruta; do
+            actual=$(git hash-object "$ruta")
+            if [ "$actual" != "$esperado" ]; then
+              echo "hash no coincide en $ruta: $actual != $esperado"
+              exit 1
+            fi
+            echo "ok $ruta $actual"
+          done < /tmp/manifiesto
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/pq.patch .github/pq-1.patch .github/pq-2.patch \
+            .github/pq-3.patch .github/workflows/reconstruir-paquete.yml
+          git commit \
+            -m "docs: el swarm, las redes y los escaneos dejan de leerse como hechos" \
+            -m "Nada de backend/ lo arranca: ni cron, ni despliegue, ni entrada en package.json, y ninguna funcion de api/ lo importa. README, AUTOMATIONS.md, Skill.md, AGENTS.md y las skills lo dicen ahora, con la tabla de plataformas sin su Activo falso y la cola de propuestas avisando de que guarda en memoria."
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
