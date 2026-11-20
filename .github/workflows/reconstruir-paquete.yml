@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: write
+  # El cambio toca .github/workflows/ci.yml: sin este permiso GitHub rechaza
+  # el push del token del workflow.
+  workflows: write
 
 jobs:
   reconstruir:
