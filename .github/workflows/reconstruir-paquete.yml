@@ -1,0 +1,46 @@
+name: reconstruir-paquete
+
+# Temporal: aplica el parche del cambio desde .github/aitor-parche.patch,
+# comprueba que los ficheros resultantes son byte a byte los revisados (por su
+# hash de git) y borra los dos ficheros de acarreo en el mismo commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --whitespace=nowarn .github/aitor-parche.patch
+
+          printf '%s\n' \
+            "055918035a9c672127c1b993dbb92b876976f754 .github/workflows/ci.yml" \
+            "31b66f27f624bcf652a1549257ea4fe5eddf86ec package-lock.json" \
+            > /tmp/manifiesto
+
+          while read -r esperado ruta; do
+            actual=$(git hash-object "$ruta")
+            if [ "$actual" != "$esperado" ]; then
+              echo "hash no coincide en $ruta: $actual != $esperado"
+              exit 1
+            fi
+            echo "ok $ruta $actual"
+          done < /tmp/manifiesto
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/aitor-parche.patch .github/workflows/reconstruir-paquete.yml
+          git commit \
+            -m "ci: instala con npm ci y completa el lockfile" \
+            -m "npm install arreglaba en silencio un lockfile desfasado, asi que la CI instalaba un arbol que no era el del repositorio. npm ci instala el lockfile congelado y falla si package.json no cuadra. Faltaban en el lock los dos plugins @lovable.dev que package.json declara; se anaden sus entradas exactas (1.3.3 y 1.8.3, ya las que habia instaladas) sin tocar ninguna otra version."
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
