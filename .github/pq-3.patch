@@ -1,0 +1,92 @@
+diff --git a/AUTOMATIONS.md b/AUTOMATIONS.md
+index 99d25e6..f25cb7b 100644
+--- a/AUTOMATIONS.md
++++ b/AUTOMATIONS.md
+@@ -1,5 +1,15 @@
+ # 🤖 AiTor v.69 - Sistema de Automatización
+ 
++> **Estado real: nada de esto está en marcha.** El código existe (`backend/agents/`,
++> `backend/workflows/socialAutomationLoops.ts`, `socialProposalQueue.ts`,
++> `socialPublisher.ts`), pero **ningún proceso lo arranca**: no hay cron, ni
++> despliegue, ni entrada en `package.json` que lo lance, y ninguna función de
++> `api/` lo importa. Lo único programado en producción es el cron de alertas de
++> precio (`/api/cron/price-alerts`), que sigue pendiente de Redis y `CRON_SECRET`
++> (ROADMAP fase 5). Esto describe el diseño y cómo se operaría **cuando** haya
++> despliegue; lo que cuenta como hecho está en [ROADMAP.md](ROADMAP.md), donde la
++> publicación en redes y los workflows con aprobación están en ⏭ (fases 9 y 10).
++
+ ## 📋 Resumen Ejecutivo
+ 
+ Este documento describe el sistema completo de automatización para AiTor v.69, incluyendo:
+@@ -19,12 +29,15 @@ Este documento describe el sistema completo de automatización para AiTor v.69,
+ | Instagram | @alien69flow | 🔜 Próximamente | Requiere Token |
+ | Facebook | @Alien69Flow | 🔜 Próximamente | Requiere Token |
+ | Discord | AlienFlowSpace | 🔜 Próximamente | Webhook/Bot Token |
+-| Telegram | @AlienFlowSpaceDAO | ✅ Activo | Ya integrado |
++| Telegram | @AlienFlowSpaceDAO | ⏸ Sin desplegar | El bot responde en producción, pero este publicador no corre |
+ | FarcaSter | @alien69flow | 🔜 Próximamente | Requiere Private Key |
+ | GitHub | @Alien69Flow | 🔜 Próximamente | PAT Token |
+ | HackMD | @Alien69Flow | 🔜 Próximamente | API Token |
+ | DoraHacks | @Alien69Flow | 🔜 Próximamente | API Token |
+ 
++Las filas de arriba describen adaptadores escritos en `backend/socialPublisher.ts`,
++no canales operativos: sin credenciales y sin proceso no hay publicación.
++
+ ---
+ 
+ ## 🚀 Workflow de Redes Sociales
+@@ -56,6 +69,10 @@ Este documento describe el sistema completo de automatización para AiTor v.69,
+ 
+ ---
+ 
++El diagrama es el diseño. Hoy el paso **PUBLICAR** nunca se ejecuta porque el
++paso anterior tampoco existe: en producción no hay nada que genere ni apruebe
++propuestas.
++
+ ## 📅 Tipos de Propuestas
+ 
+ ### Diario (Daily)
+@@ -93,6 +110,10 @@ Este documento describe el sistema completo de automatización para AiTor v.69,
+ 
+ ## 🔐 Sistema de Seguridad
+ 
++Los escaneos están escritos en `backend/agents/securityAgent.ts` (ejecuta
++`npm audit` con `child_process`), pero no hay programación: ni a las 8:00 ni los
++lunes a las 9:00. Nada los dispara.
++
+ ### Escaneo Diario (Quick Scan)
+ - **Hora**: 8:00 AM UTC
+ - **Acciones**: `npm audit`, verificación de outdated
+@@ -212,6 +233,10 @@ npm install
+ 
+ ## 🤖 OpenHands Automations
+ 
++`scripts/setup-automations.sh` es un script de configuración contra la API de
++OpenHands. En el repo no hay constancia de que se haya ejecutado ni de que esas
++automations existan hoy: los `curl` de abajo son el procedimiento, no un estado.
++
+ ### Configurar Automations
+ 
+ Ejecuta el script de configuración:
+@@ -254,6 +279,10 @@ curl -X GET "${OPENHANDS_HOST}/api/automation/v1/{automation_id}/runs" \
+ 
+ ## 📊 Estados de Propuestas
+ 
++La cola guarda las propuestas en memoria (`Map` en `ProposalQueue`), no en base
++de datos: al reiniciar el proceso se pierden. Hasta que tenga almacén, este flujo
++no puede prometerse como durable.
++
+ ```
+ ┌──────────────┐
+ │   PENDING    │ ◄── Generada, esperando tu aprobación
+@@ -284,6 +313,10 @@ curl -X GET "${OPENHANDS_HOST}/api/automation/v1/{automation_id}/runs" \
+ 
+ ### Iniciar Loops Manualmente
+ 
++`SocialAutomationLoops` sólo puede arrancarse dentro del servidor Express de
++`backend/server.ts`, que no está desplegado: desde el repo, estas líneas no
++tienen dónde correr.
++
+ ```typescript
+ import { SocialAutomationLoops } from './backend/workflows/socialAutomationLoops';
+ 
