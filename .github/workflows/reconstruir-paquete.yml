@@ -1,0 +1,38 @@
+name: reconstruir-paquete
+
+# Temporal: aplica el parche revisado desde .github/pq.patch, comprueba su hash
+# y borra los ficheros de acarreo en el mismo commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --whitespace=nowarn .github/pq.patch
+          esperado=2f4d10d3bbb8a2c65b538492a36bc4b2209de6ab
+          actual=$(git hash-object ROADMAP.md)
+          if [ "$actual" != "$esperado" ]; then
+            echo "hash no coincide en ROADMAP.md: $actual != $esperado"
+            exit 1
+          fi
+          echo "ok ROADMAP.md $actual"
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/pq.patch .github/workflows/reconstruir-paquete.yml
+          git commit \
+            -m "docs(roadmap): la fase 4 pasa a hecho con la sonda en verde" \
+            -m "El #131 desplego la pregunta de control y verify:prod --only=conocimiento salio verde contra produccion: 2 bloques, 2/2 de dominio con su bloque y 1 fuera de dominio sin contexto."
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
