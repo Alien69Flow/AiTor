@@ -29,7 +29,7 @@ interface Call {
 async function load() {
   vi.resetModules();
   process.env.TELEGRAM_BOT_TOKEN = "test-token";
-  delete process.env.TELEGRAM_WEBHOOK_SECRET;
+  process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
   delete process.env.VERCEL_ENV;
   const module = await import("../../api/telegram-webhook");
   return module.default as unknown as (req: unknown, res: unknown) => Promise<unknown>;
@@ -40,7 +40,7 @@ function invoke(handler: (req: unknown, res: unknown) => Promise<unknown>, body:
     const req = {
       method: "POST",
       body,
-      headers: {},
+      headers: { "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "198.51.100.4" },
     };
     const res = {

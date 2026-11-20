@@ -20,6 +20,7 @@ const ENV_KEYS = [
 beforeEach(() => {
   for (const name of ENV_KEYS) delete process.env[name];
   process.env.TELEGRAM_BOT_TOKEN = "123:token-de-prueba";
+  process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
   process.env.SUPABASE_URL = "https://proyecto.supabase.co";
   process.env.VITE_SUPABASE_ANON_KEY =
     "eyJhbGciOiJIUzI1NiJ9.eyJyb2xlIjoiYW5vbiJ9.firma-de-prueba-suficientemente-larga";
@@ -63,7 +64,7 @@ async function run(text: string): Promise<void> {
     {
       method: "POST",
       body: { message: { chat: { id: 42 }, text } },
-      headers: { host: "localhost" },
+      headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "203.0.113.11" },
     },
     {
