@@ -3,9 +3,22 @@
 **Única fuente de verdad.** `AGENTS.md` describe la arquitectura; aquí está qué
 falta y **cómo se comprueba**. Si los dos ficheros discrepan, manda este.
 
-Aquí no hay ✅ escritos a mano. Cada fase dice qué comando la comprueba y qué
-tiene que salir; el estado de producción lo imprime la sonda, no una memoria de
-la última vez que alguien miró.
+Cada fase dice qué comando la comprueba y qué tiene que salir. El estado de
+producción lo imprime la sonda, no una memoria de la última vez que alguien
+miró.
+
+## Qué significa cada estado
+
+| Estado | Significa |
+|---|---|
+| ✅ | Desplegado **y** demostrado contra producción por el comando de su fila, hoy y sin avisos de esa fase. |
+| 🟡 | El código está en `main`, pero su comprobación no demuestra el criterio: falta una variable, falta el despliegue que sirve, o la sonda no llega hasta ahí. |
+| ⏭ | Sin verificar: todavía no hay comando que lo pruebe. |
+
+Un ✅ sólo vale si el comando de su fila lo acaba de demostrar; si no, es 🟡
+aunque el código esté mergeado. El estado de cada fase vive en la tabla «Estado
+hoy», copiado de la última pasada de `npm run verify:prod`, nunca de lo que uno
+recuerda.
 
 ## Cómo se comprueba
 
@@ -33,8 +46,9 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
   `CRON_SECRET` se ejecuta de verdad; `sin-redis` cuenta como fallo, porque sin
   almacén no puede disparar nada.
 - **conocimiento** — `GET /api/telegram-webhook?probe=1` lanza
-  `retrieveKnowledge` con dos preguntas de muestra (DAO y física) y dice qué
-  bloque salió; sin ese campo en la respuesta queda sin verificar.
+  `retrieveKnowledge` con dos preguntas de dominio (DAO y física) y una de
+  control, de fuera de dominio, y dice qué bloque salió con cada una. Sin ese
+  campo en la respuesta, o sin la pregunta de control, queda sin verificar.
 - **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
   si falta Redis o si Telegram/chat están caídos.
 - **webhook** — vive, identifica al bot, apunta a la URL buena, sin entregas
@@ -47,12 +61,26 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 1 · Decir la verdad al fallar | `npm run verify:prod -- --only=webhook` | El webhook responde y la conclusión del chat nombra el extremo que falla, no una frase amable. |
 | 2 · La credencial correcta | `npm run verify:prod -- --only=health` | El detalle no dice `chat DOWN`: la función `chat` contesta con la JWT. |
 | 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
-| 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` | Los dos bloques de muestra se recuperan en producción (y `npx vitest run api/telegram-knowledge.test.ts` verde). |
+| 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` + `npx vitest run api/telegram-knowledge.test.ts` | Las preguntas de dominio recuperan su bloque **y** la de control, de fuera de dominio, no recupera ninguno. |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
 | 6 · Deduplicar entregas | `npm run verify:prod -- --only=health` + `npx vitest run tests/api/telegram-retry.test.ts` | Health no dice «falta Redis» y el test de reintentos está verde. |
 | 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
 | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
-| 9–14 · Producto | Ver el criterio de cada fase | Hoy no hay sonda automática: el criterio es un observable concreto. |
+| 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
+
+## Estado hoy (pasada del 2026-11-20)
+
+| Fase | Estado | Por qué |
+|---|---|---|
+| 1 | 🟡 | sólo corre la comprobación gratuita: sin `x-api-key` no llega a clasificar un fallo del modelo |
+| 2 | ✅ | `--only=health` dice `chat OK` |
+| 3 | 🟡 | ⏭: faltan las variables de Upstash en Vercel |
+| 4 | 🟡 | el despliegue que sirve aún no trae la pregunta de control: la sonda da ⏭ |
+| 5 | 🟡 | sólo está comprobada la puerta (401); sin `CRON_SECRET` no hay ejecución real |
+| 6 | 🟡 | health dice que falta Redis: el dedupe no está actuando |
+| 7 | 🟡 | `npm run typecheck` falla con 2 errores y no es un paso del workflow |
+| 8 | 🟡 | `sin firma`: falta `TELEGRAM_WEBHOOK_SECRET` |
+| 9–14 | ⏭ | sin sonda: criterio manual |
 
 ---
 
@@ -98,12 +126,16 @@ Upstash da ⏭: el bot funciona pero no recuerda.
 
 - `api/_shared/knowledge.ts`: sólo se inyecta lo que cae en el dominio (física 3-6-9, DAO, tokenómica) y el modelo recibe la orden de citarlo — #104
 - Se pasa como `context` en el turno, no como texto pegado al prompt
+- La sonda remota lanza también una pregunta de **control**, de fuera de dominio: ahí no puede salir ningún bloque (`expected: null` en `KNOWLEDGE_SAMPLES`)
 
-**Comprobación:** `npm run verify:prod -- --only=conocimiento` (sonda remota:
-`?probe=1` recupera el bloque `dao` y el `physics` con preguntas de muestra) y
-`npx vitest run api/telegram-knowledge.test.ts`. En el bot, una pregunta de la
-DAO seguida de otra de mercados: la primera cita la fuente y la segunda no
-lleva contexto inventado.
+**Comprobación:** `npm run verify:prod -- --only=conocimiento`. Verde cuando el
+detalle diga `2/2 de dominio con su bloque · 1 fuera de dominio sin contexto`,
+y `npx vitest run api/telegram-knowledge.test.ts` en verde (incluye que una
+pregunta de mercados no lleve `context`).
+
+**Estado:** 🟡 — el código con la pregunta de control está en `main`, pero el
+despliegue que sirve aún no la trae y la sonda responde ⏭. Pasa a ✅ cuando esa
+misma orden salga verde contra producción, no antes.
 
 ## Fase 5 — Alertas de precio
 
@@ -218,6 +250,7 @@ límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-20 | Un solo significado para el estado de cada fase (✅ demostrado hoy contra producción · 🟡 en `main` sin demostrar · ⏭ sin sonda), y la fila de cada fase lleva el suyo. La sonda de conocimiento gana una pregunta de control: fuera de dominio no se recupera ningún bloque. Fase 4 queda en 🟡 hasta que esa sonda salga verde contra producción. |
 | 2026-11-20 | La memoria del hilo pasa de la función `chat-thread` (404) a Postgres por PostgREST, sin CLI de Supabase ni Redis. Sigue pendiente aplicar la migración y poner la service key en Vercel; la sonda lo dice en ⏭/❌, no en verde. |
 | 2026-11-20 | `npm run verify:prod` comprueba webhook, salud, memoria y cron de una pasada, con códigos 0/1/2. El ROADMAP deja de llevar ✅ escritos a mano: cada fase apunta a su comprobación. |
 | 2026-11-19 | Mareas en el globo: tarjeta con nivel del mar y corriente superficial de Open-Meteo Marine (sin clave) para 24 puertos de referencia. Dice fuente, cobertura y hora; sin dato pone «sin cobertura» o «la fuente no responde», nunca cero. **No** sustituye a las boyas NOAA del ticker. |

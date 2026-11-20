@@ -166,9 +166,18 @@ export function interpretMemory(result) {
 }
 
 /**
- * Conocimiento: la sonda del webhook lanza `retrieveKnowledge` con dos preguntas
- * de muestra y dice qué bloque recuperó cada una. Sin ese campo (despliegue
- * viejo) no se inventa un verde: queda sin verificar.
+ * Conocimiento: la sonda del webhook lanza `retrieveKnowledge` con preguntas de
+ * muestra y dice qué bloque recuperó cada una.
+ *
+ * Son dos cosas a la vez, y las dos importan:
+ *
+ *  - las de **dominio** (`expected: "dao"`, `"physics"`) tienen que recuperar
+ *    su bloque;
+ *  - la de **control** (`expected: null`) pregunta algo de fuera y no puede
+ *    recuperar ninguno.
+ *
+ * Sin el campo `knowledgeProbe` (despliegue viejo) no se inventa un verde, y
+ * sin la pregunta de control tampoco: ahí sólo se demuestra la mitad.
  */
 export function interpretKnowledge(payload) {
   const probe = payload && typeof payload === "object" ? payload.knowledgeProbe : null;
@@ -181,14 +190,28 @@ export function interpretKnowledge(payload) {
   const samples = Array.isArray(probe.samples) ? probe.samples : [];
   if (samples.length === 0) return fail("la sonda no trae preguntas de muestra");
 
+  const dominio = samples.filter((entry) => entry.expected !== null);
+  const control = samples.filter((entry) => entry.expected === null);
+  if (dominio.length === 0) return fail("la sonda no trae ninguna pregunta de dominio");
+  if (control.length === 0) {
+    return skip("la sonda de este despliegue no trae la pregunta de control (fuera de dominio): redespliega");
+  }
+
   const falladas = samples.filter((entry) => entry.matched !== entry.expected);
   if (falladas.length > 0) {
     const detalle = falladas
-      .map((entry) => `${entry.expected}→${entry.matched ?? "nada"}`)
+      .map((entry) =>
+        entry.expected === null
+          ? `fuera de dominio recibió ${entry.matched}`
+          : `${entry.expected}→${entry.matched ?? "nada"}`,
+      )
       .join(", ");
-    return fail(`${falladas.length}/${samples.length} preguntas no recuperan su bloque (${detalle})`);
+    return fail(`${falladas.length}/${samples.length} preguntas con resultado inesperado (${detalle})`);
   }
-  return ok(`${blocks} bloques · ${samples.length}/${samples.length} preguntas recuperan su bloque`);
+  return ok(
+    `${blocks} bloques · ${dominio.length}/${dominio.length} de dominio con su bloque · ` +
+      `${control.length} fuera de dominio sin contexto`,
+  );
 }
 
 export function summarize(results) {

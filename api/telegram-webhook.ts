@@ -496,8 +496,15 @@ interface ChatProbe {
 interface KnowledgeProbe {
   /** Bloques que este despliegue lleva dentro. */
   blocks: number;
-  /** Cada pregunta de muestra con el bloque que de verdad recuperó. */
-  samples: Array<{ question: string; expected: string; matched: string | null }>;
+  /**
+   * Cada pregunta de muestra con el bloque que de verdad recuperó.
+   *
+   * `expected: null` marca la pregunta de control, la que cae **fuera** del
+   * dominio: ahí no debe salir ningún bloque, y por eso `matched` tiene que
+   * venir también `null`. Sin ese control, la sonda sólo demostraría que hay
+   * conocimiento, no que se inyecta únicamente cuando toca.
+   */
+  samples: Array<{ question: string; expected: string | null; matched: string | null }>;
 }
 
 const PROBE_MESSAGE = "ping";
@@ -665,13 +672,18 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
 
 /**
  * Conocimiento curado, sin red y sin gastar cuota: se lanza el mismo
- * `retrieveKnowledge` que usa un turno real con dos preguntas de muestra y se
- * informa de qué bloque salió. Así la sonda de producción puede distinguir un
- * despliegue sin conocimiento de uno que responde con el bloque equivocado.
+ * `retrieveKnowledge` que usa un turno real con preguntas de muestra y se
+ * informa de qué bloque salió. Así la sonda de producción distingue un
+ * despliegue sin conocimiento de uno que responde con el bloque equivocado,
+ * y —con la pregunta de control— uno que inyecta contexto donde no toca.
  */
-const KNOWLEDGE_SAMPLES = [
+const KNOWLEDGE_SAMPLES: Array<{ question: string; expected: string | null }> = [
   { question: "¿qué es AlienFlowSpace DAO y su gobernanza?", expected: "dao" },
   { question: "háblame de la proporción áurea 16.18 y Tesla", expected: "physics" },
+  // Control fuera de dominio: es la misma pregunta que el test del turno. Si
+  // recuperara un bloque, el bot estaría metiendo contexto inventado y la
+  // sonda tiene que decirlo.
+  { question: "¿cuánto cuesta el bitcoin hoy?", expected: null },
 ];
 
 function probeKnowledge(): KnowledgeProbe {

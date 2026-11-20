@@ -16,7 +16,7 @@ type ProbeView = {
   note: string | null;
   attempts: ProbeAttemptView[];
 };
-type KnowledgeSample = { question: string; expected: string; matched: string | null };
+type KnowledgeSample = { question: string; expected: string | null; matched: string | null };
 type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
 type ProbeBody = {
   chatProbe: ProbeView | null;
@@ -187,6 +187,9 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     expect(probe.samples.map((sample) => [sample.expected, sample.matched])).toEqual([
       ["dao", "dao"],
       ["physics", "physics"],
+      // Control fuera de dominio: si recuperara un bloque, habría contexto
+      // inventado y `verify:prod` lo marcaría como fallo.
+      [null, null],
     ]);
     expect(calls.filter((call) => call.includes("functions/v1/chat"))).toHaveLength(1);
   });

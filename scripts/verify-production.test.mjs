@@ -174,6 +174,7 @@ describe("conocimiento", () => {
       samples: [
         { question: "dao", expected: "dao", matched: "dao" },
         { question: "fisica", expected: "physics", matched: "physics" },
+        { question: "bitcoin", expected: null, matched: null },
       ],
     },
   };
@@ -195,6 +196,7 @@ describe("conocimiento", () => {
         samples: [
           { question: "dao", expected: "dao", matched: "dao" },
           { question: "fisica", expected: "physics", matched: "dao" },
+          { question: "bitcoin", expected: null, matched: null },
         ],
       },
     });
@@ -202,10 +204,37 @@ describe("conocimiento", () => {
     expect(result.detail).toContain("physics→dao");
   });
 
-  it("todas las preguntas en su bloque es verde", () => {
+  it("mucho cuidado con inyectar contexto fuera de dominio", () => {
+    // La pregunta de control existe para esto: si recupera un bloque, el bot
+    // está metiendo contexto donde no toca.
+    const result = interpretKnowledge({
+      knowledgeProbe: {
+        blocks: 2,
+        samples: [
+          { question: "dao", expected: "dao", matched: "dao" },
+          { question: "bitcoin", expected: null, matched: "dao" },
+        ],
+      },
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("fuera de dominio recibió dao");
+  });
+
+  it("una sonda sin pregunta de control no es verde: sólo demuestra la mitad", () => {
+    const result = interpretKnowledge({
+      knowledgeProbe: {
+        blocks: 2,
+        samples: [{ question: "dao", expected: "dao", matched: "dao" }],
+      },
+    });
+    expect(result.status).toBe("skip");
+    expect(result.detail).toContain("pregunta de control");
+  });
+
+  it("todas las preguntas en su sitio es verde, y lo dice con las dos mitades", () => {
     expect(interpretKnowledge(sano)).toEqual({
       status: "ok",
-      detail: "2 bloques · 2/2 preguntas recuperan su bloque",
+      detail: "2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto",
     });
   });
 });
