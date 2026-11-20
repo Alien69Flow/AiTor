@@ -1,0 +1,242 @@
+diff --git a/AGENTS.md b/AGENTS.md
+index 698314b..dd27347 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -304,4 +304,5 @@ interface SystemStats {
+ 
+-El roadmap vive en **[ROADMAP.md](ROADMAP.md)** y es la única fuente de verdad:
+-✅ desplegado y comprobado con una sonda, 🟡 en `main` pero sin servir, ⬜ pendiente.
++El roadmap vive en **[ROADMAP.md](ROADMAP.md)** y es la única fuente de verdad,
++incluido qué significa cada estado (✅ · 🟡 · ⏭). Aquí no se repite: una sola
++definición, la de ese fichero.
+ 
+diff --git a/ROADMAP.md b/ROADMAP.md
+index adfa0bd..2e343ef 100644
+--- a/ROADMAP.md
++++ b/ROADMAP.md
+@@ -5,5 +5,18 @@ falta y **cómo se comprueba**. Si los dos ficheros discrepan, manda este.
+ 
+-Aquí no hay ✅ escritos a mano. Cada fase dice qué comando la comprueba y qué
+-tiene que salir; el estado de producción lo imprime la sonda, no una memoria de
+-la última vez que alguien miró.
++Cada fase dice qué comando la comprueba y qué tiene que salir. El estado de
++producción lo imprime la sonda, no una memoria de la última vez que alguien
++miró.
++
++## Qué significa cada estado
++
++| Estado | Significa |
++|---|---|
++| ✅ | Desplegado **y** demostrado contra producción por el comando de su fila, hoy y sin avisos de esa fase. |
++| 🟡 | El código está en `main`, pero su comprobación no demuestra el criterio: falta una variable, falta el despliegue que sirve, o la sonda no llega hasta ahí. |
++| ⏭ | Sin verificar: todavía no hay comando que lo pruebe. |
++
++Un ✅ sólo vale si el comando de su fila lo acaba de demostrar; si no, es 🟡
++aunque el código esté mergeado. El estado de cada fase vive en la tabla «Estado
++hoy», copiado de la última pasada de `npm run verify:prod`, nunca de lo que uno
++recuerda.
+ 
+@@ -35,4 +48,5 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
+ - **conocimiento** — `GET /api/telegram-webhook?probe=1` lanza
+-  `retrieveKnowledge` con dos preguntas de muestra (DAO y física) y dice qué
+-  bloque salió; sin ese campo en la respuesta queda sin verificar.
++  `retrieveKnowledge` con dos preguntas de dominio (DAO y física) y una de
++  control, de fuera de dominio, y dice qué bloque salió con cada una. Sin ese
++  campo en la respuesta, o sin la pregunta de control, queda sin verificar.
+ - **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
+@@ -49,3 +63,3 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
+ | 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
+-| 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` | Los dos bloques de muestra se recuperan en producción (y `npx vitest run api/telegram-knowledge.test.ts` verde). |
++| 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` + `npx vitest run api/telegram-knowledge.test.ts` | Las preguntas de dominio recuperan su bloque **y** la de control, de fuera de dominio, no recupera ninguno. |
+ | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
+@@ -54,3 +68,17 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
+ | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
+-| 9–14 · Producto | Ver el criterio de cada fase | Hoy no hay sonda automática: el criterio es un observable concreto. |
++| 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
++
++## Estado hoy (pasada del 2026-11-20)
++
++| Fase | Estado | Por qué |
++|---|---|---|
++| 1 | 🟡 | sólo corre la comprobación gratuita: sin `x-api-key` no llega a clasificar un fallo del modelo |
++| 2 | ✅ | `--only=health` dice `chat OK` |
++| 3 | 🟡 | ⏭: faltan las variables de Upstash en Vercel |
++| 4 | 🟡 | el despliegue que sirve aún no trae la pregunta de control: la sonda da ⏭ |
++| 5 | 🟡 | sólo está comprobada la puerta (401); sin `CRON_SECRET` no hay ejecución real |
++| 6 | 🟡 | health dice que falta Redis: el dedupe no está actuando |
++| 7 | 🟡 | `npm run typecheck` falla con 2 errores y no es un paso del workflow |
++| 8 | 🟡 | `sin firma`: falta `TELEGRAM_WEBHOOK_SECRET` |
++| 9–14 | ⏭ | sin sonda: criterio manual |
+ 
+@@ -100,8 +128,12 @@ Upstash da ⏭: el bot funciona pero no recuerda.
+ - Se pasa como `context` en el turno, no como texto pegado al prompt
++- La sonda remota lanza también una pregunta de **control**, de fuera de dominio: ahí no puede salir ningún bloque (`expected: null` en `KNOWLEDGE_SAMPLES`)
++
++**Comprobación:** `npm run verify:prod -- --only=conocimiento`. Verde cuando el
++detalle diga `2/2 de dominio con su bloque · 1 fuera de dominio sin contexto`,
++y `npx vitest run api/telegram-knowledge.test.ts` en verde (incluye que una
++pregunta de mercados no lleve `context`).
+ 
+-**Comprobación:** `npm run verify:prod -- --only=conocimiento` (sonda remota:
+-`?probe=1` recupera el bloque `dao` y el `physics` con preguntas de muestra) y
+-`npx vitest run api/telegram-knowledge.test.ts`. En el bot, una pregunta de la
+-DAO seguida de otra de mercados: la primera cita la fuente y la segunda no
+-lleva contexto inventado.
++**Estado:** 🟡 — el código con la pregunta de control está en `main`, pero el
++despliegue que sirve aún no la trae y la sonda responde ⏭. Pasa a ✅ cuando esa
++misma orden salga verde contra producción, no antes.
+ 
+@@ -220,2 +252,3 @@ límite de gasto escrito.
+ |---|---|
++| 2026-11-20 | Un solo significado para el estado de cada fase (✅ demostrado hoy contra producción · 🟡 en `main` sin demostrar · ⏭ sin sonda), y la fila de cada fase lleva el suyo. La sonda de conocimiento gana una pregunta de control: fuera de dominio no se recupera ningún bloque. Fase 4 queda en 🟡 hasta que esa sonda salga verde contra producción. |
+ | 2026-11-20 | La memoria del hilo pasa de la función `chat-thread` (404) a Postgres por PostgREST, sin CLI de Supabase ni Redis. Sigue pendiente aplicar la migración y poner la service key en Vercel; la sonda lo dice en ⏭/❌, no en verde. |
+diff --git a/api/telegram-webhook.probe.test.ts b/api/telegram-webhook.probe.test.ts
+index aca6c4d..7216a96 100644
+--- a/api/telegram-webhook.probe.test.ts
++++ b/api/telegram-webhook.probe.test.ts
+@@ -18,3 +18,3 @@ type ProbeView = {
+ };
+-type KnowledgeSample = { question: string; expected: string; matched: string | null };
++type KnowledgeSample = { question: string; expected: string | null; matched: string | null };
+ type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
+@@ -189,2 +189,5 @@ describe("GET /api/telegram-webhook?probe=1", () => {
+       ["physics", "physics"],
++      // Control fuera de dominio: si recuperara un bloque, habría contexto
++      // inventado y `verify:prod` lo marcaría como fallo.
++      [null, null],
+     ]);
+diff --git a/api/telegram-webhook.ts b/api/telegram-webhook.ts
+index 197a562..0460f1e 100644
+--- a/api/telegram-webhook.ts
++++ b/api/telegram-webhook.ts
+@@ -498,4 +498,11 @@ interface KnowledgeProbe {
+   blocks: number;
+-  /** Cada pregunta de muestra con el bloque que de verdad recuperó. */
+-  samples: Array<{ question: string; expected: string; matched: string | null }>;
++  /**
++   * Cada pregunta de muestra con el bloque que de verdad recuperó.
++   *
++   * `expected: null` marca la pregunta de control, la que cae **fuera** del
++   * dominio: ahí no debe salir ningún bloque, y por eso `matched` tiene que
++   * venir también `null`. Sin ese control, la sonda sólo demostraría que hay
++   * conocimiento, no que se inyecta únicamente cuando toca.
++   */
++  samples: Array<{ question: string; expected: string | null; matched: string | null }>;
+ }
+@@ -667,9 +674,14 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
+  * Conocimiento curado, sin red y sin gastar cuota: se lanza el mismo
+- * `retrieveKnowledge` que usa un turno real con dos preguntas de muestra y se
+- * informa de qué bloque salió. Así la sonda de producción puede distinguir un
+- * despliegue sin conocimiento de uno que responde con el bloque equivocado.
++ * `retrieveKnowledge` que usa un turno real con preguntas de muestra y se
++ * informa de qué bloque salió. Así la sonda de producción distingue un
++ * despliegue sin conocimiento de uno que responde con el bloque equivocado,
++ * y —con la pregunta de control— uno que inyecta contexto donde no toca.
+  */
+-const KNOWLEDGE_SAMPLES = [
++const KNOWLEDGE_SAMPLES: Array<{ question: string; expected: string | null }> = [
+   { question: "¿qué es AlienFlowSpace DAO y su gobernanza?", expected: "dao" },
+   { question: "háblame de la proporción áurea 16.18 y Tesla", expected: "physics" },
++  // Control fuera de dominio: es la misma pregunta que el test del turno. Si
++  // recuperara un bloque, el bot estaría metiendo contexto inventado y la
++  // sonda tiene que decirlo.
++  { question: "¿cuánto cuesta el bitcoin hoy?", expected: null },
+ ];
+diff --git a/scripts/verify-production.mjs b/scripts/verify-production.mjs
+index b2ec57c..be1b9e9 100644
+--- a/scripts/verify-production.mjs
++++ b/scripts/verify-production.mjs
+@@ -168,5 +168,14 @@ export function interpretMemory(result) {
+ /**
+- * Conocimiento: la sonda del webhook lanza `retrieveKnowledge` con dos preguntas
+- * de muestra y dice qué bloque recuperó cada una. Sin ese campo (despliegue
+- * viejo) no se inventa un verde: queda sin verificar.
++ * Conocimiento: la sonda del webhook lanza `retrieveKnowledge` con preguntas de
++ * muestra y dice qué bloque recuperó cada una.
++ *
++ * Son dos cosas a la vez, y las dos importan:
++ *
++ *  - las de **dominio** (`expected: "dao"`, `"physics"`) tienen que recuperar
++ *    su bloque;
++ *  - la de **control** (`expected: null`) pregunta algo de fuera y no puede
++ *    recuperar ninguno.
++ *
++ * Sin el campo `knowledgeProbe` (despliegue viejo) no se inventa un verde, y
++ * sin la pregunta de control tampoco: ahí sólo se demuestra la mitad.
+  */
+@@ -183,2 +192,9 @@ export function interpretKnowledge(payload) {
+ 
++  const dominio = samples.filter((entry) => entry.expected !== null);
++  const control = samples.filter((entry) => entry.expected === null);
++  if (dominio.length === 0) return fail("la sonda no trae ninguna pregunta de dominio");
++  if (control.length === 0) {
++    return skip("la sonda de este despliegue no trae la pregunta de control (fuera de dominio): redespliega");
++  }
++
+   const falladas = samples.filter((entry) => entry.matched !== entry.expected);
+@@ -186,7 +202,14 @@ export function interpretKnowledge(payload) {
+     const detalle = falladas
+-      .map((entry) => `${entry.expected}→${entry.matched ?? "nada"}`)
++      .map((entry) =>
++        entry.expected === null
++          ? `fuera de dominio recibió ${entry.matched}`
++          : `${entry.expected}→${entry.matched ?? "nada"}`,
++      )
+       .join(", ");
+-    return fail(`${falladas.length}/${samples.length} preguntas no recuperan su bloque (${detalle})`);
++    return fail(`${falladas.length}/${samples.length} preguntas con resultado inesperado (${detalle})`);
+   }
+-  return ok(`${blocks} bloques · ${samples.length}/${samples.length} preguntas recuperan su bloque`);
++  return ok(
++    `${blocks} bloques · ${dominio.length}/${dominio.length} de dominio con su bloque · ` +
++      `${control.length} fuera de dominio sin contexto`,
++  );
+ }
+diff --git a/scripts/verify-production.test.mjs b/scripts/verify-production.test.mjs
+index 0c7f74c..67f067c 100644
+--- a/scripts/verify-production.test.mjs
++++ b/scripts/verify-production.test.mjs
+@@ -176,2 +176,3 @@ describe("conocimiento", () => {
+         { question: "fisica", expected: "physics", matched: "physics" },
++        { question: "bitcoin", expected: null, matched: null },
+       ],
+@@ -197,2 +198,3 @@ describe("conocimiento", () => {
+           { question: "fisica", expected: "physics", matched: "dao" },
++          { question: "bitcoin", expected: null, matched: null },
+         ],
+@@ -204,6 +206,33 @@ describe("conocimiento", () => {
+ 
+-  it("todas las preguntas en su bloque es verde", () => {
++  it("mucho cuidado con inyectar contexto fuera de dominio", () => {
++    // La pregunta de control existe para esto: si recupera un bloque, el bot
++    // está metiendo contexto donde no toca.
++    const result = interpretKnowledge({
++      knowledgeProbe: {
++        blocks: 2,
++        samples: [
++          { question: "dao", expected: "dao", matched: "dao" },
++          { question: "bitcoin", expected: null, matched: "dao" },
++        ],
++      },
++    });
++    expect(result.status).toBe("fail");
++    expect(result.detail).toContain("fuera de dominio recibió dao");
++  });
++
++  it("una sonda sin pregunta de control no es verde: sólo demuestra la mitad", () => {
++    const result = interpretKnowledge({
++      knowledgeProbe: {
++        blocks: 2,
++        samples: [{ question: "dao", expected: "dao", matched: "dao" }],
++      },
++    });
++    expect(result.status).toBe("skip");
++    expect(result.detail).toContain("pregunta de control");
++  });
++
++  it("todas las preguntas en su sitio es verde, y lo dice con las dos mitades", () => {
+     expect(interpretKnowledge(sano)).toEqual({
+       status: "ok",
+-      detail: "2 bloques · 2/2 preguntas recuperan su bloque",
++      detail: "2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto",
+     });
