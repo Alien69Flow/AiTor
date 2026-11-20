@@ -19,7 +19,7 @@ index 1fe152a..f57400e 100644
 -
 -**Comprobación:** `npm run verify:prod -- --only=health` (sin «falta Redis») y
 -`npx vitest run tests/api/telegram-retry.test.ts`. La prueba de punta a punta es
-dos entregas con el mismo `update_id`: una respuesta y una reserva.
+-dos entregas con el mismo `update_id`: una respuesta y una reserva.
 +- **Sin Redis**, la reserva va a Postgres: `telegram_update_reservations`, con
 +  `update_id` como clave y `expires_at` como caducidad, y la RPC
 +  `reserve_telegram_update()`, que inserta o reclama una reserva caducada en el
