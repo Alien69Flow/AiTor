@@ -17,7 +17,7 @@ jobs:
         run: |
           set -euo pipefail
           test -d .aitor-memoria
-          test "$(ls .aitor-memoria/part-* | wc -l)" -eq 5
+          test "$(ls .aitor-memoria/part-* | wc -l)" -eq 6
           cat .aitor-memoria/part-* | base64 -d > /tmp/files.txz
           xz -dc /tmp/files.txz | tar xf - -C .
           test "$(git hash-object api/_shared/thread-memory.ts)" = "415c158b1231b0e0798aee8d2fed69095898bf9c"
