@@ -1,0 +1,95 @@
+diff --git a/api/telegram-webhook.probe.test.ts b/api/telegram-webhook.probe.test.ts
+index de8cff7..aca6c4d 100644
+--- a/api/telegram-webhook.probe.test.ts
++++ b/api/telegram-webhook.probe.test.ts
+@@ -18,7 +18,12 @@ type ProbeView = {
+ };
+ type KnowledgeSample = { question: string; expected: string; matched: string | null };
+ type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
+-type ProbeBody = { chatProbe: ProbeView | null; knowledgeProbe?: KnowledgeView | null };
++type ProbeBody = {
++  chatProbe: ProbeView | null;
++  knowledgeProbe?: KnowledgeView | null;
++  redis?: { configured: boolean };
++  dedupe?: { active: boolean };
++};
+ 
+ function mockRes() {
+   let status = 0;
+@@ -66,6 +71,10 @@ const ENV_KEYS = [
+   "VITE_SUPABASE_PUBLISHABLE_KEY",
+   "VITE_SUPABASE_ANON_KEY",
+   "VERCEL_ENV",
++  "KV_REST_API_URL",
++  "KV_REST_API_TOKEN",
++  "UPSTASH_REDIS_REST_URL",
++  "UPSTASH_REDIS_REST_TOKEN",
+ ];
+ 
+ function clearEnv(): void {
+@@ -193,4 +202,39 @@ describe("GET /api/telegram-webhook?probe=1", () => {
+     expect(snap().body?.knowledgeProbe).toBeNull();
+     expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
+   });
++
++  it("sin Redis el informe dice que el dedupe no está actuando", async () => {
++    stubFetch();
++    const handler = await loadHandler();
++    const { res, snap } = mockRes();
++
++    // Sin `?probe=1`: el estado de Redis se informa siempre, es gratis.
++    await handler(req("/api/telegram-webhook"), res);
++    const body = snap().body!;
++
++    expect(snap().status).toBe(200);
++    expect(body.redis).toEqual({ configured: false });
++    // Sin almacén `claimUpdate` deja pasar el reintento a propósito: el dato
++    // tiene que decirlo, no dejar creer que la entrega se reservó.
++    expect(body.dedupe).toEqual({ active: false });
++  });
++
++  it("con las variables de Upstash informa del dedupe sin filtrar sus valores", async () => {
++    const redisUrl = "https://redis-de-prueba.upstash.io";
++    const redisToken = "token-de-prueba-no-debe-salir";
++    process.env.KV_REST_API_URL = redisUrl;
++    process.env.KV_REST_API_TOKEN = redisToken;
++    stubFetch();
++    const handler = await loadHandler();
++    const { res, snap } = mockRes();
++
++    await handler(req("/api/telegram-webhook"), res);
++    const body = snap().body!;
++
++    expect(body.redis).toEqual({ configured: true });
++    expect(body.dedupe).toEqual({ active: true });
++    const json = JSON.stringify(body);
++    expect(json).not.toContain(redisUrl);
++    expect(json).not.toContain(redisToken);
++  });
+ });
+diff --git a/api/telegram-webhook.ts b/api/telegram-webhook.ts
+index f08be7e..197a562 100644
+--- a/api/telegram-webhook.ts
++++ b/api/telegram-webhook.ts
+@@ -12,6 +12,7 @@ import {
+   SYMBOL_IDS,
+ } from "./_shared/alerts.js";
+ import { claimUpdate } from "./_shared/update-dedupe.js";
++import { isRedisConfigured } from "./_shared/redis.js";
+ import {
+   historyMessages,
+   loadThread,
+@@ -726,6 +727,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
+       service: "telegram-webhook",
+       vercelEnv: process.env.VERCEL_ENV ?? null,
+       secretConfigured: Boolean(webhookSecret()),
++      // ¿Hay Redis en este despliegue? Decide dos cosas que el operador no
++      // podía ver desde aquí: si el dedupe por `update_id` reserva la entrega
++      // (`claimUpdate` deja pasar los reintentos sin almacén) y si la memoria
++      // del hilo y las alertas tienen dónde guardar. Sólo booleanos: ni la URL
++      // ni el token salen nunca en el informe.
++      redis: { configured: isRedisConfigured() },
++      dedupe: { active: isRedisConfigured() },
+       expectedUrl: WEBHOOK_URL,
+       registration: registrationState,
+       bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
