@@ -4,12 +4,24 @@ import {
   attachProbes,
   buildChatHealth,
   DEFAULT_MODEL,
-  FALLBACK_MODEL,
   modelsForProvider,
   PROBE_MESSAGE,
   probeOracles,
   ROUTED_MODELS,
 } from "../_shared/ai-providers.ts";
+import {
+  answerChain,
+  buildPlanBlock,
+  buildPrepRequest,
+  isQuotaDeath,
+  parsePrepAnswer,
+  planPrep,
+  prepModel,
+  resolveWithFallback,
+  trimHistory,
+  type ChatTurn,
+  type PrepAnswer,
+} from "../_shared/chat-routing.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -221,7 +233,12 @@ function buildProcessedMessages(messages: Array<{ role: string; content: string;
 }
 
 // Route to Lovable AI Gateway
-async function routeToLovable(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
+async function routeToLovable(
+  model: string,
+  processedMessages: unknown[],
+  system: string = SYSTEM_PROMPT,
+  stream = true,
+) {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
   if (!LOVABLE_API_KEY) {
     throw new Error("LOVABLE_API_KEY is not configured");
@@ -239,15 +256,20 @@ async function routeToLovable(model: string, processedMessages: unknown[], syste
         { role: "system", content: system },
         ...processedMessages,
       ],
-      stream: true,
+      stream,
       // Ask the gateway for the final usage chunk so tokens are measured, not guessed.
-      stream_options: { include_usage: true },
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
     }),
   });
 }
 
 // Route to xAI Grok API
-async function routeToGrok(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
+async function routeToGrok(
+  model: string,
+  processedMessages: unknown[],
+  system: string = SYSTEM_PROMPT,
+  stream = true,
+) {
   const GROK_API_KEY = Deno.env.get("GROK_API_KEY");
   if (!GROK_API_KEY) {
     throw new Error("GROK_API_KEY is not configured");
@@ -275,19 +297,29 @@ async function routeToGrok(model: string, processedMessages: unknown[], system: 
         { role: "system", content: system },
         ...processedMessages,
       ],
-      stream: true,
-      stream_options: { include_usage: true },
+      stream,
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
     }),
   });
 }
 
 // Route to Anthropic API and convert stream to OpenAI-compatible SSE
-async function routeToAnthropic(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
-  return await routeToAnthropicImpl(model, processedMessages, system);
+async function routeToAnthropic(
+  model: string,
+  processedMessages: unknown[],
+  system: string = SYSTEM_PROMPT,
+  stream = true,
+) {
+  return await routeToAnthropicImpl(model, processedMessages, system, stream);
 }
 
 // Route to DeepSeek (OpenAI-compatible API)
-async function routeToDeepSeek(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
+async function routeToDeepSeek(
+  model: string,
+  processedMessages: unknown[],
+  system: string = SYSTEM_PROMPT,
+  stream = true,
+) {
   const DEEPSEEK_API_KEY = Deno.env.get("DEEPSEEK_API_KEY");
   if (!DEEPSEEK_API_KEY) {
     throw new Error("DEEPSEEK_API_KEY is not configured");
@@ -321,13 +353,18 @@ async function routeToDeepSeek(model: string, processedMessages: unknown[], syst
     body: JSON.stringify({
       model: dsModel,
       messages: [{ role: "system", content: system }, ...textMessages],
-      stream: true,
-      stream_options: { include_usage: true },
+      stream,
+      ...(stream ? { stream_options: { include_usage: true } } : {}),
     }),
   });
 }
 
-async function routeToAnthropicImpl(model: string, processedMessages: unknown[], system: string = SYSTEM_PROMPT) {
+async function routeToAnthropicImpl(
+  model: string,
+  processedMessages: unknown[],
+  system: string = SYSTEM_PROMPT,
+  streaming = true,
+) {
   const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
   if (!ANTHROPIC_API_KEY) {
     throw new Error("ANTHROPIC_API_KEY is not configured");
@@ -353,13 +390,16 @@ async function routeToAnthropicImpl(model: string, processedMessages: unknown[],
       system,
       messages: anthropicMessages,
       max_tokens: 4096,
-      stream: true,
+      stream: streaming,
     }),
   });
 
   if (!response.ok) {
     return response;
   }
+
+  // Sin streaming no hay SSE que traducir: se devuelve el JSON tal cual.
+  if (!streaming) return response;
 
   // Transform Anthropic SSE stream to OpenAI-compatible SSE stream
   const reader = response.body!.getReader();
@@ -446,6 +486,78 @@ function classifyProviderError(status: number, errorText: string) {
   };
 }
 
+/** Manda la petición al proveedor que sirve ese modelo, con o sin streaming. */
+function dispatchModel(
+  model: string,
+  messages: unknown[],
+  system: string,
+  stream = true,
+): Promise<Response> {
+  if (GROK_MODELS.includes(model)) return routeToGrok(model, messages, system, stream);
+  if (ANTHROPIC_MODELS.includes(model)) return routeToAnthropic(model, messages, system, stream);
+  if (DEEPSEEK_MODELS.includes(model)) return routeToDeepSeek(model, messages, system, stream);
+  return routeToLovable(model, messages, system, stream);
+}
+
+/** Texto de una respuesta sin streaming, con la forma de cualquier proveedor. */
+function extractReplyText(payload: unknown): string {
+  const data = payload as {
+    choices?: Array<{ message?: { content?: unknown } }>;
+    content?: Array<{ text?: string }>;
+  } | null;
+  const content = data?.choices?.[0]?.message?.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof (part as { text?: string })?.text === "string" ? (part as { text: string }).text : ""))
+      .join("");
+  }
+  if (Array.isArray(data?.content)) {
+    return data.content.map((block) => (typeof block?.text === "string" ? block.text : "")).join("");
+  }
+  return "";
+}
+
+/**
+ * Trabajo barato del turno: clasificar, resumir historial y datos, y elegir
+ * formato con el modelo de trabajo.
+ *
+ * Nunca bloquea: si no hay clave barata, si el proveedor falla o si contesta
+ * algo ilegible, el turno sigue sin plan. Un chat peor formateado es mejor que
+ * un chat caído.
+ */
+async function prepareTurn(
+  messages: ChatTurn[],
+  context: string[],
+): Promise<{ prep: PrepAnswer | null; plan: ReturnType<typeof planPrep> }> {
+  const plan = planPrep(messages, context);
+  const cheap = prepModel((name) => Deno.env.get(name));
+  if (!cheap) return { prep: null, plan };
+
+  const request = buildPrepRequest(messages, plan, context);
+  try {
+    const response = await dispatchModel(
+      cheap,
+      [{ role: "user", content: request.user }],
+      request.system,
+      false,
+    );
+    if (!response.ok) {
+      const text = await response.text();
+      console.warn("Clasificador barato sin respuesta:", {
+        model: cheap,
+        status: response.status,
+        body: text.slice(0, 200),
+      });
+      return { prep: null, plan };
+    }
+    return { prep: parsePrepAnswer(extractReplyText(await response.json())), plan };
+  } catch (error) {
+    console.warn("Clasificador barato falló:", error instanceof Error ? error.message : "desconocido");
+    return { prep: null, plan };
+  }
+}
+
 /**
  * Llamada mínima a un oráculo por la misma ruta que atiende el chat.
  *
@@ -457,13 +569,7 @@ function classifyProviderError(status: number, errorText: string) {
 async function probeCall(model: string): Promise<{ ok: boolean; status: number }> {
   const messages = [{ role: "user", content: PROBE_MESSAGE }];
   const system = "Responde sólo: ok";
-  const response = GROK_MODELS.includes(model)
-    ? await routeToGrok(model, messages, system)
-    : ANTHROPIC_MODELS.includes(model)
-      ? await routeToAnthropic(model, messages, system)
-      : DEEPSEEK_MODELS.includes(model)
-        ? await routeToDeepSeek(model, messages, system)
-        : await routeToLovable(model, messages, system);
+  const response = await dispatchModel(model, messages, system);
   // Se cancela el cuerpo: no hace falta gastar la respuesta entera.
   await response.body?.cancel().catch(() => undefined);
   return { ok: response.ok, status: response.status };
@@ -548,79 +654,62 @@ Deno.serve(async (req) => {
     }
     
     const { messages, model, context } = validation.data;
-    const processedMessages = buildProcessedMessages(messages);
-    const system = buildSystemPrompt(context);
+
+    // Trabajo barato primero. Clasificar, resumir y elegir formato es una
+    // llamada corta al modelo de trabajo; el modelo bueno no debería pagar
+    // por leer un volcado ni por adivinar el formato.
+    const { prep, plan } = await prepareTurn(messages, context);
+    const planBlock = prep ? buildPlanBlock(prep) : "";
+    // Si el clasificador resumió los datos, no se reenvían: el resumen ya los
+    // lleva y el prompt final se queda en lo que importa.
+    const contextoFinal = plan.compressContext && prep?.resumen ? [] : context;
+    const system = buildSystemPrompt(contextoFinal) + planBlock;
+    const processedMessages = buildProcessedMessages(trimHistory(messages, prep, plan));
 
     console.log(
-      `Processing chat request with model: ${model}, message count: ${messages.length}, context blocks: ${context.length}`,
+      `Chat: ${model}, ${messages.length} mensajes, ${context.length} bloques de contexto, plan: ${prep ? "sí" : "no"}`,
     );
 
-    // Route to appropriate provider
-    let response: Response;
-    try {
-      if (GROK_MODELS.includes(model)) {
-        response = await routeToGrok(model, processedMessages, system);
-      } else if (ANTHROPIC_MODELS.includes(model)) {
-        response = await routeToAnthropic(model, processedMessages, system);
-      } else if (DEEPSEEK_MODELS.includes(model)) {
-        response = await routeToDeepSeek(model, processedMessages, system);
-      } else {
-        response = await routeToLovable(model, processedMessages, system);
-      }
-    } catch (configError) {
-      console.error("Provider config error:", configError instanceof Error ? configError.message : "Unknown");
-      return new Response(
-        JSON.stringify({ error: "Service configuration error" }), 
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    // Respuesta final: el modelo pedido y, si su clave muere por cuota, la
+    // primera clave alternativa que quede. Nunca se reintenta el proveedor
+    // caído: lo que se agotó es su clave, no el modelo.
+    const candidates = [model, ...answerChain(model, (name) => Deno.env.get(name))];
+    const outcome = await resolveWithFallback(candidates, async (candidate) => {
+      try {
+        const response = await dispatchModel(candidate, processedMessages, system);
+        if (response.ok) return { ok: true, status: response.status, value: response };
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("AI provider error:", {
-        status: response.status,
-        model,
-        body: errorText.slice(0, 500),
-        timestamp: new Date().toISOString()
+        const errorText = await response.text();
+        console.error("AI provider error:", {
+          status: response.status,
+          model: candidate,
+          body: errorText.slice(0, 500),
+          timestamp: new Date().toISOString(),
+        });
+        return { ok: false, status: response.status, errorText };
+      } catch (configError) {
+        console.error("Proveedor sin configurar:", configError instanceof Error ? configError.message : "Unknown");
+        // Sin respuesta: la clave de este proveedor no está. Se prueba la siguiente.
+        return { ok: false, status: 0, errorText: "" };
+      }
+    });
+
+    if (outcome.attempt.ok && outcome.attempt.value) {
+      if (outcome.tried.length > 1) {
+        console.log(`Respondió la clave de respaldo ${outcome.model} (probadas: ${outcome.tried.join(" → ")})`);
+      }
+      return new Response(outcome.attempt.value.body, {
+        headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
       });
-
-      const classified = classifyProviderError(response.status, errorText);
-
-      // Third-party provider key out of credits / unauthorized → fall back to
-      // the Lovable AI gateway so the chat keeps working.
-      const isThirdParty =
-        GROK_MODELS.includes(model) ||
-        ANTHROPIC_MODELS.includes(model) ||
-        DEEPSEEK_MODELS.includes(model);
-
-      if (isThirdParty && (classified.status === 402 || classified.status === 401 || classified.status === 502)) {
-        console.log(`Falling back to Lovable gateway for model: ${model}`);
-        try {
-          const fallback = await routeToLovable(FALLBACK_MODEL, processedMessages, system);
-          if (fallback.ok) {
-            return new Response(fallback.body, {
-              headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
-            });
-          }
-          const fbText = await fallback.text();
-          const fbClassified = classifyProviderError(fallback.status, fbText);
-          return new Response(JSON.stringify(fbClassified.body), {
-            status: fbClassified.status,
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        } catch (fbErr) {
-          console.error("Fallback failed:", fbErr instanceof Error ? fbErr.message : "Unknown");
-        }
-      }
-
-      return new Response(
-        JSON.stringify(classified.body),
-        { status: classified.status, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    return new Response(response.body, {
-      headers: { ...corsHeaders, "Content-Type": "text/event-stream" },
+    const classified = classifyProviderError(
+      outcome.attempt.status,
+      outcome.attempt.errorText ?? "",
+    );
+    return new Response(JSON.stringify(classified.body), {
+      status: classified.status,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("Chat error:", { 
