@@ -10,7 +10,7 @@ la última vez que alguien miró.
 ## Cómo se comprueba
 
 ```bash
-npm run verify:prod                      # webhook, salud, memoria y cron de una pasada
+npm run verify:prod                      # memoria, cron, conocimiento, salud y webhook de una pasada
 npm run verify:prod -- --only=memoria    # una sola cosa
 npm run verify:prod -- --run-cron        # ejecuta el cron de verdad (puede enviar avisos)
 npm run verify:prod -- --json            # para máquinas
@@ -23,18 +23,22 @@ npm run verify:prod -- --json            # para máquinas
 | `2` | Nada falló, pero algo quedó **sin verificar** (por ejemplo, falta una clave local). |
 
 La sonda ([`scripts/verify-production.mjs`](scripts/verify-production.mjs)) hace
-cuatro comprobaciones y nunca imprime claves:
+cinco comprobaciones, nunca imprime claves y las saca como tabla: una fila por
+comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 
-- **webhook** — vive, identifica al bot, apunta a la URL buena, sin entregas
-  pendientes, y dice si la firma está activa.
-- **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
-  si falta Redis o si Telegram/chat están caídos.
 - **memoria** — ida y vuelta real de las tres capas (título, resumen y
   evidencia) en el hash de Redis del token, con un hilo de usar y tirar; la
   sonda se borra siempre. Sin las variables de Upstash queda en ⏭, no en verde.
 - **cron** — sin `Authorization` tiene que dar 401. Con `--run-cron` y
   `CRON_SECRET` se ejecuta de verdad; `sin-redis` cuenta como fallo, porque sin
   almacén no puede disparar nada.
+- **conocimiento** — `GET /api/telegram-webhook?probe=1` lanza
+  `retrieveKnowledge` con dos preguntas de muestra (DAO y física) y dice qué
+  bloque salió; sin ese campo en la respuesta queda sin verificar.
+- **health** — `/api/health?compact=1` responde con veredicto y upstreams; avisa
+  si falta Redis o si Telegram/chat están caídos.
+- **webhook** — vive, identifica al bot, apunta a la URL buena, sin entregas
+  pendientes, y dice si la firma está activa.
 
 ## Fase → comprobación
 
@@ -43,7 +47,7 @@ cuatro comprobaciones y nunca imprime claves:
 | 1 · Decir la verdad al fallar | `npm run verify:prod -- --only=webhook` | El webhook responde y la conclusión del chat nombra el extremo que falla, no una frase amable. |
 | 2 · La credencial correcta | `npm run verify:prod -- --only=health` | El detalle no dice `chat DOWN`: la función `chat` contesta con la JWT. |
 | 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
-| 4 · Conocimiento curado | `npx vitest run api/telegram-knowledge.test.ts` | Verde, y una pregunta de la DAO en el bot cita la fuente. |
+| 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` | Los dos bloques de muestra se recuperan en producción (y `npx vitest run api/telegram-knowledge.test.ts` verde). |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
 | 6 · Deduplicar entregas | `npm run verify:prod -- --only=health` + `npx vitest run tests/api/telegram-retry.test.ts` | Health no dice «falta Redis» y el test de reintentos está verde. |
 | 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
@@ -95,9 +99,11 @@ Upstash da ⏭: el bot funciona pero no recuerda.
 - `api/_shared/knowledge.ts`: sólo se inyecta lo que cae en el dominio (física 3-6-9, DAO, tokenómica) y el modelo recibe la orden de citarlo — #104
 - Se pasa como `context` en el turno, no como texto pegado al prompt
 
-**Comprobación:** `npx vitest run api/telegram-knowledge.test.ts` y, en el bot,
-una pregunta de la DAO seguida de otra de mercados: la primera cita la fuente y
-la segunda no lleva contexto inventado. No hay sonda remota para esto.
+**Comprobación:** `npm run verify:prod -- --only=conocimiento` (sonda remota:
+`?probe=1` recupera el bloque `dao` y el `physics` con preguntas de muestra) y
+`npx vitest run api/telegram-knowledge.test.ts`. En el bot, una pregunta de la
+DAO seguida de otra de mercados: la primera cita la fuente y la segunda no
+lleva contexto inventado.
 
 ## Fase 5 — Alertas de precio
 

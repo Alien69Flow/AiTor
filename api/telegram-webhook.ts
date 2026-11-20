@@ -2,7 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
-import { retrieveKnowledge } from "./_shared/knowledge.js";
+import { KNOWLEDGE_BLOCKS, retrieveKnowledge } from "./_shared/knowledge.js";
 import {
   addAlert,
   buildAlert,
@@ -492,6 +492,13 @@ interface ChatProbe {
   note: string | null;
 }
 
+interface KnowledgeProbe {
+  /** Bloques que este despliegue lleva dentro. */
+  blocks: number;
+  /** Cada pregunta de muestra con el bloque que de verdad recuperó. */
+  samples: Array<{ question: string; expected: string; matched: string | null }>;
+}
+
 const PROBE_MESSAGE = "ping";
 const PROBE_TIMEOUT_MS = 12_000;
 /** Un sondeo gasta cuota: como mucho uno cada 30 s por variante e instancia. */
@@ -655,6 +662,28 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
   return value;
 }
 
+/**
+ * Conocimiento curado, sin red y sin gastar cuota: se lanza el mismo
+ * `retrieveKnowledge` que usa un turno real con dos preguntas de muestra y se
+ * informa de qué bloque salió. Así la sonda de producción puede distinguir un
+ * despliegue sin conocimiento de uno que responde con el bloque equivocado.
+ */
+const KNOWLEDGE_SAMPLES = [
+  { question: "¿qué es AlienFlowSpace DAO y su gobernanza?", expected: "dao" },
+  { question: "háblame de la proporción áurea 16.18 y Tesla", expected: "physics" },
+];
+
+function probeKnowledge(): KnowledgeProbe {
+  const samples = KNOWLEDGE_SAMPLES.map(({ question, expected }) => {
+    const context = retrieveKnowledge(question);
+    const block = context
+      ? KNOWLEDGE_BLOCKS.find((entry) => context.startsWith(`[CONOCIMIENTO — ${entry.title}]`))
+      : undefined;
+    return { question, expected, matched: block?.id ?? null };
+  });
+  return { blocks: KNOWLEDGE_BLOCKS.length, samples };
+}
+
 // ---------------------------------------------------------------------------
 // Default handler
 // ---------------------------------------------------------------------------
@@ -712,6 +741,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
         : null,
       chatProbe,
+      knowledgeProbe: query.get("probe") === "1" ? probeKnowledge() : null,
     });
   }
 
