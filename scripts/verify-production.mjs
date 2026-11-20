@@ -16,8 +16,8 @@
  * Variables (entorno o .env / .env.local):
  *   PUBLIC_URL                  por defecto https://aitor.alienflow.space
  *   SUPABASE_PROJECT_REF        por defecto wkdtvrxavkhbifjtvvdw
- *   SUPABASE_URL                opcional; si no, se deriva del project ref
- *   SUPABASE_SERVICE_ROLE_KEY   necesaria para probar la memoria (sin ella: ⏭)
+ *   UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN   (o KV_REST_API_*)
+ *                               necesarias para probar la memoria (sin ellas: ⏭)
  *   CRON_SECRET                 necesaria para --run-cron
  *
  * Códigos de salida: 0 todo verde · 1 algún fallo · 2 nada falló pero algo
@@ -52,8 +52,10 @@ const runCron = args.has("--run-cron");
 
 const PUBLIC_URL = (process.env.PUBLIC_URL || "https://aitor.alienflow.space").replace(/\/+$/, "");
 const PROJECT_REF = process.env.SUPABASE_PROJECT_REF || "wkdtvrxavkhbifjtvvdw";
-const SUPABASE_URL = (process.env.SUPABASE_URL || `https://${PROJECT_REF}.supabase.co`).replace(/\/+$/, "");
-const SERVICE_KEY = (process.env.SUPABASE_SERVICE_ROLE_KEY || "").trim();
+const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL || "")
+  .trim()
+  .replace(/\/+$/, "");
+const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET || "").trim();
 
 export const ids = ["webhook", "health", "memoria", "cron"];
@@ -133,17 +135,17 @@ export function interpretCron(status, payload, options = {}) {
 /** La sonda de memoria sólo es verde con ida y vuelta completa y borrada. */
 export function interpretMemory(result) {
   if (!result.configured) {
-    return skip("falta SUPABASE_SERVICE_ROLE_KEY: no se puede probar el hilo desde aquí");
+    return skip("falta UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN: no se puede probar el hilo desde aquí");
   }
   if (result.error) return fail(result.error);
   const malas = (result.statuses || []).filter((entry) => entry.status >= 300);
   if (malas.length > 0) {
     return fail(malas.map((entry) => `${entry.name} HTTP ${entry.status}`).join(" · "));
   }
-  if (!result.saved) return fail("no se pudo guardar el turno de prueba");
-  if (!result.readBack) return fail("el turno guardado no se pudo leer de vuelta");
-  if (!result.cleaned) return fail("la sonda no se pudo borrar: revisa chat_threads");
-  return ok("ida y vuelta de 2 turnos, y borrada");
+  if (!result.saved) return fail("no se pudo guardar el hilo de prueba");
+  if (!result.readBack) return fail("las capas no volvieron tal cual");
+  if (!result.cleaned) return fail("la sonda no se pudo borrar: revisa las claves aitor:thread:*");
+  return ok("título, resumen y evidencia de ida y vuelta, y borrada");
 }
 
 export function summarize(results) {
@@ -204,68 +206,66 @@ async function checkCron() {
 }
 
 /**
- * Memoria: se prueba el mismo camino que usa el webhook (PostgREST con la
- * service key) con un token de usar y tirar. El hilo se borra siempre al final;
- * si el borrado falla, la sonda lo dice en vez de esconderlo.
+ * Memoria: se prueba el mismo camino que usa el webhook (un hash de Redis con
+ * las tres capas) con un token de usar y tirar. El hilo se borra siempre al
+ * final; si el borrado falla, la sonda lo dice en vez de esconderlo.
  */
 async function probeMemory() {
-  const result = { configured: Boolean(SERVICE_KEY), statuses: [], saved: false, readBack: false, cleaned: false };
-  if (!SERVICE_KEY) return result;
+  const result = {
+    configured: Boolean(REDIS_URL && REDIS_TOKEN),
+    statuses: [],
+    saved: false,
+    readBack: false,
+    cleaned: false,
+  };
+  if (!result.configured) return result;
 
   const token = `tg_${randomBytes(16).toString("hex")}`;
-  const headers = {
-    apikey: SERVICE_KEY,
-    Authorization: `Bearer ${SERVICE_KEY}`,
-    "Content-Type": "application/json",
-  };
-  const call = async (name, path, init = {}) => {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-      ...init,
-      headers: { ...headers, ...(init.headers || {}) },
+  const key = `aitor:thread:${token}`;
+
+  const call = async (name, command) => {
+    const response = await fetch(REDIS_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${REDIS_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(command),
       signal: AbortSignal.timeout(15_000),
     });
-    result.statuses.push({ name, status: response.status });
-    return response;
+    const payload = await response.json().catch(() => null);
+    const failed = payload && typeof payload === "object" && "error" in payload;
+    result.statuses.push({ name, status: failed ? 500 : response.status });
+    return { ok: response.ok && !failed, payload };
   };
 
+  const evidence = JSON.stringify([{ role: "user", content: "sonda: hola" }]);
   try {
-    const upsert = await call("alta del hilo", "chat_threads?on_conflict=surface,external_id", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify([
-        { surface: "telegram", external_id: token, last_active_at: new Date().toISOString() },
-      ]),
-    });
-    if (upsert.ok) {
-      const rows = await upsert.json().catch(() => []);
-      const threadId = rows?.[0]?.id;
-      if (threadId) {
-        const inserted = await call("guardar turno", "chat_turns", {
-          method: "POST",
-          body: JSON.stringify([
-            { thread_id: threadId, role: "user", content: "sonda: hola" },
-            { thread_id: threadId, role: "assistant", content: "sonda: hola" },
-          ]),
-        });
-        result.saved = inserted.ok;
-        const read = await call(
-          "leer turnos",
-          `chat_turns?thread_id=eq.${encodeURIComponent(threadId)}&select=role,content&order=id.desc&limit=8`,
-        );
-        const turns = read.ok ? await read.json().catch(() => []) : [];
-        result.readBack = Array.isArray(turns) && turns.length === 2;
-      }
+    const saved = await call("guardar capas", [
+      "HSET",
+      key,
+      "title",
+      "sonda",
+      "summary",
+      "sonda de memoria",
+      "evidence",
+      evidence,
+      "activeAt",
+      new Date().toISOString(),
+    ]);
+    result.saved = saved.ok;
+
+    if (result.saved) {
+      await call("caducar hilo", ["EXPIRE", key, "60"]);
+      const read = await call("leer capas", ["HGETALL", key]);
+      const hash = read.payload?.result ?? null;
+      result.readBack = Boolean(
+        hash && hash.title === "sonda" && hash.summary === "sonda de memoria" && hash.evidence === evidence,
+      );
     }
   } catch (error) {
     result.error = `memoria: ${error instanceof Error ? error.message : String(error)}`;
   } finally {
     try {
-      const deleted = await call(
-        "borrar sonda",
-        `chat_threads?surface=eq.telegram&external_id=eq.${encodeURIComponent(token)}`,
-        { method: "DELETE" },
-      );
-      result.cleaned = deleted.ok;
+      const deleted = await call("borrar sonda", ["DEL", key]);
+      result.cleaned = deleted.ok && Number(deleted.payload?.result) === 1;
     } catch {
       result.cleaned = false;
     }

@@ -1,24 +1,43 @@
 /**
- * Memoria del hilo en Postgres, leída por PostgREST desde Vercel.
+ * Memoria del hilo en Redis, por capas.
  *
- * Por qué no Redis: el despliegue no tiene Upstash (`GET /api/health` responde
- * `UNCONFIGURED`), así que una memoria en Redis sería código que nunca se
- * ejecuta. Las tablas `chat_threads` / `chat_turns` ya existen para las dos
- * superficies (migración `20261118190000_chat_memory.sql`).
+ * Antes vivía en Postgres y leerla exigía aplicar una migración
+ * (`20261118190000_chat_memory.sql`) y darle al webhook la service key. Si la
+ * migración no estaba aplicada, la memoria devolvía vacío en silencio: código
+ * que parecía funcionar y no hacía nada. Aquí todo cabe en un hash de Redis,
+ * que no necesita migraciones ni permisos de base de datos.
  *
- * Por qué no la función `chat-thread`: servirla exige `supabase functions
- * deploy` y nunca llegó a desplegarse (404). Hablando con PostgREST no hay que
- * desplegar nada: sólo aplicar la migración y dar la service key al webhook.
+ * ## Las tres capas
  *
- * Requisitos de despliegue (una vez):
- *  - migración aplicada (SQL Editor del panel; no hace falta la CLI),
- *  - `SUPABASE_SERVICE_ROLE_KEY` en Vercel. Sin ella esto devuelve hilo vacío:
- *    el chat sigue funcionando, pero sin memoria.
+ * Un hilo es un solo hash (`aitor:thread:<tg_…>`) con tres campos, de lo más
+ * barato a lo más caro de leer:
  *
- * Identidad: el hilo es un token opaco (`tg_…` / `web_…`, 128 bits) que aporta
- * el llamante; el `chat_id` no se guarda. Nada de esto puede tumbar el chat:
- * cualquier fallo devuelve vacío o `false`, nunca lanza.
+ *   - `title`   — de qué va el hilo, en una línea. Se saca del primer mensaje,
+ *                 sin gastar modelo. Sirve para reconocerlo y para el prompt.
+ *   - `summary` — lo que ya no cabe en la ventana, condensado. Cuando la
+ *                 evidencia se desborda, lo que sale se resume aquí.
+ *   - `evidence`— los últimos intercambios literales: la prueba de lo que dice
+ *                 el resumen. Es lo que de verdad se le pasa al modelo.
+ *
+ * `historyMessages()` las compone en ese orden: título, resumen y evidencia.
+ * Si el hilo lleva parado más de `STALE_HOURS`, la evidencia no se inyecta
+ * (un mensaje de anteayer no debe arrastrar la conversación) pero el resumen
+ * sí: es contexto, no conversación.
+ *
+ * ## Identidad
+ *
+ * El hilo es el token opaco que ya existe: `tg_<32 hex>` lo calcula el webhook
+ * con HMAC del token del bot y el `chat_id`; `web_<32 hex>` es su equivalente
+ * en el navegador. El `chat_id` no se guarda en Redis y un `web_…` no puede
+ * leer el hilo de Telegram de otro.
+ *
+ * ## Nada de esto puede tumbar el chat
+ *
+ * Sin Upstash configurado no se hace ni una petición y el bot contesta como
+ * antes. Cualquier error deja `null` o `false`: se pierde memoria, no mensaje.
  */
+
+import { isRedisConfigured, redisPipeline, redisCommand, scopedKey } from "./redis.js";
 
 export type ThreadSurface = "telegram" | "web";
 
@@ -34,25 +53,33 @@ export interface HistoryMessage {
 }
 
 export interface LoadedThread {
+  /** Capa 0: de qué va el hilo. */
+  title: string | null;
+  /** Capa 1: lo resumido de lo que ya no cabe. */
   summary: string | null;
-  lastActiveAt: string | null;
-  /** En orden cronológico, listos para el prompt. */
+  /** Capa 2: los últimos intercambios literales. */
   turns: HistoryMessage[];
+  lastActiveAt: string | null;
 }
 
 /** 32 hex = 128 bits: no se puede enumerar y no guarda el chat_id. */
 const THREAD_TOKEN = /^(tg|web)_[0-9a-f]{32}$/;
 const PREFIX: Record<ThreadSurface, string> = { telegram: "tg_", web: "web_" };
 
-/** Cuatro intercambios: ocho mensajes, ~1.500 tokens con el turno nuevo. */
+/** Cuatro intercambios: ocho mensajes, ~1.500 tokens con la memoria delante. */
 export const WINDOW_MESSAGES = 8;
-/** Un hilo parado más de esto no arrastra turnos crudos, sólo el resumen. */
+/** Un hilo parado más de esto no arrastra evidencia cruda, sólo la memoria. */
 export const STALE_HOURS = 6;
-/** El mismo tope que la tabla, para no provocar un check constraint. */
-const MAX_TEXT = 8000;
-const TIMEOUT_MS = 3_000;
-/** Proyecto de AiTor: el webhook ya lo usa como último recurso. */
-const DEFAULT_URL = "https://wkdtvrxavkhbifjtvvdw.supabase.co";
+/** El mismo tope que tenía la tabla, para no guardar respuestas enteras. */
+const MAX_TEXT = 8_000;
+/** Un título es una etiqueta, no un párrafo. */
+export const TITLE_MAX_CHARS = 80;
+/** El resumen es un dato, no un ensayo. */
+export const SUMMARY_MAX_CHARS = 600;
+/** 30 días sin hablar y el hilo deja de existir. */
+export const THREAD_TTL_SECONDS = 30 * 24 * 3_600;
+
+const FIELDS = { title: "title", summary: "summary", evidence: "evidence", activeAt: "activeAt" } as const;
 
 /**
  * Acepta sólo un hilo bien formado y con el prefijo de su superficie: un
@@ -67,42 +94,17 @@ export function normalizeThreadRef(raw: unknown): ThreadRef | null {
   return { surface, externalId };
 }
 
-/**
- * Configuración del almacén. `SUPABASE_SERVICE_ROLE_KEY` es lo único que el
- * despliegue tiene que añadir además de aplicar la migración: sin ella no se
- * hace ninguna petición y el bot contesta como antes.
- */
-function memoryConfig(): { url: string; serviceKey: string } | null {
-  const url = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_URL)
-    .trim()
-    .replace(/\/+$/, "");
-  const serviceKey = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? "").trim();
-  if (!url || !serviceKey) return null;
-  return { url, serviceKey };
+/** Clave del hash. El prefijo de entorno lo pone `scopedKey`. */
+export function threadMemoryKey(ref: ThreadRef): string {
+  return scopedKey(`aitor:thread:${ref.externalId}`);
 }
 
+/** Sin Upstash no hay memoria; el chat funciona igual. */
 export function memoryConfigured(): boolean {
-  return memoryConfig() !== null;
+  return isRedisConfigured();
 }
 
-function rest(
-  config: { url: string; serviceKey: string },
-  path: string,
-  init: RequestInit = {},
-): Promise<Response> {
-  return fetch(`${config.url}/rest/v1/${path}`, {
-    ...init,
-    headers: {
-      apikey: config.serviceKey,
-      Authorization: `Bearer ${config.serviceKey}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-}
-
-/** Un hilo sin hablar en `STALE_HOURS` no arrastra turnos crudos. */
+/** Un hilo sin hablar en `STALE_HOURS` no arrastra evidencia cruda. */
 export function isStale(lastActiveAt: string | null, now = Date.now()): boolean {
   if (!lastActiveAt) return false;
   const at = Date.parse(lastActiveAt);
@@ -110,32 +112,43 @@ export function isStale(lastActiveAt: string | null, now = Date.now()): boolean 
   return now - at > STALE_HOURS * 3_600_000;
 }
 
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
 /**
- * Lo que se le pasa al modelo sobre el hilo: el resumen (si lo hay) y los
- * turnos que toquen. Devuelve `[]` si no hay nada, para que el llamante no
- * tenga que distinguir "hilo vacío" de "sin memoria".
+ * Título de la capa 0 a partir del primer mensaje del usuario. Sin modelo: es
+ * una etiqueta, y una llamada de IA para ponerle nombre a un hilo costaría más
+ * que el hilo.
  */
-export function historyMessages(
-  thread: LoadedThread | null,
-  now = Date.now(),
-): HistoryMessage[] {
-  if (!thread) return [];
-  const messages: HistoryMessage[] = [];
+export function deriveTitle(text: string): string | null {
+  const clean = oneLine(text)
+    // Un comando (/start, /alerta) etiqueta el hilo con el comando, sin la barra.
+    .replace(/^\/([a-z0-9_]+)/i, "$1");
+  if (!clean) return null;
+  if (clean.length <= TITLE_MAX_CHARS) return clean;
+  const cut = clean.slice(0, TITLE_MAX_CHARS);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > TITLE_MAX_CHARS * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
 
-  if (thread.summary) {
-    messages.push({
-      role: "user",
-      content: `[MEMORIA DEL HILO — resumen de lo hablado antes, no es un mensaje nuevo]\n${thread.summary}`,
-    });
-    messages.push({
-      role: "assistant",
-      content: "Entendido: tengo en cuenta ese contexto previo.",
-    });
-  }
-
-  const turns = isStale(thread.lastActiveAt, now) ? [] : thread.turns;
-  for (const turn of turns) messages.push(turn);
-  return messages;
+/**
+ * Capa 1: lo que se sale de la ventana, condensado. `previous` se conserva
+ * delante porque es contexto más viejo; si el resultado no cabe, se tira por
+ * la cabecera (lo más antiguo) y se marca con puntos suspensivos.
+ */
+export function rollUpSummary(
+  previous: string | null,
+  overflow: readonly HistoryMessage[],
+): string | null {
+  if (overflow.length === 0) return previous;
+  const condesado = overflow
+    .map((turn) => `${turn.role === "user" ? "USUARIO" : "AI TOR"}: ${oneLine(turn.content).slice(0, 240)}`)
+    .join(" · ");
+  const joined = [previous?.trim(), condesado].filter(Boolean).join(" · ");
+  if (!joined) return null;
+  if (joined.length <= SUMMARY_MAX_CHARS) return joined;
+  return `…${joined.slice(joined.length - (SUMMARY_MAX_CHARS - 1))}`;
 }
 
 function usableTurn(raw: unknown): raw is HistoryMessage {
@@ -147,101 +160,149 @@ function usableTurn(raw: unknown): raw is HistoryMessage {
   );
 }
 
-/**
- * Carga la cabecera del hilo y sus últimos mensajes. PostgREST devuelve los
- * últimos `WINDOW_MESSAGES` en orden descendente; aquí se invierten para que
- * el prompt los vea como una conversación.
- */
-export async function loadThread(ref: ThreadRef): Promise<LoadedThread | null> {
-  const config = memoryConfig();
-  if (!config) return null;
+function parseEvidence(raw: unknown): HistoryMessage[] {
+  if (typeof raw !== "string" || !raw.trim()) return [];
   try {
-    const head = await rest(
-      config,
-      `chat_threads?surface=eq.${encodeURIComponent(ref.surface)}&external_id=eq.${encodeURIComponent(ref.externalId)}&select=id,summary,last_active_at`,
-    );
-    if (!head.ok) {
-      console.warn(`[memory] chat_threads respondió HTTP ${head.status}`);
-      return null;
-    }
-    const rows = (await head.json()) as Array<{
-      id: string;
-      summary: string | null;
-      last_active_at: string | null;
-    }>;
-    const found = rows[0];
-    if (!found) return { summary: null, lastActiveAt: null, turns: [] };
-
-    const tails = await rest(
-      config,
-      `chat_turns?thread_id=eq.${encodeURIComponent(found.id)}&select=role,content&order=id.desc&limit=${WINDOW_MESSAGES}`,
-    );
-    if (!tails.ok) {
-      console.warn(`[memory] chat_turns respondió HTTP ${tails.status}`);
-      return { summary: found.summary, lastActiveAt: found.last_active_at, turns: [] };
-    }
-    const recent = (await tails.json()) as unknown[];
-    return {
-      summary: found.summary,
-      lastActiveAt: found.last_active_at,
-      turns: recent.filter(usableTurn).slice().reverse(),
-    };
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter(usableTurn).slice(-WINDOW_MESSAGES) : [];
   } catch {
+    return [];
+  }
+}
+
+/** Campos del hash, sin fiarse de lo que haya guardado. */
+function parseHash(raw: unknown): LoadedThread {
+  const hash = (raw ?? {}) as Record<string, unknown>;
+  const text = (value: unknown): string | null =>
+    typeof value === "string" && value.trim() ? value.trim() : null;
+  return {
+    title: text(hash[FIELDS.title]),
+    summary: text(hash[FIELDS.summary]),
+    turns: parseEvidence(hash[FIELDS.evidence]),
+    lastActiveAt: text(hash[FIELDS.activeAt]),
+  };
+}
+
+/**
+ * Lo que se le pasa al modelo sobre el hilo: título y resumen como memoria y,
+ * debajo, la evidencia literal. Devuelve `[]` si no hay nada, para que el
+ * llamante no tenga que distinguir «hilo vacío» de «sin memoria».
+ */
+export function historyMessages(thread: LoadedThread | null, now = Date.now()): HistoryMessage[] {
+  if (!thread) return [];
+  const messages: HistoryMessage[] = [];
+
+  const lines = [
+    thread.title ? `Título del hilo: ${thread.title}` : null,
+    thread.summary ? `Resumen de lo hablado antes: ${thread.summary}` : null,
+  ].filter(Boolean);
+
+  if (lines.length > 0) {
+    messages.push({
+      role: "user",
+      content: `[MEMORIA DEL HILO — resumen de lo hablado antes, no es un mensaje nuevo]\n${lines.join("\n")}`,
+    });
+    messages.push({
+      role: "assistant",
+      content: "Entendido: tengo en cuenta ese contexto previo.",
+    });
+  }
+
+  if (!isStale(thread.lastActiveAt, now)) messages.push(...thread.turns);
+  return messages;
+}
+
+/** Lee las tres capas del hilo en una sola llamada. */
+export async function loadThread(ref: ThreadRef): Promise<LoadedThread | null> {
+  if (!memoryConfigured()) return null;
+  try {
+    const hash = await redisCommand<Record<string, unknown> | null>([
+      "HGETALL",
+      threadMemoryKey(ref),
+    ]);
+    if (!hash || typeof hash !== "object") {
+      return { title: null, summary: null, turns: [], lastActiveAt: null };
+    }
+    return parseHash(hash);
+  } catch (error) {
+    console.warn("[memory] no se pudo leer el hilo:", error instanceof Error ? error.message : error);
     return null;
   }
 }
 
 /**
- * Guarda un turno completo (lo que dijo el usuario y lo que contestó el bot).
- * El upsert mueve `last_active_at`, que es lo que marca el TTL de contexto.
- * Devuelve `false` si no se pudo guardar; nunca lanza.
+ * Guarda un turno: mueve la evidencia, saca de la ventana lo que sobra hacia el
+ * resumen y renueva el TTL. Devuelve `false` si no se pudo escribir; nunca lanza.
+ *
+ * Lee antes de escribir porque la capa 1 se calcula sobre lo que ya había. Dos
+ * mensajes simultáneos del mismo chat (Telegram no los manda) podrían perder
+ * uno; el precio de hacerlo atómico sería un script Lua por turno.
  */
 export async function saveTurn(
   ref: ThreadRef,
   userText: string,
   assistantText: string,
 ): Promise<boolean> {
-  const config = memoryConfig();
-  if (!config) return false;
+  if (!memoryConfigured()) return false;
   const clean = (text: string) => text.trim().slice(0, MAX_TEXT);
   const user = clean(userText);
   const assistant = clean(assistantText);
   if (!user && !assistant) return false;
 
   try {
-    const upsert = await rest(config, "chat_threads?on_conflict=surface,external_id", {
-      method: "POST",
-      headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-      body: JSON.stringify([
-        {
-          surface: ref.surface,
-          external_id: ref.externalId,
-          last_active_at: new Date().toISOString(),
-        },
-      ]),
-    });
-    if (!upsert.ok) {
-      console.warn(`[memory] no se pudo dar de alta el hilo: HTTP ${upsert.status}`);
-      return false;
-    }
-    const rows = (await upsert.json()) as Array<{ id?: string }>;
-    const threadId = rows[0]?.id;
-    if (!threadId) return false;
+    const key = threadMemoryKey(ref);
+    const previous = parseHash(
+      await redisCommand<Record<string, unknown> | null>(["HGETALL", key]).catch(() => null),
+    );
 
-    const inserted = await rest(config, "chat_turns", {
-      method: "POST",
-      body: JSON.stringify([
-        ...(user ? [{ thread_id: threadId, role: "user", content: user }] : []),
-        ...(assistant ? [{ thread_id: threadId, role: "assistant", content: assistant }] : []),
-      ]),
-    });
-    if (!inserted.ok) {
-      console.warn(`[memory] no se pudo guardar el turno: HTTP ${inserted.status}`);
-      return false;
-    }
-    return true;
+    const incoming: HistoryMessage[] = [
+      ...(user ? [{ role: "user" as const, content: user }] : []),
+      ...(assistant ? [{ role: "assistant" as const, content: assistant }] : []),
+    ];
+    const all = [...previous.turns, ...incoming];
+    const overflow = all.length > WINDOW_MESSAGES ? all.slice(0, all.length - WINDOW_MESSAGES) : [];
+    const evidence = overflow.length > 0 ? all.slice(-WINDOW_MESSAGES) : all;
+    const summary = rollUpSummary(previous.summary, overflow);
+    const title = previous.title ?? deriveTitle(user);
+
+    const fields: (string | number)[] = [
+      FIELDS.evidence,
+      JSON.stringify(evidence),
+      FIELDS.activeAt,
+      new Date().toISOString(),
+    ];
+    if (summary) fields.push(FIELDS.summary, summary);
+    if (title) fields.push(FIELDS.title, title);
+
+    const results = await redisPipeline([
+      ["HSET", key, ...fields],
+      ["EXPIRE", key, String(THREAD_TTL_SECONDS)],
+    ]);
+    return results[0] !== null;
+  } catch (error) {
+    console.warn("[memory] no se pudo guardar el turno:", error instanceof Error ? error.message : error);
+    return false;
+  }
+}
+
+/**
+ * Capa 1 desde fuera: deja que quien tenga un modelo reescriba el resumen.
+ *
+ * El resumen mecánico de `saveTurn` conserva lo que se sale de la ventana, pero
+ * no lo interpreta. Un llamante con modelo barato puede mandar aquí uno mejor
+ * sin tocar el resto de las capas.
+ */
+export async function saveSummary(ref: ThreadRef, summary: string): Promise<boolean> {
+  if (!memoryConfigured()) return false;
+  const clean = oneLine(summary).slice(-SUMMARY_MAX_CHARS);
+  if (!clean) return false;
+  try {
+    const results = await redisPipeline([
+      ["HSET", threadMemoryKey(ref), FIELDS.summary, clean],
+      ["EXPIRE", threadMemoryKey(ref), String(THREAD_TTL_SECONDS)],
+    ]);
+    return results[0] !== null;
   } catch {
-    // La memoria es un extra: se pierde el turno, no la respuesta.
     return false;
   }
 }

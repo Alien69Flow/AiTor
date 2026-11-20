@@ -175,10 +175,10 @@ function registerWebhookOnce(): Promise<string> {
 
 // --- Memoria del hilo ---
 //
-// Los turnos viven en Postgres (`chat_threads` / `chat_turns`) y se leen por
-// PostgREST con la service key: ni Redis (el despliegue no lo tiene) ni la
-// función `chat-thread` (nunca se desplegó). Si la memoria tarda o falla, el
-// mensaje sigue su camino como si no existiera.
+// El hilo vive en Redis, en un hash por token con tres capas (título, resumen
+// y evidencia). No hay que aplicar ninguna migración ni dar la service key al
+// webhook: sin Upstash la memoria queda apagada y el mensaje sigue su camino
+// como si no existiera.
 type ThreadRef = { surface: "telegram"; externalId: string };
 
 /**
