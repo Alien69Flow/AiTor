@@ -1,0 +1,37 @@
+name: Guardia de producción
+
+# El ✅ del ROADMAP vale por la última pasada de `npm run verify:prod`. Esto la
+# repite cada semana y a mano cuando haga falta, sin ningún secreto, para que un
+# ✅ no se quede verde por olvido: si la fase 2 (el chat responde) o la fase 4
+# (dominio con su bloque y fuera de dominio sin contexto) dejan de cumplirse, el
+# workflow se pone rojo.
+#
+# Ejecuta el mismo script que nombra el ROADMAP, no una copia de sus reglas: si
+# mañana cambia el criterio, cambia aquí sin tocar el workflow.
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sonda:
+    name: sonda semanal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Sin `npm ci`: `verify-production.mjs` sólo importa módulos `node:`, así
+      # que la guardia no depende de que el árbol de dependencias instale.
+      - name: Salud del servicio (fase 2)
+        run: node scripts/verify-production.mjs --only=health
+
+      - name: Conocimiento curado (fase 4)
+        run: node scripts/verify-production.mjs --only=conocimiento
