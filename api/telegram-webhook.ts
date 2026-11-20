@@ -12,6 +12,7 @@ import {
   SYMBOL_IDS,
 } from "./_shared/alerts.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
+import { isSupabaseDedupeConfigured } from "./_shared/update-dedupe-supabase.js";
 import { isRedisConfigured } from "./_shared/redis.js";
 import {
   historyMessages,
@@ -740,12 +741,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       vercelEnv: process.env.VERCEL_ENV ?? null,
       secretConfigured: Boolean(webhookSecret()),
       // ¿Hay Redis en este despliegue? Decide dos cosas que el operador no
-      // podía ver desde aquí: si el dedupe por `update_id` reserva la entrega
-      // (`claimUpdate` deja pasar los reintentos sin almacén) y si la memoria
-      // del hilo y las alertas tienen dónde guardar. Sólo booleanos: ni la URL
-      // ni el token salen nunca en el informe.
+      // podía ver desde aquí: si la memoria del hilo y las alertas tienen dónde
+      // guardar, y si el dedupe por `update_id` reserva la entrega. El dedupe
+      // cuenta también el respaldo en Supabase, que es el que actúa cuando no
+      // hay Redis. Sólo booleanos: ni la URL ni el token salen nunca en el
+      // informe.
       redis: { configured: isRedisConfigured() },
-      dedupe: { active: isRedisConfigured() },
+      dedupe: { active: isRedisConfigured() || isSupabaseDedupeConfigured() },
       expectedUrl: WEBHOOK_URL,
       registration: registrationState,
       bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,

@@ -69,7 +69,7 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
 | 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` + `npx vitest run api/telegram-knowledge.test.ts` | Las preguntas de dominio recuperan su bloque **y** la de control, de fuera de dominio, no recupera ninguno. |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
-| 6 · Deduplicar entregas | `npm run verify:prod -- --only=health` + `npx vitest run tests/api/telegram-retry.test.ts` | Health no dice «falta Redis» y el test de reintentos está verde. |
+| 6 · Deduplicar entregas | `npx vitest run tests/api/telegram-retry.test.ts api/update-dedupe-supabase.test.ts` | Dos entregas con el mismo `update_id` dan una respuesta y una reserva, con Redis y sin él. |
 | 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
 | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
 | 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
@@ -165,11 +165,23 @@ orden: [`docs/fase5-cron-punta-a-punta.md`](docs/fase5-cron-punta-a-punta.md).
 
 - `update_id` reservado en Redis (`SET … NX EX 600`) **antes** de procesar — #109
 - Clave con prefijo de entorno: una preview no gasta updates reales
-- Sin Redis se procesa igual y se avisa en el log
+- **Sin Redis**, la reserva va a Postgres: `telegram_update_reservations`, con
+  `update_id` como clave y `expires_at` como caducidad, y la RPC
+  `reserve_telegram_update()`, que inserta o reclama una reserva caducada en el
+  mismo `INSERT … ON CONFLICT`, así que dos reintentos no ganan los dos. Es lo
+  que actúa en producción, donde no hay Upstash
+- Ese respaldo necesita `SUPABASE_SERVICE_ROLE_KEY`: con la anon pública
+  cualquiera podría reservar `update_id` ajenos y dejar al bot mudo
+- Sin Redis ni service role, o si el almacén falla, se procesa igual y se avisa
+  en el log: mejor una respuesta doble que un silencio
+- **Pendiente:** aplicar `20261120193000_telegram_update_reservations.sql` y
+  poner `SUPABASE_SERVICE_ROLE_KEY` en Vercel
 
-**Comprobación:** `npm run verify:prod -- --only=health` (sin «falta Redis») y
-`npx vitest run tests/api/telegram-retry.test.ts`. La prueba de punta a punta es
-dos entregas con el mismo `update_id`: una respuesta y una reserva.
+**Comprobación:** `npx vitest run tests/api/telegram-retry.test.ts
+api/update-dedupe-supabase.test.ts`. La prueba de punta a punta es dos entregas
+con el mismo `update_id`: una respuesta y una reserva — con Redis y, en
+`update-dedupe-supabase.test.ts`, con el respaldo de Postgres. El log del
+webhook dice `update N ya procesado: se ignora el reintento`.
 
 ## Fase 7 — La CI no miente
 
@@ -266,6 +278,7 @@ límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-20 | Fase 6 sin depender de Redis: `telegram_update_reservations` + `reserve_telegram_update()` reservan el `update_id` en Postgres cuando no hay Upstash, que es el caso de producción. El camino de Redis queda igual. Doce tests unitarios más el de punta a punta cubren las dos rutas y el caso de no tener ninguna. |
 | 2026-11-20 | Fase 5 lista para cerrarse: `docs/fase5-cron-punta-a-punta.md` dice qué tres variables crear en Vercel, cómo generar `CRON_SECRET` sin copiarlo de ningún sitio, y la prueba de punta a punta con dos avisos (uno que cruza y otro que no) que demuestra disparo selectivo, entrega y borrado del aviso usado. |
 | 2026-11-20 | Guardia semanal de producción: el workflow repite `--only=health` y `--only=conocimiento` sin secretos, y un test cruza los bloques de conocimiento con las preguntas de la sonda para que no pierda cobertura en silencio. El ✅ deja de depender de que alguien mire. |
 | 2026-11-20 | Fase 7 en ✅: `tsc --noEmit` entra en la CI antes del build y los dos `TS2339` se arreglan con `routable !== false`, no con un `available` inventado. Pasada del head `ea6d935`: 0 errores de tipos, 0 de lint, 1269 tests y `build` verde. |

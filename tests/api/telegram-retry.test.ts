@@ -121,9 +121,36 @@ function fakeRedis(): Set<string> {
 const sentMessages = (fetchMock: ReturnType<typeof stubNetwork>) =>
   fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
 
+/**
+ * Supabase de mentira con la misma semántica que `reserve_telegram_update`: la
+ * primera reserva de un `update_id` devuelve `true`, la segunda `false`.
+ */
+function fakeSupabaseReservations() {
+  const claimed = new Set<number>();
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    if (String(url).includes("/rest/v1/rpc/reserve_telegram_update")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { p_update_id?: number };
+      const id = Number(body.p_update_id);
+      if (claimed.has(id)) {
+        return new Response(JSON.stringify(false), { status: 200 });
+      }
+      claimed.add(id);
+      return new Response(JSON.stringify(true), { status: 200 });
+    }
+    if (String(url).includes("/sendMessage") || String(url).includes("/sendChatAction")) {
+      return TELEGRAM_OK(true);
+    }
+    return new Response(SSE, { status: 200, headers: { "content-type": "text/event-stream" } });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return { claimed, fetchMock };
+}
+
 afterEach(() => {
   vi.doUnmock("../../api/_shared/redis.js");
   vi.unstubAllGlobals();
+  delete process.env.SUPABASE_URL;
+  delete process.env.SUPABASE_SERVICE_ROLE_KEY;
 });
 
 describe("reintentos de Telegram", () => {
@@ -156,7 +183,26 @@ describe("reintentos de Telegram", () => {
     expect(sentMessages(fetchMock)).toHaveLength(2);
   });
 
-  it("sin Redis se procesa igual: mejor respuesta doble que silencio", async () => {
+  it("sin Redis, la reserva la hace Postgres y el reintento no se contesta", async () => {
+    // Producción lleva tiempo sin Upstash: sin este respaldo, cada reintento
+    // contestaba otra vez y duplicaba el turno del hilo.
+    process.env.SUPABASE_URL = "https://proyecto.supabase.co";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "clave-de-servicio";
+    const { claimed, fetchMock } = fakeSupabaseReservations();
+    const handler = await load();
+
+    const first = await invoke(handler, update("hola"));
+    const retry = await invoke(handler, update("hola"));
+
+    expect(first.status).toBe(200);
+    expect(retry.status).toBe(200);
+    // Una respuesta y una sola reserva, con la clave natural del update.
+    expect(sentMessages(fetchMock)).toHaveLength(1);
+    expect(claimed.size).toBe(1);
+    expect([...claimed][0]).toBe(1);
+  });
+
+  it("sin Redis ni Supabase se procesa igual: mejor respuesta doble que silencio", async () => {
     const fetchMock = stubNetwork();
     const handler = await load();
 
