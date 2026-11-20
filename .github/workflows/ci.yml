@@ -1,8 +1,8 @@
 name: CI
 
 # Instala, compila y prueba. Sin secretos, así que nunca falla por claves que
-# falten. Build, tests y lint bloquean: un rojo de verdad tiene que verse en la
-# CI, no quedarse dentro de un job que termina en verde.
+# falten. Tipos, build, tests y lint bloquean: un rojo de verdad tiene que verse
+# en la CI, no quedarse dentro de un job que termina en verde.
 
 on:
   push:
@@ -33,6 +33,12 @@ jobs:
       # un lockfile desfasado se arreglaba en silencio y la CI medía otra cosa.
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
+
+      # Vite compila sin comprobar tipos, así que un TS2339 podía llegar a `main`
+      # con la CI en verde. `tsc --noEmit` va antes del build para fallar rápido y
+      # con el error de tipos, no con el de empaquetado.
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Build
         run: npm run build
