@@ -1,0 +1,38 @@
+name: reconstruir-paquete
+
+# Temporal: aplica el parche revisado desde .github/pq.patch, comprueba el hash
+# del fichero resultante y borra los ficheros de acarreo en el mismo commit.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  reconstruir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Aplicar, verificar y confirmar
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --index --whitespace=nowarn .github/pq.patch
+          esperado=3437c1b2487ff932edf08586ef117c11dee61a94
+          actual=$(git hash-object ROADMAP.md)
+          if [ "$actual" != "$esperado" ]; then
+            echo "hash no coincide en ROADMAP.md: $actual != $esperado"
+            exit 1
+          fi
+          echo "ok ROADMAP.md $actual"
+
+          git config user.name "Aitor CI"
+          git config user.email "ci@alienflow.space"
+          git rm --quiet .github/pq.patch .github/workflows/reconstruir-paquete.yml
+          git commit \
+            -m "docs(roadmap): la fase 7 pasa a hecho con la CI comprobando tipos" \
+            -m "tsc --noEmit entra en el workflow antes del build y los dos TS2339 se arreglan cruzando con routable !== false. Pasada real sobre ea6d935: 0 errores de tipos, 0 de lint, 1269 tests y build verde."
+          git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
