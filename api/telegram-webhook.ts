@@ -677,7 +677,7 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
  * despliegue sin conocimiento de uno que responde con el bloque equivocado,
  * y —con la pregunta de control— uno que inyecta contexto donde no toca.
  */
-const KNOWLEDGE_SAMPLES: Array<{ question: string; expected: string | null }> = [
+export const KNOWLEDGE_SAMPLES: Array<{ question: string; expected: string | null }> = [
   { question: "¿qué es AlienFlowSpace DAO y su gobernanza?", expected: "dao" },
   { question: "háblame de la proporción áurea 16.18 y Tesla", expected: "physics" },
   // Control fuera de dominio: es la misma pregunta que el test del turno. Si

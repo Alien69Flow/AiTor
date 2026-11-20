@@ -35,6 +35,12 @@ npm run verify:prod -- --json            # para máquinas
 | `1` | Algún fallo: producción no cumple el criterio de alguna fase. |
 | `2` | Nada falló, pero algo quedó **sin verificar** (por ejemplo, falta una clave local). |
 
+Cada lunes, el workflow `Guardia de producción`
+([`guardia-produccion.yml`](.github/workflows/guardia-produccion.yml)) repite
+`--only=health` y `--only=conocimiento` contra producción, sin ningún secreto. Si
+la fase 2 o la 4 dejan de cumplirse, se pone rojo: un ✅ caduca solo, sin que
+nadie tenga que acordarse de mirarlo.
+
 La sonda ([`scripts/verify-production.mjs`](scripts/verify-production.mjs)) hace
 cinco comprobaciones, nunca imprime claves y las saca como tabla: una fila por
 comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
@@ -257,6 +263,7 @@ límite de gasto escrito.
 
 | Fecha | Cambio |
 |---|---|
+| 2026-11-20 | Guardia semanal de producción: el workflow repite `--only=health` y `--only=conocimiento` sin secretos, y un test cruza los bloques de conocimiento con las preguntas de la sonda para que no pierda cobertura en silencio. El ✅ deja de depender de que alguien mire. |
 | 2026-11-20 | Fase 7 en ✅: `tsc --noEmit` entra en la CI antes del build y los dos `TS2339` se arreglan con `routable !== false`, no con un `available` inventado. Pasada del head `ea6d935`: 0 errores de tipos, 0 de lint, 1269 tests y `build` verde. |
 | 2026-11-20 | `README.md`, `AUTOMATIONS.md`, `Skill.md`, `AGENTS.md` y las skills de `.agents/skills/` dejan de presentar como hechos el swarm de `backend/`, la publicación en redes y los escaneos de seguridad: código escrito, nada desplegado (parte B, fases 9–10). La tabla de plataformas pierde su ✅ falso y la cola de propuestas avisa de que guarda en memoria. |
 | 2026-11-20 | Fase 4 en ✅ con la pasada real del #131: `2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto`. El ✅ sale de esa sonda, no de que el código esté mergeado. |
