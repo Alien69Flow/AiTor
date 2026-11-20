@@ -302,8 +302,9 @@ interface SystemStats {
 
 ## Estado y roadmap
 
-El roadmap vive en **[ROADMAP.md](ROADMAP.md)** y es la única fuente de verdad:
-✅ desplegado y comprobado con una sonda, 🟡 en `main` pero sin servir, ⬜ pendiente.
+El roadmap vive en **[ROADMAP.md](ROADMAP.md)** y es la única fuente de verdad,
+incluido qué significa cada estado (✅ · 🟡 · ⏭). Aquí no se repite: una sola
+definición, la de ese fichero.
 
 Este fichero tenía antes su propio roadmap («Fase 1 ✅ … Fase 4 📋») que
 contradecía al de `ROADMAP.md` y marcaba con ✅ cosas que nunca llegaron a
