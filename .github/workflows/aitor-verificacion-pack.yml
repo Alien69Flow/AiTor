@@ -1,0 +1,33 @@
+name: aitor-verificacion-pack
+
+on:
+  push:
+    branches: [fix/health-clave-supabase]
+    paths:
+      - '.aitor-verificacion/**'
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reconstruir los ficheros
+        run: cat .aitor-verificacion/part-* | base64 -d | tar xzf - -C .
+      - name: Comprobar que son los locales
+        run: |
+          set -euo pipefail
+          test "$(git hash-object api/health.ts)" = "a71a5b4e390ba65b50228f84dd876926504828c6"
+          test "$(git hash-object api/health.test.ts)" = "ede060af380e04c8c800a7eb72e9db545d1f5ebb"
+          test "$(git hash-object api/_shared/supabase-key.ts)" = "ceb8d51d81b430d712b48c336b82d01a60ca63cc"
+          test "$(git hash-object api/telegram-webhook.ts)" = "adaa35ef6286ad9eb06e55cd81cd299f1c6ba27d"
+          test "$(git hash-object ROADMAP.md)" = "615c39ba5453ff4ddbf9fbe625f1720eb3c58887"
+      - name: Commit
+        run: |
+          git config user.name "aitor-bot"
+          git config user.email "aitor-bot@users.noreply.github.com"
+          git add api/health.ts api/health.test.ts api/_shared/supabase-key.ts api/telegram-webhook.ts ROADMAP.md
+          git commit -m "fix(health): elegir la clave de Supabase como el webhook"
+          git push
