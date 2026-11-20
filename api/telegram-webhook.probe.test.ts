@@ -16,7 +16,9 @@ type ProbeView = {
   note: string | null;
   attempts: ProbeAttemptView[];
 };
-type ProbeBody = { chatProbe: ProbeView | null };
+type KnowledgeSample = { question: string; expected: string; matched: string | null };
+type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
+type ProbeBody = { chatProbe: ProbeView | null; knowledgeProbe?: KnowledgeView | null };
 
 function mockRes() {
   let status = 0;
@@ -162,6 +164,24 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     expect(snap().body!.chatProbe!.conclusion).toContain("el fallo está en el webhook");
   });
 
+  it("?probe=1 informa del conocimiento curado sin gastar cuota", async () => {
+    const calls = stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1"), res);
+    const probe = snap().body!.knowledgeProbe!;
+
+    expect(probe.blocks).toBeGreaterThan(0);
+    // Las dos preguntas de muestra caen en su bloque: si no, `verify:prod`
+    // marca la fase de conocimiento como fallo.
+    expect(probe.samples.map((sample) => [sample.expected, sample.matched])).toEqual([
+      ["dao", "dao"],
+      ["physics", "physics"],
+    ]);
+    expect(calls.filter((call) => call.includes("functions/v1/chat"))).toHaveLength(1);
+  });
+
   it("sin ?probe=1 no se sonda nada", async () => {
     const calls = stubFetch();
     const handler = await loadHandler();
@@ -170,6 +190,7 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     await handler(req("/api/telegram-webhook"), res);
 
     expect(snap().body?.chatProbe).toBeNull();
+    expect(snap().body?.knowledgeProbe).toBeNull();
     expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
   });
 });

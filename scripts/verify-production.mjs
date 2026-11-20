@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Una pasada contra producción: webhook, salud, memoria y cron.
+ * Una pasada contra producción: memoria, cron, conocimiento, salud y webhook.
  *
  * Por qué existe: el ROADMAP marcaba fases con ✅ escrito a mano y varias
  * estaban verdes en papel y mudas en producción (la memoria devolvía 404, el
@@ -10,6 +10,7 @@
  * Uso:
  *   node scripts/verify-production.mjs
  *   node scripts/verify-production.mjs --only=memoria
+ *   node scripts/verify-production.mjs --only=conocimiento
  *   node scripts/verify-production.mjs --json
  *   node scripts/verify-production.mjs --run-cron   # ejecuta el cron de verdad
  *
@@ -22,6 +23,9 @@
  *
  * Códigos de salida: 0 todo verde · 1 algún fallo · 2 nada falló pero algo
  * quedó sin verificar. Nunca imprime claves ni contenido de conversaciones.
+ *
+ * Salida: una tabla con lo que de verdad está hecho (sí / parcial / no / sin
+ * verificar) más el detalle de cada comprobación fallida o pendiente.
  */
 
 import { existsSync, readFileSync } from "node:fs";
@@ -58,7 +62,20 @@ const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API
 const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET || "").trim();
 
-export const ids = ["webhook", "health", "memoria", "cron"];
+export const ids = ["memoria", "cron", "conocimiento", "health", "webhook"];
+
+/** Nombre legible de cada comprobación, para la tabla. */
+const LABELS = {
+  memoria: "memoria del hilo (Redis)",
+  cron: "alertas de precio (cron)",
+  conocimiento: "conocimiento curado",
+  health: "salud del servicio",
+  webhook: "webhook de Telegram",
+};
+
+/** Lo que la tabla contesta: ¿está hecho, a medias o no? */
+const VERDICT = { ok: "sí", warn: "parcial", fail: "no", skip: "sin verificar" };
+const STATE = { ok: "OK", warn: "AVISO", fail: "FALLO", skip: "SIN VERIF." };
 
 const ok = (detail) => ({ status: "ok", detail });
 const warn = (detail) => ({ status: "warn", detail });
@@ -148,6 +165,32 @@ export function interpretMemory(result) {
   return ok("título, resumen y evidencia de ida y vuelta, y borrada");
 }
 
+/**
+ * Conocimiento: la sonda del webhook lanza `retrieveKnowledge` con dos preguntas
+ * de muestra y dice qué bloque recuperó cada una. Sin ese campo (despliegue
+ * viejo) no se inventa un verde: queda sin verificar.
+ */
+export function interpretKnowledge(payload) {
+  const probe = payload && typeof payload === "object" ? payload.knowledgeProbe : null;
+  if (!probe) {
+    return skip("este despliegue no expone knowledgeProbe: redespliega para poder comprobarlo");
+  }
+  const blocks = Number(probe.blocks) || 0;
+  if (blocks === 0) return fail("el webhook no lleva ningún bloque de conocimiento");
+
+  const samples = Array.isArray(probe.samples) ? probe.samples : [];
+  if (samples.length === 0) return fail("la sonda no trae preguntas de muestra");
+
+  const falladas = samples.filter((entry) => entry.matched !== entry.expected);
+  if (falladas.length > 0) {
+    const detalle = falladas
+      .map((entry) => `${entry.expected}→${entry.matched ?? "nada"}`)
+      .join(", ");
+    return fail(`${falladas.length}/${samples.length} preguntas no recuperan su bloque (${detalle})`);
+  }
+  return ok(`${blocks} bloques · ${samples.length}/${samples.length} preguntas recuperan su bloque`);
+}
+
 export function summarize(results) {
   const count = (status) => results.filter((entry) => entry.status === status).length;
   const summary = { ok: count("ok"), warn: count("warn"), fail: count("fail"), skip: count("skip") };
@@ -183,6 +226,15 @@ async function checkWebhook() {
 async function checkHealth() {
   const { status, payload } = await getJson(`${PUBLIC_URL}/api/health?compact=1`);
   return { id: "health", ...interpretHealth(status, payload) };
+}
+
+/** Conocimiento: misma sonda `?probe=1` del webhook; no llama al modelo. */
+async function checkKnowledge() {
+  const { status, payload } = await getJson(`${PUBLIC_URL}/api/telegram-webhook?probe=1`);
+  if (status !== 200) {
+    return { id: "conocimiento", ...fail(`HTTP ${status} en la sonda del webhook`) };
+  }
+  return { id: "conocimiento", ...interpretKnowledge(payload) };
 }
 
 /**
@@ -277,13 +329,40 @@ async function checkMemory() {
   return { id: "memoria", ...interpretMemory(await probeMemory()) };
 }
 
+/**
+ * La tabla es el entregable: una fila por comprobación y, en `Hecho`, la
+ * respuesta directa (sí / parcial / no / sin verificar). Sin emojis para que
+ * las columnas no se desalineen en ninguna terminal.
+ */
+export function renderTable(results) {
+  const head = ["COMPROBACIÓN", "HECHO", "ESTADO", "DETALLE"];
+  const rows = results.map((result) => [
+    LABELS[result.id] || result.id,
+    VERDICT[result.status] || result.status,
+    STATE[result.status] || result.status,
+    result.detail || "",
+  ]);
+  const widths = head.map((cell, index) =>
+    Math.max(cell.length, ...rows.map((row) => row[index].length)),
+  );
+  const line = (cells) => cells.map((cell, index) => cell.padEnd(widths[index])).join("  ").trimEnd();
+  const rule = widths.map((width) => "-".repeat(width)).join("  ");
+  return [line(head), rule, ...rows.map(line)].join("\n");
+}
+
 async function main() {
   if (args.has("--help") || args.has("-h")) {
     console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0]);
     return;
   }
 
-  const checks = { webhook: checkWebhook, health: checkHealth, memoria: checkMemory, cron: checkCron };
+  const checks = {
+    webhook: checkWebhook,
+    health: checkHealth,
+    memoria: checkMemory,
+    cron: checkCron,
+    conocimiento: checkKnowledge,
+  };
   const selected = ids.filter((id) => !only || id === only);
   if (selected.length === 0) {
     console.error(`--only desconocido: ${only}. Válidos: ${ids.join(", ")}`);
@@ -303,8 +382,10 @@ async function main() {
 
   console.log(`\nAiTor · verificación de producción`);
   console.log(`${PUBLIC_URL} · Supabase ${PROJECT_REF}\n`);
+  console.log(renderTable(results));
   for (const result of results) {
-    console.log(`  ${ICON[result.status]} ${result.id.padEnd(8)} ${result.detail}`);
+    if (result.status === "ok") continue;
+    console.log(`\n ${ICON[result.status]} ${result.id}: ${result.detail}`);
   }
   console.log(
     `\nResumen: ${summary.ok} ok · ${summary.warn} avisos · ${summary.fail} fallos · ${summary.skip} sin verificar`,

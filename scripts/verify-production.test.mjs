@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   interpretCron,
   interpretHealth,
+  interpretKnowledge,
   interpretMemory,
   interpretWebhook,
+  renderTable,
   summarize,
 } from "./verify-production.mjs";
 
@@ -162,6 +164,73 @@ describe("memoria", () => {
     });
     expect(result.status).toBe("fail");
     expect(result.detail).toContain("aitor:thread");
+  });
+});
+
+describe("conocimiento", () => {
+  const sano = {
+    knowledgeProbe: {
+      blocks: 2,
+      samples: [
+        { question: "dao", expected: "dao", matched: "dao" },
+        { question: "fisica", expected: "physics", matched: "physics" },
+      ],
+    },
+  };
+
+  it("un despliegue que no expone la sonda queda sin verificar, no en verde", () => {
+    expect(interpretKnowledge({ chatProbe: null }).status).toBe("skip");
+    expect(interpretKnowledge(null).status).toBe("skip");
+  });
+
+  it("sin bloques es fallo: el bot no lleva conocimiento", () => {
+    const result = interpretKnowledge({ knowledgeProbe: { blocks: 0, samples: [] } });
+    expect(result.status).toBe("fail");
+  });
+
+  it("una pregunta que recupera otro bloque es fallo con el par esperado/real", () => {
+    const result = interpretKnowledge({
+      knowledgeProbe: {
+        blocks: 2,
+        samples: [
+          { question: "dao", expected: "dao", matched: "dao" },
+          { question: "fisica", expected: "physics", matched: "dao" },
+        ],
+      },
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("physics→dao");
+  });
+
+  it("todas las preguntas en su bloque es verde", () => {
+    expect(interpretKnowledge(sano)).toEqual({
+      status: "ok",
+      detail: "2 bloques · 2/2 preguntas recuperan su bloque",
+    });
+  });
+});
+
+describe("tabla", () => {
+  const results = [
+    { id: "memoria", status: "skip", detail: "falta Redis" },
+    { id: "webhook", status: "ok", detail: "firma activa" },
+  ];
+
+  it("una fila por comprobación con la respuesta directa en HECHO", () => {
+    const table = renderTable(results);
+    const lines = table.split("\n");
+    expect(lines[0]).toContain("COMPROBACIÓN");
+    expect(lines[0]).toContain("HECHO");
+    expect(table).toContain("sin verificar");
+    expect(table).toContain("sí");
+    expect(table).toContain("memoria del hilo (Redis)");
+    expect(lines).toHaveLength(4);
+  });
+
+  it("las columnas quedan alineadas: el detalle empieza donde el encabezado", () => {
+    const [head, , ...rows] = renderTable(results).split("\n");
+    const start = head.indexOf("DETALLE");
+    rows.forEach((row, index) => expect(row.indexOf(results[index].detail)).toBe(start));
   });
 });
 
