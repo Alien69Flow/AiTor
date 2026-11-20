@@ -1,16 +1,14 @@
 name: reconstruir-paquete
 
-# Temporal: aplica el parche del cambio desde .github/aitor-parche.patch,
-# comprueba que los ficheros resultantes son byte a byte los revisados (por su
-# hash de git) y borra los dos ficheros de acarreo en el mismo commit.
+# Temporal: aplica el parche de package-lock.json desde .github/aitor-parche.patch,
+# comprueba que el resultado es byte a byte el revisado (por su hash de git) y
+# borra el parche. El cambio de ci.yml va ya en la rama porque el token del
+# workflow no puede modificar ficheros de .github/workflows.
 on:
   workflow_dispatch:
 
 permissions:
   contents: write
-  # El cambio toca .github/workflows/ci.yml: sin este permiso GitHub rechaza
-  # el push del token del workflow.
-  workflows: write
 
 jobs:
   reconstruir:
@@ -26,24 +24,18 @@ jobs:
           set -euo pipefail
           git apply --index --whitespace=nowarn .github/aitor-parche.patch
 
-          printf '%s\n' \
-            "055918035a9c672127c1b993dbb92b876976f754 .github/workflows/ci.yml" \
-            "31b66f27f624bcf652a1549257ea4fe5eddf86ec package-lock.json" \
-            > /tmp/manifiesto
-
-          while read -r esperado ruta; do
-            actual=$(git hash-object "$ruta")
-            if [ "$actual" != "$esperado" ]; then
-              echo "hash no coincide en $ruta: $actual != $esperado"
-              exit 1
-            fi
-            echo "ok $ruta $actual"
-          done < /tmp/manifiesto
+          esperado=31b66f27f624bcf652a1549257ea4fe5eddf86ec
+          actual=$(git hash-object package-lock.json)
+          if [ "$actual" != "$esperado" ]; then
+            echo "hash no coincide en package-lock.json: $actual != $esperado"
+            exit 1
+          fi
+          echo "ok package-lock.json $actual"
 
           git config user.name "Aitor CI"
           git config user.email "ci@alienflow.space"
-          git rm --quiet .github/aitor-parche.patch .github/workflows/reconstruir-paquete.yml
+          git rm --quiet .github/aitor-parche.patch
           git commit \
-            -m "ci: instala con npm ci y completa el lockfile" \
-            -m "npm install arreglaba en silencio un lockfile desfasado, asi que la CI instalaba un arbol que no era el del repositorio. npm ci instala el lockfile congelado y falla si package.json no cuadra. Faltaban en el lock los dos plugins @lovable.dev que package.json declara; se anaden sus entradas exactas (1.3.3 y 1.8.3, ya las que habia instaladas) sin tocar ninguna otra version."
+            -m "fix(ci): completa el lockfile con los dos plugins que faltaban" \
+            -m "Faltaban en el lock los dos plugins @lovable.dev que package.json declara; se anaden sus entradas exactas (1.3.3 y 1.8.3, ya las que habia instaladas) sin tocar ninguna otra version."
           git push origin "HEAD:refs/heads/${GITHUB_REF_NAME}"
