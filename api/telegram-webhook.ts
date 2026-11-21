@@ -86,6 +86,17 @@ if (SUPABASE_KEY.kind !== 'jwt') {
 }
 
 const CHAT_URL = `${SUPABASE_URL}/functions/v1/chat`;
+
+/**
+ * Topes de tiempo. Sin ellos, un extremo que no contesta deja el handler
+ * colgado hasta que Vercel corta el turno y el usuario se queda sin respuesta.
+ */
+/** Telegram contesta en milisegundos; si no, el turno sigue igual. */
+const TELEGRAM_TIMEOUT_MS = 10_000;
+/** Manus encola la tarea; responderá luego, fuera de este handler. */
+const MANUS_TIMEOUT_MS = 15_000;
+/** El turno del modelo tarda 6-22 s medidos: 55 s deja margen bajo `maxDuration = 60`. */
+const CHAT_TIMEOUT_MS = 55_000;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
 /**
@@ -112,6 +123,7 @@ async function telegramApi<T>(method: string, payload?: unknown): Promise<T | nu
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload ?? {}),
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     });
     const data = (await response.json().catch(() => null)) as
       | { ok?: boolean; result?: T; description?: string }
@@ -291,6 +303,7 @@ function postTelegramMessage(
       ...(parseMode ? { parse_mode: parseMode } : {}),
       ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
     }),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
 }
 
@@ -340,6 +353,7 @@ async function sendTypingAction(chatId: number) {
       chat_id: chatId,
       action: "typing",
     }),
+    signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
   });
 }
 
@@ -380,6 +394,7 @@ async function getAiTorResponse(
         ...(thread ? { thread } : {}),
         ...(knowledge ? { context: [knowledge] } : {}),
       }),
+      signal: AbortSignal.timeout(CHAT_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -439,6 +454,7 @@ async function createManusTask(chatId: number, prompt: string): Promise<{ ok: bo
       body: JSON.stringify({
         message: { content: fullPrompt },
       }),
+      signal: AbortSignal.timeout(MANUS_TIMEOUT_MS),
     });
 
     const data = await response.json();

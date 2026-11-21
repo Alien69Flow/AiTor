@@ -13,6 +13,11 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN!;
 const MANUS_API_KEY = process.env.MANUS_API_KEY!;
 const TELEGRAM_API = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}`;
 
+/** Este callback contesta a Manus: si Telegram no responde, no puede colgarse. */
+const TELEGRAM_TIMEOUT_MS = 10_000;
+/** Manus ya tiene la tarea hecha; sólo se lee el último mensaje. */
+const MANUS_TIMEOUT_MS = 15_000;
+
 async function sendTelegramMessage(chatId: number, text: string) {
   const maxLen = 4000;
   if (text.length > maxLen) {
@@ -26,6 +31,7 @@ async function sendTelegramMessage(chatId: number, text: string) {
           text: part,
           parse_mode: 'Markdown',
         }),
+        signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
       });
     }
   } else {
@@ -37,6 +43,7 @@ async function sendTelegramMessage(chatId: number, text: string) {
         text: text,
         parse_mode: 'Markdown',
       }),
+      signal: AbortSignal.timeout(TELEGRAM_TIMEOUT_MS),
     });
   }
 }
@@ -49,6 +56,7 @@ async function getChatIdFromTask(taskId: string): Promise<number | null> {
         headers: {
           'x-manus-api-key': MANUS_API_KEY,
         },
+        signal: AbortSignal.timeout(MANUS_TIMEOUT_MS),
       }
     );
     const data = await response.json();
