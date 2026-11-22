@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Una pasada contra producción: memoria, cron, conocimiento, salud y webhook.
+ * Una pasada contra producción: memoria, cron, conocimiento, salud, webhook y
+ * dedupe de entregas.
  *
  * Por qué existe: el ROADMAP marcaba fases con ✅ escrito a mano y varias
  * estaban verdes en papel y mudas en producción (la memoria devolvía 404, el
@@ -11,6 +12,7 @@
  *   node scripts/verify-production.mjs
  *   node scripts/verify-production.mjs --only=memoria
  *   node scripts/verify-production.mjs --only=conocimiento
+ *   node scripts/verify-production.mjs --only=dedupe
  *   node scripts/verify-production.mjs --json
  *   node scripts/verify-production.mjs --run-cron   # ejecuta el cron de verdad
  *
@@ -62,7 +64,7 @@ const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API
 const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET || "").trim();
 
-export const ids = ["memoria", "cron", "conocimiento", "health", "webhook"];
+export const ids = ["memoria", "cron", "conocimiento", "health", "webhook", "dedupe"];
 
 /** Nombre legible de cada comprobación, para la tabla. */
 const LABELS = {
@@ -71,6 +73,7 @@ const LABELS = {
   conocimiento: "conocimiento curado",
   health: "salud del servicio",
   webhook: "webhook de Telegram",
+  dedupe: "dedupe de entregas (update_id)",
 };
 
 /** Lo que la tabla contesta: ¿está hecho, a medias o no? */
@@ -105,6 +108,38 @@ export function interpretWebhook(status, payload) {
   return payload.secretConfigured
     ? ok(`${base} · firma activa`)
     : warn(`${base} · sin firma (configura TELEGRAM_WEBHOOK_SECRET)`);
+}
+
+/**
+ * Dedupe de entregas: Telegram reintenta un update si el webhook tarda o si la
+ * respuesta le parece un fallo. Sin reserva por `update_id` el mismo mensaje se
+ * contesta dos veces, se cobra dos veces al modelo y deja el turno duplicado en
+ * la memoria.
+ *
+ * El informe separa las dos piezas a propósito: `redis.configured` dice si hay
+ * Upstash en el despliegue, y `dedupe.active` si la reserva ocurre de verdad
+ * (Redis o el respaldo de Supabase, que es el que actúa sin Upstash). Sin
+ * dedupe el bot sigue contestando, así que no es un fallo del servicio, pero la
+ * fase 6 no está cumplida: parcial, nunca verde.
+ */
+export function interpretDedupe(status, payload) {
+  if (status !== 200 || !payload || payload.ok !== true) {
+    return fail(`HTTP ${status}${payload?.error ? `: ${payload.error}` : ""}`);
+  }
+  const redis = payload.redis?.configured;
+  const dedupe = payload.dedupe?.active;
+  if (typeof redis !== "boolean" || typeof dedupe !== "boolean") {
+    return skip("este despliegue no expone redis/dedupe: redespliega para poder comprobarlo");
+  }
+  const almacen = redis ? "Redis configurado" : "Redis sin configurar";
+  if (!dedupe) {
+    return warn(`${almacen} · sin dedupe: un reintento de Telegram se procesaría dos veces`);
+  }
+  return ok(
+    redis
+      ? `${almacen} · dedupe activo`
+      : `${almacen} · dedupe activo por el respaldo de Supabase`,
+  );
 }
 
 /**
@@ -233,8 +268,19 @@ async function getJson(url, init = {}) {
   }
 }
 
+/**
+ * El informe del webhook se lee una vez: el webhook y el dedupe miran la misma
+ * respuesta, y repetir la petición gastaría dos llamadas a la API de Telegram
+ * para decir lo mismo.
+ */
+let webhookReport = null;
+function readWebhook() {
+  if (!webhookReport) webhookReport = getJson(`${PUBLIC_URL}/api/telegram-webhook`);
+  return webhookReport;
+}
+
 async function checkWebhook() {
-  const { status, payload, raw } = await getJson(`${PUBLIC_URL}/api/telegram-webhook`);
+  const { status, payload, raw } = await readWebhook();
   const result = interpretWebhook(status, payload);
   if (result.status === "fail" && raw) result.detail += ` · ${raw}`;
   // La conclusión de `?probe=1` es la Fase 1: dice qué extremo falla, gratis.
@@ -244,6 +290,11 @@ async function checkWebhook() {
     if (typeof conclusion === "string" && conclusion) result.detail += ` · ${conclusion}`;
   }
   return { id: "webhook", ...result };
+}
+
+async function checkDedupe() {
+  const { status, payload } = await readWebhook();
+  return { id: "dedupe", ...interpretDedupe(status, payload) };
 }
 
 async function checkHealth() {
@@ -381,6 +432,7 @@ async function main() {
 
   const checks = {
     webhook: checkWebhook,
+    dedupe: checkDedupe,
     health: checkHealth,
     memoria: checkMemory,
     cron: checkCron,

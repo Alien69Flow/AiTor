@@ -23,7 +23,7 @@ recuerda.
 ## Cómo se comprueba
 
 ```bash
-npm run verify:prod                      # memoria, cron, conocimiento, salud y webhook de una pasada
+npm run verify:prod                      # memoria, cron, conocimiento, salud, webhook y dedupe de una pasada
 npm run verify:prod -- --only=memoria    # una sola cosa
 npm run verify:prod -- --run-cron        # ejecuta el cron de verdad (puede enviar avisos)
 npm run verify:prod -- --json            # para máquinas
@@ -42,7 +42,7 @@ la fase 2 o la 4 dejan de cumplirse, se pone rojo: un ✅ caduca solo, sin que
 nadie tenga que acordarse de mirarlo.
 
 La sonda ([`scripts/verify-production.mjs`](scripts/verify-production.mjs)) hace
-cinco comprobaciones, nunca imprime claves y las saca como tabla: una fila por
+seis comprobaciones, nunca imprime claves y las saca como tabla: una fila por
 comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 
 - **memoria** — ida y vuelta real de las tres capas (título, resumen y
@@ -59,6 +59,10 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
   si falta Redis o si Telegram/chat están caídos.
 - **webhook** — vive, identifica al bot, apunta a la URL buena, sin entregas
   pendientes, y dice si la firma está activa.
+- **dedupe** — del mismo informe del webhook, `redis.configured` (¿hay Upstash?) y
+  `dedupe.active` (¿la reserva por `update_id` ocurre de verdad, con Redis o con
+  el respaldo de Supabase?). Sin dedupe queda en parcial: el bot contesta, pero
+  un reintento de Telegram se procesaría dos veces.
 
 ## Fase → comprobación
 
@@ -69,7 +73,7 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 3 · Memoria del hilo | `npm run verify:prod -- --only=memoria` | Título, resumen y evidencia de ida y vuelta y borrada (no ⏭: hacen falta las variables de Upstash). |
 | 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` + `npx vitest run api/telegram-knowledge.test.ts` | Las preguntas de dominio recuperan su bloque **y** la de control, de fuera de dominio, no recupera ninguno. |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
-| 6 · Deduplicar entregas | `npx vitest run tests/api/telegram-retry.test.ts api/update-dedupe-supabase.test.ts` | Dos entregas con el mismo `update_id` dan una respuesta y una reserva, con Redis y sin él. |
+| 6 · Deduplicar entregas | `npm run verify:prod -- --only=dedupe` + `npx vitest run tests/api/telegram-retry.test.ts api/update-dedupe-supabase.test.ts` | Dos entregas con el mismo `update_id` dan una respuesta y una reserva, con Redis y sin él. |
 | 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
 | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
 | 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |

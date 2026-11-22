@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   interpretCron,
+  interpretDedupe,
   interpretHealth,
   interpretKnowledge,
   interpretMemory,
@@ -48,6 +49,47 @@ describe("webhook", () => {
 
   it("un 500 no se confunde con verde", () => {
     expect(interpretWebhook(500, null).status).toBe("fail");
+  });
+});
+
+describe("dedupe", () => {
+  it("con Redis y la reserva actuando es verde, y lo dice", () => {
+    expect(
+      interpretDedupe(200, { ok: true, redis: { configured: true }, dedupe: { active: true } }),
+    ).toEqual({ status: "ok", detail: "Redis configurado · dedupe activo" });
+  });
+
+  it("sin Redis pero con el respaldo de Supabase el dedupe sigue actuando", () => {
+    const result = interpretDedupe(200, {
+      ok: true,
+      redis: { configured: false },
+      dedupe: { active: true },
+    });
+    expect(result.status).toBe("ok");
+    expect(result.detail).toContain("Redis sin configurar");
+    expect(result.detail).toContain("Supabase");
+  });
+
+  it("sin dedupe avisa: un reintento se procesaría dos veces", () => {
+    const result = interpretDedupe(200, {
+      ok: true,
+      redis: { configured: false },
+      dedupe: { active: false },
+    });
+    expect(result.status).toBe("warn");
+    expect(result.detail).toContain("Redis sin configurar");
+    expect(result.detail).toContain("dos veces");
+  });
+
+  it("un despliegue que no expone redis/dedupe queda sin verificar, no en verde", () => {
+    expect(interpretDedupe(200, { ok: true }).status).toBe("skip");
+    expect(interpretDedupe(200, { ok: true, dedupe: { active: true } }).status).toBe("skip");
+    expect(interpretDedupe(200, { ok: true, redis: { configured: true } }).status).toBe("skip");
+  });
+
+  it("un 500 no se confunde con verde", () => {
+    expect(interpretDedupe(500, null).status).toBe("fail");
+    expect(interpretDedupe(503, { ok: true }).status).toBe("fail");
   });
 });
 
@@ -254,6 +296,19 @@ describe("tabla", () => {
     expect(table).toContain("sí");
     expect(table).toContain("memoria del hilo (Redis)");
     expect(lines).toHaveLength(4);
+  });
+
+  it("el dedupe tiene su fila, con Redis y la reserva en el detalle", () => {
+    const table = renderTable([
+      {
+        id: "dedupe",
+        status: "warn",
+        detail: "Redis sin configurar · sin dedupe: un reintento se procesaría dos veces",
+      },
+    ]);
+    expect(table).toContain("dedupe de entregas (update_id)");
+    expect(table).toContain("parcial");
+    expect(table).toContain("Redis sin configurar");
   });
 
   it("las columnas quedan alineadas: el detalle empieza donde el encabezado", () => {
