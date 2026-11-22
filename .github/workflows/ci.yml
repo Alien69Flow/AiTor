@@ -40,6 +40,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `tsc -b` sólo mira `src/` (tsconfig.app.json y tsconfig.node.json). Los
+      # handlers de `api/` tienen su propio tsconfig, con `strict` y `types: node`,
+      # y hasta ahora ningún paso los compilaba: un error de tipos ahí sólo se
+      # veía al desplegar. Va también antes del build, por el mismo motivo.
+      - name: Typecheck API
+        run: npm run typecheck:api
+
       - name: Build
         run: npm run build
 
