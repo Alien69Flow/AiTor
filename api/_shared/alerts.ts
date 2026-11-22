@@ -217,6 +217,68 @@ export function alertKindLabel(alert: Alert): string {
   }
 }
 
+/**
+ * `/alerta lista` y `/alerta borra <n>`: los dos comandos que no crean nada.
+ *
+ * Se interpretan aparte de `parseAlertCommand` para que una alerta nunca pueda
+ * llamarse «lista» o «borra» y para poder distinguir «no entiendo el número»
+ * de «ese número no existe»: el usuario necesita saber cuál de las dos cosas
+ * pasó para corregirlo.
+ */
+export type AlertManageCommand =
+  | { action: "list" }
+  /** `position: null` = se pidió borrar sin un número utilizable. */
+  | { action: "delete"; position: number | null };
+
+export function parseAlertManage(text: string): AlertManageCommand | null {
+  const body = text.replace(/^\/alerta(@\w+)?/i, "").trim();
+  if (/^lista$/i.test(body)) return { action: "list" };
+
+  const remove = /^borra(?:\s+(.*))?$/i.exec(body);
+  if (!remove) return null;
+  const raw = (remove[1] ?? "").trim();
+  if (!/^\d{1,3}$/.test(raw)) return { action: "delete", position: null };
+  const position = Number(raw);
+  return { action: "delete", position: position >= 1 ? position : null };
+}
+
+/**
+ * Lista numerada, en el mismo orden en que se guardaron.
+ *
+ * Los números son la única forma de referirse a un aviso (no tienen id), así
+ * que se numeran desde 1 y se repiten al borrar: lo que el usuario ve es
+ * siempre el índice que puede usar.
+ */
+export function formatAlertList(alerts: Alert[]): string {
+  if (alerts.length === 0) {
+    return "📋 No tienes avisos. Crea uno con /alerta BTC > 95000.";
+  }
+  const lines = alerts.map((alert, index) => `${index + 1}. ${alertKindLabel(alert)}`);
+  const example = alerts.length === 1 ? 1 : 2;
+  return [
+    `📋 Tus avisos (${alerts.length} de ${MAX_ALERTS_PER_CHAT}):`,
+    ...lines,
+    "",
+    `Para cancelar uno: /alerta borra ${example}`,
+  ].join("\n");
+}
+
+/** Quita el aviso en la posición indicada (1…n) sin tocar el original. */
+export function removeAlertAt(
+  alerts: Alert[],
+  position: number,
+): { removed: Alert; alerts: Alert[] } | null {
+  if (!Number.isInteger(position) || position < 1 || position > alerts.length) return null;
+  const remaining = alerts.slice();
+  const [removed] = remaining.splice(position - 1, 1);
+  return removed ? { removed, alerts: remaining } : null;
+}
+
+/** Confirmación de `/alerta borra <n>`. */
+export function formatCancelled(alert: Alert): string {
+  return `✅ Aviso cancelado: ${alertKindLabel(alert)}.`;
+}
+
 /** El sismo más fuerte que cruza el umbral y es posterior a la alerta. */
 function strongest(alert: QuakeAlert, snapshot: AlertSnapshot) {
   const createdAt = Date.parse(alert.createdAt);

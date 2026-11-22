@@ -6,9 +6,15 @@ import { KNOWLEDGE_BLOCKS, retrieveKnowledge } from "./_shared/knowledge.js";
 import {
   addAlert,
   buildAlert,
+  formatAlertList,
+  formatCancelled,
   formatCreated,
+  loadAlerts,
   MAX_ALERTS_PER_CHAT,
   parseAlertCommand,
+  parseAlertManage,
+  removeAlertAt,
+  saveAlerts,
   SYMBOL_IDS,
 } from "./_shared/alerts.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
@@ -875,13 +881,64 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } else if (command === "/help") {
       await sendTelegramMessage(
         chatId,
-        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/alerta BTC +5% - Aviso si se mueve ese porcentaje en 24 h\n/alerta sismos 5.5 - Aviso si hay un sismo de esa magnitud o más\n/alerta gdelt ARMEDCONFLICT - Aviso si aparece un evento nuevo del tema\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/alerta BTC +5% - Aviso si se mueve ese porcentaje en 24 h\n/alerta sismos 5.5 - Aviso si hay un sismo de esa magnitud o más\n/alerta gdelt ARMEDCONFLICT - Aviso si aparece un evento nuevo del tema\n/alerta lista - Ver tus avisos, numerados\n/alerta borra 2 - Cancelar el aviso número 2\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
         undefined,
         { html: true },
       );
     }
     // === ALERTAS DE PRECIO ===
     else if (command === "/alerta") {
+      // `lista` y `borra <n>` se resuelven antes de intentar crear un aviso: si
+      // no, caían en la ayuda de formato y el usuario no tenía forma de ver ni
+      // de cancelar lo que ya tenía, con el tope de 10 esperándole.
+      const manage = parseAlertManage(text);
+      if (manage) {
+        const thread = telegramThread(chatId);
+        if (!thread) {
+          await sendTelegramMessage(
+            chatId,
+            "No puedo consultar alertas: falta el token del bot en este despliegue.",
+          );
+        } else if (!isRedisConfigured()) {
+          // Sin almacén, `loadAlerts` devuelve [] y la lista diría «no tienes
+          // avisos» cuando en realidad no se pueden leer los que haya.
+          await sendTelegramMessage(
+            chatId,
+            "No puedo consultar alertas: falta Redis en este despliegue (KV_REST_API_URL / KV_REST_API_TOKEN).",
+          );
+        } else {
+          const alerts = await loadAlerts(thread.externalId);
+          if (manage.action === "list") {
+            await sendTelegramMessage(chatId, formatAlertList(alerts));
+          } else if (manage.position === null) {
+            await sendTelegramMessage(
+              chatId,
+              alerts.length === 0
+                ? "No tienes avisos que cancelar."
+                : `Dime qué aviso cancelar: /alerta borra 2 (tienes ${alerts.length}).`,
+            );
+          } else {
+            const removal = removeAlertAt(alerts, manage.position);
+            if (!removal) {
+              await sendTelegramMessage(
+                chatId,
+                alerts.length === 0
+                  ? "No tienes avisos que cancelar."
+                  : `Solo tienes ${alerts.length} ${alerts.length === 1 ? "aviso" : "avisos"}. Elige un número entre 1 y ${alerts.length}.`,
+              );
+            } else if (await saveAlerts(thread.externalId, removal.alerts)) {
+              await sendTelegramMessage(chatId, formatCancelled(removal.removed));
+            } else {
+              await sendTelegramMessage(
+                chatId,
+                "No puedo guardar alertas: falta Redis en este despliegue (KV_REST_API_URL / KV_REST_API_TOKEN).",
+              );
+            }
+          }
+        }
+        return res.status(200).send("OK");
+      }
+
       const parsed = parseAlertCommand(text);
       const thread = telegramThread(chatId);
       const symbols = Object.keys(SYMBOL_IDS).join(", ");

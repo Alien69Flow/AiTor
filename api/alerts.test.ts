@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   buildAlert,
   dueAlerts,
+  formatAlertList,
   formatAlert,
+  formatCancelled,
   formatCreated,
   isDue,
   parseAlertCommand,
+  parseAlertManage,
   parsePrice,
+  removeAlertAt,
   sanitizeAlerts,
   type Alert,
   type GdeltAlert,
@@ -276,6 +280,77 @@ describe("formatAlert", () => {
     expect(formatAlert(moveAlert(), emptySnapshot())).toContain("sin variación");
     expect(formatAlert(quakeAlert(), emptySnapshot())).toContain("sin dato");
     expect(formatAlert(gdeltAlert(), emptySnapshot())).toContain("sin evento nuevo");
+  });
+});
+
+describe("parseAlertManage", () => {
+  it("reconoce /alerta lista, con o sin el nombre del bot", () => {
+    expect(parseAlertManage("/alerta lista")).toEqual({ action: "list" });
+    expect(parseAlertManage("/alerta@Alien69Bot LISTA")).toEqual({ action: "list" });
+  });
+
+  it("lee el número de /alerta borra <n>", () => {
+    expect(parseAlertManage("/alerta borra 2")).toEqual({ action: "delete", position: 2 });
+    expect(parseAlertManage("/alerta borra 12")).toEqual({ action: "delete", position: 12 });
+  });
+
+  it("sin número utilizable lo distingue de un comando que no entiende", () => {
+    expect(parseAlertManage("/alerta borra")).toEqual({ action: "delete", position: null });
+    expect(parseAlertManage("/alerta borra 0")).toEqual({ action: "delete", position: null });
+    expect(parseAlertManage("/alerta borra dos")).toEqual({ action: "delete", position: null });
+    expect(parseAlertManage("/alerta borra 12 extra")).toEqual({ action: "delete", position: null });
+  });
+
+  it("no se come una alerta normal ni una orden con sobras", () => {
+    expect(parseAlertManage("/alerta BTC > 95000")).toBeNull();
+    expect(parseAlertManage("/alerta sismos 5.5")).toBeNull();
+    expect(parseAlertManage("/alerta lista extra")).toBeNull();
+    expect(parseAlertManage("/alerta")).toBeNull();
+  });
+});
+
+describe("formatAlertList", () => {
+  it("numera desde 1 con el nombre corto de cada clase", () => {
+    const text = formatAlertList([
+      priceAlert({ price: 95_000 }),
+      moveAlert(),
+      quakeAlert(),
+      gdeltAlert(),
+    ]);
+    expect(text).toContain("4 de 10");
+    expect(text).toContain("1. BTC ≥ $95.000");
+    expect(text).toContain("2. BTC +5 % 24 h");
+    expect(text).toContain("3. sismo ≥ 5,5");
+    expect(text).toContain("4. GDELT ARMEDCONFLICT");
+    expect(text).toContain("/alerta borra 2");
+  });
+
+  it("con un solo aviso sugiere el 1, y sin avisos no inventa una lista", () => {
+    expect(formatAlertList([priceAlert()])).toContain("/alerta borra 1");
+    expect(formatAlertList([])).toBe("📋 No tienes avisos. Crea uno con /alerta BTC > 95000.");
+  });
+});
+
+describe("removeAlertAt", () => {
+  it("quita el indicado y deja el resto en orden", () => {
+    const alerts: Alert[] = [priceAlert({ symbol: "BTC" }), priceAlert({ symbol: "ETH" }), priceAlert({ symbol: "SOL" })];
+    const result = removeAlertAt(alerts, 2);
+    expect(result?.removed.symbol).toBe("ETH");
+    expect(result?.alerts.map((alert) => alert.symbol)).toEqual(["BTC", "SOL"]);
+    // No toca el original: quien llama decide si lo guarda.
+    expect(alerts.map((alert) => alert.symbol)).toEqual(["BTC", "ETH", "SOL"]);
+  });
+
+  it("fuera de rango no quita nada", () => {
+    expect(removeAlertAt([priceAlert()], 0)).toBeNull();
+    expect(removeAlertAt([priceAlert()], 2)).toBeNull();
+    expect(removeAlertAt([], 1)).toBeNull();
+  });
+});
+
+describe("formatCancelled", () => {
+  it("dice qué aviso se canceló", () => {
+    expect(formatCancelled(priceAlert({ price: 95_000 }))).toBe("✅ Aviso cancelado: BTC ≥ $95.000.");
   });
 });
 

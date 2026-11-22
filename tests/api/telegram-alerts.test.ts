@@ -285,6 +285,106 @@ describe("/alerta respeta el tope", () => {
   });
 });
 
+describe("/alerta lista y borra", () => {
+  it("numera los avisos guardados, con su nombre corto", async () => {
+    const redis = fakeRedis();
+    const fetchMock = stubTelegram();
+    redis.hash.set(
+      threadToken(),
+      JSON.stringify([alerta(), alerta({ symbol: "ETH", price: 2_500 })]),
+    );
+    const handler = await load();
+
+    const { status } = await invoke(handler, "/alerta lista");
+
+    expect(status).toBe(200);
+    const [sent] = sentMessages(fetchMock);
+    expect(sent.text).toContain("2 de 10");
+    expect(sent.text).toContain("1. BTC ≥ $100.000");
+    expect(sent.text).toContain("2. ETH ≥ $2500");
+    expect(sent.text).toContain("/alerta borra 2");
+    // Listar no reescribe el hash.
+    expect(redis.commands.some((args) => ["HSET", "HDEL"].includes(String(args[0]).toUpperCase()))).toBe(false);
+  });
+
+  it("sin avisos lo dice y no crea una entrada vacía", async () => {
+    const redis = fakeRedis();
+    const fetchMock = stubTelegram();
+    const handler = await load();
+
+    await invoke(handler, "/alerta lista");
+
+    expect(sentMessages(fetchMock)[0].text).toContain("No tienes avisos");
+    expect(redis.hash.size).toBe(0);
+  });
+
+  it("borra el número pedido y deja el resto en el hash", async () => {
+    const redis = fakeRedis();
+    const fetchMock = stubTelegram();
+    redis.hash.set(
+      threadToken(),
+      JSON.stringify([alerta({ price: 100 }), alerta({ price: 200 }), alerta({ price: 300 })]),
+    );
+    const handler = await load();
+
+    await invoke(handler, "/alerta borra 2");
+
+    expect(sentMessages(fetchMock)[0].text).toBe("✅ Aviso cancelado: BTC ≥ $200.");
+    const stored = storedAlerts(redis);
+    expect(stored.map((item) => item.price)).toEqual([100, 300]);
+  });
+
+  it("al borrar el último, la entrada del hash desaparece", async () => {
+    const redis = fakeRedis();
+    stubTelegram();
+    redis.hash.set(threadToken(), JSON.stringify([alerta()]));
+    const handler = await load();
+
+    await invoke(handler, "/alerta borra 1");
+
+    expect(redis.hash.has(threadToken())).toBe(false);
+    expect(redis.hash.size).toBe(0);
+  });
+
+  it("un número fuera de rango no toca lo guardado y dice el rango", async () => {
+    const redis = fakeRedis();
+    const fetchMock = stubTelegram();
+    const before = JSON.stringify([alerta({ price: 100 }), alerta({ price: 200 })]);
+    redis.hash.set(threadToken(), before);
+    const handler = await load();
+
+    await invoke(handler, "/alerta borra 9");
+
+    expect(sentMessages(fetchMock)[0].text).toContain("entre 1 y 2");
+    expect(redis.hash.get(threadToken())).toBe(before);
+  });
+
+  it("sin número pide cuál cancelar en vez del formato de creación", async () => {
+    const redis = fakeRedis();
+    const fetchMock = stubTelegram();
+    const before = JSON.stringify([alerta(), alerta({ price: 200 })]);
+    redis.hash.set(threadToken(), before);
+    const handler = await load();
+
+    await invoke(handler, "/alerta borra");
+
+    const [sent] = sentMessages(fetchMock);
+    expect(sent.text).toContain("Dime qué aviso cancelar");
+    expect(sent.text).not.toContain("Formato:");
+    expect(redis.hash.get(threadToken())).toBe(before);
+  });
+
+  it("sin Redis lo dice en vez de fingir la lista", async () => {
+    fakeRedis({ configured: false });
+    const fetchMock = stubTelegram();
+    const handler = await load();
+
+    await invoke(handler, "/alerta lista");
+
+    expect(sentMessages(fetchMock)[0].text).toContain("falta Redis");
+  });
+});
+
 describe("/alerta sin almacén", () => {
   it("sin Redis lo dice en vez de fingir que la creó", async () => {
     const redis = fakeRedis({ configured: false });
