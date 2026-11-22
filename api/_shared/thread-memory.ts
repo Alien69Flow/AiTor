@@ -285,24 +285,3 @@ export async function saveTurn(
   }
 }
 
-/**
- * Capa 1 desde fuera: deja que quien tenga un modelo reescriba el resumen.
- *
- * El resumen mecánico de `saveTurn` conserva lo que se sale de la ventana, pero
- * no lo interpreta. Un llamante con modelo barato puede mandar aquí uno mejor
- * sin tocar el resto de las capas.
- */
-export async function saveSummary(ref: ThreadRef, summary: string): Promise<boolean> {
-  if (!memoryConfigured()) return false;
-  const clean = oneLine(summary).slice(-SUMMARY_MAX_CHARS);
-  if (!clean) return false;
-  try {
-    const results = await redisPipeline([
-      ["HSET", threadMemoryKey(ref), FIELDS.summary, clean],
-      ["EXPIRE", threadMemoryKey(ref), String(THREAD_TTL_SECONDS)],
-    ]);
-    return results[0] !== null;
-  } catch {
-    return false;
-  }
-}

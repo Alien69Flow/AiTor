@@ -57,7 +57,6 @@ import {
   memoryConfigured,
   normalizeThreadRef,
   rollUpSummary,
-  saveSummary,
   saveTurn,
   STALE_HOURS,
   SUMMARY_MAX_CHARS,
@@ -226,14 +225,6 @@ describe("escritura y lectura del hilo", () => {
     expect(thread).toEqual({ title: null, summary: null, turns: [], lastActiveAt: null });
   });
 
-  it("saveSummary reescribe la capa 1 sin tocar la evidencia", async () => {
-    await saveTurn(ref, "hablamos de BTC", "vamos allá");
-    expect(await saveSummary(ref, "  el usuario  sigue BTC  ")).toBe(true);
-
-    const thread = await loadThread(ref);
-    expect(thread?.summary).toBe("el usuario sigue BTC");
-    expect(thread?.turns).toHaveLength(2);
-  });
 });
 
 describe("degradación sin Upstash", () => {
@@ -242,7 +233,6 @@ describe("degradación sin Upstash", () => {
     expect(memoryConfigured()).toBe(false);
     expect(await loadThread(ref)).toBeNull();
     expect(await saveTurn(ref, "hola", "buenas")).toBe(false);
-    expect(await saveSummary(ref, "resumen")).toBe(false);
     expect(fake.state.commands).toBe(0);
   });
 
