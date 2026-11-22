@@ -16,6 +16,7 @@ const redis = vi.hoisted(() => ({
   configured: true,
   hash: new Map<string, string>(),
   calls: [] as (string | number)[][],
+  seeds: [] as { key: string; count: number; ttl: number }[],
 }));
 
 vi.mock("../_shared/redis.js", () => ({
@@ -32,6 +33,10 @@ vi.mock("../_shared/redis.js", () => ({
     if (command === "HDEL") return redis.hash.delete(String(args[2])) ? 1 : 0;
     if (command === "EXPIRE") return 1;
     return null;
+  },
+  recordSeed: async (key: string, count: number, ttl: number) => {
+    redis.seeds.push({ key, count, ttl });
+    return redis.configured;
   },
 }));
 
@@ -137,6 +142,7 @@ beforeEach(() => {
   redis.configured = true;
   redis.hash.clear();
   redis.calls = [];
+  redis.seeds = [];
   process.env.CRON_SECRET = "secreto-de-cron";
   process.env.TELEGRAM_BOT_TOKEN = "123:token-de-prueba";
 });
@@ -214,6 +220,26 @@ describe("GET /api/cron/price-alerts", () => {
 
     // Una alerta de precio es de un solo uso: ya no está.
     expect(redis.hash.has(THREAD)).toBe(false);
+  });
+
+  it("deja la marca de frescura de cripto sin guardar los precios", async () => {
+    seed([alerta()]);
+    stubNetwork({ BTC: 120_000 });
+
+    await call({ authorization: "Bearer secreto-de-cron" });
+
+    expect(redis.seeds).toEqual([{ key: "market:crypto:v1", count: 1, ttl: 48 * 3_600 }]);
+    // La marca no es el dataset: los precios no se copian a Redis desde aquí.
+    expect(redis.hash.has("market:crypto:v1")).toBe(false);
+  });
+
+  it("si la fuente falla no deja marca", async () => {
+    seed([alerta()]);
+    stubNetwork(null);
+
+    await call({ authorization: "Bearer secreto-de-cron" });
+
+    expect(redis.seeds).toEqual([]);
   });
 
   it("no avisa si el precio no llega al umbral, y la alerta sigue", async () => {
@@ -318,6 +344,32 @@ describe("GET /api/cron/price-alerts · sismos, GDELT y movimiento", () => {
     expect(payload.text).toContain("ARMEDCONFLICT");
     expect(payload.text).toContain("https://ejemplo.com/nota");
     expect(redis.hash.has(THREAD)).toBe(false);
+  });
+
+  it("marca sismos y GDELT con lo que trajo cada fuente", async () => {
+    seed([
+      { kind: "quake", chatId: CHAT, minMagnitude: 5.5, createdAt: "2026-11-19T10:00:00.000Z" },
+      { kind: "gdelt", chatId: CHAT, theme: "ARMEDCONFLICT", createdAt: "2026-11-19T10:00:00.000Z" },
+    ]);
+    stubNetwork({ BTC: 1 }, true, {
+      usgs: quakeFeed,
+      gdelt: {
+        type: "FeatureCollection",
+        features: [
+          {
+            type: "Feature",
+            properties: { url: "https://ejemplo.com/nota", name: "Moscú, Rusia", urlpubtimedate: "20261119120000" },
+          },
+        ],
+      },
+    });
+
+    await call({ authorization: "Bearer secreto-de-cron" });
+
+    expect(redis.seeds).toEqual([
+      { key: "seismic:events:v1", count: 1, ttl: 48 * 3_600 },
+      { key: "osint:gdelt:v1", count: 1, ttl: 48 * 3_600 },
+    ]);
   });
 
   it("una variación del 6 % dispara el aviso de movimiento", async () => {

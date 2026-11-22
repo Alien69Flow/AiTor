@@ -128,6 +128,47 @@ describe("configuración", () => {
   });
 });
 
+describe("recordSeed", () => {
+  it("escribe la marca con hora, recuento y TTL, sin guardar el dataset", async () => {
+    const redis = await loadModule();
+
+    const written = await redis.recordSeed("osint:gdelt:v1", 12, 3_600, { theme: "ARMEDCONFLICT" });
+
+    expect(written).toBe(true);
+    const meta = JSON.parse(store.get("seed-meta:osint:gdelt:v1") ?? "null");
+    expect(meta.recordCount).toBe(12);
+    expect(meta.theme).toBe("ARMEDCONFLICT");
+    expect(Number.isFinite(Date.parse(meta.fetchedAt))).toBe(true);
+    // Sólo la marca: el dato no se copia a la caché desde aquí.
+    expect(store.has("osint:gdelt:v1")).toBe(false);
+
+    const commands = (vi.mocked(globalThis.fetch).mock.calls as unknown as [string, RequestInit][]).map(
+      ([, init]) => JSON.parse(String(init.body)) as (string | number)[],
+    );
+    const set = commands.find(
+      (args) => args[0] === "SET" && args[1] === "seed-meta:osint:gdelt:v1",
+    );
+    expect(set?.slice(3)).toEqual(["EX", "3600"]);
+  });
+
+  it("sin Redis configurado devuelve false y no sale a la red", async () => {
+    clearEnv();
+    const redis = await loadModule();
+    const fetchMock = vi.mocked(globalThis.fetch);
+    fetchMock.mockClear();
+
+    await expect(redis.recordSeed("market:crypto:v1", 1, 60)).resolves.toBe(false);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("si Redis falla devuelve false en vez de tumbar al llamante", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, json: async () => ({}) }) as Response));
+    const redis = await loadModule();
+
+    await expect(redis.recordSeed("seismic:events:v1", 3, 60)).resolves.toBe(false);
+  });
+});
+
 describe("readSeedMetas", () => {
   it("lee las marcas de frescura en una sola llamada", async () => {
     store.set("seed-meta:osint:gdelt:v1", JSON.stringify({ fetchedAt: "2026-11-18T18:00:00.000Z", recordCount: 12 }));

@@ -245,6 +245,36 @@ export async function writeSeedMeta(
   ]);
 }
 
+/**
+ * Deja la marca de frescura que lee `/api/health`, sin escribir los datos.
+ *
+ * Se llama donde ya se acaba de traer el dato, para que la salud no dependa de
+ * que otro proceso (ni el cron de alertas) pase por la caché: el que consultó
+ * la fuente deja constancia de cuándo y cuánto trajo, y nada más.
+ *
+ * No lanza nunca. Si Redis falla o no está configurado, devuelve `false` y el
+ * llamante sigue con los datos que ya tiene; la salud lo verá como EMPTY o
+ * STALE, que es exactamente lo que pasó.
+ */
+export async function recordSeed(
+  dataKey: string,
+  recordCount: number,
+  metaTtlSeconds: number,
+  extra: Record<string, unknown> = {},
+): Promise<boolean> {
+  if (!isRedisConfigured()) return false;
+  try {
+    await writeSeedMeta(dataKey, recordCount, metaTtlSeconds, extra);
+    return true;
+  } catch (error) {
+    console.warn(
+      `[seed] ${dataKey} sin marca:`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
+}
+
 export async function readSeedMetas(keys: string[]): Promise<Map<string, SeedMeta | null>> {
   const out = new Map<string, SeedMeta | null>();
   if (keys.length === 0) return out;
