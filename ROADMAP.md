@@ -70,7 +70,7 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 4 · Conocimiento curado | `npm run verify:prod -- --only=conocimiento` + `npx vitest run api/telegram-knowledge.test.ts` | Las preguntas de dominio recuperan su bloque **y** la de control, de fuera de dominio, no recupera ninguno. |
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
 | 6 · Deduplicar entregas | `npx vitest run tests/api/telegram-retry.test.ts api/update-dedupe-supabase.test.ts` | Dos entregas con el mismo `update_id` dan una respuesta y una reserva, con Redis y sin él. |
-| 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
+| 7 · La CI no miente | `npm test && npm run lint && npm run typecheck && npm run typecheck:api` | Los cuatro verdes, y el check `build` del head mergeado en verde. |
 | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
 | 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
 
