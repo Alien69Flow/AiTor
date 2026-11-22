@@ -7,7 +7,8 @@
  * queda el reparto:
  *
  *   - **barato** (`CHEAP_MODEL`): clasifica la intención, resume el historial
- *     largo y elige el formato. Una llamada corta, sin streaming.
+ *     largo y elige el formato. Una llamada corta, sin streaming, y sólo
+ *     cuando el turno lo justifica (`planPrep`); un «hola» no la paga.
  *   - **bueno**: el modelo que pidió el cliente, y sólo para la respuesta final.
  *
  * Y si el proveedor de la respuesta final muere por cuota, `answerChain()`
@@ -63,7 +64,10 @@ export interface ChatTurn {
 }
 
 export interface PrepPlan {
-  /** El planificador barato siempre clasifica; esto es la puerta general. */
+  /**
+   * Hay algo que preparar: historial o datos por encima del umbral, o una
+   * pregunta claramente compleja. Un «hola» no paga la llamada barata.
+   */
   needed: boolean;
   /** Hay historial de sobra: el barato lo resume y se recortan los turnos. */
   compressHistory: boolean;
@@ -76,13 +80,51 @@ function historyChars(messages: readonly ChatTurn[]): number {
   return messages.reduce((total, message) => total + message.content.length, 0);
 }
 
+/** A partir de aquí una pregunta ya no es un saludo ni una consulta de una línea. */
+export const COMPLEX_QUESTION_CHARS = 280;
+
+/**
+ * Señales de una pregunta que se beneficia de plan: comparar, analizar,
+ * diseñar, calcular, depurar o pedir un plan. En español y en inglés porque el
+ * chat contesta en los dos.
+ *
+ * Es una heurística a propósito: el planificador cuesta una llamada, así que
+ * ante la duda se deja pasar al modelo bueno, que es el que responde igual.
+ */
+const COMPLEX_QUESTION_PATTERNS: readonly RegExp[] = [
+  /\b(compara|comparar|comparaci[oó]n|compare|comparison)\b/i,
+  /\b(analiza|analizar|an[aá]lisis|analy[sz]e|analysis)\b/i,
+  /\b(explica|explicar|explain)\b.*\b(paso a paso|step by step|en detalle|in detail)\b/i,
+  /\b(paso a paso|step by step)\b/i,
+  /\b(plan|planifica|planificar|estrategia|strategy|roadmap|hoja de ruta)\b/i,
+  /\b(calcula|calcular|presupuesto|rentabilidad|beneficio|rendimiento)\b/i,
+  /\b(dise[nñ]a|dise[nñ]o|arquitectura|architect|implementa|implement|refactoriza|refactor|migra|migrate)\b/i,
+  /\b(diagn[oó]stic\w*|diagnose|depura|debug|por qu[eé] falla|root cause)\b/i,
+  /\b(ventajas|inconvenientes|trade-?offs?|pros y contras|pros and cons)\b/i,
+  /\b(demuestra|demostrar|deriva|derivar|proof|derive)\b/i,
+];
+
+/**
+ * ¿La pregunta se parece a un trabajo de varios pasos?
+ *
+ * Cuenta la longitud, varias preguntas en el mismo mensaje, bloques de código
+ * o listas, y vocabulario de análisis. Un «hola» o «¿precio de BTC?» no pasan.
+ */
+export function isComplexQuestion(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length >= COMPLEX_QUESTION_CHARS) return true;
+  if ((trimmed.match(/\?/g) ?? []).length >= 2) return true;
+  if (/```/.test(trimmed) || /\n\s*[-*]\s+/.test(trimmed)) return true;
+  return COMPLEX_QUESTION_PATTERNS.some((pattern) => pattern.test(trimmed));
+}
+
 /**
  * Decide qué trabajo barato hace falta en este turno.
  *
- * Clasificar y elegir formato es siempre rentable: una llamada corta al modelo
- * barato evita que el bueno escriba en un formato que no toca. Comprimir el
- * historial sólo lo es cuando el historial es largo; por debajo del umbral, el
- * resumen costaría más de lo que ahorra.
+ * El planificador no se paga en todos los turnos: sólo cuando hay historial o
+ * datos por encima de los umbrales (donde comprimir ahorra tokens de verdad) o
+ * cuando la pregunta es claramente compleja. Un «hola» va directo al modelo
+ * bueno: una llamada menos y la latencia de esa llamada menos.
  */
 export function planPrep(
   messages: readonly ChatTurn[],
@@ -90,11 +132,15 @@ export function planPrep(
 ): PrepPlan {
   const contextChars = context.reduce((total, block) => total + block.length, 0);
   const chars = historyChars(messages) + contextChars;
+  const lastUser = [...messages].reverse().find((message) => message.role === "user")?.content ?? "";
+  const complex = isComplexQuestion(lastUser);
+  const overHistory = chars > MAX_HISTORY_CHARS;
+  const compressContext = contextChars > MAX_CONTEXT_CHARS;
   return {
-    needed: messages.length > 0,
+    needed: overHistory || compressContext || complex,
     // Sin turnos antiguos que quitar no hay nada que ahorrar recortando.
-    compressHistory: chars > MAX_HISTORY_CHARS && messages.length > KEEP_RECENT_MESSAGES,
-    compressContext: contextChars > MAX_CONTEXT_CHARS,
+    compressHistory: overHistory && messages.length > KEEP_RECENT_MESSAGES,
+    compressContext,
     historyChars: chars,
   };
 }

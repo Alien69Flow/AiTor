@@ -522,6 +522,10 @@ function extractReplyText(payload: unknown): string {
  * Trabajo barato del turno: clasificar, resumir historial y datos, y elegir
  * formato con el modelo de trabajo.
  *
+ * El turno trivial no llega al modelo barato: `planPrep` sólo abre la puerta
+ * con historial o datos por encima del umbral, o con una pregunta claramente
+ * compleja. Un «hola» se ahorra la llamada y su latencia.
+ *
  * Nunca bloquea: si no hay clave barata, si el proveedor falla o si contesta
  * algo ilegible, el turno sigue sin plan. Un chat peor formateado es mejor que
  * un chat caído.
@@ -531,6 +535,7 @@ async function prepareTurn(
   context: string[],
 ): Promise<{ prep: PrepAnswer | null; plan: ReturnType<typeof planPrep> }> {
   const plan = planPrep(messages, context);
+  if (!plan.needed) return { prep: null, plan };
   const cheap = prepModel((name) => Deno.env.get(name));
   if (!cheap) return { prep: null, plan };
 
@@ -655,9 +660,8 @@ Deno.serve(async (req) => {
     
     const { messages, model, context } = validation.data;
 
-    // Trabajo barato primero. Clasificar, resumir y elegir formato es una
-    // llamada corta al modelo de trabajo; el modelo bueno no debería pagar
-    // por leer un volcado ni por adivinar el formato.
+    // Trabajo barato primero, y sólo cuando toca: historial o datos largos, o
+    // una pregunta compleja. El turno trivial va directo al modelo bueno.
     const { prep, plan } = await prepareTurn(messages, context);
     const planBlock = prep ? buildPlanBlock(prep) : "";
     // Si el clasificador resumió los datos, no se reenvían: el resumen ya los
@@ -667,7 +671,9 @@ Deno.serve(async (req) => {
     const processedMessages = buildProcessedMessages(trimHistory(messages, prep, plan));
 
     console.log(
-      `Chat: ${model}, ${messages.length} mensajes, ${context.length} bloques de contexto, plan: ${prep ? "sí" : "no"}`,
+      `Chat: ${model}, ${messages.length} mensajes, ${context.length} bloques de contexto, plan: ${
+        prep ? "sí" : plan.needed ? "no (el planificador falló)" : "no (turno trivial)"
+      }`,
     );
 
     // Respuesta final: el modelo pedido y, si su clave muere por cuota, la
