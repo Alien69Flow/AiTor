@@ -4,7 +4,9 @@ import {
   buildPlanBlock,
   buildPrepRequest,
   CHEAP_MODEL,
+  COMPLEX_QUESTION_CHARS,
   KEEP_RECENT_MESSAGES,
+  isComplexQuestion,
   isQuotaDeath,
   MAX_HISTORY_CHARS,
   parsePrepAnswer,
@@ -46,10 +48,23 @@ describe("nivel de precio del modelo", () => {
 });
 
 describe("planificador barato", () => {
-  it("siempre clasifica, pero no comprime un historial corto", () => {
-    const plan = planPrep([turn("user", "hola"), turn("assistant", "buenas")]);
-    expect(plan.needed).toBe(true);
+  it("un turno trivial va directo al modelo bueno", () => {
+    const plan = planPrep([turn("user", "hola"), turn("assistant", "buenas"), turn("user", "hola")]);
+    expect(plan.needed).toBe(false);
     expect(plan.compressHistory).toBe(false);
+    expect(plan.compressContext).toBe(false);
+  });
+
+  it("una pregunta corta de datos tampoco paga planificador", () => {
+    expect(planPrep([turn("user", "¿precio de BTC ahora?")]).needed).toBe(false);
+    expect(planPrep([turn("user", "avísame si BTC supera 95000")]).needed).toBe(false);
+  });
+
+  it("se abre con una pregunta claramente compleja", () => {
+    expect(planPrep([turn("user", "Compara BTC y ETH y dime cuál aguanta mejor")]).needed).toBe(true);
+    expect(planPrep([turn("user", "hazme un plan de despliegue")]).needed).toBe(true);
+    expect(planPrep([turn("user", "x".repeat(COMPLEX_QUESTION_CHARS))]).needed).toBe(true);
+    expect(planPrep([turn("user", "¿BTC? ¿ETH?")]).needed).toBe(true);
   });
 
   it("comprime cuando el historial pasa del umbral", () => {
@@ -59,6 +74,7 @@ describe("planificador barato", () => {
     const plan = planPrep(largo);
     expect(plan.historyChars).toBeGreaterThan(MAX_HISTORY_CHARS);
     expect(plan.compressHistory).toBe(true);
+    expect(plan.needed).toBe(true);
   });
 
   it("cuenta también los datos de herramientas al decidir si comprime", () => {
@@ -68,10 +84,13 @@ describe("planificador barato", () => {
     const conDatos = planPrep(corto, ["y".repeat(MAX_HISTORY_CHARS + 1)]);
     expect(conDatos.compressContext).toBe(true);
     expect(conDatos.compressHistory).toBe(false);
+    expect(conDatos.needed).toBe(true);
   });
 
   it("no resume datos pequeños: costaría más de lo que ahorra", () => {
-    expect(planPrep([turn("user", "hola")], ["dato corto"]).compressContext).toBe(false);
+    const plan = planPrep([turn("user", "hola")], ["dato corto"]);
+    expect(plan.compressContext).toBe(false);
+    expect(plan.needed).toBe(false);
   });
 
   it("separa historial antiguo de últimos turnos en el prompt", () => {
@@ -89,6 +108,30 @@ describe("planificador barato", () => {
   it("sin compresión no pide resumen", () => {
     const turns = [turn("user", "hola")];
     expect(buildPrepRequest(turns, planPrep(turns)).user).not.toContain("HISTORIAL A COMPRIMIR");
+  });
+});
+
+describe("complejidad de la pregunta", () => {
+  it("los saludos y las consultas de una línea no son complejos", () => {
+    expect(isComplexQuestion("hola")).toBe(false);
+    expect(isComplexQuestion("buenas, ¿qué tal?" )).toBe(false);
+    expect(isComplexQuestion("¿cuánto vale BTC?")).toBe(false);
+    expect(isComplexQuestion("   ")).toBe(false);
+  });
+
+  it("reconoce trabajo de varios pasos sin depender del idioma", () => {
+    expect(isComplexQuestion("analiza el mercado de capas 2")).toBe(true);
+    expect(isComplexQuestion("explica paso a paso cómo firmar un tx")).toBe(true);
+    expect(isComplexQuestion("explain step by step how the bridge works")).toBe(true);
+    expect(isComplexQuestion("diseña la arquitectura del indexer")).toBe(true);
+    expect(isComplexQuestion("which are the trade-offs?")).toBe(true);
+  });
+
+  it("una pregunta larga, varias preguntas o un bloque de código también cuentan", () => {
+    expect(isComplexQuestion("x".repeat(COMPLEX_QUESTION_CHARS))).toBe(true);
+    expect(isComplexQuestion("¿BTC sube? ¿y ETH?")).toBe(true);
+    expect(isComplexQuestion("revisa esto:\n```ts\nconst a = 1;\n```")).toBe(true);
+    expect(isComplexQuestion("lista:\n- uno\n- dos")).toBe(true);
   });
 });
 
