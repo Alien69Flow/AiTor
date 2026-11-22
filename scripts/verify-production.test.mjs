@@ -5,6 +5,7 @@ import {
   interpretKnowledge,
   interpretMemory,
   interpretWebhook,
+  interpretWebhookGate,
   renderTable,
   summarize,
 } from "./verify-production.mjs";
@@ -48,6 +49,37 @@ describe("webhook", () => {
 
   it("un 500 no se confunde con verde", () => {
     expect(interpretWebhook(500, null).status).toBe("fail");
+  });
+});
+
+describe("webhook · puerta de firma", () => {
+  const cerrada = [
+    { label: "sin token", status: 401 },
+    { label: "token inventado", status: 401 },
+  ];
+
+  it("los dos POST ajenos con 401 son verdes", () => {
+    expect(interpretWebhookGate(cerrada)).toEqual({
+      status: "ok",
+      detail: "POST sin token y con token inventado: 401",
+    });
+  });
+
+  it("un 200 en cualquiera de los dos significa que quedó abierto", () => {
+    const anonimo = interpretWebhookGate([{ label: "sin token", status: 200 }, cerrada[1]]);
+    expect(anonimo.status).toBe("fail");
+    expect(anonimo.detail).toContain("sin token → 200");
+
+    const inventado = interpretWebhookGate([cerrada[0], { label: "token inventado", status: 200 }]);
+    expect(inventado.status).toBe("fail");
+    expect(inventado.detail).toContain("token inventado → 200");
+  });
+
+  it("un 500 o una petición sin respuesta tampoco pasan por cerrado", () => {
+    expect(interpretWebhookGate([{ label: "sin token", status: 500 }, cerrada[1]]).status).toBe("fail");
+    expect(interpretWebhookGate([{ label: "sin token", status: 0 }, cerrada[1]]).detail).toContain(
+      "sin respuesta",
+    );
   });
 });
 
