@@ -55,6 +55,25 @@ export const DATASETS: Dataset[] = [
   { key: "weather:grid:v1", label: "Meteo", maxStaleMin: 120, criticality: "standard" },
 ];
 
+/**
+ * ¿Está definida la variable que firma el webhook?
+ *
+ * Sin ella, `/api/telegram-webhook` responde 401 a Telegram y el bot queda
+ * mudo, pero desde fuera eso se confunde con un bot caído. La vista compacta lo
+ * publica sin `OPERATOR_KEY`; sólo el estado, nunca el valor. `invalid` es un
+ * valor definido que Telegram rechaza como `secret_token` (fuera de
+ * `A-Za-z0-9_-` o de más de 256 caracteres), que deja el bot igual de mudo.
+ */
+export type WebhookSecretState = "present" | "invalid" | "missing";
+
+export function webhookSecretState(
+  raw: string | undefined = process.env.TELEGRAM_WEBHOOK_SECRET,
+): WebhookSecretState {
+  const value = (raw ?? "").trim();
+  if (!value) return "missing";
+  return /^[A-Za-z0-9_-]{1,256}$/.test(value) ? "present" : "invalid";
+}
+
 type CheckStatus = "OK" | "STALE" | "EMPTY" | "ERROR";
 
 interface Check {
@@ -315,6 +334,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       checkedAt,
       detail: "UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN (o KV_REST_API_*) no están definidas",
       upstreams: upstreamView,
+      ...(compact ? { telegramWebhookSecret: webhookSecretState() } : {}),
     });
     return;
   }
@@ -344,6 +364,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
       summary: verdict.summary,
       problems: verdict.problems.map((check) => ({ label: check.label, status: check.status })),
       upstreams: upstreamView,
+      telegramWebhookSecret: webhookSecretState(),
     });
     return;
   }

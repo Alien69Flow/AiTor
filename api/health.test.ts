@@ -6,7 +6,7 @@
  * que `?compact=1` no filtre detalle, y que el token del bot no salga nunca.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import handler, { __resetUpstreamCacheForTest, explainChatFailure } from "./health";
+import handler, { __resetUpstreamCacheForTest, explainChatFailure, webhookSecretState } from "./health";
 
 function mockRes() {
   const headers: Record<string, string> = {};
@@ -47,6 +47,7 @@ const authed = (url = "/api/health") => req(url, { "x-api-key": OPERATOR });
 
 const ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
+  "TELEGRAM_WEBHOOK_SECRET",
   "SUPABASE_URL",
   "SUPABASE_ANON_KEY",
   "VITE_SUPABASE_URL",
@@ -137,6 +138,19 @@ describe("explainChatFailure", () => {
   });
 });
 
+describe("webhookSecretState", () => {
+  it("distingue ausente, definido y definido pero inservible", () => {
+    expect(webhookSecretState(undefined)).toBe("missing");
+    expect(webhookSecretState("")).toBe("missing");
+    expect(webhookSecretState("   ")).toBe("missing");
+    expect(webhookSecretState("secreto-de-prueba_123")).toBe("present");
+    // Telegram sólo acepta A-Za-z0-9_- y hasta 256 caracteres.
+    expect(webhookSecretState("con espacio")).toBe("invalid");
+    expect(webhookSecretState("ñandú")).toBe("invalid");
+    expect(webhookSecretState("a".repeat(257))).toBe("invalid");
+  });
+});
+
 describe("/api/health · puerta de operador", () => {
   it("sin clave y sin Redis, la vista completa es 401 y no llama a nadie", async () => {
     const fetcher = vi.fn(async () => telegramOk());
@@ -167,6 +181,7 @@ describe("/api/health · puerta de operador", () => {
 
   it("`?compact=1` sigue siendo público y sin detalle", async () => {
     process.env.TELEGRAM_BOT_TOKEN = "123:token";
+    process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
     vi.stubGlobal("fetch", vi.fn(async () => telegramOk()));
 
     const { res, snap } = mockRes();
@@ -177,6 +192,48 @@ describe("/api/health · puerta de operador", () => {
     const telegram = upstreamsOf(result.body).find((entry) => entry.key === "telegram");
     expect(telegram?.status).toBe("OK");
     expect(telegram?.detail).toBeUndefined();
+    // Se ve de un vistazo si el bot puede recibir, sin OPERATOR_KEY y sin
+    // publicar el valor.
+    expect(result.body).toMatchObject({ telegramWebhookSecret: "present" });
+    expect(JSON.stringify(result.body)).not.toContain("secreto-de-prueba");
+  });
+
+  it("`?compact=1` con Redis publica el dato y sigue sin checks ni detalle", async () => {
+    // El módulo de Redis lee el entorno al importarse: para esta ruta hace
+    // falta una instancia nueva.
+    vi.resetModules();
+    process.env.UPSTASH_REDIS_REST_URL = "https://redis.test";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "token-de-prueba";
+    process.env.TELEGRAM_WEBHOOK_SECRET = "secreto-de-prueba";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("api.telegram.org")) return telegramOk();
+        return { ok: true, status: 200, json: async () => ({ result: Array(8).fill(null) }) };
+      }),
+    );
+    const fresh = await import("./health");
+
+    const { res, snap } = mockRes();
+    await fresh.default(req("/api/health?compact=1"), res as never);
+    const result = snap();
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({ telegramWebhookSecret: "present" });
+    expect(result.body).not.toHaveProperty("checks");
+    expect(result.body).not.toHaveProperty("detail");
+  });
+
+  it("`?compact=1` sin Redis también dice si el secreto falta", async () => {
+    const { res, snap } = mockRes();
+    await handler(req("/api/health?compact=1"), res as never);
+    const result = snap();
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      status: "UNCONFIGURED",
+      telegramWebhookSecret: "missing",
+    });
   });
 });
 
