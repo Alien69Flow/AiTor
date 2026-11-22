@@ -108,6 +108,28 @@ export function interpretWebhook(status, payload) {
 }
 
 /**
+ * Puerta de firma del webhook, vista desde fuera.
+ *
+ * El endpoint es público y gasta cuota del modelo, así que un POST sin
+ * `X-Telegram-Bot-Api-Secret-Token` (o con uno inventado) tiene que ser 401.
+ * Si alguno contesta 200, el webhook está abierto y cualquiera puede usarlo:
+ * es un fallo, no un aviso, porque la firma ya está desplegada.
+ *
+ * El cuerpo va vacío (`{}`) a propósito: así una respuesta abierta no ejecuta
+ * ningún comando ni manda mensajes; lo único que se mide es la puerta.
+ */
+export function interpretWebhookGate(results) {
+  const abiertos = results.filter((entry) => entry.status !== 401);
+  if (abiertos.length > 0) {
+    const detalle = abiertos
+      .map((entry) => `${entry.label} → ${entry.status === 0 ? "sin respuesta" : entry.status}`)
+      .join(" · ");
+    return fail(`el webhook no exige firma: ${detalle}`);
+  }
+  return ok("POST sin token y con token inventado: 401");
+}
+
+/**
  * Salud: el endpoint responde y dice qué sabe. `UNCONFIGURED` es la verdad, no
  * un fallo del endpoint: avisa de que sin Redis no se puede comprobar frescura.
  * Un upstream caído se marca como aviso: el webhook es la autoridad sobre el
@@ -234,9 +256,28 @@ async function getJson(url, init = {}) {
 }
 
 async function checkWebhook() {
+  // Primero la puerta: si está abierta, lo demás da igual.
+  const body = JSON.stringify({});
+  const headers = { "content-type": "application/json" };
+  const sinRed = () => ({ status: 0, payload: null });
+  const [anonimo, inventado] = await Promise.all([
+    getJson(`${PUBLIC_URL}/api/telegram-webhook`, { method: "POST", headers, body }).catch(sinRed),
+    getJson(`${PUBLIC_URL}/api/telegram-webhook`, {
+      method: "POST",
+      headers: { ...headers, "x-telegram-bot-api-secret-token": "no-es-el-secreto" },
+      body,
+    }).catch(sinRed),
+  ]);
+  const gate = interpretWebhookGate([
+    { label: "sin token", status: anonimo.status },
+    { label: "token inventado", status: inventado.status },
+  ]);
+  if (gate.status !== "ok") return { id: "webhook", ...gate };
+
   const { status, payload, raw } = await getJson(`${PUBLIC_URL}/api/telegram-webhook`);
   const result = interpretWebhook(status, payload);
   if (result.status === "fail" && raw) result.detail += ` · ${raw}`;
+  if (result.status !== "fail") result.detail += ` · ${gate.detail}`;
   // La conclusión de `?probe=1` es la Fase 1: dice qué extremo falla, gratis.
   if (result.status !== "fail") {
     const probe = await getJson(`${PUBLIC_URL}/api/telegram-webhook?probe=1`).catch(() => null);

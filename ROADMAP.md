@@ -71,7 +71,7 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 5 · Alertas de precio | `npm run verify:prod -- --only=cron --run-cron` | Sin `sin-redis` y sin `failures`; un `/alerta` creado desde el bot llega cuando se cruza. |
 | 6 · Deduplicar entregas | `npx vitest run tests/api/telegram-retry.test.ts api/update-dedupe-supabase.test.ts` | Dos entregas con el mismo `update_id` dan una respuesta y una reserva, con Redis y sin él. |
 | 7 · La CI no miente | `npm test && npm run lint && npm run typecheck` | Los tres verdes, y el check `build` del head mergeado en verde. |
-| 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
+| 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa` y los POST sin token y con token inventado dan 401. |
 | 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
 
 ## Estado hoy (pasada del 2026-11-20)
@@ -205,7 +205,8 @@ mismo día.
 - **Pendiente:** `TELEGRAM_WEBHOOK_SECRET` en Vercel y re-registrar con `node scripts/telegram-webhook.mjs --set`
 
 **Comprobación:** `npm run verify:prod -- --only=webhook`. Hoy da aviso («sin
-firma»); verde cuando diga `firma activa` y el bot siga respondiendo.
+firma»); verde cuando diga `firma activa`, los POST sin token y con token
+inventado devuelvan 401 y el bot siga respondiendo.
 
 ---
 
