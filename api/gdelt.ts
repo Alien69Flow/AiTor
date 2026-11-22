@@ -33,7 +33,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { applyCors } from "./_shared/cors.js";
 import { sendJson } from "./_shared/http.js";
 import { checkRateLimit } from "./_shared/rate-limit.js";
-import { cachedFetchJson } from "./_shared/redis.js";
+import { cachedFetchJson, recordSeed } from "./_shared/redis.js";
 
 export const maxDuration = 25;
 
@@ -46,6 +46,25 @@ const MAX_HOURS = 24;
 const CACHE_TTL_SECONDS = 300;
 /** Tras un fallo, no se vuelve a salir a GDELT durante este tiempo. */
 const NEGATIVE_TTL_SECONDS = 60;
+
+/**
+ * `/api/health` vigila esta clave, no la de cada consulta.
+ *
+ * La marca se escribe sólo cuando se sale a GDELT de verdad (fallo de caché):
+ * servir una copia de hace veinte minutos no vuelve joven al dato.
+ */
+export const SEED_META_KEY = "osint:gdelt:v1";
+/**
+ * Seis horas: con el umbral de 30 min de la salud, la marca sigue existiendo
+ * cuando el dato ya es viejo, así que se ve STALE en vez de un EMPTY engañoso.
+ */
+export const SEED_META_TTL_SECONDS = 6 * 3_600;
+
+/** Filas del GeoJSON del GKG; una respuesta de error no trae `features`. */
+export function gdeltArticleCount(payload: unknown): number {
+  const features = (payload as { features?: unknown } | null)?.features;
+  return Array.isArray(features) ? features.length : 0;
+}
 
 export interface GkgQuery {
   theme: string;
@@ -122,12 +141,18 @@ async function fetchUpstream(upstream: string): Promise<unknown> {
   if (!response.ok) throw new UpstreamError(502, `GDELT respondió ${response.status}`);
 
   const text = await response.text();
+  let payload: unknown;
   try {
-    return JSON.parse(text) as unknown;
+    payload = JSON.parse(text) as unknown;
   } catch {
     // GKG contesta en HTML cuando la consulta no le encaja.
     throw new UpstreamError(502, "GDELT no devolvió JSON (¿tema inexistente?)");
   }
+
+  // Aquí y no en el handler: esto sólo corre cuando la caché falló y el dato es
+  // de ahora; servir una copia antigua no debe rejuvenecer la marca.
+  await recordSeed(SEED_META_KEY, gdeltArticleCount(payload), SEED_META_TTL_SECONDS);
+  return payload;
 }
 
 const fail = (res: VercelResponse, status: number, reason: string) => {

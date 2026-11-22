@@ -36,7 +36,7 @@ import {
   type AlertSnapshot,
 } from "../_shared/alert-sources.js";
 import { gdeltUpstreamUrl, parseGdeltParams } from "../gdelt.js";
-import { isRedisConfigured } from "../_shared/redis.js";
+import { isRedisConfigured, recordSeed } from "../_shared/redis.js";
 
 export const maxDuration = 30;
 
@@ -45,6 +45,25 @@ const QUAKE_URL = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all
 const HTTP_TIMEOUT_MS = 12_000;
 /** Ventana de GDELT para buscar eventos nuevos: el cron corre como mucho una vez al día. */
 const GDELT_HOURS = 24;
+
+/**
+ * Marcas de frescura que lee `/api/health`.
+ *
+ * Se escriben al terminar de traer cada fuente, sin guardar los datos ni
+ * consultarlos luego: el cron sigue disparando con lo que acaba de pedir. La
+ * marca no cambia ninguna decisión de alerta, así que un Redis lento o caído
+ * no retrasa ni impide un aviso (`recordSeed` no lanza).
+ */
+const MARKET_SEED_KEY = "market:crypto:v1";
+const QUAKE_SEED_KEY = "seismic:events:v1";
+const GDELT_SEED_KEY = "osint:gdelt:v1";
+/**
+ * 48 h de vida para la marca: la salud da por viejo a los 10 min (cripto), 60
+ * min (sismos) y 30 min (GDELT), así que la marca tiene que durar más que eso
+ * para poder decir STALE; si caducara, diría EMPTY y parecería que no hay
+ * publicador.
+ */
+const SEED_META_TTL_SECONDS = 48 * 3_600;
 
 function sameSecret(a: string, b: string): boolean {
   const left = Buffer.from(a);
@@ -123,6 +142,8 @@ async function collectSnapshot(alerts: Alert[]): Promise<{ snapshot: AlertSnapsh
     if (market) {
       snapshot.prices = market.prices;
       snapshot.changes = market.changes;
+      const quoted = Object.values(market.prices).filter((price) => price !== null).length;
+      await recordSeed(MARKET_SEED_KEY, quoted, SEED_META_TTL_SECONDS);
     } else {
       failures.push("sin-precios");
     }
@@ -130,8 +151,12 @@ async function collectSnapshot(alerts: Alert[]): Promise<{ snapshot: AlertSnapsh
 
   if (needed.quakes) {
     const payload = await getJson(QUAKE_URL, "USGS");
-    if (payload === null) failures.push("sin-sismos");
-    else snapshot.quakes = readQuakes(payload);
+    if (payload === null) {
+      failures.push("sin-sismos");
+    } else {
+      snapshot.quakes = readQuakes(payload);
+      await recordSeed(QUAKE_SEED_KEY, snapshot.quakes.length, SEED_META_TTL_SECONDS);
+    }
   }
 
   for (const theme of needed.gdeltThemes) {
@@ -141,8 +166,12 @@ async function collectSnapshot(alerts: Alert[]): Promise<{ snapshot: AlertSnapsh
       continue;
     }
     const payload = await getJson(gdeltUpstreamUrl(parsed.value), `GDELT ${theme}`);
-    if (payload === null) failures.push(`sin-gdelt:${theme}`);
-    else snapshot.gdelt[theme] = readGdeltEvents(payload);
+    if (payload === null) {
+      failures.push(`sin-gdelt:${theme}`);
+    } else {
+      snapshot.gdelt[theme] = readGdeltEvents(payload);
+      await recordSeed(GDELT_SEED_KEY, snapshot.gdelt[theme].length, SEED_META_TTL_SECONDS);
+    }
   }
 
   return { snapshot, failures };
