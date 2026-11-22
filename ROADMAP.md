@@ -122,6 +122,7 @@ capas —título, resumen y evidencia— bajo el mismo token opaco `tg_…`. No 
 falta aplicar migraciones ni dar service key al webhook.
 
 - Almacén `api/_shared/thread-memory.ts` (tres capas, ventana de 8 mensajes de evidencia, caducidad de 6 h y TTL de 30 días)
+- Las tres capas viajan al prompt: título y resumen en un mensaje de memoria delante de la evidencia. Con el hilo parado se cae la evidencia y esa memoria sigue; `api/telegram-thread.test.ts` lo fija de punta a punta
 - La migración `20261118190000_chat_memory.sql` sigue en el repositorio para la ruta de la función `chat`, que no es la del bot
 - **Pendiente:** poner `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` en Vercel
 

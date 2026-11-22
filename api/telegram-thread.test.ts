@@ -248,6 +248,36 @@ describe("hilo de Telegram", () => {
     expect(messages.at(-1)).toEqual({ role: "user", content: "y el mercado?" });
   });
 
+  it("el resumen de la ventana llega al prompt, no sólo la evidencia", async () => {
+    stubFetch(() => reply(200, OK_STREAM));
+    // Cinco turnos llenan la ventana de ocho mensajes y desbordan dos al resumen.
+    for (let turno = 0; turno < 5; turno += 1) await run(update(`pregunta ${turno}`));
+
+    const capturado = stubFetch(() => reply(200, OK_STREAM));
+    await run(update("¿y ahora?"));
+
+    const messages = capturado.chat?.body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0].content).toContain("Resumen de lo hablado antes:");
+    expect(messages[0].content).toContain("pregunta 0");
+    expect(messages.at(-1)).toEqual({ role: "user", content: "¿y ahora?" });
+  });
+
+  it("un hilo parado manda título y resumen, sin arrastrar la evidencia", async () => {
+    stubFetch(() => reply(200, OK_STREAM));
+    await run(update("me llamo Ana"));
+
+    const clave = fake.state.writes[0]!.key;
+    fake.state.hashes.get(clave)!.activeAt = new Date(Date.now() - 7 * 3_600_000).toISOString();
+
+    const capturado = stubFetch(() => reply(200, OK_STREAM));
+    await run(update("¿sigues ahí?"));
+
+    const messages = capturado.chat?.body.messages as Array<{ role: string; content: string }>;
+    expect(messages[0].content).toContain("Título del hilo: me llamo Ana");
+    expect(messages.some((message) => message.content === "me llamo Ana")).toBe(false);
+    expect(messages.at(-1)).toEqual({ role: "user", content: "¿sigues ahí?" });
+  });
+
   it("no guarda nada si el chat falla", async () => {
     stubFetch(() => reply(401, '{"message":"Invalid API key"}'));
     await run();
