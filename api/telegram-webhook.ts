@@ -1,6 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
+import {
+  chatFailureDetail,
+  chatFailureMessage,
+  classifyChatFailure,
+} from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import { KNOWLEDGE_BLOCKS, retrieveKnowledge } from "./_shared/knowledge.js";
 import {
@@ -533,17 +537,15 @@ function scrub(text: string): string {
 
 function hintFor(
   status: number | null,
+  rawBody: string,
   ok: boolean,
   produced: boolean,
   healthOnly: boolean,
 ): string {
-  if (status === null) return "sin respuesta: red, DNS o tiempo agotado";
-  if (status === 401) return "credencial rechazada: gateway de Supabase o clave del proveedor de IA";
-  if (status === 402) return "la clave del proveedor está sin créditos";
-  if (status === 403) return "prohibido: revisa verify_jwt de la función chat";
-  if (status === 404) return "la función chat no existe en ese proyecto";
-  if (status === 429) return "límite de peticiones del proveedor";
-  if (status >= 500) return "la función chat falló o el proveedor está caído";
+  // Los fallos salen de la misma clasificación que `/api/health` y que el
+  // mensaje del bot: antes había una tabla de estados aquí y otra allí, y
+  // podían decir cosas distintas del mismo 401.
+  if (!ok) return chatFailureDetail(classifyChatFailure(status, rawBody));
   if (healthOnly) return "la función chat vive y responde a su informe de salud";
   return produced
     ? "responde de verdad: el fallo está en el webhook, no en el chat"
@@ -582,7 +584,7 @@ async function probeAttempt(
       contentType: response.headers.get("content-type"),
       bytes: text.length,
       errorHead: response.ok ? null : scrub(text),
-      hint: hintFor(response.status, response.ok, produced, healthOnly),
+      hint: hintFor(response.status, text, response.ok, produced, healthOnly),
     };
   } catch (error) {
     return {
@@ -594,7 +596,7 @@ async function probeAttempt(
       contentType: null,
       bytes: null,
       errorHead: error instanceof Error ? scrub(error.message) : "error desconocido",
-      hint: hintFor(null, false, false, healthOnly),
+      hint: hintFor(null, "", false, false, healthOnly),
     };
   }
 }

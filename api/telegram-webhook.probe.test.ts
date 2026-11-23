@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
-type ProbeAttemptView = { via: string; status?: number | null };
+type ProbeAttemptView = { via: string; status?: number | null; hint: string };
 type ProbeView = {
   keyKind: string;
   conclusion: string;
@@ -126,6 +126,22 @@ const req = (url: string, headers: Record<string, string> = {}) =>
   ({ method: "GET", url, headers: { host: "localhost", ...headers } }) as never;
 
 describe("GET /api/telegram-webhook?probe=1", () => {
+  // Primero, con la caché de sondas vacía: `runChatProbe` memoiza por instancia.
+  it("la sonda y /api/health explican el mismo 401 con el mismo texto", async () => {
+    const raw = '{"message":"Invalid API key"}';
+    stubFetch(401, raw);
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1", { "x-api-key": OPERATOR }), res);
+    const paid = snap().body!.chatProbe!.attempts.find((attempt) => attempt.via === "como-hoy")!;
+
+    // Una sola clasificación para las dos superficies: si alguien vuelve a
+    // escribir la tabla de estados dentro del webhook, esto se separa.
+    const { explainChatFailure } = await import("./health");
+    expect(paid.hint).toBe(explainChatFailure(401, raw));
+  });
+
   it("sin clave de operador sólo hace la comprobación gratuita", async () => {
     const calls = stubFetch();
     const handler = await loadHandler();
