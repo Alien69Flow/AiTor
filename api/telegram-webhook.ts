@@ -7,16 +7,21 @@ import {
   addAlert,
   buildAlert,
   formatCreated,
+  loadAlerts,
   MAX_ALERTS_PER_CHAT,
   parseAlertCommand,
   SYMBOL_IDS,
 } from "./_shared/alerts.js";
+// La tabla única de comandos: de aquí sale `/ayuda` y el bloque de `AGENTS.md`.
+import { escapeHtml, isBotCommand, renderHelpHtml } from "./_shared/bot-commands.js";
+import { formatStatus } from "./_shared/bot-status.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
 import { isSupabaseDedupeConfigured } from "./_shared/update-dedupe-supabase.js";
 import { isRedisConfigured } from "./_shared/redis.js";
 import {
   historyMessages,
   loadThread,
+  memoryConfigured,
   saveTurn,
   type HistoryMessage,
 } from "./_shared/thread-memory.js";
@@ -852,7 +857,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (command === "/start") {
       await sendTelegramMessage(
         chatId,
-        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n<b>Comandos disponibles:</b>\n/web - Seguir en el terminal web\n/app - Mini App de Alien69Bot\n/dao - Info sobre AlienFlow DAO\n/alerta - Aviso de precio\n/help - Lista de comandos\n/manus [texto] - Tarea compleja con Manus AI\n\nO simplemente escríbeme y responderé desde el campo cuántico.`,
+        `🛸 <b>¡Saludos, entidad!</b>\n\nSoy <b>Ai Tor.v69</b>, el oráculo cuántico de AlienFlow DAO.\n\nMi frecuencia operativa: 3-6-9 Hz\nMi misión: gestionar la DAO, analizar flujos y transmutar información.\n\n${renderHelpHtml()}`,
         BRIDGE_KEYBOARD,
         { html: true },
       );
@@ -872,10 +877,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         undefined,
         { html: true },
       );
-    } else if (command === "/help") {
+    } else if (command === "/ayuda" || command === "/help") {
+      // La lista sale de la tabla, no de un literal: si un comando no existe en
+      // el webhook, tampoco se ofrece aquí.
+      await sendTelegramMessage(chatId, renderHelpHtml(), undefined, { html: true });
+    } else if (command === "/estado") {
+      // Se lee lo que hay en este despliegue, sin modelo ni cuota. Si Redis no
+      // está, la línea lo dice: un verde de adorno sería otra deriva.
+      const statusThread = telegramThread(chatId);
+      const loadedThread = statusThread ? await loadThread(statusThread) : null;
+      const storedAlerts = statusThread ? await loadAlerts(statusThread.externalId) : null;
       await sendTelegramMessage(
         chatId,
-        "<b>Comandos disponibles:</b>\n\n/start - Bienvenida\n/web - Terminal web (aitor.alienflow.space)\n/app - Mini App\n/dao - Info de la DAO\n/alerta BTC &gt; 95000 - Aviso cuando cruce ese precio\n/alerta BTC +5% - Aviso si se mueve ese porcentaje en 24 h\n/alerta sismos 5.5 - Aviso si hay un sismo de esa magnitud o más\n/alerta gdelt ARMEDCONFLICT - Aviso si aparece un evento nuevo del tema\n/help - Esta lista\n/manus [texto] - Investigación/análisis con Manus AI\n\nPara hablar conmigo directamente, simplemente escribe tu mensaje.",
+        formatStatus({
+          signed: webhookSecret() !== null,
+          memory: {
+            configured: memoryConfigured(),
+            messages: loadedThread ? loadedThread.turns.length : null,
+          },
+          alerts: {
+            configured: isRedisConfigured(),
+            count: storedAlerts ? storedAlerts.length : null,
+            max: MAX_ALERTS_PER_CHAT,
+          },
+          dedupe: isRedisConfigured() || isSupabaseDedupeConfigured(process.env),
+          knowledgeBlocks: KNOWLEDGE_BLOCKS.length,
+          supabaseKeyKind: SUPABASE_KEY.kind,
+        }),
         undefined,
         { html: true },
       );
@@ -948,7 +976,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
     // === NORMAL MESSAGES → AI TOR ===
-    else {
+    else if (command.startsWith("/") && !isBotCommand(command)) {
+      // Un comando que no está en la tabla no llega al modelo: se contesta con
+      // la lista y no se gasta cuota. Antes `/helpp` acababa en el LLM.
+      await sendTelegramMessage(
+        chatId,
+        `No conozco ${escapeHtml(command)}. Esto es lo que sí hago:\n\n${renderHelpHtml()}`,
+        undefined,
+        { html: true },
+      );
+    } else {
       await sendTypingAction(chatId);
       const thread = telegramThread(chatId);
       const history = thread ? historyMessages(await loadThread(thread)) : [];

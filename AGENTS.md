@@ -222,8 +222,27 @@ GITHUB_TOKEN=
 
 ## Comandos del Sistema
 
-El bot de Telegram hoy entiende `/alerta` y las preguntas de chat; los comandos
-de abajo son el diseño del supervisor y no existen en producción.
+### Bot de Telegram — lo que responde hoy
+
+<!-- comandos:inicio -->
+Generado por `npm run docs:comandos` desde `api/_shared/bot-commands.ts`.
+No lo edites a mano: `api/_shared/bot-commands.test.ts` falla si no coincide con la tabla.
+
+| Comando | Alias | Qué hace | Uso | Coste |
+| --- | --- | --- | --- | --- |
+| `/ayuda` | `/help` | Esta lista, pintada desde la tabla que atiende los comandos. | — | — |
+| `/estado` | — | Qué está vivo ahora mismo: webhook, memoria, alertas, dedupe y conocimiento. | — | — |
+| `/alerta` | — | Aviso de precio, movimiento, sismo o noticia nueva; se guarda y te aviso aquí. | `/alerta BTC > 95000` | — |
+| `/manus` | `/investigar`, `/analizar` | Manda una tarea larga a Manus AI y te trae el resultado. | `/manus analiza las tendencias crypto de esta semana` | gasta cuota |
+| `/start` | — | Bienvenida y la lista de comandos. | — | — |
+| `/web` | — | Terminal web, con el mismo hilo de conversación. | — | — |
+| `/app` | — | Enlace a la Mini App de Alien69Bot. | — | — |
+| `/dao` | — | Qué es AlienFlow DAO. | — | — |
+
+Sin comando, el mensaje va al chat: es la vía para preguntar en lenguaje natural.
+<!-- comandos:fin -->
+
+Lo de abajo es el diseño del supervisor (texto libre, no comandos del bot).
 
 ### Redes Sociales
 ```

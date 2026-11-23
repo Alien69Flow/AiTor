@@ -67,7 +67,8 @@
     "mcp:key:verify": "node scripts/vercel-gemini-key.mjs --verify",
     "deploy:all": "node scripts/deploy-all.mjs",
     "deploy:verify": "node scripts/deploy-all.mjs --verify",
-    "verify:prod": "node scripts/verify-production.mjs"
+    "verify:prod": "node scripts/verify-production.mjs",
+    "docs:comandos": "tsx scripts/generate-bot-commands.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
