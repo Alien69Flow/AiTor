@@ -489,9 +489,18 @@ interface ChatProbeAttempt {
   hint: string;
 }
 
+/**
+ * El veredicto de la comprobación gratuita, con los mismos valores que el
+ * upstream `chat` de `/api/health`: las dos superficies no pueden decir cosas
+ * distintas del mismo sondeo. Un 200 de la llamada de pago no cambia este
+ * veredicto; si discrepan, la conclusión lo dice.
+ */
+type ChatProbeStatus = "UP" | "DOWN";
+
 interface ChatProbe {
   host: string;
   keyKind: KeyKind;
+  status: ChatProbeStatus;
   attempts: ChatProbeAttempt[];
   conclusion: string;
   cached: boolean;
@@ -652,22 +661,33 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
   const health = attempts[0];
   const paidAttempts = attempts.slice(1);
   const working = paidAttempts.find((attempt) => attempt.ok);
+  const status: ChatProbeStatus = health.ok ? "UP" : "DOWN";
+  // Cómo falló la gratis, para la conclusión que explica la discrepancia.
+  const freeFailure = health.status === null ? "sin respuesta a tiempo" : `HTTP ${health.status}`;
 
-  const conclusion = working
-    ? `chat responde (${working.via}): el fallo está en el webhook, no en el chat`
-    : paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)
-      ? "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)"
-      : health.status === 401
-        ? "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale"
-        : health.ok && paidAttempts.length > 0
-          ? "chat vive pero no contesta al modelo: el fallo está dentro de la función"
-          : health.ok
-            ? "chat vive (comprobación gratuita): añade x-api-key para probar el modelo"
-            : "chat no responde: mira el estado y el error de la primera comprobación";
+  let conclusion: string;
+  if (status === "DOWN" && working) {
+    // Las dos cosas, sin dar el chat por bueno: es el caso que hizo falta
+    // unificar, porque el informe de salud y la llamada de pago discrepan.
+    conclusion = `la comprobación gratuita dice DOWN (${freeFailure}), pero el modelo responde con la clave de operador (${working.via}): el informe de salud y la llamada de pago no cuadran`;
+  } else if (working) {
+    conclusion = `chat responde (${working.via}): el fallo está en el webhook, no en el chat`;
+  } else if (paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)) {
+    conclusion = "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)";
+  } else if (health.status === 401) {
+    conclusion = "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale";
+  } else if (health.ok && paidAttempts.length > 0) {
+    conclusion = "chat vive pero no contesta al modelo: el fallo está dentro de la función";
+  } else if (health.ok) {
+    conclusion = "chat vive (comprobación gratuita): añade x-api-key para probar el modelo";
+  } else {
+    conclusion = "chat no responde: mira el estado y el error de la primera comprobación";
+  }
 
   const value: ChatProbe = {
     host: chatHost(),
     keyKind: keyKind(SUPABASE_ANON_KEY),
+    status,
     attempts,
     conclusion,
     cached: false,
