@@ -62,7 +62,7 @@ const REDIS_URL = (process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API
 const REDIS_TOKEN = (process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN || "").trim();
 const CRON_SECRET = (process.env.CRON_SECRET || "").trim();
 
-export const ids = ["memoria", "cron", "conocimiento", "health", "webhook"];
+export const ids = ["memoria", "cron", "conocimiento", "health", "webhook", "senal"];
 
 /** Nombre legible de cada comprobación, para la tabla. */
 const LABELS = {
@@ -71,6 +71,7 @@ const LABELS = {
   conocimiento: "conocimiento curado",
   health: "salud del servicio",
   webhook: "webhook de Telegram",
+  senal: "señal de mercado (/senal)",
 };
 
 /** Lo que la tabla contesta: ¿está hecho, a medias o no? */
@@ -105,6 +106,54 @@ export function interpretWebhook(status, payload) {
   return payload.secretConfigured
     ? ok(`${base} · firma activa`)
     : warn(`${base} · sin firma (configura TELEGRAM_WEBHOOK_SECRET)`);
+}
+
+/**
+ * Señal (fase 9): `/api/signal` devuelve precio, fuente y dos horas, y el bot
+ * desplegado ofrece `/senal`. Lo segundo se comprueba en el diagnóstico del
+ * webhook, que publica su tabla de comandos: mandar un mensaje de verdad no es
+ * algo que la sonda deba hacer.
+ */
+export function interpretSenal(status, payload, options = {}) {
+  const commands = Array.isArray(options.commands) ? options.commands : null;
+  if (status === 404) return fail("el endpoint /api/signal no está desplegado en este dominio");
+  // 200 con HTML es una pantalla de login o una ruta que no es la función:
+  // decir «sin señal» a secas haría pensar que la fuente falló.
+  if (status === 200 && payload === null) {
+    return fail("la respuesta no es JSON (¿despliegue protegido o ruta equivocada?)");
+  }
+  if (status !== 200 || payload?.ok !== true || !payload.signal) {
+    const motivo = payload?.reason || payload?.error || "sin señal";
+    return fail(`HTTP ${status} · ${motivo}${payload?.code ? ` (${payload.code})` : ""}`);
+  }
+
+  const signal = payload.signal;
+  const problemas = [];
+  if (typeof signal.priceUsd !== "number" || !(signal.priceUsd > 0)) problemas.push("sin precio");
+  if (typeof signal.source !== "string" || !signal.source.startsWith("https://")) {
+    problemas.push("sin URL de fuente");
+  }
+  for (const field of ["asOf", "fetchedAt"]) {
+    if (typeof signal[field] !== "string" || Number.isNaN(Date.parse(signal[field]))) {
+      problemas.push(`${field} no es una hora ISO`);
+    }
+  }
+  if (typeof signal.symbol !== "string") problemas.push("sin símbolo");
+  if (problemas.length > 0) return fail(problemas.join(" · "));
+
+  const ageSeconds = typeof payload.ageSeconds === "number" ? payload.ageSeconds : null;
+  const age = ageSeconds === null ? "antigüedad desconocida" : `leído hace ${ageSeconds} s`;
+  if (ageSeconds !== null && ageSeconds > 300) {
+    return warn(`${signal.symbol} $${signal.priceUsd} · ${age} (dato viejo)`);
+  }
+  if (commands && !commands.includes("/senal")) {
+    return fail(`/api/signal responde, pero el bot desplegado no ofrece /senal`);
+  }
+
+  const host = new URL(signal.source).host;
+  const cache = payload.cache ? ` · caché ${payload.cache}` : "";
+  const bot = commands ? " · /senal ofrecido por el bot" : "";
+  return ok(`${signal.symbol} $${signal.priceUsd} · ${host} · ${age}${cache}${bot}`);
 }
 
 /**
@@ -251,6 +300,28 @@ async function checkHealth() {
   return { id: "health", ...interpretHealth(status, payload) };
 }
 
+/**
+ * Señal: el endpoint primero; si responde, se confirma en el diagnóstico del
+ * webhook que el bot desplegado ofrece `/senal`. Sin esa confirmación la fila
+ * queda en aviso, no en verde: el criterio de la fase 9 incluye el comando.
+ */
+async function checkSignal() {
+  const { status, payload } = await getJson(`${PUBLIC_URL}/api/signal?symbol=BTC`);
+  let commands = null;
+  if (status === 200) {
+    const diag = await getJson(`${PUBLIC_URL}/api/telegram-webhook`).catch(() => null);
+    commands = Array.isArray(diag?.payload?.commands) ? diag.payload.commands : null;
+  }
+  const result = interpretSenal(status, payload, { commands });
+  if (result.status === "ok" && commands === null) {
+    return {
+      id: "senal",
+      ...warn(`${result.detail} · no se pudo confirmar /senal en el bot (diagnóstico sin \`commands\`)`),
+    };
+  }
+  return { id: "senal", ...result };
+}
+
 /** Conocimiento: misma sonda `?probe=1` del webhook; no llama al modelo. */
 async function checkKnowledge() {
   const { status, payload } = await getJson(`${PUBLIC_URL}/api/telegram-webhook?probe=1`);
@@ -385,6 +456,7 @@ async function main() {
     memoria: checkMemory,
     cron: checkCron,
     conocimiento: checkKnowledge,
+    senal: checkSignal,
   };
   const selected = ids.filter((id) => !only || id === only);
   if (selected.length === 0) {

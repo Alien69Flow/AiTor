@@ -13,7 +13,15 @@ import {
   SYMBOL_IDS,
 } from "./_shared/alerts.js";
 // La tabla única de comandos: de aquí sale `/ayuda` y el bloque de `AGENTS.md`.
-import { escapeHtml, isBotCommand, renderHelpHtml } from "./_shared/bot-commands.js";
+import { commandNames, escapeHtml, isBotCommand, renderHelpHtml } from "./_shared/bot-commands.js";
+import {
+  formatSignalHtml,
+  formatSignalUnavailableHtml,
+  parseMarketSignal,
+  parseSignalSymbol,
+  type MarketSignal,
+  type SignalSymbol,
+} from "./_shared/market-signal.js";
 import { formatStatus } from "./_shared/bot-status.js";
 import { claimUpdate } from "./_shared/update-dedupe.js";
 import { isSupabaseDedupeConfigured } from "./_shared/update-dedupe-supabase.js";
@@ -202,6 +210,39 @@ function telegramThread(chatId: number): ThreadRef | null {
     .digest("hex")
     .slice(0, 32);
   return { surface: "telegram", externalId: `tg_${signature}` };
+}
+
+/**
+ * Lee la señal de la propia función `/api/signal` de este despliegue.
+ *
+ * El bot no consulta CoinGecko por su cuenta: así lo que enseña es exactamente
+ * lo que se puede pedir a mano en `/api/signal`, con la misma caché. Si no hay
+ * respuesta, o no trae una señal válida, se devuelve el motivo para que el
+ * comando lo diga; nunca se rellena una cifra.
+ */
+async function readDeployedSignal(
+  symbol: SignalSymbol,
+): Promise<{ ok: true; signal: MarketSignal } | { ok: false; reason: string }> {
+  const url = `${PUBLIC_URL}/api/signal?symbol=${symbol}`;
+  try {
+    const response = await fetch(url, {
+      headers: { accept: "application/json", "user-agent": "aitor-bot/senal" },
+      signal: AbortSignal.timeout(9_000),
+    });
+    const payload = (await response.json().catch(() => null)) as
+      | { ok?: boolean; signal?: unknown; reason?: string; error?: string }
+      | null;
+    if (!response.ok || !payload?.ok) {
+      return { ok: false, reason: payload?.reason ?? payload?.error ?? `HTTP ${response.status}` };
+    }
+    const signal = parseMarketSignal(payload.signal);
+    if (!signal) {
+      return { ok: false, reason: "la respuesta de /api/signal no traía una señal válida" };
+    }
+    return { ok: true, signal };
+  } catch (error) {
+    return { ok: false, reason: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 // --- Puente web <-> Telegram ---
@@ -753,6 +794,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // informe.
       redis: { configured: isRedisConfigured() },
       dedupe: { active: isRedisConfigured() || isSupabaseDedupeConfigured() },
+      // La misma tabla que pinta `/ayuda`, para poder comprobar desde fuera que
+      // el bot desplegado ofrece lo que el código dice (fase 9, `/senal`).
+      commands: commandNames(),
       expectedUrl: WEBHOOK_URL,
       registration: registrationState,
       bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
@@ -907,6 +951,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         undefined,
         { html: true },
       );
+    } else if (command === "/senal") {
+      // El precio lo sirve la propia función `/api/signal` de este despliegue:
+      // lo que contesta el bot es exactamente lo que se puede pedir a mano, con
+      // la misma caché. Si la fuente no responde, se dice; no se inventa.
+      const requested = text.split(/\s+/)[1] ?? "BTC";
+      const symbol = parseSignalSymbol(requested);
+      if (!symbol) {
+        await sendTelegramMessage(
+          chatId,
+          formatSignalUnavailableHtml(requested, "symbol"),
+          undefined,
+          { html: true },
+        );
+      } else {
+        const read = await readDeployedSignal(symbol);
+        await sendTelegramMessage(
+          chatId,
+          read.ok
+            ? formatSignalHtml(read.signal)
+            : formatSignalUnavailableHtml(symbol, read.reason),
+          undefined,
+          { html: true },
+        );
+      }
     }
     // === ALERTAS DE PRECIO ===
     else if (command === "/alerta") {

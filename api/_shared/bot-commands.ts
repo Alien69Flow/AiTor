@@ -42,6 +42,12 @@ export const BOT_COMMANDS: readonly BotCommand[] = [
     cost: "gratis",
   },
   {
+    command: "/senal",
+    summary: "Precio ahora mismo, con su fuente y la hora del dato, servido desde /api/signal.",
+    usage: "/senal BTC",
+    cost: "gratis",
+  },
+  {
     command: "/alerta",
     summary: "Aviso de precio, movimiento, sismo o noticia nueva; se guarda y te aviso aquí.",
     usage: "/alerta BTC > 95000",

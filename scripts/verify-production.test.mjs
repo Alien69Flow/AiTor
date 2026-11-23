@@ -4,6 +4,7 @@ import {
   interpretHealth,
   interpretKnowledge,
   interpretMemory,
+  interpretSenal,
   interpretWebhook,
   renderTable,
   summarize,
@@ -275,5 +276,70 @@ describe("resumen y código de salida", () => {
 
   it("todo comprobado devuelve 0", () => {
     expect(summarize([{ status: "ok" }, { status: "warn" }]).exitCode).toBe(0);
+  });
+});
+
+describe("señal de mercado (fase 9)", () => {
+  const signal = {
+    symbol: "BTC",
+    priceUsd: 61241,
+    asOf: "2026-11-23T00:33:47.000Z",
+    fetchedAt: "2026-11-23T00:34:28.829Z",
+    source: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin",
+    sourceName: "CoinGecko",
+  };
+  const payload = {
+    ok: true,
+    servedFrom: "api/signal",
+    cache: "hit",
+    ageSeconds: 12,
+    stale: false,
+    signal,
+  };
+
+  it("verde con precio, fuente, horas y /senal ofrecido por el bot", () => {
+    const result = interpretSenal(200, payload, { commands: ["/ayuda", "/senal"] });
+    expect(result.status).toBe("ok");
+    expect(result.detail).toContain("BTC $61241");
+    expect(result.detail).toContain("api.coingecko.com");
+    expect(result.detail).toContain("/senal ofrecido por el bot");
+  });
+
+  it("404 es fallo: el endpoint no está desplegado", () => {
+    expect(interpretSenal(404, null).status).toBe("fail");
+  });
+
+  it("un 200 que no es JSON (login de protección) no se disfraza de fuente caída", () => {
+    const result = interpretSenal(200, null);
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("no es JSON");
+  });
+
+  it("la fuente caída se cuenta con su motivo", () => {
+    const result = interpretSenal(502, {
+      ok: false,
+      code: "source",
+      reason: "la fuente no respondió: timeout",
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("timeout");
+  });
+
+  it("sin precio, sin URL de fuente o con horas falsas no hay verde", () => {
+    expect(interpretSenal(200, { ok: true, signal: { ...signal, priceUsd: 0 } }).status).toBe("fail");
+    expect(interpretSenal(200, { ok: true, signal: { ...signal, source: "api.coingecko.com" } }).status).toBe(
+      "fail",
+    );
+    expect(interpretSenal(200, { ok: true, signal: { ...signal, asOf: "ayer" } }).status).toBe("fail");
+  });
+
+  it("un precio viejo es aviso, no verde", () => {
+    expect(interpretSenal(200, { ...payload, ageSeconds: 900 }).status).toBe("warn");
+  });
+
+  it("si el bot desplegado no ofrece /senal, falla aunque el precio llegue", () => {
+    const result = interpretSenal(200, payload, { commands: ["/ayuda", "/estado"] });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("no ofrece /senal");
   });
 });
