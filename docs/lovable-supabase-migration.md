@@ -22,8 +22,16 @@ Por eso el frontend usa **dos clientes** en `src/integrations/supabase/client.ts
 
 | Cliente | Proyecto | Para qué |
 | --- | --- | --- |
-| `authClient` | identidad (`VITE_AUTH_SUPABASE_*`) | login, sesión, filas del usuario (`user_credits`) |
-| `supabase` | datos (`VITE_DATA_SUPABASE_*`) | Edge Functions y filas públicas, **sin sesión** |
+| `authClient` | identidad (`VITE_AUTH_SUPABASE_*` → `pnyi…`) | login y sesión |
+| `supabase` | datos (`VITE_DATA_SUPABASE_*` → `wkdt…`) | Edge Functions y tablas (`user_credits`, `uap_sightings`, …), **sin sesión** |
+
+> **Corregido el 2026-11-23 (medido).** La fila de `authClient` decía también «filas del
+> usuario (`user_credits`)», y no es así: `GET /rest/v1/user_credits` responde **200 en
+> `wkdt…`** y **404 `PGRST205` en `pnyi…`**, que no tiene ninguna tabla. El proyecto de
+> identidad es sólo GoTrue. Consecuencia real: `src/hooks/useTier.ts` lee `user_credits`
+> con `authClient`, así que esa consulta falla y el plan se queda en el gratuito; si
+> quieres que el plan de pago se lea, la consulta tiene que ir por el cliente de datos
+> (es un cambio de código, no de variables).
 
 Tres reglas que no se pueden romper:
 
@@ -58,6 +66,12 @@ curl -s -o /dev/null -w '%{http_code}\n' https://pnyigikagdxqaogbiift.supabase.c
 ```
 
 ## Situación actual (medida 2026-10-16)
+
+> **Actualizado el 2026-11-23.** El login del sitio va por `pnyi…`
+> (`authorize?provider=google` → `302`) y `wkdt…` devuelve `400 missing OAuth secret`; las
+> Edge Functions sólo están y responden en `wkdt…` (21 declaradas, 20 sondadas, 17 responden).
+> `user_credits` vive en `wkdt…`, no en el proyecto de identidad (ver la corrección de la
+> tabla de clientes, arriba).
 
 - Proyecto Supabase: `wkdtvrxavkhbifjtvvdw` (ya es del propietario). Las funciones Edge están
   versionadas en `supabase/functions/` y el frontend las invoca con

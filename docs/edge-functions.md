@@ -1,6 +1,6 @@
 # Edge Functions: despliegue y verificación
 
-El proyecto tiene **20 Edge Functions** en `supabase/functions/` (más `_shared/`, que
+El proyecto tiene **21 Edge Functions** en `supabase/functions/` (más `_shared/`, que
 no se despliega). Este documento es el procedimiento para subirlas y, sobre todo,
 para comprobar que **responden de verdad** — que no es lo mismo que "están
 desplegadas".
@@ -8,7 +8,7 @@ desplegadas".
 ## Verificar (no requiere credenciales de administración)
 
 ```bash
-npm run edge:check            # tabla de las 20 funciones
+npm run edge:check            # tabla de las 21 funciones
 npm run edge:check -- --strict   # falla también con avisos (datos simulados)
 ```
 
@@ -25,19 +25,34 @@ mismo método, query y body que usan los hooks. Distingue tres resultados:
 También compara las carpetas de `supabase/functions/` con `supabase/config.toml`
 y falla si falta alguna declaración (ver "Deriva de configuración").
 
-### Estado medido el 2026-10-20
+### Estado medido el 2026-11-23
 
-`14 responden · 5 protegidas correctamente · 2 avisos · 0 fallos`
+`17 responden · 4 protegidas correctamente · 0 avisos · 0 fallos` — 21 declaradas en
+`config.toml`, 20 sondadas.
 
-Medido antes de retirar `mcp` y de añadir la sonda `chat?health=1`, que falla hasta
-que se despliegue la versión nueva de `chat`.
+Esta medición sustituye a la del 2026-10-20 (`14 responden · 5 protegidas · 2 avisos`):
+`chat?health=1`, `crypto-feed`, `crypto-price` y `wallet-auth` ya están desplegadas y
+responden, y `air-traffic` y `marine-traffic` ya no sirven datos simulados.
 
-Los dos avisos son `air-traffic` y `marine-traffic`: su upstream no respondía y
-ambas devolvían **datos simulados** (`icao24: "mock0000"`,
-`mmsi: "mock000000000"`). Eso ya no existe — se retiró el generador de tráfico
-inventado —, así que a partir del despliegue el aviso significa "sin cobertura":
-la función declara `unavailable: true` y sirve una capa vacía. Ver "Tráfico aéreo
-y marítimo".
+**Lo que el resumen no cubre.** `chat-thread` está declarada en `config.toml` y su
+carpeta sigue en el repositorio, pero **no está desplegada**: `GET
+/functions/v1/chat-thread` devuelve `404 NOT_FOUND` (medido el 2026-11-23). No tiene
+sonda en `scripts/check-edge-functions.mjs`, así que «todas las funciones desplegadas
+responden» habla de las 20 sondadas; una función declarada y sin sondar puede estar en
+404 sin que el resumen lo diga. Comprobación directa de cualquiera de las 21:
+
+```bash
+for n in chat-thread chat mcp; do
+  printf '%-14s ' "$n"
+  curl -s -o /dev/null -w '%{http_code}\n' "https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/$n"
+done   # 404 = no desplegada · 405 = habla otro protocolo (mcp) · 401/403 = protegida
+```
+
+Histórico: la tabla del 2026-10-20 marcaba dos avisos, `air-traffic` y
+`marine-traffic`, porque ambas devolvían **datos simulados** (`icao24: "mock0000"`,
+`mmsi: "mock000000000"`). El generador de tráfico inventado se retiró y las dos
+responden con datos reales: hoy un aviso en esas filas significa «sin cobertura»
+(`unavailable: true`, capa vacía), no datos falsos. Ver "Tráfico aéreo y marítimo".
 
 ## Salud del chat: qué proveedores tienen clave
 
@@ -146,10 +161,32 @@ globo y las cripto se quedan sin backend aunque el login funcione.
 
 Del esquema solo hacen falta cuatro tablas, todas creadas por
 `supabase/migrations/`: `uap_sightings`, `user_roles`, `crypto_payments` y
-`user_credits`. El frontend no consulta ninguna tabla —solo auth y Edge
-Functions—, así que el login funciona en un proyecto vacío; lo que falla sin
-esquema son `ufo-feed`, `github-proxy`, `verify-crypto-payment` y
+`user_credits`. El frontend consulta **una** tabla, `user_credits`, y lo hace con
+`authClient` (`src/hooks/useTier.ts`), así que esa lectura apunta al proyecto de
+identidad, donde la tabla no existe (404 medido): el plan se queda en gratuito. El
+resto va por auth y Edge Functions, así que el login funciona en un proyecto vacío;
+lo que falla sin esquema son `ufo-feed`, `github-proxy`, `verify-crypto-payment` y
 `verify-dao-holdings`.
+
+**Cuáles están aplicadas de verdad (medido el 2026-11-23 en `wkdt…`, clave
+pública):** esas cuatro responden `200`. Las migraciones posteriores están
+escritas en el repositorio pero **no aplicadas** — todas dan `404 PGRST205`:
+
+| Migración | Tablas | Estado |
+| --- | --- | --- |
+| `20261029130000_profiles_tier.sql` | `profiles` | no aplicada (404 en los dos proyectos) |
+| `20261107210000_game_league.sql` | `game_scores` | no aplicada |
+| `20261118190000_chat_memory.sql` | `chat_threads`, `chat_turns` | no aplicada (la memoria del bot va por Redis, no la usa) |
+| `20261120193000_telegram_update_reservations.sql` | `telegram_update_reservations` | no aplicada (`ROADMAP.md` ya la marca pendiente) |
+
+```bash
+KEY=$(grep -o 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9[^']*' src/integrations/supabase/client.ts | head -1)
+for t in uap_sightings user_credits game_scores profiles telegram_update_reservations; do
+  printf '%-32s ' "$t"
+  curl -s -o /dev/null -w '%{http_code}\n' \
+    "https://wkdtvrxavkhbifjtvvdw.supabase.co/rest/v1/$t?select=*&limit=1" -H "apikey: $KEY"
+done   # 200 = aplicada · 404 PGRST205 = sin tabla
+```
 
 Los usuarios y los secretos no viajan solos: sin copiar los datos, el login abrirá
 sesión en un proyecto sin las cuentas del anterior.

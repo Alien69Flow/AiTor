@@ -1,15 +1,27 @@
 # Activar los proveedores de acceso (OAuth)
 
 Los botones de la página de acceso existen todos, pero solo funcionan los
-métodos que estén configurados en el proyecto de Supabase
-(`wkdtvrxavkhbifjtvvdw`). Este documento es la lista de trabajo, con la consola
-donde se crea cada aplicación y el callback exacto que hay que registrar.
+métodos que estén configurados en el proyecto de Supabase **que el sitio consulta**.
+Y ese no es el de datos: el login va contra el proyecto de identidad,
+`pnyigikagdxqaogbiift`, que es el que `AUTH_SUPABASE_URL` usa por defecto
+(`src/integrations/supabase/client.ts`).
 
-> **Comprobado el 2026-10-20** con `npm run auth:providers` contra el proyecto
-> real: `google` y `apple` aparecen **encendidos pero sin Client ID/Secret**
-> (Supabase responde `Unsupported provider: missing OAuth secret`), los otros
-> 17 están apagados, `email` funciona y `phone` está encendido **sin proveedor
-> SMS** (por eso el envío de códigos por SMS falla).
+> **Medido el 2026-11-23**, sin credenciales de administración:
+> `authorize?provider=google` → **`302`** hacia `accounts.google.com` en `pnyi…` y
+> **`400 Unsupported provider: missing OAuth secret`** en `wkdt…`. Es decir: Google
+> funciona donde el sitio lo llama; el proyecto sin credenciales es el de destino de
+> la migración, no el que atiende el botón.
+>
+> **Comprobado el 2026-10-20** con `npm run auth:providers` contra `wkdt…`: `google`
+> y `apple` aparecen **encendidos pero sin Client ID/Secret**, los otros 17 están
+> apagados, `email` funciona y `phone` está encendido **sin proveedor SMS** (por eso
+> el envío de códigos por SMS falla). Eso describe el proyecto de destino.
+>
+> Este documento es la lista de trabajo para **mover la identidad a `wkdt…`**: la
+> consola donde se crea cada aplicación y el callback exacto que habrá que registrar
+> `https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback`. Mientras la identidad
+> siga en `pnyi…`, el callback en uso es
+> `https://pnyigikagdxqaogbiift.supabase.co/auth/v1/callback`.
 >
 > La página de acceso ya no deja pulsar esos botones: marca **sin configurar**
 > (encendido, sin credenciales) o **no activado**, leyendo `/auth/v1/settings` y
