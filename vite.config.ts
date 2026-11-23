@@ -85,6 +85,10 @@ function apiDevFunctions(): Plugin {
         const devReq = {
           url: raw,
           method: req.method,
+          // Los handlers leen `req.headers` (por ejemplo `/api/health` usa
+          // `host` para resolver la URL). Sin esto, la función petaba con
+          // «Cannot read properties of undefined (reading 'host')».
+          headers: req.headers,
           query: Object.fromEntries(url.searchParams.entries()) as Record<string, string>,
         };
 
