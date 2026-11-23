@@ -13,6 +13,7 @@ import {
   answerChain,
   buildPlanBlock,
   buildPrepRequest,
+  imageModelError,
   isQuotaDeath,
   parsePrepAnswer,
   planPrep,
@@ -333,7 +334,9 @@ async function routeToDeepSeek(
   const requested = model.replace("deepseek/", "");
   const dsModel = map[requested] ?? "deepseek-chat";
 
-  // DeepSeek is text-only: flatten any multimodal content to text
+  // DeepSeek is text-only: flatten any multimodal content to text. Última red:
+  // el handler rechaza antes un turno con foto para este modelo y `answerChain`
+  // no lo ofrece como respaldo, así que aquí no debería llegar una imagen.
   const textMessages = (processedMessages as Array<{ role: string; content: unknown }>).map((m) => ({
     role: m.role,
     content: Array.isArray(m.content)
@@ -655,6 +658,19 @@ Deno.serve(async (req) => {
     
     const { messages, model, context } = validation.data;
 
+    // Un turno con imagen sólo puede ir a un modelo que la vea. Antes, si la
+    // clave del modelo pedido caía, el respaldo podía ser DeepSeek: su ruta
+    // aplana el contenido y descarta la foto, así que el modelo contestaba a
+    // ciegas. Mejor decirlo que fingir que la ha visto.
+    const hasImages = messages.some((message) => Boolean(message.imageData));
+    const imageError = imageModelError(model, hasImages);
+    if (imageError) {
+      return new Response(
+        JSON.stringify({ error: imageError, reason: "model-without-vision", suggestedModel: DEFAULT_MODEL }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     // Trabajo barato primero. Clasificar, resumir y elegir formato es una
     // llamada corta al modelo de trabajo; el modelo bueno no debería pagar
     // por leer un volcado ni por adivinar el formato.
@@ -673,7 +689,7 @@ Deno.serve(async (req) => {
     // Respuesta final: el modelo pedido y, si su clave muere por cuota, la
     // primera clave alternativa que quede. Nunca se reintenta el proveedor
     // caído: lo que se agotó es su clave, no el modelo.
-    const candidates = [model, ...answerChain(model, (name) => Deno.env.get(name))];
+    const candidates = [model, ...answerChain(model, (name) => Deno.env.get(name), { hasImages })];
     const outcome = await resolveWithFallback(candidates, async (candidate) => {
       try {
         const response = await dispatchModel(candidate, processedMessages, system);

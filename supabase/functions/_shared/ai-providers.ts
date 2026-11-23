@@ -32,6 +32,14 @@ export interface ProviderSpec {
   where: string;
   /** Modelos que atiende este proveedor (ids compartidos con la UI). */
   models: readonly string[];
+  /**
+   * ¿Puede leer una imagen en el turno? Si es `false`, mandarle una foto hace
+   * que conteste a ciegas: DeepSeek la descarta al aplanar el contenido, y ni
+   * el modelo ni el usuario se enteran. El enrutado de respaldo lo consulta
+   * antes de ofrecer una alternativa y el handler rechaza el turno si el
+   * modelo pedido no ve.
+   */
+  supportsImages: boolean;
 }
 
 export const DEFAULT_MODEL = "google/gemini-2.5-flash";
@@ -54,6 +62,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [
       "openai/gpt-5-mini",
       "openai/gpt-5-nano",
     ],
+    supportsImages: true,
   },
   {
     id: "xai",
@@ -61,6 +70,9 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     envVar: "GROK_API_KEY",
     where: "Supabase → Edge Functions → Secrets → GROK_API_KEY",
     models: ["xai/grok-2"],
+    // grok-2 es texto; la variante con visión es otro id que no está en el
+    // catálogo. Conservador: no se le manda una imagen que podría ignorar.
+    supportsImages: false,
   },
   {
     id: "anthropic",
@@ -68,6 +80,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     envVar: "ANTHROPIC_API_KEY",
     where: "Supabase → Edge Functions → Secrets → ANTHROPIC_API_KEY",
     models: ["anthropic/claude-sonnet-4"],
+    supportsImages: true,
   },
   {
     id: "deepseek",
@@ -75,6 +88,7 @@ export const PROVIDERS: readonly ProviderSpec[] = [
     envVar: "DEEPSEEK_API_KEY",
     where: "Supabase → Edge Functions → Secrets → DEEPSEEK_API_KEY",
     models: ["deepseek/deepseek-v3", "deepseek/deepseek-chat", "deepseek/deepseek-reasoner"],
+    supportsImages: false,
   },
 ];
 
@@ -120,6 +134,11 @@ export const ROUTED_MODELS: readonly string[] = PROVIDERS.flatMap((provider) => 
 
 export function providerForModel(model: string): ProviderSpec | null {
   return PROVIDERS.find((provider) => provider.models.includes(model)) ?? null;
+}
+
+/** ¿Este modelo puede leer una imagen del turno? Desconocido = no. */
+export function modelSeesImages(model: string): boolean {
+  return providerForModel(model)?.supportsImages ?? false;
 }
 
 export interface ProviderHealth {

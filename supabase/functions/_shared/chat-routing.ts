@@ -19,7 +19,7 @@
  * con un objeto cualquiera y el handler es el único que toca `Deno.env`.
  */
 
-import { keyState, providerForModel, PROVIDERS } from "./ai-providers.ts";
+import { DEFAULT_MODEL, keyState, modelSeesImages, providerForModel, PROVIDERS } from "./ai-providers.ts";
 
 /**
  * El modelo de trabajo. Gemini Flash Lite es el más barato del catálogo y
@@ -260,11 +260,20 @@ export function isQuotaDeath(status: number, errorText: string): boolean {
  * baratos: si el usuario eligió un modelo bueno, una respuesta peor es
  * preferible a ninguna, pero sólo como último recurso.
  */
-export function answerChain(model: string, env: (name: string) => string | undefined): string[] {
+export function answerChain(
+  model: string,
+  env: (name: string) => string | undefined,
+  { hasImages = false }: { hasImages?: boolean } = {},
+): string[] {
   const dead = providerForModel(model)?.id ?? null;
 
   const candidates = PROVIDERS.filter(
-    (provider) => provider.id !== dead && keyState(env(provider.envVar)) === "ok",
+    (provider) =>
+      provider.id !== dead &&
+      keyState(env(provider.envVar)) === "ok" &&
+      // Un turno con foto sólo admite proveedores que la vean: cambiar a uno
+      // de texto la descartaría en silencio y contestaría a ciegas.
+      (!hasImages || provider.supportsImages),
   ).flatMap((provider) =>
     provider.models.map((candidate) => ({ model: candidate, tier: tierOf(candidate) })),
   );
@@ -323,6 +332,18 @@ export async function resolveWithFallback<Ok>(
   }
 
   return last;
+}
+
+/**
+ * Aviso cuando el modelo pedido no puede ver la imagen del turno.
+ *
+ * `null` = adelante. Se devuelve texto y no un booleano para que el handler
+ * pueda decírselo al usuario sin inventarse el mensaje, y para poder probarlo
+ * sin Deno.
+ */
+export function imageModelError(model: string, hasImages: boolean): string | null {
+  if (!hasImages || modelSeesImages(model)) return null;
+  return `El modelo ${model} no puede ver imágenes. Elige uno multimodal (por ejemplo ${DEFAULT_MODEL}) o envía el mensaje sin la foto.`;
 }
 
 /** Modelo barato que de verdad puede responder ahora mismo, si hay alguno. */
