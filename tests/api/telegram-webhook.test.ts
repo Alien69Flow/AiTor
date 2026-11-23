@@ -272,6 +272,34 @@ describe("webhook de Telegram", () => {
     expect(sent.secret_token).toBe("s3cr3t");
   });
 
+  it("informa el estado de esa petición aunque el alta esté cacheada", async () => {
+    // Sin secreto: el alta no se repite y su resultado queda memoizado.
+    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token" });
+
+    // Primera lectura: `getWebhookInfo` falla, así que el memo dice «sin-secreto».
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/getMe")) {
+          return TELEGRAM_OK({ id: 1, username: "Alien69Bot" });
+        }
+        if (String(url).includes("/getWebhookInfo")) {
+          return new Response("caído", { status: 502 });
+        }
+        return TELEGRAM_OK(true);
+      }),
+    );
+    const first = JSON.parse((await invoke(handler, null, {}, "GET")).body);
+    expect(first.registration).toBe("sin-secreto");
+    expect(first.webhook).toBeNull();
+
+    // Segunda: Telegram ya informa la URL buena; el memo sigue igual.
+    stubNetwork();
+    const second = JSON.parse((await invoke(handler, null, {}, "GET")).body);
+    expect(second.webhook.matchesExpected).toBe(true);
+    expect(second.registration).toBe("ya-registrado");
+  });
+
   it("un despliegue de preview no roba el webhook de producción", async () => {
     const fetchMock = stubNetwork("https://viejo.example/hook");
     const handler = await load({

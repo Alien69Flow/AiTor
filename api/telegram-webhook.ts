@@ -138,7 +138,15 @@ async function telegramApi<T>(method: string, payload?: unknown): Promise<T | nu
  * En preview no se toca: un despliegue de preview robaría el webhook de
  * producción.
  */
-async function registerWebhook(): Promise<string> {
+type RegistrationState =
+  | "sin-token"
+  | "no-produccion"
+  | "sin-secreto"
+  | "ya-registrado"
+  | "registrado-con-secreto"
+  | "error";
+
+async function registerWebhook(): Promise<RegistrationState> {
   if (!TELEGRAM_BOT_TOKEN) return "sin-token";
   if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") return "no-produccion";
 
@@ -163,9 +171,30 @@ async function registerWebhook(): Promise<string> {
   return "registrado-con-secreto";
 }
 
+/**
+ * Qué se informa en `registration`.
+ *
+ * El alta se hace una vez por instancia y su resultado queda memoizado, pero
+ * ese resultado puede dejar de describir la realidad: si la primera lectura de
+ * `getWebhookInfo` falló, el memo dice «sin-secreto» mientras el webhook ya
+ * está en la URL correcta. Por eso el informe se calcula con los datos de esta
+ * petición; el memo sólo decide donde es la única fuente posible (el alta con
+ * secreto, que Telegram no deja consultar).
+ */
+function liveRegistration(
+  info: TelegramWebhookInfo | null,
+  attempt: RegistrationState,
+): RegistrationState {
+  if (!TELEGRAM_BOT_TOKEN) return "sin-token";
+  if (process.env.VERCEL_ENV && process.env.VERCEL_ENV !== "production") return "no-produccion";
+  if (attempt === "registrado-con-secreto") return attempt;
+  if (webhookSecret()) return info?.url === WEBHOOK_URL ? "registrado-con-secreto" : attempt;
+  return info?.url === WEBHOOK_URL ? "ya-registrado" : "sin-secreto";
+}
+
 /** Una sola vez por instancia: si falla, se reintenta en la siguiente petición. */
-let registration: Promise<string> | null = null;
-function registerWebhookOnce(): Promise<string> {
+let registration: Promise<RegistrationState> | null = null;
+function registerWebhookOnce(): Promise<RegistrationState> {
   if (!registration) {
     registration = registerWebhook().then((state) => {
       if (state === "error") registration = null;
@@ -749,7 +778,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       redis: { configured: isRedisConfigured() },
       dedupe: { active: isRedisConfigured() || isSupabaseDedupeConfigured() },
       expectedUrl: WEBHOOK_URL,
-      registration: registrationState,
+      // Estado de esta petición, no el memo del primer alta (ver liveRegistration).
+      registration: liveRegistration(info, registrationState),
       bot: me ? { id: me.id, username: me.username ?? null, name: me.first_name ?? null } : null,
       webhook: info
         ? {
