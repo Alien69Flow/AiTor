@@ -1,7 +1,29 @@
 # Activar Google en Supabase, paso a paso
 
-Proyecto `wkdtvrxavkhbifjtvvdw` · sitio `https://aitor.alienflow.space` · callback de Supabase
-`https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback`
+## Qué proyecto atiende el login hoy (medido el 2026-11-23)
+
+La identidad del sitio es **`pnyigikagdxqaogbiift`**, no `wkdt…`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://pnyigikagdxqaogbiift.supabase.co/auth/v1/authorize?provider=google"   # 302 → accounts.google.com
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/authorize?provider=google"   # 400 missing OAuth secret
+```
+
+El frontend usa el primero: `AUTH_SUPABASE_URL` de `src/integrations/supabase/client.ts` cae en
+`pnyi…` cuando Vercel no define `VITE_AUTH_SUPABASE_URL`. O sea: **Google ya funciona en el sitio**
+y el callback real es `https://pnyigikagdxqaogbiift.supabase.co/auth/v1/callback`.
+
+Los pasos de abajo sirven para **mover la identidad a `wkdt…`** (el objetivo de
+[lovable-supabase-migration.md](lovable-supabase-migration.md)). Mientras eso no pase,
+configurar Google en `wkdt…` no cambia el botón de la página de acceso: el sitio no le pregunta
+a ese proyecto.
+
+## El proyecto de destino: `wkdtvrxavkhbifjtvvdw`
+
+Sitio `https://aitor.alienflow.space` · callback que habrá que registrar el día que la identidad
+se mueva: `https://wkdtvrxavkhbifjtvvdw.supabase.co/auth/v1/callback`.
 
 Estado de partida (medido, no supuesto): en `/auth/v1/settings` Google aparece **activado**, pero
 `/auth/v1/authorize?provider=google` responde `400 Unsupported provider: missing OAuth secret`.
@@ -152,10 +174,14 @@ app de Google **de Lovable**. Ese broker solo acepta `aitor.lovable.app` como `r
 en `aitor.alienflow.space` ya devolvía `400 redirect_uri is not allowed` y `/~oauth/initiate` no
 existe fuera del hosting de Lovable (404) — está documentado en
 [lovable-supabase-migration.md](lovable-supabase-migration.md). Desde la migración el flujo va directo
-contra tu proyecto (`nativeOAuth` en `src/hooks/useAuth.ts`), y ahí las credenciales de Google no
-existen: el interruptor se quedó encendido, el secret no.
+contra Supabase (`nativeOAuth` en `src/hooks/useAuth.ts`), pero contra el proyecto de **identidad**
+(`pnyi…`), donde Google sí responde `302`. El interruptor sin credenciales es el de `wkdt…`, que
+hoy no atiende el login.
 
 Para comprobarlo sin fiarse de nadie, dos comandos y una respuesta del servidor:
+
+Los dos comandos siguientes miden **`wkdt…`** (el proyecto de destino). Para medir el que usa el
+sitio hoy, cambia el host a `pnyigikagdxqaogbiift.supabase.co`: ahí la segunda orden da `302`.
 
 ```bash
 # ¿qué está encendido?  → google y apple salen true

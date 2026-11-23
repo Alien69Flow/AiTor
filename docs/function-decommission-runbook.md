@@ -305,6 +305,23 @@ Rollback probado:   <sí/no>
 proyecto) devolvió **20 funciones en el repositorio y 4 desplegadas fuera de
 él**. `skills-ingest` ya no existe en producción (404 de la plataforma).
 
+### Revisión el 2026-11-23 (sondas directas a `wkdt…`)
+
+El repositorio tiene ya **21 funciones** (se añadió `chat-thread`) y el inventario
+de fuera del repo **sigue igual**, sin ninguna baja hecha:
+
+| Función | Sonda hoy | Qué significa |
+| --- | --- | --- |
+| `secrets-diag` | **200 sin autenticación** | la P0 **sigue abierta**; no se ha tumbado |
+| `mcp` | 405 (servidor MCP vivo) | sigue desplegada; falta tumba → 7 días → borrar |
+| `agenticworkflows` | 401 | sigue desplegada |
+| `consume-credits` | 401 | sigue desplegada |
+| `skills-ingest` | 404 | ya no existe (correcto) |
+
+`chat-thread`, que sí está en el repositorio y declarada en `config.toml`, **no está
+desplegada** (`404`): no entra en este inventario, pero conviene saberlo antes de
+dar por hecho que «todo lo declarado está arriba».
+
 | Función | Fuera del repo desde | Sonda | Consumidores | Acción |
 | --- | --- | --- | --- | --- |
 | `secrets-diag` | 2026-05-07 | **200 sin autenticación** | ninguno | **P0**: tumba hoy, borrar en 48 h |

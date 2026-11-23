@@ -57,6 +57,20 @@ porque un cliente puede pedir una herramienta que nunca llegó a listar.
 
 ## Control de acceso en la base de datos
 
+> **Estado medido el 2026-11-23: la migración está escrita, no aplicada.**
+> `GET /rest/v1/profiles?select=*&limit=1` devuelve `404 PGRST205` («Could not find the
+> table `public.profiles`») tanto en el proyecto de identidad (`pnyi…`) como en el de
+> datos (`wkdt…`), con la clave pública. Sin tabla, `resolveCaller` cae en su `catch` y
+> **todo el mundo es `free`**: las herramientas `pro` no se pueden usar hasta que se
+> aplique `supabase db push` (o el SQL equivalente) en el proyecto de identidad.
+>
+> ```bash
+> KEY=$(grep -o 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9[^']*' src/integrations/supabase/client.ts | head -1)
+> curl -s -o /dev/null -w '%{http_code}\n' \
+>   "https://pnyigikagdxqaogbiift.supabase.co/rest/v1/profiles?select=id&limit=1" -H "apikey: $KEY"
+> # 404 PGRST205 = sin tabla (lo de hoy) · 200 = aplicada
+> ```
+
 `supabase/migrations/20261029130000_profiles_tier.sql`:
 
 - `profiles.tier` con `check (tier in ('free','pro','dao'))` y `free` por defecto.
