@@ -58,7 +58,7 @@
     "preview": "vite preview",
     "edge:check": "node scripts/check-edge-functions.mjs",
     "functions:retire": "node scripts/retire-functions.mjs",
-    "edge:deploy": "supabase functions deploy --project-ref pnyigikagdxqaogbiift",
+    "edge:deploy": "supabase functions deploy --project-ref wkdtvrxavkhbifjtvvdw",
     "arsenal:sync": "node scripts/sync-arsenal.mjs",
     "chat:deploy": "node scripts/deploy-chat.mjs",
     "chat:health": "node scripts/deploy-chat.mjs --verify",

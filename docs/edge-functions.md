@@ -104,7 +104,7 @@ npx supabase login                       # interactivo, abre el navegador
 export SUPABASE_ACCESS_TOKEN=...         # o el token en CI
 
 # 3. Enlazar el proyecto
-npx supabase link --project-ref pnyigikagdxqaogbiift
+npx supabase link --project-ref wkdtvrxavkhbifjtvvdw
 
 # 4. Desplegar
 npm run edge:deploy                      # = supabase functions deploy --project-ref ...
@@ -117,19 +117,60 @@ npm run edge:check
 `verify_jwt` de `supabase/config.toml`. Para iterar sobre una sola:
 
 ```bash
-npx supabase functions deploy chat --project-ref pnyigikagdxqaogbiift
+npx supabase functions deploy chat --project-ref wkdtvrxavkhbifjtvvdw
 ```
 
-### Cambiar de proyecto
+### Dos proyectos, y el de las funciones es uno solo
 
-El ref canónico es `project_id` de `supabase/config.toml`: `npm run edge:deploy` y
-`npm run functions:retire` lo leen de ahí, así que no hay que repetirlo en otro
-sitio.
+| Proyecto | Para qué | Lo usan |
+| --- | --- | --- |
+| `wkdtvrxavkhbifjtvvdw` | Edge Functions y tablas del producto | `project_id` de `supabase/config.toml`, `npm run edge:deploy`, `scripts/deploy-all.mjs`, `api/telegram-webhook.ts` |
+| `pnyigikagdxqaogbiift` | Identidad: GoTrue con Google y `profiles` | `src/integrations/supabase/client.ts`, la `AUTH_SUPABASE_URL` de `api/mcp.ts` y `api/league.ts` |
 
-Desplegar no basta para migrar. El frontend habla con el proyecto que le indican
+Las funciones **solo** responden en el proyecto de datos. Medido el 2026-11-23:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/chat   # 200
+curl -s -o /dev/null -w '%{http_code}\n' https://pnyigikagdxqaogbiift.supabase.co/functions/v1/chat   # 404
+```
+
+Que la identidad siga en `pnyi…` no es deriva: ese proyecto es el que tiene Google
+configurado y el de datos no (`docs/lovable-supabase-migration.md`). Por eso
+`api/mcp.ts`, `api/league.ts` y `src/integrations/supabase/client.ts` nombran
+`pnyi…` **a propósito** y no se "corrigen": son auth, no funciones.
+
+El ref canónico para desplegar es `project_id` de `supabase/config.toml`;
+`edge:deploy` lo repite en su comando, `deploy-all.mjs` y `functions:retire` lo
+llevan o lo leen, y `scripts/supabase-ref.test.mjs` falla si dejan de coincidir
+entre sí o con el proyecto al que llama el bot.
+
+### Cómo comprobar que el despliegue llegó al proyecto bueno
+
+Después de `npm run edge:deploy`, en este orden:
+
+1. **El CLI dice dónde desplegó**:
+   `npx supabase functions list --project-ref wkdtvrxavkhbifjtvvdw` → `chat` con
+   `updated_at` de hace un momento. Si en `pnyi…` también aparece reciente, se
+   desplegó en los dos y el comando llevaba el ref viejo.
+2. **La función existe**:
+   `curl -s -o /dev/null -w '%{http_code}\n' https://wkdtvrxavkhbifjtvvdw.supabase.co/functions/v1/chat`
+   → `200`. Un `POST {}` que contesta `400` también vale: es la validación de la
+   función; lo que descarta el proyecto es el **404**.
+3. **La contraprueba, que es la que faltaba**: el mismo `GET` en
+   `https://pnyigikagdxqaogbiift.supabase.co/functions/v1/chat` → `404`. Si ahí
+   contesta `200`, el despliegue fue al proyecto de identidad y el bot seguirá
+   leyendo la versión anterior.
+4. **Responde la versión nueva**: `npm run edge:check` prueba producción con la URL
+   y la clave del cliente (`VITE_SUPABASE_URL` primero), así que caza justo el caso
+   "desplegado en un proyecto, llamado en otro". `chat?health=1` deja de dar
+   `400 Invalid JSON` cuando la versión desplegada es la del repositorio.
+5. **Sin repetirlo a mano**: `npm test -- scripts/supabase-ref.test.mjs`.
+
+Desplegar no basta para migrar. El frontend habla con dos proyectos a la vez:
 `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` (Vercel → Settings →
-Environment Variables); mientras esos dos apunten al proyecto viejo, las funciones
-nuevas quedan sin usar. El orden que no rompe nada:
+Environment Variables) tienen que apuntar al de datos —el de las funciones— o cada
+`supabase.functions.invoke` responde 404 aunque las funciones estén arriba. El
+orden que no rompe nada:
 
 1. `npx supabase login`, `npx supabase db push` (esquema) y `npm run edge:deploy`
    sobre el proyecto nuevo.
@@ -159,7 +200,7 @@ sesión en un proyecto sin las cuentas del anterior.
 Los valores no viven en el repositorio. Se cargan en el proyecto una vez:
 
 ```bash
-npx supabase secrets set --project-ref pnyigikagdxqaogbiift \
+npx supabase secrets set --project-ref wkdtvrxavkhbifjtvvdw \
   FIRECRAWL_API_KEY=... OPENWEATHER_API_KEY=... OPENSKY_CLIENT_ID=... OPENSKY_CLIENT_SECRET=...
 ```
 
@@ -269,7 +310,7 @@ se despliegue, esa marca desaparece sola.
   Lovable, pero **la función sigue desplegada** y ya no aparece en `edge:check`.
   El inventario de funciones de más y el apagado seguro (tumba 410 → borrado)
   están en `docs/function-decommission-runbook.md`; a mano:
-  `npx supabase functions delete mcp --project-ref pnyigikagdxqaogbiift`
+  `npx supabase functions delete mcp --project-ref wkdtvrxavkhbifjtvvdw`
   (requiere `SUPABASE_ACCESS_TOKEN` o un `supabase login`).
 - `_shared/guard.ts`: allowlist sin hosts de Lovable. Afecta a las nueve funciones
   que usan `guardPublic`, así que **solo aplica al redesplegarlas**; hasta entonces

@@ -1,4 +1,15 @@
-project_id = "pnyigikagdxqaogbiift"
+# Ref canónico del proyecto de DATOS Y FUNCIONES (wiKDT).
+#
+# Este repositorio trabaja con dos proyectos de Supabase y no son
+# intercambiables: aquí viven las Edge Functions y las tablas del producto
+# (`wkdtvrxavkhbifjtvvdw`); el proyecto de identidad, el que tiene Google
+# configurado (`pnyigikagdxqaogbiift`), lo usan `src/integrations/supabase/client.ts`
+# y las `AUTH_SUPABASE_URL` de `api/mcp.ts` y `api/league.ts`.
+#
+# Estuvo en `pnyi…` y por eso `npm run edge:deploy` desplegaba donde nada
+# responde: `GET /functions/v1/chat` da 200 en `wkdt…` y 404 en `pnyi…`.
+# `scripts/supabase-ref.test.mjs` impide que vuelva a divergir.
+project_id = "wkdtvrxavkhbifjtvvdw"
 
 [functions.chat]
 verify_jwt = false
