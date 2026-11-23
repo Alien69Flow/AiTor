@@ -41,6 +41,13 @@ Cada lunes, el workflow `Guardia de producción`
 la fase 2 o la 4 dejan de cumplirse, se pone rojo: un ✅ caduca solo, sin que
 nadie tenga que acordarse de mirarlo.
 
+Y un rojo ya no se queda en la pestaña de Actions: el workflow abre un issue
+`Guardia de producción en rojo` con la tabla de la sonda y la salida de lo que
+falló, lo actualiza en las pasadas siguientes (busca por título, no acumula) y
+lo cierra con un comentario cuando vuelve a verde. Lo hace
+[`scripts/guardia-issue.mjs`](scripts/guardia-issue.mjs) con el token efímero del
+run (`issues: write`), así que no hay ninguna credencial nueva.
+
 La sonda ([`scripts/verify-production.mjs`](scripts/verify-production.mjs)) hace
 cinco comprobaciones, nunca imprime claves y las saca como tabla: una fila por
 comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
