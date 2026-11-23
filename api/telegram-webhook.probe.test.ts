@@ -6,6 +6,7 @@
  * la respuesta no lleva nunca el valor de la clave.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { classifySecret } from "./telegram-webhook";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
@@ -124,6 +125,34 @@ function stubFetch(chatStatus = 401, chatBody = '{"error":"Provider authenticati
 
 const req = (url: string, headers: Record<string, string> = {}) =>
   ({ method: "GET", url, headers: { host: "localhost", ...headers } }) as never;
+
+describe("estado del secreto del webhook", () => {
+  it("distingue ausente, vacío, formato inválido y válido", () => {
+    expect(classifySecret(undefined)).toBe("missing");
+    expect(classifySecret("")).toBe("empty");
+    expect(classifySecret("   ")).toBe("empty");
+    // El caso que dejaba el bot mudo sin pista: pegado con comillas o base64.
+    expect(classifySecret('"secreto"')).toBe("bad-chars");
+    expect(classifySecret("abc+/=")).toBe("bad-chars");
+    expect(classifySecret("a".repeat(257))).toBe("too-long");
+    expect(classifySecret("secreto-de-prueba_123")).toBe("ok");
+    expect(classifySecret("  secreto-de-prueba  ")).toBe("ok");
+  });
+
+  it("el GET publica el motivo, nunca el valor", async () => {
+    process.env.TELEGRAM_WEBHOOK_SECRET = "no+vale/=";
+    stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook"), res);
+    const body = snap().body as ProbeBody & { secretConfigured: boolean; secretState: string };
+
+    expect(body.secretConfigured).toBe(false);
+    expect(body.secretState).toBe("bad-chars");
+    expect(JSON.stringify(body)).not.toContain("no+vale/=");
+  });
+});
 
 describe("GET /api/telegram-webhook?probe=1", () => {
   it("sin clave de operador sólo hace la comprobación gratuita", async () => {

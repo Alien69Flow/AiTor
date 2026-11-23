@@ -57,6 +57,24 @@ function webhookSecret(): string | null {
   return WEBHOOK_SECRET_PATTERN.test(TELEGRAM_WEBHOOK_SECRET) ? TELEGRAM_WEBHOOK_SECRET : null;
 }
 
+/**
+ * Por qué el secreto no sirve, sin decir cuál es.
+ *
+ * `secretConfigured: false` no distingue una variable que no llegó al
+ * despliegue de una que llegó mal escrita, y esa diferencia decide dónde se
+ * arregla: en el panel de Vercel o en el valor. Se publica la clasificación,
+ * nunca el valor ni su longitud.
+ */
+export type SecretState = "ok" | "missing" | "empty" | "bad-chars" | "too-long";
+
+export function classifySecret(raw: string | undefined): SecretState {
+  if (raw === undefined) return "missing";
+  const value = raw.trim();
+  if (!value) return "empty";
+  if (value.length > 256) return "too-long";
+  return /^[A-Za-z0-9_-]+$/.test(value) ? "ok" : "bad-chars";
+}
+
 // Supabase de AiTor (función de chat existente). SUPABASE_URL manda cuando
 // existe, para poder mover las funciones de proyecto desde Vercel sin tocar
 // código; si no, se usa el proyecto en el que viven hoy.
@@ -740,6 +758,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       service: "telegram-webhook",
       vercelEnv: process.env.VERCEL_ENV ?? null,
       secretConfigured: Boolean(webhookSecret()),
+      // Falta / vacío / caracteres fuera de A-Za-z0-9_- / demasiado largo.
+      // El valor no sale nunca: sólo el motivo.
+      secretState: classifySecret(process.env.TELEGRAM_WEBHOOK_SECRET),
       // ¿Hay Redis en este despliegue? Decide dos cosas que el operador no
       // podía ver desde aquí: si la memoria del hilo y las alertas tienen dónde
       // guardar, y si el dedupe por `update_id` reserva la entrega. El dedupe
