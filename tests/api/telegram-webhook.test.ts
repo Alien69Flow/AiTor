@@ -96,6 +96,7 @@ const TELEGRAM_OK = (result: unknown) =>
 function stubNetwork(
   webhookUrl = "https://aitor.alienflow.space/api/telegram-webhook",
   sse = SSE,
+  fallaElIndicador = false,
 ) {
   const fetchMock = vi.fn(async (url: string) => {
     if (typeof url === "string" && url.includes("/getMe")) {
@@ -114,6 +115,7 @@ function stubNetwork(
       });
     }
     if (typeof url === "string" && url.includes("/sendChatAction")) {
+      if (fallaElIndicador) throw new TypeError("fetch failed");
       return new Response(JSON.stringify({ ok: true }), { status: 200 });
     }
     return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -153,6 +155,20 @@ describe("formato de los mensajes", () => {
 });
 
 describe("webhook de Telegram", () => {
+  it("si el «escribiendo…» falla, el turno sigue y contesta", async () => {
+    const fetchMock = stubNetwork(undefined, SSE, true);
+    const handler = await load({ TELEGRAM_BOT_TOKEN: "test-token", TELEGRAM_WEBHOOK_SECRET: SECRET });
+
+    const result = await invoke(handler, update("hola"), FIRMA);
+
+    expect(result.status).toBe(200);
+    const sent = fetchMock.mock.calls.filter(([url]) => String(url).includes("/sendMessage"));
+    const [, init] = sent.at(-1) as unknown as [string, RequestInit];
+    const payload = JSON.parse(String(init.body));
+    expect(payload.text).toContain("hola desde el núcleo");
+    expect(payload.text).not.toContain("Error en el procesamiento");
+  });
+
   it("la respuesta del modelo sale como HTML, no como Markdown legacy", async () => {
     const sse = [
       `data: ${JSON.stringify({ choices: [{ delta: { content: "```text\nHOLA\n```\n**negrita**" } }] })}`,

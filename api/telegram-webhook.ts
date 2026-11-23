@@ -332,15 +332,32 @@ async function sendTelegramMessage(
   }
 }
 
+/**
+ * «Escribiendo…»: un extra, nunca un requisito del turno.
+ *
+ * El `await` sin red era el fallo: si Telegram no aceptaba el indicador (red,
+ * 429), la excepción subía al `try` del handler y el usuario recibía «Error en
+ * el procesamiento» sin que se hubiera llamado al modelo. Ahora se ignora.
+ */
 async function sendTypingAction(chatId: number) {
-  await fetch(`${TELEGRAM_API}/sendChatAction`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      action: "typing",
-    }),
-  });
+  try {
+    const response = await fetch(`${TELEGRAM_API}/sendChatAction`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        action: "typing",
+      }),
+    });
+    if (!response.ok) {
+      console.warn(`[telegram] el indicador respondió ${response.status}: se sigue sin él`);
+    }
+  } catch (error) {
+    console.warn(
+      "[telegram] no se pudo enviar el indicador de escritura:",
+      error instanceof Error ? error.message : error,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
