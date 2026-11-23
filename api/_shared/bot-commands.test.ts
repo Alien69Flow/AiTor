@@ -72,10 +72,12 @@ describe("/estado", () => {
       dedupe: false,
       knowledgeBlocks: 4,
       supabaseKeyKind: "jwt",
+      budget: { used: 3, limit: 40, storage: "memory" },
     });
-    expect(text.match(/⚠️/g)?.length).toBe(4);
+          expect(text.match(/⚠️/g)?.length).toBe(5);
     expect(text).toContain("4 bloque(s)");
     expect(text).toContain("<code>jwt</code>");
+    expect(text).toContain("3 de 40 en esta instancia");
   });
 
   it("cuenta el hilo y las alertas cuando hay almacén", () => {
@@ -86,9 +88,11 @@ describe("/estado", () => {
       dedupe: true,
       knowledgeBlocks: 4,
       supabaseKeyKind: "jwt",
+      budget: { used: 4, limit: 40, storage: "redis" },
     });
     expect(text).toContain("6 mensaje(s)");
     expect(text).toContain("2 de 10");
+    expect(text).toContain("4 de 40 respuestas hoy (exacto, Redis)");
     expect(text).not.toContain("⚠️");
   });
 });

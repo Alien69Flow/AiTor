@@ -15,6 +15,11 @@ import {
 // La tabla única de comandos: de aquí sale `/ayuda` y el bloque de `AGENTS.md`.
 import { commandNames, escapeHtml, isBotCommand, renderHelpHtml } from "./_shared/bot-commands.js";
 import {
+  formatBudgetExceeded,
+  peekBudget,
+  takeTurn,
+} from "./_shared/chat-budget.js";
+import {
   formatSignalHtml,
   formatSignalUnavailableHtml,
   parseMarketSignal,
@@ -931,6 +936,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const statusThread = telegramThread(chatId);
       const loadedThread = statusThread ? await loadThread(statusThread) : null;
       const storedAlerts = statusThread ? await loadAlerts(statusThread.externalId) : null;
+      const budget = await peekBudget(chatId);
       await sendTelegramMessage(
         chatId,
         formatStatus({
@@ -947,6 +953,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           dedupe: isRedisConfigured() || isSupabaseDedupeConfigured(process.env),
           knowledgeBlocks: KNOWLEDGE_BLOCKS.length,
           supabaseKeyKind: SUPABASE_KEY.kind,
+          budget: { used: budget.used, limit: budget.limit, storage: budget.storage },
         }),
         undefined,
         { html: true },
@@ -1054,6 +1061,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         { html: true },
       );
     } else {
+      // El único camino que gasta modelo. Se cuenta antes de llamar: un intento
+      // fallido también pudo costar cuota. Al llegar al tope se contesta sin
+      // modelo, y los comandos gratuitos siguen funcionando.
+      const budget = await takeTurn(chatId);
+      if (!budget.allowed) {
+        // El aviso, una sola vez: justo al cruzar el tope. Si se repitiera en
+        // cada mensaje, el tope se convertiría en spam. Después se calla (el
+        // usuario ya sabe hasta cuándo), y el contador sigue subiendo.
+        if (budget.used === budget.limit + 1) {
+          console.warn(`[budget] chat ${chatId}: tope diario alcanzado (${budget.used}/${budget.limit})`);
+          await sendTelegramMessage(chatId, formatBudgetExceeded(budget), undefined, { html: true });
+        }
+        return res.status(200).send("OK");
+      }
       await sendTypingAction(chatId);
       const thread = telegramThread(chatId);
       const history = thread ? historyMessages(await loadThread(thread)) : [];
