@@ -513,7 +513,13 @@ interface KnowledgeProbe {
 }
 
 const PROBE_MESSAGE = "ping";
-const PROBE_TIMEOUT_MS = 12_000;
+/**
+ * Presupuesto por intento, no por sonda: la sonda hace hasta tres llamadas en
+ * secuencia (salud, como-hoy, sólo-apikey) y tiene que devolver el diagnóstico
+ * antes de que Vercel corte la función a los 30 s (`vercel.json`).
+ * 3 × 8 = 24 s, con 6 s de margen para el conocimiento y la respuesta.
+ */
+export const PROBE_TIMEOUT_MS = 8_000;
 /** Un sondeo gasta cuota: como mucho uno cada 30 s por variante e instancia. */
 const PROBE_CACHE_MS = 30_000;
 const PROBE_CACHE = new Map<string, { at: number; value: ChatProbe }>();
@@ -540,13 +546,11 @@ function hintFor(
   rawBody: string,
   ok: boolean,
   produced: boolean,
-  healthOnly: boolean,
 ): string {
   // Los fallos salen de la misma clasificación que `/api/health` y que el
   // mensaje del bot: antes había una tabla de estados aquí y otra allí, y
   // podían decir cosas distintas del mismo 401.
   if (!ok) return chatFailureDetail(classifyChatFailure(status, rawBody));
-  if (healthOnly) return "la función chat vive y responde a su informe de salud";
   return produced
     ? "responde de verdad: el fallo está en el webhook, no en el chat"
     : "200 pero sin texto: mira el modelo y el stream";
@@ -584,7 +588,10 @@ async function probeAttempt(
       contentType: response.headers.get("content-type"),
       bytes: text.length,
       errorHead: response.ok ? null : scrub(text),
-      hint: hintFor(response.status, text, response.ok, produced, healthOnly),
+      hint:
+        healthOnly && response.ok
+          ? "la función chat vive y responde a su informe de salud"
+          : hintFor(response.status, text, response.ok, produced),
     };
   } catch (error) {
     return {
@@ -596,7 +603,7 @@ async function probeAttempt(
       contentType: null,
       bytes: null,
       errorHead: error instanceof Error ? scrub(error.message) : "error desconocido",
-      hint: hintFor(null, "", false, false, healthOnly),
+      hint: hintFor(null, "", false, false),
     };
   }
 }
