@@ -6,6 +6,10 @@ name: Guardia de producción
 # (dominio con su bloque y fuera de dominio sin contexto) dejan de cumplirse, el
 # workflow se pone rojo.
 #
+# Y un rojo no se queda en la pestaña de Actions: al final del job, el mismo
+# token del workflow abre (o actualiza) un issue con el detalle de lo que falló,
+# y lo cierra solo cuando la guardia vuelve a verde. No hay secretos nuevos.
+#
 # Ejecuta el mismo script que nombra el ROADMAP, no una copia de sus reglas: si
 # mañana cambia el criterio, cambia aquí sin tocar el workflow.
 
@@ -16,6 +20,9 @@ on:
 
 permissions:
   contents: read
+  # Abrir, actualizar y cerrar el issue del aviso. `github.token` es el token
+  # efímero del propio run: no hay ninguna credencial que configurar.
+  issues: write
 
 jobs:
   sonda:
@@ -30,8 +37,39 @@ jobs:
 
       # Sin `npm ci`: `verify-production.mjs` sólo importa módulos `node:`, así
       # que la guardia no depende de que el árbol de dependencias instale.
+      #
+      # Cada paso deja su código de salida en `.guardia/*.code` y su salida en
+      # `.guardia/*.log`, y termina con ese mismo código: el job sigue rojo como
+      # antes. El archivo existe para que el aviso pueda contar qué falló.
       - name: Salud del servicio (fase 2)
-        run: node scripts/verify-production.mjs --only=health
+        run: |
+          mkdir -p .guardia
+          set -o pipefail
+          node scripts/verify-production.mjs --only=health 2>&1 | tee .guardia/health.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > .guardia/health.code
+          exit "$code"
 
+      # `always()` para que corra aunque la anterior falle: el issue tiene que
+      # contar las dos comprobaciones, no sólo la primera que se rompió.
       - name: Conocimiento curado (fase 4)
-        run: node scripts/verify-production.mjs --only=conocimiento
+        if: always()
+        run: |
+          mkdir -p .guardia
+          set -o pipefail
+          node scripts/verify-production.mjs --only=conocimiento 2>&1 | tee .guardia/conocimiento.log
+          code=${PIPESTATUS[0]}
+          echo "$code" > .guardia/conocimiento.code
+          exit "$code"
+
+      # Último paso: avisa. Un rojo abre o actualiza un solo issue (se busca por
+      # título, así que no se acumulan); un verde lo comenta y lo cierra.
+      # Si esta llamada falla, el job ya está rojo por la sonda: no se enmascara.
+      - name: Abrir, actualizar o cerrar el issue de la guardia
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_SERVER_URL: ${{ github.server_url }}
+        run: node scripts/guardia-issue.mjs --dir=.guardia
