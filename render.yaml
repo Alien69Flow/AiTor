@@ -1,0 +1,33 @@
+# Despliegue del enjambre (fase 9). Render lee este blueprint del repo, crea el
+# servicio y lo redespliega en cada push a `main`. Las variables con `sync:
+# false` se piden en el panel y no se versionan.
+#
+# `rootDir: backend` compila allí, pero el checkout entero está disponible: el
+# tsconfig de `backend/` incluye `../src/lib/mcp`, que es el servidor MCP que
+# comparten la web y este proceso.
+#
+# Plan `free`: 512 MB y el servicio se duerme tras 15 minutos sin tráfico (la
+# primera petición tarda ~30–60 s). Para que el comando del bot no espere, el
+# plan `starter` (7 $/mes) lo mantiene despierto; Railway, con ~5 $/mes, es la
+# otra alternativa sin siesta.
+services:
+  - type: web
+    name: aitor-swarm
+    runtime: node
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: npm ci --no-audit --no-fund && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Se piden en el panel: nunca en el repositorio.
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false

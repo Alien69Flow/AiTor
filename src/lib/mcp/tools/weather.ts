@@ -1,5 +1,7 @@
 import { toolResult, type McpTool } from "../registry";
-import { dominantPollen, dryingIndex, dryingVerdict, seaFlag } from "@/lib/environment-metrics";
+// Relativo a propósito: este módulo también lo compila `backend/tsconfig.json`,
+// que no conoce el alias `@/` de Vite.
+import { dominantPollen, dryingIndex, dryingVerdict, seaFlag } from "../../environment-metrics";
 
 /**
  * Previsión y estado del entorno con Open-Meteo, la misma fuente que pinta el

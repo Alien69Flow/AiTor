@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { SwarmOrchestrator } from './agents/orchestrator'; // <- Importamos tu Orquestador Central
 import { createMcpRouter } from './mcp';
+import { fetchQuote, QuoteError } from './market/quote';
 
 // Hack cuántico para variables de entorno (invisible para escáneres estáticos)
 const getEnv = (key: string) => {
@@ -43,6 +44,22 @@ app.get('/health', (req, res) => {
     vibration: '16.18',
     modules: ['rag', 'agents', 'tools', 'workflows']
   });
+});
+
+// Señal de mercado verificable (fase 9): precio de una fuente pública, con la
+// URL consultada y las dos horas (la del dato y la de la lectura). No pasa por
+// el modelo a propósito: un LLM inventa el precio y la hora, y esto tiene que
+// poder comprobarse abriendo la URL. Si la fuente falla, se dice; no se rellena.
+app.get('/api/signal/:symbol', async (req, res) => {
+  try {
+    const signal = await fetchQuote(req.params.symbol);
+    res.set('cache-control', 'no-store');
+    return res.json({ ok: true, servedFrom: 'backend', signal });
+  } catch (error) {
+    const status = error instanceof QuoteError ? error.status : 500;
+    const message = error instanceof Error ? error.message : 'Error desconocido';
+    return res.status(status).json({ ok: false, servedFrom: 'backend', error: message });
+  }
 });
 
 // Verify the caller's Supabase JWT and return the verified user id.

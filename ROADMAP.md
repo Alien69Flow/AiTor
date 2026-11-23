@@ -221,6 +221,13 @@ verificables, servida desde `backend/` desplegado (no desde el portátil).
 **Comprobación:** manual, con el comando y la URL de la fuente al lado. Cuando
 haya endpoint, entra aquí con su `--only`.
 
+**Estado (2026-11-22):** el endpoint existe y responde en local —
+`GET /api/signal/:símbolo` consulta CoinGecko y devuelve el precio, la hora del
+dato (`asOf`), la de la lectura (`fetchedAt`) y la URL exacta consultada—, y
+`backend/` ya compila y arranca (`npm run build` + `npm start`). Falta el
+despliegue (`render.yaml`), `BACKEND_URL` en Vercel y el comando del bot: hasta
+entonces la fase sigue en ⏭, no en ✅.
+
 ## Fase 10 — Workflows con aprobación humana
 
 **Criterio:** una propuesta llega al usuario, se aprueba o rechaza desde el bot,
