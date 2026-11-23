@@ -18,6 +18,8 @@ export interface BotStatus {
   knowledgeBlocks: number;
   /** Tipo de clave de Supabase en uso (`jwt` o `publishable`), nunca su valor. */
   supabaseKeyKind: string;
+  /** Tope diario de respuestas del modelo en este chat. */
+  budget: { used: number; limit: number; storage: "redis" | "memory" | "none" };
 }
 
 const OK = "✅";
@@ -50,6 +52,15 @@ export function formatStatus(status: BotStatus): string {
 
   const knowledge = `${OK} ${status.knowledgeBlocks} bloque(s) fundacionales`;
 
+  // El tope cuenta turnos del modelo: con Redis es exacto entre invocaciones;
+  // sin Redis es sólo de esta instancia y hay que decirlo, no maquillarlo.
+  const budget =
+    status.budget.storage === "redis"
+      ? `${OK} ${status.budget.used} de ${status.budget.limit} respuestas hoy (exacto, Redis)`
+      : status.budget.storage === "memory"
+        ? `${WARN} ${status.budget.used} de ${status.budget.limit} en esta instancia: sin Redis el tope no es exacto`
+        : `${WARN} sin contador: configura UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN`;
+
   return [
     "🛰 <b>Estado del bot</b>",
     "",
@@ -58,6 +69,7 @@ export function formatStatus(status: BotStatus): string {
     statusLine("Alertas", alerts),
     statusLine("Dedupe", dedupe),
     statusLine("Conocimiento", knowledge),
+    statusLine("Gasto del chat", budget),
     statusLine("Clave de Supabase", `<code>${status.supabaseKeyKind}</code>`),
     "",
     "Esto es lo que veo desde este despliegue; lo marcado como aviso no está disponible, y el comando sigue respondiendo sin esa pieza.",
