@@ -232,6 +232,7 @@ No lo edites a mano: `api/_shared/bot-commands.test.ts` falla si no coincide con
 | --- | --- | --- | --- | --- |
 | `/ayuda` | `/help` | Esta lista, pintada desde la tabla que atiende los comandos. | — | — |
 | `/estado` | — | Qué está vivo ahora mismo: webhook, memoria, alertas, dedupe y conocimiento. | — | — |
+| `/senal` | — | Precio ahora mismo, con su fuente y la hora del dato, servido desde /api/signal. | `/senal BTC` | — |
 | `/alerta` | — | Aviso de precio, movimiento, sismo o noticia nueva; se guarda y te aviso aquí. | `/alerta BTC > 95000` | — |
 | `/manus` | `/investigar`, `/analizar` | Manda una tarea larga a Manus AI y te trae el resultado. | `/manus analiza las tendencias crypto de esta semana` | gasta cuota |
 | `/start` | — | Bienvenida y la lista de comandos. | — | — |
