@@ -117,6 +117,11 @@ export function interpretWebhook(status, payload) {
 export function interpretSenal(status, payload, options = {}) {
   const commands = Array.isArray(options.commands) ? options.commands : null;
   if (status === 404) return fail("el endpoint /api/signal no está desplegado en este dominio");
+  // 200 con HTML es una pantalla de login o una ruta que no es la función:
+  // decir «sin señal» a secas haría pensar que la fuente falló.
+  if (status === 200 && payload === null) {
+    return fail("la respuesta no es JSON (¿despliegue protegido o ruta equivocada?)");
+  }
   if (status !== 200 || payload?.ok !== true || !payload.signal) {
     const motivo = payload?.reason || payload?.error || "sin señal";
     return fail(`HTTP ${status} · ${motivo}${payload?.code ? ` (${payload.code})` : ""}`);

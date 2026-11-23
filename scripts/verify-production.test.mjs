@@ -309,6 +309,12 @@ describe("señal de mercado (fase 9)", () => {
     expect(interpretSenal(404, null).status).toBe("fail");
   });
 
+  it("un 200 que no es JSON (login de protección) no se disfraza de fuente caída", () => {
+    const result = interpretSenal(200, null);
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("no es JSON");
+  });
+
   it("la fuente caída se cuenta con su motivo", () => {
     const result = interpretSenal(502, {
       ok: false,

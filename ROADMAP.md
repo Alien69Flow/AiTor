@@ -86,7 +86,8 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 6 | 🟡 | health dice que falta Redis: el dedupe no está actuando |
 | 7 | ✅ | `typecheck` 0 errores · `lint` 0 · 1269 tests · `build` verde en `ea6d935` |
 | 8 | 🟡 | `sin firma`: falta `TELEGRAM_WEBHOOK_SECRET` |
-| 9–14 | ⏭ | sin sonda: criterio manual |
+| 9 | ⏭ | `--only=senal` listo, pero `/api/signal` aún no está en producción (404) |
+| 10–14 | ⏭ | sin sonda: criterio manual |
 
 ---
 
@@ -216,10 +217,19 @@ RAG, loops) existe pero **nada lo arranca**, así que no cuenta como hecho.
 
 ## Fase 9 — Agentes de mercado
 
-**Criterio:** un comando del bot devuelve una señal con fuente, hora y precio
-verificables, servida desde `backend/` desplegado (no desde el portátil).
-**Comprobación:** manual, con el comando y la URL de la fuente al lado. Cuando
-haya endpoint, entra aquí con su `--only`.
+**Criterio:** un comando del bot (`/senal`) devuelve una señal con fuente, hora
+y precio verificables, servida desde `api/` desplegado (no desde el portátil).
+**Comprobación:** `npm run verify:prod -- --only=senal`: mira
+`/api/signal?symbol=BTC` (precio, URL de la fuente y las dos horas) y que el
+diagnóstico del webhook publique `/senal` en su tabla de comandos. Un 200 que no
+sea JSON, un precio sin URL de fuente o un bot que no ofrezca el comando no
+cuentan como verdes.
+
+**Estado (2026-11-22): ⏭.** `api/signal.ts` (CoinGecko, caché de 60 s en Redis,
+502 sin cifra cuando la fuente falla), el comando `/senal` y su `--only=senal`
+están escritos y probados en local; contra producción todavía no se puede medir
+porque la ruta no está desplegada (`404` en `/api/signal`). La fila pasa a ✅ en
+cuanto la sonda contra producción salga verde, con esa salida delante.
 
 ## Fase 10 — Workflows con aprobación humana
 
