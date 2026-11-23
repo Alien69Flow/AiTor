@@ -74,17 +74,17 @@ comprobación con **Hecho** en `sí` / `parcial` / `no` / `sin verificar`.
 | 8 · Webhook firmado | `npm run verify:prod -- --only=webhook` | El detalle dice `firma activa`. |
 | 9–14 · Producto | Ver el criterio de cada fase | No hay sonda automática todavía: el criterio es un observable manual. |
 
-## Estado hoy (pasada del 2026-11-20)
+## Estado hoy (pasada del 2026-11-22)
 
 | Fase | Estado | Por qué |
 |---|---|---|
-| 1 | 🟡 | sólo corre la comprobación gratuita: sin `x-api-key` no llega a clasificar un fallo del modelo |
+| 1 | 🟡 | `--only=webhook` da fallo: 5 entregas pendientes y 401 en el último envío; sin `x-api-key` tampoco clasifica un fallo del modelo |
 | 2 | ✅ | `--only=health` dice `chat OK` |
 | 3 | 🟡 | ⏭: faltan las variables de Upstash en Vercel |
 | 4 | ✅ | `--only=conocimiento`: `2 bloques · 2/2 de dominio con su bloque · 1 fuera de dominio sin contexto` |
 | 5 | 🟡 | sólo está comprobada la puerta (401); sin `CRON_SECRET` no hay ejecución real |
 | 6 | 🟡 | health dice que falta Redis: el dedupe no está actuando |
-| 7 | ✅ | `typecheck` 0 errores · `lint` 0 · 1269 tests · `build` verde en `ea6d935` |
+| 7 | ✅ | `typecheck` 0 · `lint` 0 errores (10 avisos) · 1286 tests · `build` verde en `20d19f4` |
 | 8 | 🟡 | `sin firma`: falta `TELEGRAM_WEBHOOK_SECRET` |
 | 9–14 | ⏭ | sin sonda: criterio manual |
 
