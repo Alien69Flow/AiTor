@@ -18,6 +18,18 @@ const botRef = read("api/telegram-webhook.ts").match(
 )?.[2];
 const pkg = JSON.parse(read("package.json"));
 
+/** El valor real de la constante, no una mención en un comentario. */
+const fallback = (path, name) =>
+  read(path).match(
+    new RegExp(`${name}\\s*=\\s*'(https:\\/\\/([a-z0-9]+)\\.supabase\\.co)'`),
+  )?.[2];
+const literal = (path, name) =>
+  read(path).match(
+    new RegExp(
+      `${name}\\s*=\\s*[\\s\\S]*?"(https:\\/\\/([a-z0-9]+)\\.supabase\\.co)"`,
+    ),
+  )?.[2];
+
 describe("ref canónico del proyecto Supabase", () => {
   it("config.toml declara el proyecto al que llama el bot", () => {
     expect(configRef).toBe(DATA_REF);
@@ -44,9 +56,13 @@ describe("ref canónico del proyecto Supabase", () => {
   });
 
   it("la identidad sigue en su proyecto y no se confunde con el de datos", () => {
-    expect(read("src/integrations/supabase/client.ts")).toContain(AUTH_REF);
-    expect(read("api/mcp.ts")).toContain(AUTH_REF);
-    expect(read("api/league.ts")).toContain(AUTH_REF);
+    const client = "src/integrations/supabase/client.ts";
+    // Las constantes, no los comentarios: client.ts nombra los dos refs al
+    // explicarse, así que un `toContain` pasaría cambiando la de auth.
+    expect(fallback(client, "AUTH_URL_FALLBACK")).toBe(AUTH_REF);
+    expect(fallback(client, "DATA_URL_FALLBACK")).toBe(DATA_REF);
+    expect(literal("api/mcp.ts", "const AUTH_URL")).toBe(AUTH_REF);
+    expect(literal("api/league.ts", "const AUTH_URL")).toBe(AUTH_REF);
     // Si algún día se unifican, este test deja de tener sentido y hay que
     // borrarlo a conciencia, no "arreglarlo" cambiando las constantes de auth.
     expect(configRef).not.toBe(AUTH_REF);

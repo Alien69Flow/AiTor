@@ -166,11 +166,35 @@ Después de `npm run edge:deploy`, en este orden:
    `400 Invalid JSON` cuando la versión desplegada es la del repositorio.
 5. **Sin repetirlo a mano**: `npm test -- scripts/supabase-ref.test.mjs`.
 
-Desplegar no basta para migrar. El frontend habla con dos proyectos a la vez:
-`VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` (Vercel → Settings →
-Environment Variables) tienen que apuntar al de datos —el de las funciones— o cada
-`supabase.functions.invoke` responde 404 aunque las funciones estén arriba. El
-orden que no rompe nada:
+Desplegar no basta para migrar. El frontend usa **dos pares** de variables, con nombres
+distintos para cada proyecto (Vercel → Settings → Environment Variables):
+
+| Uso | Variables | Proyecto |
+| --- | --- | --- |
+| Funciones y tablas (`supabase`) | `VITE_DATA_SUPABASE_URL`, `VITE_DATA_SUPABASE_PUBLISHABLE_KEY` | el de datos, `wkdt…` |
+| Login (`authClient`) | `VITE_AUTH_SUPABASE_URL`, `VITE_AUTH_SUPABASE_PUBLISHABLE_KEY` | el de identidad, `pnyi…` |
+
+Si `VITE_DATA_SUPABASE_*` apunta a un proyecto sin funciones, cada
+`supabase.functions.invoke` responde 404 aunque las funciones estén arriba en el otro.
+
+`npm run edge:check` **no** lee esos nombres: usa `VITE_SUPABASE_URL` y
+`VITE_SUPABASE_PUBLISHABLE_KEY` (o los valores por defecto del cliente), así que un check
+verde prueba el proyecto que él mira, no necesariamente el que usa el navegador. Para
+comprobar el que usa el sitio:
+
+```bash
+VITE_SUPABASE_URL=https://wkdtvrxavkhbifjtvvdw.supabase.co npm run edge:check
+```
+
+**Callers de identidad (hallazgo abierto, medido el 2026-11-23).** Cuatro llamadas van por
+el proyecto de identidad, donde no hay ninguna función (`404`): `verify-dao-holdings` y
+`verify-crypto-payment` (`authClient.functions.invoke`, en `src/hooks/useDaoAccess.ts` y
+`src/hooks/useCryptoCheckout.ts`) y `github-proxy` (`AUTH_SUPABASE_URL` en
+`src/services/mcpClient.ts` y `api/mcp.ts`). Eso no se arregla desplegando en `pnyi…`
+—dejaría las otras 17 sin actualizar—, sino moviendo esas llamadas al cliente de datos o
+desplegando allí solo esas tres: es un cambio de código aparte, no de configuración.
+
+El orden que no rompe nada:
 
 1. `npx supabase login`, `npx supabase db push` (esquema) y `npm run edge:deploy`
    sobre el proyecto nuevo.
