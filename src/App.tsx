@@ -11,6 +11,7 @@ import Auth from "./pages/Auth";
 import Privacy from "./pages/Privacy";
 import Terms from "./pages/Terms";
 import OAuthConsent from "./pages/OAuthConsent";
+import Estado from "./pages/Estado";
 import NotFound from "./pages/NotFound";
 import { Web3Provider } from "./components/web3/Web3Provider";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -35,6 +36,8 @@ const App = () => (
                     OAuth, así que son rutas reales y no el catch-all. */}
                 <Route path="/privacy" element={<Privacy />} />
                 <Route path="/terms" element={<Terms />} />
+                {/* Estado público: lee `/api/health?compact=1`, sin claves. */}
+                <Route path="/estado" element={<Estado />} />
                 <Route path="/.lovable/oauth/consent" element={<OAuthConsent />} />
                 {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
                 <Route path="*" element={<NotFound />} />
