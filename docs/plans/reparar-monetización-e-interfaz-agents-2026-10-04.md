@@ -1,5 +1,11 @@
 # Reparar monetización e interfaz AGENTS
 
+> **Estado real (2026-11-22).** Propuesta de reparación, no un registro de lo
+> entregado: no hay sonda que demuestre el paywall ni la interfaz de AGENTS
+> (ROADMAP, fases 9–14: ⏭). Los prerrequisitos que el propio plan deja
+> pendientes —direcciones de contrato por red y `alienflow.crypto` resolviendo a
+> la wallet receptora— siguen siendo la condición para cobrar Oracle y Quantum.
+
 ## Objetivo
 
 Dejar el paywall de cinco niveles totalmente visible, recuperar los controles de AGENTS y verificar qué datos Web3 faltan antes de activar Oracle y Quantum.
