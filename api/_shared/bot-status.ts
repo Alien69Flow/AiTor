@@ -19,7 +19,7 @@ export interface BotStatus {
   /** Tipo de clave de Supabase en uso (`jwt` o `publishable`), nunca su valor. */
   supabaseKeyKind: string;
   /** Tope diario de respuestas del modelo en este chat. */
-  budget: { used: number; limit: number; storage: "redis" | "memory" | "none" };
+  budget: { used: number; limit: number; storage: "redis" | "memory" };
 }
 
 const OK = "✅";
@@ -57,9 +57,7 @@ export function formatStatus(status: BotStatus): string {
   const budget =
     status.budget.storage === "redis"
       ? `${OK} ${status.budget.used} de ${status.budget.limit} respuestas hoy (exacto, Redis)`
-      : status.budget.storage === "memory"
-        ? `${WARN} ${status.budget.used} de ${status.budget.limit} en esta instancia: sin Redis el tope no es exacto`
-        : `${WARN} sin contador: configura UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN`;
+      : `${WARN} ${status.budget.used} de ${status.budget.limit} en esta instancia: sin Redis el tope no es exacto`;
 
   return [
     "🛰 <b>Estado del bot</b>",

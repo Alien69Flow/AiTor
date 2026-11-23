@@ -1066,8 +1066,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // modelo, y los comandos gratuitos siguen funcionando.
       const budget = await takeTurn(chatId);
       if (!budget.allowed) {
-        console.warn(`[budget] chat ${chatId}: tope diario alcanzado (${budget.used}/${budget.limit})`);
-        await sendTelegramMessage(chatId, formatBudgetExceeded(budget), undefined, { html: true });
+        // El aviso, una sola vez: justo al cruzar el tope. Si se repitiera en
+        // cada mensaje, el tope se convertiría en spam. Después se calla (el
+        // usuario ya sabe hasta cuándo), y el contador sigue subiendo.
+        if (budget.used === budget.limit + 1) {
+          console.warn(`[budget] chat ${chatId}: tope diario alcanzado (${budget.used}/${budget.limit})`);
+          await sendTelegramMessage(chatId, formatBudgetExceeded(budget), undefined, { html: true });
+        }
         return res.status(200).send("OK");
       }
       await sendTypingAction(chatId);

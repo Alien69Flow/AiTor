@@ -22,7 +22,7 @@ export const DEFAULT_DAILY_LIMIT = 40;
 /** Dos días de margen: la clave del día caduca sola aunque el INCR no acierte. */
 export const BUDGET_TTL_SECONDS = 60 * 60 * 48;
 
-export type BudgetStorage = "redis" | "memory" | "none";
+export type BudgetStorage = "redis" | "memory";
 
 export interface BudgetDecision {
   allowed: boolean;
@@ -34,13 +34,8 @@ export interface BudgetDecision {
   storage: BudgetStorage;
 }
 
-interface MemoryEntry {
-  day: string;
-  used: number;
-}
-
 /** Contador por instancia: sólo si no hay Redis. Se pierde al reciclarse. */
-const memory = new Map<string, MemoryEntry>();
+const memory = new Map<string, number>();
 
 /** Para los tests: deja el contador de memoria como recién arrancado. */
 export function __resetBudgetForTest(): void {
@@ -75,10 +70,10 @@ function decide(used: number, limit: number, storage: BudgetStorage, now: Date):
 }
 
 function countInMemory(chatId: number | string, day: string): number {
+  // El día va dentro de la clave: no hace falta volver a comprobarlo aquí.
   const key = budgetKey(chatId, day);
-  const entry = memory.get(key);
-  const used = (entry && entry.day === day ? entry.used : 0) + 1;
-  memory.set(key, { day, used });
+  const used = (memory.get(key) ?? 0) + 1;
+  memory.set(key, used);
   return used;
 }
 
@@ -86,8 +81,8 @@ function countInMemory(chatId: number | string, day: string): number {
  * Suma un turno y dice si se puede llamar al modelo.
  *
  * Se cuenta el intento, no el éxito: una llamada que falla a mitad también pudo
- * costar. Sin almacén configurado, `storage: "none"` avisa de que el tope no
- * está protegiendo nada.
+ * costar. Sin Redis el contador es de la instancia, y `storage: "memory"` lo
+ * dice en `/estado` en vez de fingir exactitud.
  */
 export async function takeTurn(
   chatId: number | string,
@@ -129,8 +124,7 @@ export async function peekBudget(
       /* cae a memoria */
     }
   }
-  const entry = memory.get(budgetKey(chatId, day));
-  return { used: entry?.day === day ? entry.used : 0, limit, storage: "memory" };
+  return { used: memory.get(budgetKey(chatId, day)) ?? 0, limit, storage: "memory" };
 }
 
 /** El aviso cuando el chat ya gastó lo suyo. No llama al modelo. */

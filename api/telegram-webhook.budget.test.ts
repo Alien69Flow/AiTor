@@ -145,6 +145,15 @@ describe("tope diario por chat", () => {
     expect(refused).toContain("Tope diario");
     expect(refused).toContain("1 de 1");
     expect(refused).toContain("/senal");
+
+    // Insistir no repite el aviso: un mensaje más del tope no puede convertirse
+    // en spam. Sigue sin llamar al modelo y sin escribir nada.
+    const sent = sentTexts().length;
+    await say("insisto", 3);
+    await say("insisto otra vez", 4);
+    expect(chatCalls.length).toBe(1);
+    expect(sentTexts().length).toBe(sent);
+    expect(sentTexts().filter((text) => text.includes("Tope diario"))).toHaveLength(1);
   });
 
   it("el tope no bloquea lo que no gasta modelo", async () => {
