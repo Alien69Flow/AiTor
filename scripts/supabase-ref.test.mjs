@@ -42,6 +42,17 @@ describe("ref canónico del proyecto Supabase", () => {
     expect(script).not.toContain(AUTH_REF);
   });
 
+  it("los scripts de despliegue usan el mismo proyecto que edge:deploy", () => {
+    expect(read("scripts/deploy-all.mjs")).toContain(`"${configRef}"`);
+    // `chat:deploy` tiene su propio default; si alguien lo cambia al de
+    // identidad, desplegaría `chat` donde no hay funciones y la sonda de salud
+    // daría 404 sin que este test lo viera.
+    const deployChat = read("scripts/deploy-chat.mjs").match(
+      /const PROJECT_REF = process\.env\.SUPABASE_PROJECT_REF \|\| "([a-z0-9]+)"/,
+    )?.[1];
+    expect(deployChat).toBe(configRef);
+  });
+
   it("deploy-all.mjs y la documentación de despliegue no mandan al de identidad", () => {
     expect(read("scripts/deploy-all.mjs")).toContain(`"${configRef}"`);
     // La documentación puede nombrar el proyecto de identidad (lo hace, para
