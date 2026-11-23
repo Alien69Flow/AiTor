@@ -35,6 +35,11 @@ npm run verify:prod -- --json            # para máquinas
 | `1` | Algún fallo: producción no cumple el criterio de alguna fase. |
 | `2` | Nada falló, pero algo quedó **sin verificar** (por ejemplo, falta una clave local). |
 
+Cuando una fila queda en ⏭, parcial o fallo, la sonda imprime debajo de la
+tabla qué variable falta —**sólo el nombre**, nunca el valor— y el comando
+exacto que lo demuestra en cuanto exista. Poner la variable y repetir esa línea
+es toda la subida a ✅.
+
 Cada lunes, el workflow `Guardia de producción`
 ([`guardia-produccion.yml`](.github/workflows/guardia-produccion.yml)) repite
 `--only=health` y `--only=conocimiento` contra producción, sin ningún secreto. Si

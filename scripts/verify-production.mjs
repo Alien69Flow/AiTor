@@ -86,6 +86,21 @@ const fail = (detail) => ({ status: "fail", detail });
 const skip = (detail) => ({ status: "skip", detail });
 
 /**
+ * Qué falta para que esa comprobación pase a verde: **sólo nombres** de
+ * variables, nunca su valor, y el comando que la demuestra en cuanto existan.
+ * `or` son caminos alternativos que también valen (los alias de Vercel Storage,
+ * el respaldo del dedupe en Supabase); `also` son variables independientes que
+ * la misma fase necesita además, cada una con su comando.
+ */
+const need = (vars, command, expect, or = [], also = []) => ({ vars, command, expect, or, also });
+
+/** Los dos juegos de nombres que acepta `api/_shared/redis.ts`. */
+const redisNeed = (command, expect) =>
+  need(["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"], command, expect, [
+    { vars: ["KV_REST_API_URL", "KV_REST_API_TOKEN"], why: "alias de Vercel Storage" },
+  ]);
+
+/**
  * Webhook: vive, identifica al bot, apunta a la URL buena y no arrastra
  * entregas. Sin firma funciona, pero es un aviso (Fase 8): cualquiera puede
  * gastar cuota del modelo.
@@ -101,13 +116,33 @@ export function interpretWebhook(status, payload) {
     problemas.push(`${webhook.pendingUpdates} entregas pendientes`);
   }
   if (webhook.lastErrorMessage) problemas.push("último envío con error");
-  if (problemas.length > 0) return fail(problemas.join(" · "));
+  // Sin firma, la variable que falta es una y siempre la misma: se adjunta a
+  // cualquier veredicto que no sea verde (incluido el fallo por 401, que es su
+  // consecuencia).
+  const unblock = payload.secretConfigured
+    ? undefined
+    : need(
+        ["TELEGRAM_WEBHOOK_SECRET"],
+        "npm run verify:prod -- --only=webhook",
+        "sí · firma activa",
+        [],
+        [
+          {
+            vars: ["OPERATOR_KEY"],
+            why: "sonda de pago de la fase 1: clasifica el fallo del chat",
+            command: `curl -sS -H "x-api-key: $OPERATOR_KEY" "${PUBLIC_URL}/api/telegram-webhook?probe=1"`,
+          },
+        ],
+      );
+  if (problemas.length > 0) {
+    return { ...fail(problemas.join(" · ")), ...(unblock ? { unblock } : {}) };
+  }
 
   const bot = payload.bot?.username ? `@${payload.bot.username}` : "bot sin identificar";
   const base = `${bot} · ${payload.registration || "sin registro"}`;
   return payload.secretConfigured
     ? ok(`${base} · firma activa`)
-    : warn(`${base} · sin firma (configura TELEGRAM_WEBHOOK_SECRET)`);
+    : { ...warn(`${base} · sin firma (configura TELEGRAM_WEBHOOK_SECRET)`), unblock };
 }
 
 /**
@@ -133,7 +168,22 @@ export function interpretDedupe(status, payload) {
   }
   const almacen = redis ? "Redis configurado" : "Redis sin configurar";
   if (!dedupe) {
-    return warn(`${almacen} · sin dedupe: un reintento de Telegram se procesaría dos veces`);
+    return {
+      ...warn(`${almacen} · sin dedupe: un reintento de Telegram se procesaría dos veces`),
+      // Dos caminos válidos: Redis, o el respaldo en Supabase con service role.
+      unblock: need(
+        ["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"],
+        "npm run verify:prod -- --only=dedupe",
+        "sí · dedupe activo",
+        [
+          { vars: ["KV_REST_API_URL", "KV_REST_API_TOKEN"], why: "alias de Vercel Storage" },
+          {
+            vars: ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"],
+            why: "respaldo del dedupe en Supabase",
+          },
+        ],
+      ),
+    };
   }
   return ok(
     redis
@@ -155,7 +205,13 @@ export function interpretHealth(status, payload) {
   const upstreams = Array.isArray(payload.upstreams) ? payload.upstreams : [];
   const resumen = upstreams.map((entry) => `${entry.key} ${entry.status}`).join(" · ") || "sin upstreams";
   if (payload.status === "UNCONFIGURED") {
-    return warn(`${resumen} · falta Redis: la frescura no se puede comprobar`);
+    return {
+      ...warn(`${resumen} · falta Redis: la frescura no se puede comprobar`),
+      unblock: redisNeed(
+        "npm run verify:prod -- --only=health",
+        "un veredicto distinto de UNCONFIGURED",
+      ),
+    };
   }
   const caidos = upstreams.filter((entry) => entry.status === "DOWN").map((entry) => entry.key);
   if (caidos.length > 0) return warn(`${payload.status} · ${resumen} · caído: ${caidos.join(", ")}`);
@@ -177,7 +233,13 @@ export function interpretCron(status, payload, options = {}) {
     return fail(`HTTP ${status} con el secreto correcto`);
   }
   if (payload.reason === "sin-redis") {
-    return fail("responde 200 pero sin Redis: no puede disparar ninguna alerta");
+    return {
+      ...fail("responde 200 pero sin Redis: no puede disparar ninguna alerta"),
+      unblock: redisNeed(
+        "npm run verify:prod -- --only=cron --run-cron",
+        "sí · avisos y disparos reales, sin `sin-redis`",
+      ),
+    };
   }
   const failures = Array.isArray(payload.failures) ? payload.failures : [];
   const base = `${payload.checked ?? 0} avisos · ${payload.fired ?? 0} disparados · ${payload.delivered ?? 0} entregados`;
@@ -187,7 +249,13 @@ export function interpretCron(status, payload, options = {}) {
 /** La sonda de memoria sólo es verde con ida y vuelta completa y borrada. */
 export function interpretMemory(result) {
   if (!result.configured) {
-    return skip("falta UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN: no se puede probar el hilo desde aquí");
+    return {
+      ...skip("falta UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN: no se puede probar el hilo desde aquí"),
+      unblock: redisNeed(
+        "npm run verify:prod -- --only=memoria",
+        "sí · título, resumen y evidencia de ida y vuelta, y borrada",
+      ),
+    };
   }
   if (result.error) return fail(result.error);
   const malas = (result.statuses || []).filter((entry) => entry.status >= 300);
@@ -319,11 +387,29 @@ async function checkCron() {
   const gate = await getJson(`${PUBLIC_URL}/api/cron/price-alerts`);
   const gateResult = interpretCron(gate.status, gate.payload);
   if (gateResult.status !== "ok") return { id: "cron", ...gateResult };
+  // La puerta en 401 no cierra la fase: lo que falta es el secreto para
+  // ejecutarlo de verdad, y eso se dice aquí con su comando.
   if (!runCron) {
-    return { id: "cron", ...ok(`${gateResult.detail} · ejecución real omitida (--run-cron)`) };
+    return {
+      id: "cron",
+      ...ok(`${gateResult.detail} · ejecución real omitida (--run-cron)`),
+      unblock: need(
+        ["CRON_SECRET"],
+        "npm run verify:prod -- --only=cron --run-cron",
+        "sí · avisos y disparos reales, sin `sin-redis`",
+      ),
+    };
   }
   if (!CRON_SECRET) {
-    return { id: "cron", ...skip(`${gateResult.detail} · falta CRON_SECRET para ejecutarlo`) };
+    return {
+      id: "cron",
+      ...skip(`${gateResult.detail} · falta CRON_SECRET para ejecutarlo`),
+      unblock: need(
+        ["CRON_SECRET"],
+        "npm run verify:prod -- --only=cron --run-cron",
+        "sí · avisos y disparos reales, sin `sin-redis`",
+      ),
+    };
   }
   const run = await getJson(`${PUBLIC_URL}/api/cron/price-alerts`, {
     headers: { Authorization: `Bearer ${CRON_SECRET}` },
@@ -424,6 +510,29 @@ export function renderTable(results) {
   return [line(head), rule, ...rows.map(line)].join("\n");
 }
 
+/**
+ * Lo que falta, una línea por comprobación pendiente: variables exactas (sólo
+ * el nombre) y el comando que lo demuestra en cuanto existan. Es la lista de
+ * la subida a ✅ para que no haya que recordar qué variable era cada fase.
+ */
+export function renderUnblock(results) {
+  const pendientes = results.filter((result) => result.unblock);
+  if (pendientes.length === 0) return "";
+  const lines = ["Qué falta para subir cada pendiente (nombres de variables, nunca valores):"];
+  for (const result of pendientes) {
+    const { vars, or = [], also = [], command, expect } = result.unblock;
+    const caminos = [vars.join(" + "), ...or.map((entry) => `${entry.vars.join(" + ")} (${entry.why})`)];
+    lines.push(`- ${LABELS[result.id] || result.id}: falta ${caminos.join("  o  ")}`);
+    lines.push(`    comando: ${command}`);
+    lines.push(`    verde cuando: ${expect}`);
+    for (const extra of also) {
+      lines.push(`    además: ${extra.vars.join(" + ")} (${extra.why})`);
+      lines.push(`      comando: ${extra.command}`);
+    }
+  }
+  return lines.join("\n");
+}
+
 async function main() {
   if (args.has("--help") || args.has("-h")) {
     console.log(readFileSync(fileURLToPath(import.meta.url), "utf8").split("*/")[0]);
@@ -458,6 +567,8 @@ async function main() {
   console.log(`\nAiTor · verificación de producción`);
   console.log(`${PUBLIC_URL} · Supabase ${PROJECT_REF}\n`);
   console.log(renderTable(results));
+  const unblock = renderUnblock(results);
+  if (unblock) console.log(`\n${unblock}`);
   for (const result of results) {
     if (result.status === "ok") continue;
     console.log(`\n ${ICON[result.status]} ${result.id}: ${result.detail}`);

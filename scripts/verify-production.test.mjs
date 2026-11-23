@@ -7,6 +7,7 @@ import {
   interpretMemory,
   interpretWebhook,
   renderTable,
+  renderUnblock,
   summarize,
 } from "./verify-production.mjs";
 
@@ -90,6 +91,107 @@ describe("dedupe", () => {
   it("un 500 no se confunde con verde", () => {
     expect(interpretDedupe(500, null).status).toBe("fail");
     expect(interpretDedupe(503, { ok: true }).status).toBe("fail");
+  });
+});
+
+describe("qué falta para subir cada 🟡", () => {
+  const sinFirma = {
+    ok: true,
+    registration: "ya-registrado",
+    secretConfigured: false,
+    bot: { username: "Alien69Bot" },
+    webhook: { matchesExpected: true, pendingUpdates: 0, lastErrorMessage: null },
+  };
+
+  it("la memoria sin Redis nombra las dos variables y su comando", () => {
+    const result = interpretMemory({ configured: false, statuses: [] });
+    expect(result.unblock.vars).toEqual(["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]);
+    expect(result.unblock.command).toBe("npm run verify:prod -- --only=memoria");
+    expect(result.unblock.or.map((camino) => camino.vars.join("+"))).toContain(
+      "KV_REST_API_URL+KV_REST_API_TOKEN",
+    );
+  });
+
+  it("el webhook sin firma pide TELEGRAM_WEBHOOK_SECRET, también cuando falla por el 401", () => {
+    expect(interpretWebhook(200, sinFirma).unblock.vars).toEqual(["TELEGRAM_WEBHOOK_SECRET"]);
+    const conPendientes = {
+      ...sinFirma,
+      webhook: { ...sinFirma.webhook, pendingUpdates: 5, lastErrorMessage: "401 Unauthorized" },
+    };
+    const result = interpretWebhook(200, conPendientes);
+    expect(result.status).toBe("fail");
+    expect(result.unblock.vars).toEqual(["TELEGRAM_WEBHOOK_SECRET"]);
+    expect(result.unblock.command).toBe("npm run verify:prod -- --only=webhook");
+    // La fase 1 no cierra sólo con la firma: la sonda de pago lleva su clave.
+    expect(result.unblock.also.map((extra) => extra.vars.join("+"))).toContain("OPERATOR_KEY");
+    expect(result.unblock.also[0].command).toContain("x-api-key");
+  });
+
+  it("el dedupe inactivo ofrece Redis o el respaldo de Supabase", () => {
+    const result = interpretDedupe(200, {
+      ok: true,
+      redis: { configured: false },
+      dedupe: { active: false },
+    });
+    expect(result.unblock.vars).toEqual(["UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]);
+    expect(result.unblock.or.map((camino) => camino.vars.join("+"))).toContain(
+      "SUPABASE_URL+SUPABASE_SERVICE_ROLE_KEY",
+    );
+    expect(result.unblock.command).toBe("npm run verify:prod -- --only=dedupe");
+  });
+
+  it("el cron con `sin-redis` pide la pareja de Redis para su ejecución real", () => {
+    const result = interpretCron(
+      200,
+      { ok: true, checked: 0, reason: "sin-redis" },
+      { withSecret: true },
+    );
+    expect(result.unblock.vars).toContain("UPSTASH_REDIS_REST_URL");
+    expect(result.unblock.command).toContain("--run-cron");
+  });
+
+  it("la salud sin Redis pide la misma pareja, para su propia comprobación", () => {
+    const result = interpretHealth(200, { status: "UNCONFIGURED", upstreams: [] });
+    expect(result.unblock.vars).toContain("UPSTASH_REDIS_REST_URL");
+    expect(result.unblock.command).toBe("npm run verify:prod -- --only=health");
+  });
+
+  it("lo que ya está en verde no pide ninguna variable", () => {
+    const memoria = interpretMemory({
+      configured: true,
+      statuses: [],
+      saved: true,
+      readBack: true,
+      cleaned: true,
+    });
+    expect(memoria.unblock).toBeUndefined();
+    expect(
+      interpretDedupe(200, { ok: true, redis: { configured: true }, dedupe: { active: true } }).unblock,
+    ).toBeUndefined();
+  });
+
+  it("la lista imprime variable, comando y criterio: sólo nombres, nunca valores", () => {
+    const results = [
+      { id: "memoria", status: "skip", ...interpretMemory({ configured: false, statuses: [] }) },
+    ];
+    const text = renderUnblock(results);
+    expect(text).toContain("UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN");
+    expect(text).toContain("comando: npm run verify:prod -- --only=memoria");
+    expect(text).toContain("verde cuando: sí · título, resumen y evidencia");
+    expect(Object.keys(interpretMemory({ configured: false, statuses: [] }).unblock).sort()).toEqual([
+      "also",
+      "command",
+      "expect",
+      "or",
+      "vars",
+    ]);
+    expect(renderUnblock([{ id: "memoria", status: "ok" }])).toBe("");
+
+    const webhook = renderUnblock([
+      { id: "webhook", status: "warn", ...interpretWebhook(200, sinFirma) },
+    ]);
+    expect(webhook).toContain("falta TELEGRAM_WEBHOOK_SECRET");
+    expect(webhook).toContain("además: OPERATOR_KEY");
   });
 });
 
