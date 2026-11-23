@@ -149,7 +149,8 @@ describe("/api/health · puerta de operador", () => {
     expect(result.status).toBe(401);
     expect(fetcher).not.toHaveBeenCalled();
     expect(JSON.stringify(result.body)).not.toContain("@");
-    expect(result.body).toMatchObject({ code: "unauthorized" });
+    expect(result.body).toMatchObject({ error: "operator key required for detailed health" });
+    expect(result.body).not.toHaveProperty("code");
   });
 
   it("una clave equivocada tampoco pasa", async () => {

@@ -293,9 +293,11 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
   const operatorKey = process.env.OPERATOR_KEY || "";
   const provided = String(req.headers["x-api-key"] || "");
   if (!compact && (!operatorKey || provided !== operatorKey)) {
+    // Sin `code`: el estado HTTP (401) y `error` ya dicen lo mismo y nadie lo
+    // consumía; un campo más en la respuesta pública sólo era otra cosa que
+    // mantener en sincronía.
     sendError(res, 401, {
       error: "operator key required for detailed health",
-      code: "unauthorized",
       hint: "usa ?compact=1 para la vista pública o envía x-api-key",
     });
     return;
@@ -327,7 +329,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse) {
     sendError(
       res,
       503,
-      { error: "redis unreachable", code: "redis_down", requestId: checkedAt, upstreams: upstreamView },
+      { error: "redis unreachable", requestId: checkedAt, upstreams: upstreamView },
       { "Retry-After": "5" },
     );
     return;

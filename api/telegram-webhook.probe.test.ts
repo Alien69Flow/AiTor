@@ -5,11 +5,13 @@
  * gratuita sí), que con clave se prueban las dos formas de credencial, y que
  * la respuesta no lleva nunca el valor de la clave.
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
-type ProbeAttemptView = { via: string; status?: number | null };
+type ProbeAttemptView = { via: string; status?: number | null; hint: string };
 type ProbeView = {
   keyKind: string;
   conclusion: string;
@@ -126,6 +128,22 @@ const req = (url: string, headers: Record<string, string> = {}) =>
   ({ method: "GET", url, headers: { host: "localhost", ...headers } }) as never;
 
 describe("GET /api/telegram-webhook?probe=1", () => {
+  // Primero, con la caché de sondas vacía: `runChatProbe` memoiza por instancia.
+  it("la sonda y /api/health explican el mismo 401 con el mismo texto", async () => {
+    const raw = '{"message":"Invalid API key"}';
+    stubFetch(401, raw);
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1", { "x-api-key": OPERATOR }), res);
+    const paid = snap().body!.chatProbe!.attempts.find((attempt) => attempt.via === "como-hoy")!;
+
+    // Una sola clasificación para las dos superficies: si alguien vuelve a
+    // escribir la tabla de estados dentro del webhook, esto se separa.
+    const { explainChatFailure } = await import("./health");
+    expect(paid.hint).toBe(explainChatFailure(401, raw));
+  });
+
   it("sin clave de operador sólo hace la comprobación gratuita", async () => {
     const calls = stubFetch();
     const handler = await loadHandler();
@@ -137,6 +155,7 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     expect(snap().status).toBe(200);
     expect(body.chatProbe!.attempts).toHaveLength(1);
     expect(body.chatProbe!.attempts[0].via).toBe("salud");
+    expect(body.chatProbe!.attempts[0].hint).toContain("vive y responde");
     expect(body.chatProbe!.note).toContain("OPERATOR_KEY");
     // Sólo GET al chat: ninguna llamada al modelo.
     expect(calls.filter((call) => call.startsWith("POST") && call.includes("functions/v1/chat"))).toHaveLength(0);
@@ -192,6 +211,20 @@ describe("GET /api/telegram-webhook?probe=1", () => {
       [null, null],
     ]);
     expect(calls.filter((call) => call.includes("functions/v1/chat"))).toHaveLength(1);
+  });
+
+  it("las tres llamadas caben antes del corte de Vercel", async () => {
+    // salud + como-hoy + solo-apikey van en secuencia: con 12 s por intento el
+    // peor caso (36 s) pasaba del `maxDuration` de 30 s y la sonda se quedaba
+    // sin devolver ni el diagnóstico. El techo se lee de la config desplegada.
+    const { PROBE_TIMEOUT_MS } = await import("./telegram-webhook");
+    const vercel = JSON.parse(readFileSync(resolve(process.cwd(), "vercel.json"), "utf8")) as {
+      functions?: Record<string, { maxDuration?: number }>;
+    };
+    const ceiling = (vercel.functions?.["api/telegram-webhook.ts"]?.maxDuration ?? 0) * 1000;
+
+    expect(ceiling).toBeGreaterThan(0);
+    expect(PROBE_TIMEOUT_MS * 3).toBeLessThanOrEqual(ceiling - 5_000);
   });
 
   it("sin ?probe=1 no se sonda nada", async () => {

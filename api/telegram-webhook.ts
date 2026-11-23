@@ -1,6 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createHmac, timingSafeEqual } from 'crypto';
-import { chatFailureMessage, classifyChatFailure } from "./_shared/chat-failure.js";
+import {
+  chatFailureDetail,
+  chatFailureMessage,
+  classifyChatFailure,
+} from "./_shared/chat-failure.js";
 import { pickSupabaseKey, supabaseAuthHeaders } from "./_shared/supabase-key.js";
 import { KNOWLEDGE_BLOCKS, retrieveKnowledge } from "./_shared/knowledge.js";
 import {
@@ -485,9 +489,18 @@ interface ChatProbeAttempt {
   hint: string;
 }
 
+/**
+ * El veredicto de la comprobación gratuita, con los mismos valores que el
+ * upstream `chat` de `/api/health`: las dos superficies no pueden decir cosas
+ * distintas del mismo sondeo. Un 200 de la llamada de pago no cambia este
+ * veredicto; si discrepan, la conclusión lo dice.
+ */
+type ChatProbeStatus = "UP" | "DOWN";
+
 interface ChatProbe {
   host: string;
   keyKind: KeyKind;
+  status: ChatProbeStatus;
   attempts: ChatProbeAttempt[];
   conclusion: string;
   cached: boolean;
@@ -509,7 +522,13 @@ interface KnowledgeProbe {
 }
 
 const PROBE_MESSAGE = "ping";
-const PROBE_TIMEOUT_MS = 12_000;
+/**
+ * Presupuesto por intento, no por sonda: la sonda hace hasta tres llamadas en
+ * secuencia (salud, como-hoy, sólo-apikey) y tiene que devolver el diagnóstico
+ * antes de que Vercel corte la función a los 30 s (`vercel.json`).
+ * 3 × 8 = 24 s, con 6 s de margen para el conocimiento y la respuesta.
+ */
+export const PROBE_TIMEOUT_MS = 8_000;
 /** Un sondeo gasta cuota: como mucho uno cada 30 s por variante e instancia. */
 const PROBE_CACHE_MS = 30_000;
 const PROBE_CACHE = new Map<string, { at: number; value: ChatProbe }>();
@@ -533,18 +552,14 @@ function scrub(text: string): string {
 
 function hintFor(
   status: number | null,
+  rawBody: string,
   ok: boolean,
   produced: boolean,
-  healthOnly: boolean,
 ): string {
-  if (status === null) return "sin respuesta: red, DNS o tiempo agotado";
-  if (status === 401) return "credencial rechazada: gateway de Supabase o clave del proveedor de IA";
-  if (status === 402) return "la clave del proveedor está sin créditos";
-  if (status === 403) return "prohibido: revisa verify_jwt de la función chat";
-  if (status === 404) return "la función chat no existe en ese proyecto";
-  if (status === 429) return "límite de peticiones del proveedor";
-  if (status >= 500) return "la función chat falló o el proveedor está caído";
-  if (healthOnly) return "la función chat vive y responde a su informe de salud";
+  // Los fallos salen de la misma clasificación que `/api/health` y que el
+  // mensaje del bot: antes había una tabla de estados aquí y otra allí, y
+  // podían decir cosas distintas del mismo 401.
+  if (!ok) return chatFailureDetail(classifyChatFailure(status, rawBody));
   return produced
     ? "responde de verdad: el fallo está en el webhook, no en el chat"
     : "200 pero sin texto: mira el modelo y el stream";
@@ -582,7 +597,10 @@ async function probeAttempt(
       contentType: response.headers.get("content-type"),
       bytes: text.length,
       errorHead: response.ok ? null : scrub(text),
-      hint: hintFor(response.status, response.ok, produced, healthOnly),
+      hint:
+        healthOnly && response.ok
+          ? "la función chat vive y responde a su informe de salud"
+          : hintFor(response.status, text, response.ok, produced),
     };
   } catch (error) {
     return {
@@ -594,7 +612,7 @@ async function probeAttempt(
       contentType: null,
       bytes: null,
       errorHead: error instanceof Error ? scrub(error.message) : "error desconocido",
-      hint: hintFor(null, false, false, healthOnly),
+      hint: hintFor(null, "", false, false),
     };
   }
 }
@@ -643,22 +661,33 @@ async function runChatProbe(paid: boolean): Promise<ChatProbe> {
   const health = attempts[0];
   const paidAttempts = attempts.slice(1);
   const working = paidAttempts.find((attempt) => attempt.ok);
+  const status: ChatProbeStatus = health.ok ? "UP" : "DOWN";
+  // Cómo falló la gratis, para la conclusión que explica la discrepancia.
+  const freeFailure = health.status === null ? "sin respuesta a tiempo" : `HTTP ${health.status}`;
 
-  const conclusion = working
-    ? `chat responde (${working.via}): el fallo está en el webhook, no en el chat`
-    : paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)
-      ? "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)"
-      : health.status === 401
-        ? "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale"
-        : health.ok && paidAttempts.length > 0
-          ? "chat vive pero no contesta al modelo: el fallo está dentro de la función"
-          : health.ok
-            ? "chat vive (comprobación gratuita): añade x-api-key para probar el modelo"
-            : "chat no responde: mira el estado y el error de la primera comprobación";
+  let conclusion: string;
+  if (status === "DOWN" && working) {
+    // Las dos cosas, sin dar el chat por bueno: es el caso que hizo falta
+    // unificar, porque el informe de salud y la llamada de pago discrepan.
+    conclusion = `la comprobación gratuita dice DOWN (${freeFailure}), pero el modelo responde con la clave de operador (${working.via}): el informe de salud y la llamada de pago no cuadran`;
+  } else if (working) {
+    conclusion = `chat responde (${working.via}): el fallo está en el webhook, no en el chat`;
+  } else if (paid && paidAttempts.length > 0 && paidAttempts.every((attempt) => attempt.status === 401)) {
+    conclusion = "chat rechaza la credencial en las dos formas: mira la clave del proveedor de IA (LOVABLE_API_KEY)";
+  } else if (health.status === 401) {
+    conclusion = "el gateway rechaza incluso el informe de salud: la clave de Supabase no vale";
+  } else if (health.ok && paidAttempts.length > 0) {
+    conclusion = "chat vive pero no contesta al modelo: el fallo está dentro de la función";
+  } else if (health.ok) {
+    conclusion = "chat vive (comprobación gratuita): añade x-api-key para probar el modelo";
+  } else {
+    conclusion = "chat no responde: mira el estado y el error de la primera comprobación";
+  }
 
   const value: ChatProbe = {
     host: chatHost(),
     keyKind: keyKind(SUPABASE_ANON_KEY),
+    status,
     attempts,
     conclusion,
     cached: false,
