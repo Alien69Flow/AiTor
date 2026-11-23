@@ -1,5 +1,12 @@
 # Globe, Markets & Agents — full repair plan
 
+> **Estado real (2026-11-22).** Plan de trabajo, no un registro de lo desplegado.
+> Su primera frase ya no se sostiene: hoy el webhook rechaza toda entrega con
+> `401` porque `TELEGRAM_WEBHOOK_SECRET` no está definido en Production
+> (`npm run verify:prod -- --only=webhook`: 5 entregas pendientes y último envío
+> con error). Siguen en 🟡 las fases 1, 3, 5, 6 y 8 del ROADMAP. Las secciones 1–5
+> son propuestas: ninguna está medida contra producción.
+
 Telegram is already fixed in this turn (the webhook was rejecting every Telegram
 update because of a secret-token check added during the security pass; it now
 only rejects when Telegram actually sends a wrong token).

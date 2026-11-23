@@ -1,5 +1,10 @@
 # Globe Mission Dashboard
 
+> **Estado real (2026-11-22).** Propuesta de rediseño, no una descripción de lo
+> desplegado. No tiene sonda propia: en el ROADMAP son las fases 9–14, en ⏭
+> (criterio manual). Que el código exista en `main` no demuestra que la pestaña
+> Globe se comporte así en producción.
+
 ## Objetivo
 Convertir la pestaña Globe en la dirección **Hyper-spectral tactical command** seleccionada, conservando Cesium y las fuentes en tiempo real como núcleo.
 

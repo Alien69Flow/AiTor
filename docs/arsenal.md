@@ -8,7 +8,7 @@ el filtro real está en los datos, no en la interfaz.
 
 | Estado | Qué significa | Quién decide |
 |---|---|---|
-| `incorporado` | Ya vive en AiTor; se puede señalar el cambio | nadie, es un hecho |
+| `incorporado` | El cambio está en `main` con su PR; **no** que esté verificado en producción (para eso está la sonda) | nadie, es un hecho |
 | `candidato` | Pieza concreta que se puede traer sin claves nuevas ni runtime ajeno | requiere un PR |
 | `referencia` | Se lee para aprender, no se copia | licencia, runtime o producto externo |
 
@@ -25,6 +25,12 @@ Los datos traen `license` por repo y `arsenalLicenses()` cuenta también los
 
 ## Qué se incorporó ya
 
+Medido en producción el 2026-11-22 con `GET /api/mcp`: `toolResultChars: 6000`
+(el presupuesto de `headroom` está sirviendo), `aemetKeyState: "missing"` y
+`geminiKeyState: "missing"`. O sea: el código de los tres está en `main`, pero
+`weather.aemet` no puede ejecutarse sin `AEMET_API_KEY` y el chat contesta sin
+herramientas hasta que el despliegue tenga clave de Gemini.
+
 - **`headroom`** → presupuesto de resultados de herramientas en `api/mcp.ts`
   (`compressToolResult`, `budgetToolResponse`): conserva principio y final y
   rescata las líneas de error del trozo descartado. PR #42.
@@ -35,7 +41,7 @@ Los datos traen `license` por repo y `arsenalLicenses()` cuenta también los
 
 | Repo | Destino | Pieza que se trae | Qué hace falta |
 |---|---|---|---|
-| ~~`aemet-client`~~ | Atmósfera | **Incorporado**: `weather.aemet` (previsión municipal y observación con el sobre de dos pasos) | sólo `AEMET_API_KEY` |
+| ~~`aemet-client`~~ | Atmósfera | **Incorporado**: `weather.aemet` (previsión municipal y observación con el sobre de dos pasos) | sólo `AEMET_API_KEY` (medido: `missing` en producción) |
 | `xerj` / `codebase-memory-mcp` | Memoria | Índice de símbolos del repo para el agente, en vez de releer ficheros | nada |
 | `claude-mem` | Memoria | Resumen de turnos anteriores con presupuesto de tamaño | nada |
 | `ccxt` | Mercados | Nombres de exchange y símbolos normalizados para el proxy | nada (sólo el catálogo) |
