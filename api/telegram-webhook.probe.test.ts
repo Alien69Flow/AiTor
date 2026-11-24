@@ -18,8 +18,10 @@ type ProbeView = {
 };
 type KnowledgeSample = { question: string; expected: string | null; matched: string | null };
 type KnowledgeView = { blocks: number; samples: KnowledgeSample[] };
+type VoiceProbeView = { geminiKeyState: string; geminiVoice: string; note: string | null };
 type ProbeBody = {
   chatProbe: ProbeView | null;
+  voiceProbe?: VoiceProbeView | null;
   knowledgeProbe?: KnowledgeView | null;
   redis?: { configured: boolean };
   dedupe?: { active: boolean };
@@ -194,6 +196,21 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     expect(calls.filter((call) => call.includes("functions/v1/chat"))).toHaveLength(1);
   });
 
+  it("?probe=1 informa del estado de GEMINI_API_KEY para notas de voz", async () => {
+    const calls = stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1"), res);
+    const probe = snap().body!.voiceProbe!;
+
+    expect(probe.geminiKeyState).toBe("missing");
+    expect(probe.geminiVoice).toBe("---");
+    expect(probe.note).toContain("GEMINI_API_KEY");
+    expect(probe.note).toContain("no funcionarán");
+    expect(calls.filter((call) => call.includes("generativelanguage.googleapis.com"))).toHaveLength(0);
+  });
+
   it("sin ?probe=1 no se sonda nada", async () => {
     const calls = stubFetch();
     const handler = await loadHandler();
@@ -202,7 +219,50 @@ describe("GET /api/telegram-webhook?probe=1", () => {
     await handler(req("/api/telegram-webhook"), res);
 
     expect(snap().body?.chatProbe).toBeNull();
+    expect(snap().body?.voiceProbe).toBeNull();
     expect(snap().body?.knowledgeProbe).toBeNull();
+    expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
+  });
+
+  it("el marcador de GEMINI_API_KEY se distingue de la falta", async () => {
+    process.env.GEMINI_API_KEY = "tu_clave_aqui";
+    const calls = stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1"), res);
+    const probe = snap().body!.voiceProbe!;
+
+    expect(probe.geminiKeyState).toBe("placeholder");
+    expect(probe.geminiVoice).toBe("---");
+    expect(probe.note).toContain("marcador de posición");
+    expect(probe.note).toContain("no funcionarán");
+    expect(calls.filter((call) => call.includes("generativelanguage.googleapis.com"))).toHaveLength(0);
+  });
+
+  it("con clave real informa disponible sin filtrar el valor", async () => {
+    process.env.GEMINI_API_KEY = "AIzaSoyUnaClaveRealDePrueba1234567890";
+    const calls = stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook?probe=1"), res);
+    const probe = snap().body!.voiceProbe!;
+
+    expect(probe.geminiKeyState).toBe("ok");
+    expect(probe.geminiVoice).toBe("disponible");
+    expect(probe.note).toBeNull();
+    expect(JSON.stringify(snap().body!)).not.toContain("AIzaSoyUnaClaveRealDePrueba1234567890");
+    expect(calls.filter((call) => call.includes("generativelanguage.googleapis.com"))).toHaveLength(0);
+  });
+
+  it("sin ?probe=1 el voiceProbe no aparece", async () => {
+    const calls = stubFetch();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(req("/api/telegram-webhook"), res);
+    expect(snap().body?.voiceProbe).toBeNull();
     expect(calls.some((call) => call.includes("functions/v1/chat"))).toBe(false);
   });
 

@@ -20,6 +20,7 @@ import {
   saveTurn,
   type HistoryMessage,
 } from "./_shared/thread-memory.js";
+import { geminiKeyState } from "./mcp.js";
 
 /**
  * El turno del modelo tarda: medido hoy, de 6 a 22 s por respuesta. Con el
@@ -531,6 +532,28 @@ function scrub(text: string): string {
   return out.slice(0, 200);
 }
 
+function rawGeminiKeyForWebhook(): string {
+  return process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? "";
+}
+
+interface VoiceProbe {
+  geminiKeyState: string;
+  geminiVoice: string;
+  note: string | null;
+}
+
+function probeVoice(): VoiceProbe {
+  const state = geminiKeyState(rawGeminiKeyForWebhook());
+  const voice = state === "ok" ? "disponible" : "---";
+  return { geminiKeyState: state, geminiVoice: voice, note: voiceNote(state) };
+}
+
+function voiceNote(state: string): string | null {
+  if (state === "missing") return "GEMINI_API_KEY no está definida en este despliegue: las notas de voz no funcionarán";
+  if (state === "placeholder") return "GEMINI_API_KEY tiene la forma de un marcador de posición (falta clave real): las notas de voz no funcionarán";
+  return null;
+}
+
 function hintFor(
   status: number | null,
   ok: boolean,
@@ -762,6 +785,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             lastErrorMessage: info.last_error_message ?? null,
           }
         : null,
+      voiceProbe: query.get("probe") === "1" ? probeVoice() : null,
       chatProbe,
       knowledgeProbe: query.get("probe") === "1" ? probeKnowledge() : null,
     });
