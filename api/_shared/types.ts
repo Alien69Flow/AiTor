@@ -33,9 +33,25 @@ export function header(req: ApiRequest, name: string): string {
   return raw ?? "";
 }
 
-/** IP del llamante según la cadena de proxies de Vercel. */
+/**
+ * IP del llamante.
+ *
+ * `x-real-ip` y `x-vercel-forwarded-for` los escribe la plataforma. El primer
+ * salto de `x-forwarded-for` lo aporta quien llama, así que leerlo permitía
+ * estrenar cubo de rate limit inventando la cabecera. Se toma el último salto
+ * (el que añade el proxy más cercano) y sólo como respaldo.
+ */
 export function clientIp(req: ApiRequest): string {
-  const forwarded = header(req, "x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return header(req, "x-real-ip") || header(req, "cf-connecting-ip") || "unknown";
+  const real = header(req, "x-real-ip").trim();
+  if (real) return real;
+
+  for (const name of ["x-vercel-forwarded-for", "x-forwarded-for"]) {
+    const chain = header(req, name)
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    if (chain.length > 0) return chain[chain.length - 1];
+  }
+
+  return header(req, "cf-connecting-ip").trim() || "unknown";
 }

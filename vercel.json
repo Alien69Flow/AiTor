@@ -1,11 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [
-    {
-      "path": "/api/cron/price-alerts",
-      "schedule": "17 9 * * *"
-    }
-  ],
   "redirects": [
     {
       "source": "/~oauth/initiate",
@@ -26,6 +20,12 @@
     },
     "api/telegram-webhook.ts": {
       "maxDuration": 30
+    },
+    "api/gdelt.ts": {
+      "maxDuration": 25
+    },
+    "api/health.ts": {
+      "maxDuration": 15
     }
   },
   "headers": [
