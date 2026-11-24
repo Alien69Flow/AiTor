@@ -5,6 +5,7 @@ import {
   buildPrepRequest,
   CHEAP_MODEL,
   KEEP_RECENT_MESSAGES,
+  imageModelError,
   isQuotaDeath,
   MAX_HISTORY_CHARS,
   parsePrepAnswer,
@@ -15,6 +16,7 @@ import {
   trimHistory,
   type ChatTurn,
 } from "./chat-routing";
+import { modelSeesImages } from "./ai-providers";
 
 /**
  * El reparto por coste se juega en dos sitios: qué trabajo se manda al modelo
@@ -205,6 +207,71 @@ describe("cadena de claves de respaldo", () => {
       envCon({ LOVABLE_API_KEY: LOVABLE_OK, XAI_OK: XAI_OK, DEEPSEEK_API_KEY: DEEPSEEK_OK }),
     );
     expect(new Set(chain).size).toBe(chain.length);
+  });
+});
+
+describe("turnos con imagen", () => {
+  it("la cadena de respaldo no ofrece proveedores que no ven", () => {
+    const chain = answerChain(
+      "google/gemini-2.5-pro",
+      envCon({
+        LOVABLE_API_KEY: LOVABLE_OK,
+        ANTHROPIC_API_KEY: ANTHROPIC_OK,
+        DEEPSEEK_API_KEY: DEEPSEEK_OK,
+        GROK_API_KEY: XAI_OK,
+      }),
+      { hasImages: true },
+    );
+
+    // DeepSeek y grok-2 son texto: la foto se descartaría en silencio. Del
+    // proveedor pedido (Lovable) no se ofrece nada, así que sólo queda el
+    // multimodal de Anthropic.
+    expect(chain).not.toContain("deepseek/deepseek-reasoner");
+    expect(chain).not.toContain("deepseek/deepseek-chat");
+    expect(chain).not.toContain("xai/grok-2");
+    expect(chain).toEqual(["anthropic/claude-sonnet-4"]);
+  });
+
+  it("si el pedido es Anthropic, el respaldo multimodal es Gemini y no DeepSeek", () => {
+    const chain = answerChain(
+      "anthropic/claude-sonnet-4",
+      envCon({ LOVABLE_API_KEY: LOVABLE_OK, DEEPSEEK_API_KEY: DEEPSEEK_OK }),
+      { hasImages: true },
+    );
+    expect(chain).toContain("google/gemini-2.5-flash");
+    expect(chain).not.toContain("deepseek/deepseek-v3");
+  });
+
+  it("si el único respaldo no ve, la cadena queda vacía en vez de contestar a ciegas", () => {
+    expect(
+      answerChain(
+        "google/gemini-2.5-pro",
+        envCon({ LOVABLE_API_KEY: LOVABLE_OK, DEEPSEEK_API_KEY: DEEPSEEK_OK }),
+        { hasImages: true },
+      ),
+    ).toEqual([]);
+  });
+
+  it("sin imagen, DeepSeek vuelve a ser alternativa", () => {
+    const chain = answerChain(
+      "google/gemini-2.5-pro",
+      envCon({ LOVABLE_API_KEY: LOVABLE_OK, DEEPSEEK_API_KEY: DEEPSEEK_OK }),
+    );
+    expect(chain).toContain("deepseek/deepseek-reasoner");
+  });
+
+  it("el modelo pedido con foto avisa si no ve, y sólo calla cuando ve", () => {
+    expect(modelSeesImages("google/gemini-2.5-flash")).toBe(true);
+    expect(modelSeesImages("anthropic/claude-sonnet-4")).toBe(true);
+    expect(modelSeesImages("deepseek/deepseek-chat")).toBe(false);
+    expect(modelSeesImages("modelo/desconocido")).toBe(false);
+
+    expect(imageModelError("google/gemini-2.5-flash", true)).toBeNull();
+    expect(imageModelError("deepseek/deepseek-v3", false)).toBeNull();
+
+    const aviso = imageModelError("deepseek/deepseek-v3", true);
+    expect(aviso).toContain("no puede ver imágenes");
+    expect(aviso).toContain("google/gemini-2.5-flash");
   });
 });
 
