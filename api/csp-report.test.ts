@@ -60,4 +60,17 @@ describe("parseReports", () => {
 
     expect(parseReports(entries)).toHaveLength(20);
   });
+
+  it("sanea los campos: ni saltos de línea ni URLs sin tope en el log", () => {
+    const [report] = parseReports({
+      "csp-report": {
+        "effective-directive": "img-src",
+        "blocked-uri": "https://x.example/a.png\n[csp-report] directive=fake blocked=fake",
+        "document-uri": `https://aitor.alienflow.space/${"a".repeat(1000)}`,
+      },
+    });
+
+    expect(report.blocked).toBe("https://x.example/a.png [csp-report] directive=fake blocked=fake");
+    expect(report.document.length).toBe(512);
+  });
 });

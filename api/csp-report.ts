@@ -24,6 +24,9 @@ const MAX_BODY_BYTES = 8 * 1024;
 /** Tope de informes por petición: un array enorme no debe llenar el log. */
 const MAX_REPORTS = 20;
 
+/** Un campo más largo que esto no aporta: para agregar orígenes sobra. */
+const MAX_FIELD_CHARS = 512;
+
 export interface CspReport {
   directive: string;
   disposition: string;
@@ -31,10 +34,28 @@ export interface CspReport {
   document: string;
 }
 
+/**
+ * Un campo en una sola línea y con tope.
+ *
+ * El cuerpo lo manda cualquiera y estos valores acaban en `console.warn`: un
+ * salto de línea dentro de `document-uri` fabricaría líneas de log falsas, y
+ * una URL de megabytes llenaría el log con un solo informe.
+ */
+function oneLine(value: string): string {
+  let out = "";
+  for (const char of value) {
+    if (out.length >= MAX_FIELD_CHARS) break;
+    const code = char.codePointAt(0) ?? 0;
+    out += code < 0x20 || code === 0x7f ? " " : char;
+  }
+  return out.trim();
+}
+
+/** Primer valor de texto no vacío de `names`, ya saneado. */
 function pick(source: Record<string, unknown>, ...names: string[]): string {
   for (const name of names) {
     const value = source[name];
-    if (typeof value === "string" && value) return value;
+    if (typeof value === "string" && value) return oneLine(value);
   }
   return "";
 }
@@ -102,7 +123,9 @@ export function parseReports(payload: unknown): CspReport[] {
 
 /** JSON del cuerpo, o null si no es JSON o pasa de `MAX_BODY_BYTES`. */
 function decodeBody(body: unknown): unknown {
-  // Vercel ya parsea los cuerpos JSON; los informes llegan como texto o bytes.
+  // Vercel ya entrega parseado lo que llega como JSON. Ahí no se puede medir el
+  // cuerpo sin volver a serializarlo, así que el daño lo acotan `MAX_REPORTS` y
+  // `MAX_FIELD_CHARS` (el tamaño de la petición lo limita la plataforma).
   if (body && typeof body === "object" && !(body instanceof Uint8Array)) return body;
 
   const raw =
