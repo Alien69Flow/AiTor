@@ -43,9 +43,13 @@ select col_is_pk('public', 'game_runs', 'nonce', 'el nonce es la clave de la tab
 select has_function('public', 'start_game_run', array['text'], 'existe start_game_run');
 select has_function('public', 'consume_game_run', array['uuid', 'text'], 'existe consume_game_run');
 
--- 5: quien puede emitir y gastar.
-select has_function_privilege(
-  'authenticated', 'public.start_game_run(text)', 'execute',
+-- 5: quien puede emitir y gastar. El helper de pgTAP con descripcion no existe
+-- en la version que trae la imagen (el run lo dijo), asi que se usa el de
+-- PostgreSQL y la descripcion va en `ok()`.
+select ok(
+  has_function_privilege(
+    'authenticated', 'public.start_game_run(text)'::regprocedure, 'execute'
+  ),
   'authenticated puede emitir nonces'
 );
 
