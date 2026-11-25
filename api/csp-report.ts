@@ -52,6 +52,19 @@ function pick(source: Record<string, unknown>, ...names: string[]): string {
 }
 
 /**
+ * La URL del documento sin query ni fragmento.
+ *
+ * `document-uri` llega con la URL que el navegador tiene abierta, y ahí puede
+ * viajar un `?token=` o un `?code=` de OAuth. Eso acabaría en los logs de la
+ * función, que no es sitio para un secreto; el origen y la ruta siguen diciendo
+ * en qué página molesta.
+ */
+function withoutQuery(value: string): string {
+  const cut = value.search(/[?#]/);
+  return cut === -1 ? value : value.slice(0, cut);
+}
+
+/**
  * Una entrada a la forma que se registra, o null si no es una violación CSP.
  *
  * Tres envoltorios y una sola capa: `body` (Reporting API), `csp-report`
@@ -84,7 +97,7 @@ function toReport(item: unknown): CspReport | null {
   return {
     directive,
     blocked,
-    document: pick(violation, "document-uri", "documentURL"),
+    document: withoutQuery(pick(violation, "document-uri", "documentURL")),
     disposition: pick(violation, "disposition"),
   };
 }

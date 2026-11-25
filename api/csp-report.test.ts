@@ -187,4 +187,22 @@ describe("handler", () => {
     expect(status).toBe(204);
     expect(lines).toHaveLength(0);
   });
+
+  it("no registra la query del documento: un token en la URL no llega al log", async () => {
+    const { status, lines } = await run({
+      "csp-report": {
+        "effective-directive": "img-src",
+        "blocked-uri": "https://x.example/a.png",
+        "document-uri": "https://aitor.alienflow.space/auth/callback?token=secreto-de-prueba#frag",
+      },
+    });
+
+    expect(status).toBe(204);
+    expect(lines).toHaveLength(1);
+    // La línea entera, para que el formato no se mueva sin que salte esta prueba.
+    expect(lines[0]).toBe(
+      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space/auth/callback disposition=-",
+    );
+    expect(lines[0]).not.toContain("token=");
+  });
 });
