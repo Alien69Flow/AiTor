@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "crons": [
+    {
+      "path": "/api/cron/price-alerts",
+      "schedule": "17 9 * * *"
+    }
+  ],
   "redirects": [
     {
       "source": "/~oauth/initiate",
