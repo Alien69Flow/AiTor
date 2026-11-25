@@ -5,6 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
+/** `res` de Vercel tal y como lo usa el handler: encadenable. */
+interface MockRes {
+  statusCode: number;
+  status(code: number): MockRes;
+  json(): MockRes;
+  send(): MockRes;
+}
+
 const ENV_KEYS = [
   "TELEGRAM_BOT_TOKEN",
   "TELEGRAM_WEBHOOK_SECRET",
@@ -58,6 +66,27 @@ function stubFetch(messages: string[]): { chatBodies: Array<Record<string, unkno
   return { chatBodies };
 }
 
+/**
+ * El `res` con la forma que el handler espera. La anotación no es decorativa:
+ * sin ella, `this` dentro de `status()` se queda en `{}` y `this.statusCode`
+ * no compila (TS2339) en cuanto el fichero entra en un `tsconfig`.
+ */
+function mockRes(): MockRes {
+  return {
+    statusCode: 200,
+    status(code) {
+      this.statusCode = code;
+      return this;
+    },
+    json() {
+      return this;
+    },
+    send() {
+      return this;
+    },
+  };
+}
+
 async function run(text: string): Promise<void> {
   const handler = (await import("./telegram-webhook")).default as unknown as Handler;
   await handler(
@@ -67,19 +96,7 @@ async function run(text: string): Promise<void> {
       headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "203.0.113.11" },
     },
-    {
-      statusCode: 200,
-      status(code: number) {
-        this.statusCode = code;
-        return this;
-      },
-      json() {
-        return this;
-      },
-      send() {
-        return this;
-      },
-    },
+    mockRes(),
   );
 }
 
@@ -97,7 +114,6 @@ describe("conocimiento en el turno", () => {
   it("una pregunta de mercados no lleva contexto inventado", async () => {
     const { chatBodies } = stubFetch([]);
     await run("¿cuánto cuesta el bitcoin hoy?");
-
     expect(chatBodies[0].context).toBeUndefined();
   });
 });
