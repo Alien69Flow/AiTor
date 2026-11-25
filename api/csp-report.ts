@@ -134,7 +134,18 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   // el endpoint para escribir el log que queremos leer.
   if (!(await checkRateLimit(req, res, { name: "csp-report", limit: 120, windowSec: 60 }))) return;
 
-  for (const report of parseReports(decodeBody(req.body))) {
+  let reports = parseReports(decodeBody(req.body));
+
+  // Vercel no parsea `application/csp-report` ni `application/reports+json`:
+  // deja `req.body` vacio y el JSON sin leer en el stream de la peticion, asi
+  // que el colector se quedaria mudo justo en produccion. Se lee el crudo solo
+  // cuando lo que ya llego no produce ni un informe (vacio, `{}` o un
+  // envoltorio ajeno).
+  if (reports.length === 0) {
+    reports = parseReports(decodeBody(await readRawBody(req)));
+  }
+
+  for (const report of reports) {
     console.warn(
       `[csp-report] directive=${report.directive || "-"} blocked=${report.blocked || "-"} document=${report.document || "-"} disposition=${report.disposition || "-"}`,
     );
@@ -143,4 +154,34 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   // 204 también sin nada que registrar: el navegador no reintenta un informe, así
   // que un error sólo añadiría ruido al log.
   res.status(204).end();
+}
+
+/**
+ * Cuerpo crudo de la peticion, que es donde Vercel deja los tipos que no
+ * sabe parsear. Devuelve vacio si el stream ya estaba consumido (el cuerpo
+ * llego parseado) o si pasa del tope: en los dos casos no hay informe que
+ * rescatar.
+ */
+async function readRawBody(req: unknown): Promise<string> {
+  const source = req as unknown as Record<symbol, unknown>;
+  if (typeof source[Symbol.asyncIterator] !== 'function') return '';
+
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+
+  for await (const chunk of req as unknown as AsyncIterable<Uint8Array | string>) {
+    const bytes = typeof chunk === 'string' ? encoder.encode(chunk) : chunk;
+    size += bytes.length;
+    if (size > MAX_BODY_BYTES) return '';
+    chunks.push(bytes);
+  }
+
+  const raw = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    raw.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return new TextDecoder().decode(raw);
 }
