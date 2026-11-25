@@ -1,7 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { guardPublic, isAllowedOrigin } from "./guard";
+import { clientIp, guardPublic, isAllowedOrigin } from "./guard";
 
 const request = (origin: string) => new Request("https://example.com/air-traffic", { headers: { origin } });
+
+const requestWith = (headers: Record<string, string>) =>
+  new Request("https://example.com/air-traffic", { headers });
+
+describe("client IP for the rate limit", () => {
+  it("usa la IP que escribe la plataforma", () => {
+    expect(clientIp(requestWith({ "x-real-ip": "198.51.100.9" }))).toBe("198.51.100.9");
+  });
+
+  it("no deja estrenar cubo con cabeceras que escribe el visitante", () => {
+    // `cf-connecting-ip` no la pone nadie de confianza en Edge Functions y el
+    // primer salto de `x-forwarded-for` lo prefija quien llama: ninguno de los
+    // dos puede decidir el cubo.
+    expect(clientIp(requestWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("unknown");
+    expect(
+      clientIp(requestWith({ "x-forwarded-for": "203.0.113.7, 198.51.100.9" })),
+    ).toBe("198.51.100.9");
+  });
+
+  it("sin cabeceras cae en un único cubo", () => {
+    expect(clientIp(requestWith({}))).toBe("unknown");
+  });
+});
 
 describe("public feed origin permissions", () => {
   it.each([

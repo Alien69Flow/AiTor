@@ -37,11 +37,29 @@ export function isAllowedOrigin(req: Request): boolean {
 type Bucket = { count: number; reset: number };
 const buckets = new Map<string, Bucket>();
 
+/**
+ * IP del llamante, y sólo de cabeceras que escribe la plataforma.
+ *
+ * El gateway pone `x-real-ip` con una sola IP. `x-forwarded-for` puede llegar
+ * con una cadena prefijada por el cliente, así que manda el último salto, el
+ * que añade el proxy más cercano a nosotros. `cf-connecting-ip` no se lee: no
+ * está documentada para Edge Functions y aceptarla dejaba que cada petición
+ * estrenara un cubo de rate limit.
+ */
+export function clientIp(req: Request): string {
+  const real = req.headers.get("x-real-ip")?.trim();
+  if (real) return real;
+
+  const hops = (req.headers.get("x-forwarded-for") ?? "")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+
+  return hops.pop() || "unknown";
+}
+
 export function rateLimit(req: Request, limit = 30, windowMs = 60_000): boolean {
-  const ip =
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    "unknown";
+  const ip = clientIp(req);
   const now = Date.now();
   const b = buckets.get(ip);
   if (!b || b.reset <= now) {
