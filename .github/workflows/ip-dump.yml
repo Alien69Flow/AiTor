@@ -1,0 +1,19 @@
+name: ip dump
+on:
+  push:
+    branches: ["chore/ip-unificado"]
+    paths:
+      - ".github/workflows/ip-dump.yml"
+  workflow_dispatch:
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chore/ip-unificado
+      - name: tipos
+        run: cat -n api/_shared/types.ts
+      - name: guardia
+        run: cat -n supabase/functions/_shared/guard.ts
