@@ -28,7 +28,7 @@ jobs:
           cache: npm
 
       - name: Dependencias
-        run: npm ci --no-audit --no-fund
+        run: npm ci --no-audit --no-fund >/dev/null 2>&1
 
       - name: Aplicar parche
         run: |
@@ -101,14 +101,13 @@ jobs:
           console.log("parcheado api/csp-report.ts");
           JS
 
-      - name: Que incluye el typecheck
-        run: cat tsconfig.api.json
-
       - name: Typecheck de la API
-        run: npx tsc -p tsconfig.api.json --noEmit
+        run: npx tsc -p tsconfig.api.json --noEmit && echo TSC_OK
 
       - name: Pruebas del colector
-        run: npx vitest run api/csp-report
+        run: |
+          npx vitest --version
+          npx vitest run api/csp-report.test.ts api/csp-report.raw-body.test.ts
 
       - name: Commit del parche
         run: |
