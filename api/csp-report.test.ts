@@ -153,6 +153,7 @@ describe("handler", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("directive=img-src");
     expect(lines[0]).toContain("blocked=https://x.example/a.png");
+    expect(lines[0]).toContain("count=1");
   });
 
   it("por debajo de 8 KiB entra y justo en el tope también", async () => {
@@ -169,16 +170,42 @@ describe("handler", () => {
     expect((await run(new TextEncoder().encode(big))).lines).toHaveLength(0);
   });
 
-  it("un array enorme de informes se corta en 20 líneas", async () => {
-    const reports = Array.from({ length: 200 }, () => ({
+  it("un array enorme se corta en 20 informes: 20 grupos distintos", async () => {
+    const reports = Array.from({ length: 200 }, (_, index) => ({
       type: "csp-violation",
-      body: { effectiveDirective: "img-src", blockedURL: "https://x.example/a.png" },
+      body: { effectiveDirective: "img-src", blockedURL: `https://x.example/${index}.png` },
     }));
 
     const { status, lines } = await run(reports);
 
     expect(status).toBe(204);
     expect(lines).toHaveLength(20);
+    expect(lines.every((line) => line.endsWith("count=1"))).toBe(true);
+  });
+
+  it("agrupa por directiva y origen: los repetidos son una línea con su cuenta", async () => {
+    const repeated = (directive: string, blocked: string, times: number) =>
+      Array.from({ length: times }, () => ({
+        type: "csp-violation",
+        body: { effectiveDirective: directive, blockedURL: blocked },
+      }));
+
+    const { status, lines } = await run([
+      ...repeated("img-src", "https://x.example/a.png", 3),
+      ...repeated("connect-src", "https://y.example/api", 2),
+    ]);
+
+    expect(status).toBe(204);
+    // Dos pares (directiva, origen) → dos líneas, no cinco.
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toBe("[csp-report] directive=img-src blocked=https://x.example/a.png document=- disposition=- count=3");
+    expect(lines[1]).toBe("[csp-report] directive=connect-src blocked=https://y.example/api document=- disposition=- count=2");
+
+    // El tope de informes se aplica antes de agrupar: 25 repeticiones cuentan 20.
+    const capped = await run(repeated("img-src", "https://x.example/a.png", 25));
+
+    expect(capped.lines).toHaveLength(1);
+    expect(capped.lines[0]).toContain("count=20");
   });
 
   it("JSON roto responde 204 y no registra ni lanza", async () => {
@@ -201,7 +228,7 @@ describe("handler", () => {
     expect(lines).toHaveLength(1);
     // La línea entera, para que el formato no se mueva sin que salte esta prueba.
     expect(lines[0]).toBe(
-      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space/auth/callback disposition=-",
+      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space/auth/callback disposition=- count=1",
     );
     expect(lines[0]).not.toContain("token=");
   });

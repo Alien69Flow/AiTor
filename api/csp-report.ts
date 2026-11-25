@@ -6,8 +6,9 @@
  * `Content-Security-Policy-Report-Only` sin `report-uri`/`report-to` sólo escribe
  * en la consola del visitante. Este handler recibe los dos formatos que mandan
  * los navegadores —`csp-report` (legacy) y la lista de `reports+json` con
- * `{ type: "csp-violation", body }`— y escribe una línea por informe en los logs
- * de la función. No guarda nada: el histórico es la retención de Vercel.
+ * `{ type: "csp-violation", body }`— agrupa los informes de cada petición por
+ * directiva y origen, y escribe una línea por grupo con su cuenta en los logs de
+ * la función. No guarda nada: el histórico es la retención de Vercel.
  */
 import { checkRateLimit } from "./_shared/rate-limit.js";
 import type { ApiRequest, ApiResponse } from "./_shared/types.js";
@@ -26,6 +27,11 @@ export interface CspReport {
   disposition: string;
   blocked: string;
   document: string;
+}
+
+/** Un grupo de informes iguales dentro de una petición, con cuántos eran. */
+interface CspGroup extends CspReport {
+  count: number;
 }
 
 /**
@@ -116,6 +122,36 @@ export function parseReports(payload: unknown): CspReport[] {
   return reports;
 }
 
+/**
+ * Los informes de una petición agrupados por directiva y origen, con su cuenta.
+ *
+ * Veinte avisos del mismo par (directiva, origen) son un dato, no veinte líneas:
+ * el navegador repite el mismo informe mientras el recurso siga en la página, y
+ * eso llenaba el log con ruido idéntico. Se agrupa sobre los campos ya saneados,
+ * así que dos valores que sólo difieren en caracteres de control caen juntos, que
+ * es lo correcto: son el mismo aviso.
+ *
+ * `document` y `disposition` son los del primer informe del grupo: la cuenta es
+ * del par (directiva, origen), y las páginas se reparten entre peticiones.
+ */
+export function groupReports(reports: CspReport[]): CspGroup[] {
+  const groups = new Map<string, CspGroup>();
+
+  for (const report of reports) {
+    // Los campos saneados no llevan controles, así que el separador no puede
+    // aparecer dentro de un valor y pegar dos claves distintas.
+    const key = `${report.directive}\u0000${report.blocked}`;
+    const group = groups.get(key);
+    if (group) {
+      group.count += 1;
+      continue;
+    }
+    groups.set(key, { ...report, count: 1 });
+  }
+
+  return [...groups.values()];
+}
+
 /** JSON del cuerpo, o null si no es JSON o pasa de `MAX_BODY_BYTES`. */
 function decodeBody(body: unknown): unknown {
   // Vercel ya entrega parseado lo que llega como JSON. Ahí el tamaño no se puede
@@ -158,9 +194,9 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     reports = parseReports(decodeBody(await readRawBody(req)));
   }
 
-  for (const report of reports) {
+  for (const group of groupReports(reports)) {
     console.warn(
-      `[csp-report] directive=${report.directive || "-"} blocked=${report.blocked || "-"} document=${report.document || "-"} disposition=${report.disposition || "-"}`,
+      `[csp-report] directive=${group.directive || "-"} blocked=${group.blocked || "-"} document=${group.document || "-"} disposition=${group.disposition || "-"} count=${group.count}`,
     );
   }
 
