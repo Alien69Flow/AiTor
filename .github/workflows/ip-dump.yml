@@ -13,9 +13,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: chore/ip-unificado
-      - name: mcp
-        run: grep -n -B8 -A22 -i 'x-forwarded-for' api/mcp.ts
-      - name: usos
-        run: grep -rn 'clientIp' api --include=*.ts
-      - name: guard-test
-        run: cat -n supabase/functions/_shared/guard.test.ts
+      - name: cabecera
+        run: sed -n '1,45p' api/mcp.ts | cat -n
+      - name: tipo-req
+        run: grep -n 'ApiRequest\|VercelRequest\|req:' api/mcp.ts | head -20
