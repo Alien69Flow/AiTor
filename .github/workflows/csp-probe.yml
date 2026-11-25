@@ -1,0 +1,35 @@
+name: csp-probe
+
+# Sonda temporal: typecheck de api/ y solo la prueba del handler CSP.
+# Se borra en el commit siguiente.
+
+on:
+  push:
+    paths:
+      - ".github/workflows/csp-probe.yml"
+      - "api/csp-report.ts"
+      - "api/csp-report.test.ts"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: csp
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Typecheck de la API
+        run: npx tsc -p tsconfig.api.json --noEmit
+
+      - name: Prueba del handler
+        run: npx vitest run api/csp-report.test.ts --reporter=dot 2>&1 | tail -n 25
