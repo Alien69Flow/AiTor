@@ -1,7 +1,7 @@
 name: csp raw body patch
 
-# Sonda temporal, se borra en un commit posterior. Primero vuelca el handler
-# para ver el ancla exacta; con ese texto se aplica el parche y se verifica.
+# Sonda temporal, se borra en un commit posterior: aplica el parche de lectura
+# del cuerpo crudo, compila y pasa las pruebas antes de commitear.
 
 on:
   push:
@@ -11,20 +11,113 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  dump:
-    name: volcar handler
+  patch:
+    name: aplicar y verificar
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: chore/csp-report-only
 
-      - name: Volcar api/csp-report.ts
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Dependencias
+        run: npm ci --no-audit --no-fund
+
+      - name: Aplicar parche
         run: |
-          wc -c api/csp-report.ts
-          echo '-----INICIO-----'
-          cat -A api/csp-report.ts | sed -e 's/\$$//' | head -n 400
-          echo '-----FIN-----'
+          node <<'JS'
+          const { readFileSync, writeFileSync } = require("node:fs");
+          const path = "api/csp-report.ts";
+          const src = readFileSync(path, "utf8");
+
+          if (src.includes("readRawBody")) {
+            console.log("ya parcheado: nada que hacer");
+            process.exit(0);
+          }
+
+          const anchor = "  for (const report of parseReports(decodeBody(req.body))) {";
+          if (!src.includes(anchor)) {
+            console.error("falta el ancla del bucle de informes");
+            process.exit(1);
+          }
+
+          const patched = [
+            "  let reports = parseReports(decodeBody(req.body));",
+            "",
+            "  // Vercel no parsea `application/csp-report` ni `application/reports+json`:",
+            "  // deja `req.body` vacio y el JSON sin leer en el stream de la peticion, asi",
+            "  // que el colector se quedaria mudo justo en produccion. Se lee el crudo solo",
+            "  // cuando lo que ya llego no produce ni un informe (vacio, `{}` o un",
+            "  // envoltorio ajeno).",
+            "  if (reports.length === 0) {",
+            "    reports = parseReports(decodeBody(await readRawBody(req)));",
+            "  }",
+            "",
+            "  for (const report of reports) {",
+          ].join("\n");
+
+          const helper = [
+            "",
+            "/**",
+            " * Cuerpo crudo de la peticion, que es donde Vercel deja los tipos que no",
+            " * sabe parsear. Devuelve vacio si el stream ya estaba consumido (el cuerpo",
+            " * llego parseado) o si pasa del tope: en los dos casos no hay informe que",
+            " * rescatar.",
+            " */",
+            "async function readRawBody(req: unknown): Promise<string> {",
+            "  const source = req as unknown as Record<symbol, unknown>;",
+            "  if (typeof source[Symbol.asyncIterator] !== 'function') return '';",
+            "",
+            "  const encoder = new TextEncoder();",
+            "  const chunks: Uint8Array[] = [];",
+            "  let size = 0;",
+            "",
+            "  for await (const chunk of req as unknown as AsyncIterable<Uint8Array | string>) {",
+            "    const bytes = typeof chunk === 'string' ? encoder.encode(chunk) : chunk;",
+            "    size += bytes.length;",
+            "    if (size > MAX_BODY_BYTES) return '';",
+            "    chunks.push(bytes);",
+            "  }",
+            "",
+            "  const raw = new Uint8Array(size);",
+            "  let offset = 0;",
+            "  for (const chunk of chunks) {",
+            "    raw.set(chunk, offset);",
+            "    offset += chunk.length;",
+            "  }",
+            "  return new TextDecoder().decode(raw);",
+            "}",
+            "",
+          ].join("\n");
+
+          writeFileSync(path, src.replace(anchor, () => patched) + helper);
+          console.log("parcheado api/csp-report.ts");
+          JS
+
+      - name: Que incluye el typecheck
+        run: cat tsconfig.api.json
+
+      - name: Typecheck de la API
+        run: npx tsc -p tsconfig.api.json --noEmit
+
+      - name: Pruebas del colector
+        run: npx vitest run api/csp-report
+
+      - name: Commit del parche
+        run: |
+          if git diff --quiet; then
+            echo "sin cambios que commitear"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add api/csp-report.ts
+          git commit -m "fix(seguridad): leer el cuerpo crudo del informe cuando Vercel no lo parsea"
+          git push origin HEAD:chore/csp-report-only
