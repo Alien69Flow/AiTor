@@ -17,6 +17,7 @@
     "api/gdelt.ts",
     "api/traffic.ts",
     "api/bitnodes.ts",
-    "api/github.ts"
+    "api/github.ts",
+    "api/csp-report.ts"
   ]
 }
