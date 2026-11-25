@@ -46,11 +46,10 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # The repo carries pre-existing lint debt (135 problems: src, supabase/functions,
-      # backend). Keep it non-blocking so this gate stays useful, and flip it to
-      # blocking once that backlog is cleared. New/changed files must be clean.
-      - name: Lint (advisory)
-        continue-on-error: true
+      # Lint bloquea, sin `continue-on-error`: un aviso silenciado es cómo un
+      # rojo se vuelve verde, y `tests/api/collected-by-vitest.test.ts` lo
+      # prohíbe a propósito. Si sale deuda previa, se arregla el código.
+      - name: Lint
         run: npm run lint
 
       - name: Build
