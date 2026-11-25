@@ -17,7 +17,6 @@ export interface ApiRequest {
   url?: string;
   body?: unknown;
 }
-
 export interface ApiResponse {
   statusCode: number;
   status(code: number): ApiResponse;
@@ -34,24 +33,31 @@ export function header(req: ApiRequest, name: string): string {
 }
 
 /**
- * IP del llamante.
+ * IP del llamante, con el mismo orden que `supabase/functions/_shared/guard.ts`.
  *
- * `x-real-ip` y `x-vercel-forwarded-for` los escribe la plataforma. El primer
- * salto de `x-forwarded-for` lo aporta quien llama, así que leerlo permitía
- * estrenar cubo de rate limit inventando la cabecera. Se toma el último salto
- * (el que añade el proxy más cercano) y sólo como respaldo.
+ *  1. `cf-connecting-ip`: Cloudflare la escribe con el cliente real y pisa la
+ *     que mande el visitante, así que es la única que sigue siendo del cliente
+ *     cuando hay un CDN delante.
+ *  2. `x-real-ip`: la escribe Vercel con el par TCP. Sin CDN es el cliente; con
+ *     Cloudflare delante sería la IP del borde, idéntica para todos los
+ *     usuarios de ese PoP — por eso no va primero.
+ *  3. `x-forwarded-for`: primer salto, y sólo como último recurso. Es la parte
+ *     que puede aportar el visitante, así que no se usa si hay algo mejor.
+ *
+ * Sin ninguna cabecera (dev en local) devuelve "unknown": un único cubo, que en
+ * local es exactamente lo que se quiere.
+ *
+ * Caveat: si el despliegue de Vercel es alcanzable saltándose Cloudflare, un
+ * visitante puede inventarse `cf-connecting-ip` y estrenar cubo. Eso se cierra
+ * cerrando el origen, no eligiendo otra cabecera.
  */
 export function clientIp(req: ApiRequest): string {
+  const cf = header(req, "cf-connecting-ip").trim();
+  if (cf) return cf;
+
   const real = header(req, "x-real-ip").trim();
   if (real) return real;
 
-  for (const name of ["x-vercel-forwarded-for", "x-forwarded-for"]) {
-    const chain = header(req, name)
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean);
-    if (chain.length > 0) return chain[chain.length - 1];
-  }
-
-  return header(req, "cf-connecting-ip").trim() || "unknown";
+  const first = header(req, "x-forwarded-for").split(",")[0]?.trim();
+  return first || "unknown";
 }
