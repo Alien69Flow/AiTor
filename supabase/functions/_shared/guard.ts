@@ -34,14 +34,42 @@ export function isAllowedOrigin(req: Request): boolean {
   );
 }
 
+// Regla única de IP, copia literal de `clientIp` en `api/_shared/types.ts`.
+// Los edge functions sólo empaquetan su propio directorio, así que no se puede
+// importar de `api/`: el orden de abajo tiene que ser el mismo, y el test
+// `guard.ip.test.ts` usa la misma tabla que el lado Node para detectarlo si no.
+//
+// Antes esta función ponía `cf-connecting-ip` por delante, y eso la hacía
+// esquivables: la manda el cliente y rotarla daba un cubo de rate limit nuevo
+// por petición.
+export const IP_HEADERS = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const;
+
+export const UNKNOWN_IP = "unknown";
+
+/** Primer segmento no vacío de una cadena `x-forwarded-for`. */
+export function firstForwardedIp(value: string): string {
+  for (const segment of value.split(",")) {
+    const trimmed = segment.trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/** IP del llamante según la regla única; `remoteAddress` sólo existe en Node. */
+export function clientIp(headers: Headers, remoteAddress?: string): string {
+  for (const name of IP_HEADERS) {
+    const raw = headers.get(name) ?? "";
+    const candidate = name === "x-forwarded-for" ? firstForwardedIp(raw) : raw.trim();
+    if (candidate) return candidate;
+  }
+  return remoteAddress?.trim() || UNKNOWN_IP;
+}
+
 type Bucket = { count: number; reset: number };
 const buckets = new Map<string, Bucket>();
 
 export function rateLimit(req: Request, limit = 30, windowMs = 60_000): boolean {
-  const ip =
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    "unknown";
+  const ip = clientIp(req.headers);
   const now = Date.now();
   const b = buckets.get(ip);
   if (!b || b.reset <= now) {
