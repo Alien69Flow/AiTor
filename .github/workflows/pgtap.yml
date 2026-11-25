@@ -1,0 +1,46 @@
+name: pgTAP
+
+# Las aserciones de supabase/tests no las ejecutaba nadie: no existía job.
+# `record_game_run.sql` (plan 12) y `games_scores_guard.sql` (plan 19) estaban
+# escritas y jamás corridas, así que la liga podía estar rota sin que el CI
+# dijera nada.
+#
+# Va en su propio fichero a propósito: escribir un workflow por API exige el
+# contenido completo del fichero, y rehacer `ci.yml` desde una copia extraída es
+# más riesgo que beneficio. Los jobs que ya existen no se tocan.
+#
+# La secuencia `db start` + `test db` es la que documenta Supabase para GitHub
+# Actions: `db start` levanta Postgres, aplica migraciones y seed; `test db`
+# corre pg_prove contra esa base.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pgtap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgtap:
+    name: supabase pgTAP
+    runs-on: ubuntu-latest
+    # Runner en frío: incluye la descarga de la imagen de Postgres.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Preferible fijar la versión, pero inventar un número rompería el job en
+      # cuanto el CLI falle al resolverla. Cuando la primera ejecución diga qué
+      # versión usó, se pinta aquí.
+      - uses: supabase/setup-cli@v1
+
+      - name: Start local database
+        run: supabase db start
+
+      - name: Run pgTAP suites
+        run: supabase test db supabase/tests
