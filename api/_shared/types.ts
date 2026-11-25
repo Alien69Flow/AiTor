@@ -32,32 +32,46 @@ export function header(req: ApiRequest, name: string): string {
   return raw ?? "";
 }
 
+/** Último salto no vacío: el más cercano a nosotros, no el que pudo poner el cliente. */
+function lastHop(value: string): string {
+  return (
+    value
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .pop() ?? ""
+  );
+}
+
 /**
- * IP del llamante, con el mismo orden que `supabase/functions/_shared/guard.ts`.
+ * IP del llamante, y sólo de cabeceras que escribe la plataforma.
  *
- *  1. `cf-connecting-ip`: Cloudflare la escribe con el cliente real y pisa la
- *     que mande el visitante, así que es la única que sigue siendo del cliente
- *     cuando hay un CDN delante.
- *  2. `x-real-ip`: la escribe Vercel con el par TCP. Sin CDN es el cliente; con
- *     Cloudflare delante sería la IP del borde, idéntica para todos los
- *     usuarios de ese PoP — por eso no va primero.
- *  3. `x-forwarded-for`: primer salto, y sólo como último recurso. Es la parte
- *     que puede aportar el visitante, así que no se usa si hay algo mejor.
+ * Vercel sobrescribe `x-forwarded-for` y no reenvía la IP que mande el cliente
+ * (salvo Enterprise con proxy de confianza), así que esas tres son de fiar:
+ *
+ *  1. `x-vercel-forwarded-for`: la propia de Vercel, y la única que sobrevive a
+ *     un proxy delante si algún día se pone uno.
+ *  2. `x-real-ip`: la misma IP, por si la primera no llega.
+ *  3. `x-forwarded-for`: último salto, como último recurso.
+ *
+ * `cf-connecting-ip` **no se lee**, a propósito. Producción no está detrás de
+ * Cloudflare (el dominio es CNAME a `vercel-dns` y el apex resuelve a
+ * 76.76.21.21), y los previews `*.vercel.app` van a Vercel directo, así que esa
+ * cabecera sólo puede venir del visitante: leerla permitía inventarse un cubo
+ * de rate limit nuevo con cada petición, que es peor que compartir uno. Si
+ * algún día Cloudflare sí va delante, el paso previo es cerrar el origen —que
+ * no se pueda alcanzar saltándose el CDN— y entonces volver a leerla a
+ * propósito, no por lo que diga el DNS.
  *
  * Sin ninguna cabecera (dev en local) devuelve "unknown": un único cubo, que en
  * local es exactamente lo que se quiere.
- *
- * Caveat: si el despliegue de Vercel es alcanzable saltándose Cloudflare, un
- * visitante puede inventarse `cf-connecting-ip` y estrenar cubo. Eso se cierra
- * cerrando el origen, no eligiendo otra cabecera.
  */
 export function clientIp(req: ApiRequest): string {
-  const cf = header(req, "cf-connecting-ip").trim();
-  if (cf) return cf;
+  const vercel = lastHop(header(req, "x-vercel-forwarded-for"));
+  if (vercel) return vercel;
 
-  const real = header(req, "x-real-ip").trim();
+  const real = lastHop(header(req, "x-real-ip"));
   if (real) return real;
 
-  const first = header(req, "x-forwarded-for").split(",")[0]?.trim();
-  return first || "unknown";
+  return lastHop(header(req, "x-forwarded-for")) || "unknown";
 }
