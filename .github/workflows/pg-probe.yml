@@ -1,0 +1,43 @@
+name: pg probe
+
+# Sonda temporal (se borra): imprime solo el final de la salida de pgTAP,
+# porque el log del job se trunca antes de llegar ahi.
+
+on:
+  push:
+    branches: ["ci/pgtap"]
+    paths:
+      - ".github/workflows/pg-probe.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: leer salida de pgTAP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 3.3.0
+
+      - name: Base local
+        run: |
+          set +e
+          supabase db start >/tmp/start.log 2>&1
+          echo "START_EXIT=$?"
+          tail -3 /tmp/start.log
+
+      - name: Suites
+        run: |
+          set +e
+          supabase test db supabase/tests >/tmp/t.log 2>&1
+          echo "TEST_EXIT=$?"
+          echo "--- ficheros ---"
+          ls -l supabase/tests
+          echo "--- salida (ultimas 80 lineas) ---"
+          tail -80 /tmp/t.log
