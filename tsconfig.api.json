@@ -4,7 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2022", "DOM"],
-    "types": ["node"],
+    "types": ["node", "vitest/globals"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
@@ -13,6 +13,7 @@
   },
   "include": [
     "api/_shared/**/*.ts",
+    "api/**/*.test.ts",
     "api/health.ts",
     "api/gdelt.ts",
     "api/traffic.ts",

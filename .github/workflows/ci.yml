@@ -40,6 +40,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # `tsc -b` sólo compila los proyectos que referencia la raíz
+      # (`tsconfig.app.json` y `tsconfig.node.json`). `tsconfig.api.json` existía
+      # desde la fase 1 pero no lo ejecutaba ningún paso, así que los tipos de
+      # `api/` y los de sus tests no los miraba ningún gate.
+      - name: Typecheck de la API
+        run: npx tsc -p tsconfig.api.json --noEmit
+
       - name: Build
         run: npm run build
 
