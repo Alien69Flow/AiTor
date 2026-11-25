@@ -40,16 +40,24 @@ describe("parseReports", () => {
     });
   });
 
-  it("acepta el informe ya plano y cae a violated-directive si falta effective", () => {
-    const [report] = parseReports({ "blocked-uri": "wss://relay.walletconnect.com", "violated-directive": "connect-src" });
+  it("cae a violated-directive cuando el navegador no manda effective", () => {
+    const [report] = parseReports({
+      "blocked-uri": "wss://relay.walletconnect.com",
+      "violated-directive": "connect-src",
+    });
 
     expect(report).toMatchObject({ directive: "connect-src", blocked: "wss://relay.walletconnect.com" });
   });
 
-  it("descarta lo que no es un informe", () => {
-    expect(parseReports({})).toEqual([]);
-    expect(parseReports({ type: "deprecation" })).toEqual([]);
-    expect(parseReports(null)).toEqual([]);
-    expect(parseReports("texto")).toEqual([]);
+  it("descarta lo que no es un informe, sin lanzar", () => {
+    const notReports: unknown[] = [{}, { type: "deprecation" }, { type: "csp-violation" }, null, "texto", 42];
+
+    for (const payload of notReports) expect(parseReports(payload)).toEqual([]);
+  });
+
+  it("corta en el tope de informes por petición", () => {
+    const entries = Array.from({ length: 50 }, () => ({ type: "csp-violation", body: { effectiveDirective: "img-src" } }));
+
+    expect(parseReports(entries)).toHaveLength(20);
   });
 });

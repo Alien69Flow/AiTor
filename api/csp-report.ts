@@ -3,22 +3,17 @@
  *
  * Colector de informes CSP.
  *
- * `Content-Security-Policy-Report-Only` no envía nada a ningún sitio por sí
- * sola: sin `report-uri`/`report-to` los avisos sólo aparecen en la consola del
- * navegador de cada visitante, así que no se puede medir qué orígenes usa el
- * sitio de verdad. Este handler es ese destino.
+ * `Content-Security-Policy-Report-Only` sin `report-uri`/`report-to` sólo
+ * escribe en la consola del visitante: no se puede medir nada con tráfico real.
+ * Este handler es ese destino, y no guarda estado: una línea por informe en los
+ * logs de la función (`vercel logs | grep csp-report`).
  *
- * Dos formatos, a propósito:
+ * Dos formatos, y los dos con una sola capa de envoltorio:
  *
- *  · `application/csp-report` (legacy, `report-uri`): un objeto
- *    `{ "csp-report": { … } }` con claves en kebab-case.
- *  · `application/reports+json` (Reporting API, `report-to`): una lista de
- *    `{ type: "csp-violation", body: { … } }` con claves en camelCase.
- *
- * No guarda nada en base de datos: escribe una línea por informe en los logs de
- * la función, que es donde se puede agregar (`vercel logs | grep csp-report`).
- * Sin infraestructura nueva y sin PII más allá de las URLs que el navegador ya
- * manda.
+ *  · `application/csp-report` (legacy, `report-uri`): `{ "csp-report": { … } }`,
+ *    claves en kebab-case.
+ *  · `application/reports+json` (Reporting API, `report-to`): lista de
+ *    `{ type: "csp-violation", body: { … } }`, claves en camelCase.
  */
 import { checkRateLimit } from "./_shared/rate-limit.js";
 import type { ApiRequest, ApiResponse } from "./_shared/types.js";
@@ -26,8 +21,8 @@ import type { ApiRequest, ApiResponse } from "./_shared/types.js";
 /** Un cuerpo mayor que esto no es un informe; es alguien probando el endpoint. */
 const MAX_BODY_BYTES = 8 * 1024;
 
-/** Tope de líneas por petición: un array enorme no debe llenar el log. */
-const MAX_REPORTS_PER_REQUEST = 20;
+/** Tope de informes por petición: un array enorme no debe llenar el log. */
+const MAX_REPORTS = 20;
 
 export interface CspReport {
   directive: string;
@@ -45,24 +40,30 @@ function pick(source: Record<string, unknown>, ...names: string[]): string {
 }
 
 /**
- * Normaliza cualquiera de los dos formatos a una lista plana.
+ * El objeto que lleva los campos del informe, ya desenvuelto.
  *
- * Exportada para poder probarla sin levantar la función: la forma del cuerpo la
- * decide el navegador, no nosotros.
+ * Los navegadores mandan tres formas y ninguna anida más de una capa: el `body`
+ * de la Reporting API, el `csp-report` del formato legacy, o el objeto plano.
  */
-export function parseReports(payload: unknown): CspReport[] {
-  if (Array.isArray(payload)) return payload.flatMap((entry) => parseReports(entry));
-  if (!payload || typeof payload !== "object") return [];
+function violationOf(item: unknown): Record<string, unknown> | null {
+  if (!item || typeof item !== "object") return null;
 
-  const entry = payload as Record<string, unknown>;
-  // Reporting API: { type: "csp-violation", body: { … } }
-  if (entry.type === "csp-violation" && entry.body) return parseReports(entry.body);
+  const entry = item as Record<string, unknown>;
+  // `body` sólo cuenta si la entrada dice ser una violación CSP: `deprecation` e
+  // `intervention` también llegan por `report-to` y no son esto.
+  const inner = entry.type === "csp-violation" ? entry.body : (entry["csp-report"] ?? entry);
+  return inner && typeof inner === "object" ? (inner as Record<string, unknown>) : null;
+}
 
-  // Legacy envuelve el informe; el moderno a veces ya viene plano.
-  const inner = entry["csp-report"] ?? entry;
-  if (!inner || typeof inner !== "object") return [];
-
-  const violation = inner as Record<string, unknown>;
+/**
+ * Una violación a la forma que se registra, o null si no tiene ni un campo
+ * reconocible.
+ *
+ * `effective-directive` es el nombre de la directiva (`script-src-elem`);
+ * `violated-directive` es el respaldo de los navegadores viejos y trae la
+ * directiva entera, así que sólo se usa si no hay `effective`.
+ */
+function toReport(violation: Record<string, unknown>): CspReport | null {
   const directive = pick(
     violation,
     "effective-directive",
@@ -73,23 +74,50 @@ export function parseReports(payload: unknown): CspReport[] {
   const blocked = pick(violation, "blocked-uri", "blockedURL");
   const document = pick(violation, "document-uri", "documentURL");
 
-  // Si no queda ni un campo reconocible, no es un informe: no se registra.
-  if (!directive && !blocked && !document) return [];
+  if (!directive && !blocked && !document) return null;
 
-  return [{ directive, disposition: pick(violation, "disposition"), blocked, document }];
+  return { directive, disposition: pick(violation, "disposition"), blocked, document };
 }
 
-/** Cuerpo crudo (string o bytes) a JSON. Lanza si no es JSON; el caller decide. */
+/**
+ * De cuerpo a lista plana, en una pasada y con tope.
+ *
+ * Exportada para poder probarla sin levantar la función: la forma del cuerpo la
+ * decide el navegador, no nosotros.
+ */
+export function parseReports(payload: unknown): CspReport[] {
+  const items = Array.isArray(payload) ? payload : [payload];
+  const reports: CspReport[] = [];
+
+  for (const item of items) {
+    if (reports.length >= MAX_REPORTS) break;
+    const violation = violationOf(item);
+    if (!violation) continue;
+    const report = toReport(violation);
+    if (report) reports.push(report);
+  }
+
+  return reports;
+}
+
+/** JSON del cuerpo, o null si no es JSON o pasa de `MAX_BODY_BYTES`. */
 function decodeBody(body: unknown): unknown {
+  // Vercel ya parsea los cuerpos JSON; los informes llegan como texto o bytes.
   if (body && typeof body === "object" && !(body instanceof Uint8Array)) return body;
+
   const raw =
     typeof body === "string"
       ? body
       : body instanceof Uint8Array
         ? new TextDecoder().decode(body)
         : "";
-  if (!raw || raw.length > MAX_BODY_BYTES) return null;
-  return JSON.parse(raw);
+  if (!raw || new TextEncoder().encode(raw).length > MAX_BODY_BYTES) return null;
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export default async function handler(req: ApiRequest, res: ApiResponse): Promise<void> {
@@ -98,26 +126,14 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
     return;
   }
 
-  // El endpoint es público: acepta un POST de cualquiera. El límite evita que
-  // un script lo use para escribir el log que queremos leer.
-  const allowed = await checkRateLimit(req, res, {
-    name: "csp-report",
-    limit: 120,
-    windowSec: 60,
-  });
+  // El endpoint es público: acepta un POST de cualquiera. El límite evita que un
+  // script lo use para escribir el log que queremos leer.
+  const allowed = await checkRateLimit(req, res, { name: "csp-report", limit: 120, windowSec: 60 });
   if (!allowed) return;
 
-  let payload: unknown = null;
-  try {
-    payload = decodeBody(req.body);
-  } catch {
-    payload = null;
-  }
-
-  const reports = parseReports(payload).slice(0, MAX_REPORTS_PER_REQUEST);
-  for (const report of reports) {
-    // Una línea por informe, con lo mínimo para poder agregar orígenes:
-    // la directiva que saltó y el host que no estaba contemplado.
+  for (const report of parseReports(decodeBody(req.body))) {
+    // Una línea por informe, con lo mínimo para poder agregar orígenes: la
+    // directiva que saltó y el host que no estaba contemplado.
     console.warn(
       `[csp-report] directive=${report.directive || "-"} blocked=${report.blocked || "-"} document=${report.document || "-"} disposition=${report.disposition || "-"}`,
     );
