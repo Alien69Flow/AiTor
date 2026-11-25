@@ -28,11 +28,23 @@ export interface ApiResponse {
   end(chunk?: string): unknown;
 }
 
-/** Primer valor de una cabecera, o "" si no viene. */
+/** Primer valor de una cabecera, o "" si no viene. No distingue mayúsculas. */
 export function header(req: ApiRequest, name: string): string {
-  const raw = req.headers?.[name.toLowerCase()] ?? req.headers?.[name];
-  if (Array.isArray(raw)) return raw[0] ?? "";
-  return raw ?? "";
+  const headers = req.headers ?? {};
+  const wanted = name.toLowerCase();
+
+  let value = headers[wanted];
+  if (value === undefined) {
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === wanted) {
+        value = headers[key];
+        break;
+      }
+    }
+  }
+
+  if (Array.isArray(value)) return value[0] ?? "";
+  return value ?? "";
 }
 
 /**
@@ -75,7 +87,7 @@ export function firstForwardedIp(value: string): string {
   }
   return "";
 }
- 
+
 /** IP del llamante según la regla única de arriba. */
 export function clientIp(req: ApiRequest): string {
   for (const name of IP_HEADERS) {
