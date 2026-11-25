@@ -95,8 +95,29 @@ export function guardPublic(
   return null;
 }
 
-/** Timing-independent-ish shared secret comparison helper. */
+/**
+ * Comparación de un secreto compartido sin salida temprana.
+ *
+ * `provided === expected` compara hasta el primer carácter distinto, así que el
+ * tiempo de respuesta dice cuántos caracteres del secreto acertó quien prueba
+ * (y, con el secreto correcto por prefijo, se puede adivinar carácter a
+ * carácter). Aquí se recorre siempre la entrada más larga y la diferencia se
+ * acumula con XOR: el trabajo hecho no depende de dónde esté el primer fallo.
+ */
 export function secretMatches(provided: string | null, expected: string | undefined): boolean {
   if (!expected || !provided) return false;
-  return provided === expected;
+
+  const length = Math.max(provided.length, expected.length);
+  // La longitud se compara aparte, en la misma cuenta: una diferencia de
+  // longitud no se puede ocultar sin hashear las dos entradas, y hashear deja
+  // la función en asíncrona. Eso rompería el chequeo de `ufo-feed`, que llama
+  // como `if (!secretMatches(...))`: con una promesa ese `!` nunca sería
+  // `true` y la autorización desaparecería sin avisar.
+  let diff = provided.length ^ expected.length;
+  for (let i = 0; i < length; i++) {
+    // `charCodeAt` fuera de rango da `NaN`; `| 0` lo deja en 0 y mantiene la
+    // misma cuenta para los dos lados.
+    diff |= (provided.charCodeAt(i) | 0) ^ (expected.charCodeAt(i) | 0);
+  }
+  return diff === 0;
 }

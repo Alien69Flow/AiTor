@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { clientIp, guardPublic, isAllowedOrigin } from "./guard";
+import { clientIp, guardPublic, isAllowedOrigin, secretMatches } from "./guard";
 
-const request = (origin: string) => new Request("https://example.com/air-traffic", { headers: { origin } });
+const request = (origin: string) =>
+  new Request("https://example.com/air-traffic", { headers: { origin } });
 
 const requestWith = (headers: Record<string, string>) =>
   new Request("https://example.com/air-traffic", { headers });
@@ -16,9 +17,9 @@ describe("client IP for the rate limit", () => {
     // primer salto de `x-forwarded-for` lo prefija quien llama: ninguno de los
     // dos puede decidir el cubo.
     expect(clientIp(requestWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("unknown");
-    expect(
-      clientIp(requestWith({ "x-forwarded-for": "203.0.113.7, 198.51.100.9" })),
-    ).toBe("198.51.100.9");
+    expect(clientIp(requestWith({ "x-forwarded-for": "203.0.113.7, 198.51.100.9" }))).toBe(
+      "198.51.100.9",
+    );
   });
 
   it("sin cabeceras cae en un único cubo", () => {
@@ -34,17 +35,45 @@ describe("public feed origin permissions", () => {
     "https://2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovableproject.com",
     "https://aitor.alienflow.space",
     "http://localhost:8080",
-  ])("allows verified app origin %s", origin => {
+  ])("allows verified app origin %s", (origin) => {
     expect(isAllowedOrigin(request(origin))).toBe(true);
   });
 
-  it.each(["https://other.lovable.app", "https://other.lovableproject.com", "https://2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovableproject.com.evil.example", "https://aitor.lovable.app.evil.example", "https://notalienflow.space", "null"])("rejects %s", origin => {
+  it.each([
+    "https://other.lovable.app",
+    "https://other.lovableproject.com",
+    "https://2c5132b1-16ca-4d74-90b6-c7e7c79a842d.lovableproject.com.evil.example",
+    "https://aitor.lovable.app.evil.example",
+    "https://notalienflow.space",
+    "null",
+  ])("rejects %s", (origin) => {
     expect(isAllowedOrigin(request(origin))).toBe(false);
   });
 
   it("preserves CORS headers on forbidden responses", () => {
-    const response = guardPublic(request("https://evil.example"), { "Access-Control-Allow-Origin": "*" });
+    const response = guardPublic(request("https://evil.example"), {
+      "Access-Control-Allow-Origin": "*",
+    });
     expect(response?.status).toBe(403);
     expect(response?.headers.get("Access-Control-Allow-Origin")).toBe("*");
+  });
+});
+
+describe("shared secret comparison", () => {
+  it("acepta el secreto exacto", () => {
+    expect(secretMatches("s3cr3t-de-prueba", "s3cr3t-de-prueba")).toBe(true);
+  });
+
+  it("rechaza un secreto distinto, un prefijo y uno más largo", () => {
+    expect(secretMatches("s3cr3t-de-prueb4", "s3cr3t-de-prueba")).toBe(false);
+    expect(secretMatches("s3cr3t", "s3cr3t-de-prueba")).toBe(false);
+    expect(secretMatches("s3cr3t-de-prueba-extra", "s3cr3t-de-prueba")).toBe(false);
+  });
+
+  it("rechaza cuando falta la cabecera o el secreto configurado", () => {
+    expect(secretMatches(null, "s3cr3t-de-prueba")).toBe(false);
+    expect(secretMatches("", "s3cr3t-de-prueba")).toBe(false);
+    expect(secretMatches("s3cr3t-de-prueba", undefined)).toBe(false);
+    expect(secretMatches("s3cr3t-de-prueba", "")).toBe(false);
   });
 });
