@@ -1,0 +1,28 @@
+name: escape-probe
+
+# Temporal: no cambia la config de eslint ni el código; solo fuerza que
+# `no-useless-escape` salga como error y se anote con fichero y línea.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: escapes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Solo no-useless-escape
+        continue-on-error: true
+        run: npx eslint . --format=github --rule '{"no-useless-escape":"error"}'
