@@ -32,46 +32,30 @@ export function header(req: ApiRequest, name: string): string {
   return raw ?? "";
 }
 
-/** Último salto no vacío: el más cercano a nosotros, no el que pudo poner el cliente. */
-function lastHop(value: string): string {
-  return (
-    value
-      .split(",")
-      .map((part) => part.trim())
-      .filter(Boolean)
-      .pop() ?? ""
-  );
-}
-
 /**
  * IP del llamante, y sólo de cabeceras que escribe la plataforma.
  *
- * Vercel sobrescribe `x-forwarded-for` y no reenvía la IP que mande el cliente
- * (salvo Enterprise con proxy de confianza), así que esas tres son de fiar:
+ * Vercel sobrescribe estas tres con la IP pública del visitante —una sola, sin
+ * cadena— y no reenvía la que mande el cliente (salvo Enterprise con proxy de
+ * confianza). `x-vercel-forwarded-for` es la que sobrevive si algún día hay un
+ * proxy encima; `x-real-ip` lleva el mismo valor.
  *
- *  1. `x-vercel-forwarded-for`: la propia de Vercel, y la única que sobrevive a
- *     un proxy delante si algún día se pone uno.
- *  2. `x-real-ip`: la misma IP, por si la primera no llega.
- *  3. `x-forwarded-for`: último salto, como último recurso.
+ * `x-forwarded-for` queda para cuando no hay Vercel delante (dev en local),
+ * donde sí puede ser una cadena: ahí manda el último salto, el que añade el
+ * proxy, no el que pudo poner el cliente.
  *
- * `cf-connecting-ip` **no se lee**, a propósito. Producción no está detrás de
- * Cloudflare (el dominio es CNAME a `vercel-dns` y el apex resuelve a
- * 76.76.21.21), y los previews `*.vercel.app` van a Vercel directo, así que esa
- * cabecera sólo puede venir del visitante: leerla permitía inventarse un cubo
- * de rate limit nuevo con cada petición, que es peor que compartir uno. Si
- * algún día Cloudflare sí va delante, el paso previo es cerrar el origen —que
- * no se pueda alcanzar saltándose el CDN— y entonces volver a leerla a
- * propósito, no por lo que diga el DNS.
- *
- * Sin ninguna cabecera (dev en local) devuelve "unknown": un único cubo, que en
- * local es exactamente lo que se quiere.
+ * `cf-connecting-ip` no se lee: no hay Cloudflare delante, así que sólo puede
+ * venir del visitante, y aceptarla permitía estrenar un cubo de rate limit con
+ * cada petición.
  */
 export function clientIp(req: ApiRequest): string {
-  const vercel = lastHop(header(req, "x-vercel-forwarded-for"));
-  if (vercel) return vercel;
+  const platform = header(req, "x-vercel-forwarded-for") || header(req, "x-real-ip");
+  if (platform) return platform;
 
-  const real = lastHop(header(req, "x-real-ip"));
-  if (real) return real;
+  const hops = header(req, "x-forwarded-for")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
 
-  return lastHop(header(req, "x-forwarded-for")) || "unknown";
+  return hops.pop() || "unknown";
 }
