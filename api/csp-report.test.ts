@@ -15,7 +15,8 @@ describe("parseReports", () => {
     expect(report).toMatchObject({
       directive: "script-src-elem",
       blocked: "https://cdn.example/x.js",
-      document: "https://aitor.alienflow.space/",
+      // Del documento sólo queda el origen: ni ruta, ni query, ni fragmento.
+      document: "https://aitor.alienflow.space",
       disposition: "report",
     });
   });
@@ -70,17 +71,25 @@ describe("parseReports", () => {
     expect(parseReports(entries)).toHaveLength(20);
   });
 
-  it("sanea los campos: ni saltos de línea ni URLs sin tope en el log", () => {
-    const [report] = parseReports({
-      "csp-report": {
-        "effective-directive": "img-src",
-        "blocked-uri": "https://x.example/a.png\n[csp-report] directive=fake blocked=fake",
-        "document-uri": `https://aitor.alienflow.space/${"a".repeat(1000)}`,
+  it("sanea los campos: sin saltos de línea, sin secretos en el documento y con tope", () => {
+    const [withControl, withToken, longBlocked] = parseReports([
+      { "csp-report": { "effective-directive": "img-src", "blocked-uri": "https://x.example/a.png\n[csp-report] directive=fake blocked=fake" } },
+      {
+        "csp-report": {
+          "effective-directive": "img-src",
+          "blocked-uri": "https://x.example/a.png",
+          "document-uri": "https://aitor.alienflow.space/auth/callback/abc123?token=secreto#access_token=mala",
+        },
       },
-    });
+      { "csp-report": { "effective-directive": "img-src", "blocked-uri": `https://x.example/${"a".repeat(1000)}` } },
+    ]);
 
-    expect(report.blocked).toBe("https://x.example/a.png [csp-report] directive=fake blocked=fake");
-    expect(report.document.length).toBe(512);
+    // Un `\n` en un campo no puede fabricar una línea de log falsa.
+    expect(withControl.blocked).toBe("https://x.example/a.png [csp-report] directive=fake blocked=fake");
+    // El secreto puede ir en la ruta, no sólo en la query: del documento queda el origen.
+    expect(withToken.document).toBe("https://aitor.alienflow.space");
+    // El tope de 512 sigue aplicándose a los campos que se registran enteros.
+    expect(longBlocked.blocked.length).toBe(512);
   });
 });
 
@@ -215,12 +224,12 @@ describe("handler", () => {
     expect(lines).toHaveLength(0);
   });
 
-  it("no registra la query del documento: un token en la URL no llega al log", async () => {
+  it("no registra la ruta ni la query del documento: un token en la URL no llega al log", async () => {
     const { status, lines } = await run({
       "csp-report": {
         "effective-directive": "img-src",
         "blocked-uri": "https://x.example/a.png",
-        "document-uri": "https://aitor.alienflow.space/auth/callback?token=secreto-de-prueba#frag",
+        "document-uri": "https://aitor.alienflow.space/auth/callback/abc123?token=secreto-de-prueba#frag",
       },
     });
 
@@ -228,8 +237,9 @@ describe("handler", () => {
     expect(lines).toHaveLength(1);
     // La línea entera, para que el formato no se mueva sin que salte esta prueba.
     expect(lines[0]).toBe(
-      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space/auth/callback disposition=- count=1",
+      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space disposition=- count=1",
     );
     expect(lines[0]).not.toContain("token=");
+    expect(lines[0]).not.toContain("/auth/callback");
   });
 });

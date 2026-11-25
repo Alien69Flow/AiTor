@@ -81,7 +81,8 @@ describe("handler: cuerpo que Vercel no ha parseado", () => {
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("directive=connect-src");
     expect(lines[0]).toContain("blocked=https://pnyigikagdxqaogbiift.supabase.co/rest/v1");
-    expect(lines[0]).toContain("document=https://aitor.alienflow.space/hub");
+    // Sólo el origen del documento, aunque el informe traiga `/hub`.
+    expect(lines[0]).toContain("document=https://aitor.alienflow.space ");
   });
 
   it("tambien cuando `body` es un objeto sin datos", async () => {
@@ -96,7 +97,7 @@ describe("handler: cuerpo que Vercel no ha parseado", () => {
     const { lines } = await run(streamedRequest(legacy(), { type: "deprecation" }));
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("document=https://aitor.alienflow.space/hub");
+    expect(lines[0]).toContain("document=https://aitor.alienflow.space ");
   });
 
   it("no relee el stream si `body` ya trae el informe", async () => {

@@ -58,16 +58,22 @@ function pick(source: Record<string, unknown>, ...names: string[]): string {
 }
 
 /**
- * La URL del documento sin query ni fragmento.
+ * El origen del documento: esquema, host y puerto, nada más.
  *
- * `document-uri` llega con la URL que el navegador tiene abierta, y ahí puede
- * viajar un `?token=` o un `?code=` de OAuth. Eso acabaría en los logs de la
- * función, que no es sitio para un secreto; el origen y la ruta siguen diciendo
- * en qué página molesta.
+ * `document-uri` llega con la URL que el navegador tiene abierta, y el secreto
+ * puede ir en cualquier parte: en la query (`?token=…`), en el fragmento
+ * (`#access_token=…`) o en la propia ruta (`/auth/callback/<codigo>`, como en
+ * los enlaces de recuperación). Quedarse con el origen no deja nada que recortar
+ * ni que adivinar.
+ *
+ * Se parsea con una expresión regular y no con `new URL`: no lanza con basura y
+ * no depende del runtime. Si el valor no es una URL absoluta con autoridad no hay
+ * origen que registrar y se devuelve vacío, porque media URL con un token dentro
+ * es peor que un `-`.
  */
-function withoutQuery(value: string): string {
-  const cut = value.search(/[?#]/);
-  return cut === -1 ? value : value.slice(0, cut);
+function originOnly(value: string): string {
+  const match = /^([a-z][a-z0-9+.-]*:\/\/[^/?#]*)/i.exec(value);
+  return match ? match[1] : "";
 }
 
 /**
@@ -103,7 +109,7 @@ function toReport(item: unknown): CspReport | null {
   return {
     directive,
     blocked,
-    document: withoutQuery(pick(violation, "document-uri", "documentURL")),
+    document: originOnly(pick(violation, "document-uri", "documentURL")),
     disposition: pick(violation, "disposition"),
   };
 }
