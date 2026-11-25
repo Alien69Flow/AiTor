@@ -4,6 +4,8 @@ name: ip patch
 # api/mcp.ts por la funcion compartida y no commitea hasta que compila, pasa
 # las pruebas y pasa eslint.
 
+# relanzada tras corregir header() y el espacio irregular.
+
 on:
   push:
     branches: ["chore/ip-unificado"]
@@ -87,7 +89,7 @@ jobs:
 
       - name: Pruebas de la regla
         run: |
-          npx vitest run api/_shared/types.test.ts supabase/functions/_shared/guard.ip.test.ts supabase/functions/_shared/guard.test.ts 2>&1 | tail -30
+          npx vitest run api/_shared/types.test.ts supabase/functions/_shared/guard.ip.test.ts supabase/functions/_shared/guard.test.ts 2>&1 | tail -20
 
       - name: Lint
         run: |
