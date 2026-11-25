@@ -40,6 +40,11 @@ jobs:
           const path = "api/mcp.ts";
           let src = readFileSync(path, "utf8");
 
+          if (src.includes("const ip = clientIp(req);")) {
+            console.log("ya parcheado: nada que hacer");
+            process.exit(0);
+          }
+
           const block = [
             '  const forwarded = req.headers["x-forwarded-for"];',
             '  const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0].trim() ||',
@@ -88,8 +93,7 @@ jobs:
           npx tsc -p tsconfig.mcp.check.json --noEmit && echo TSC_MCP_OK
 
       - name: Pruebas de la regla
-        run: |
-          npx vitest run api/_shared/types.test.ts supabase/functions/_shared/guard.ip.test.ts supabase/functions/_shared/guard.test.ts 2>&1 | tail -20
+        run: npx vitest run api/_shared/types.test.ts supabase/functions/_shared/guard.ip.test.ts supabase/functions/_shared/guard.test.ts
 
       - name: Lint
         run: |
