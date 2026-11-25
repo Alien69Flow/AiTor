@@ -46,9 +46,10 @@ jobs:
       - name: Unit tests
         run: npm test
 
-      # Lint bloquea, sin `continue-on-error`: un aviso silenciado es cómo un
+      # El lint bloquea: un paso que puede fallar sin tumbar el job es cómo un
       # rojo se vuelve verde, y `tests/api/collected-by-vitest.test.ts` lo
-      # prohíbe a propósito. Si sale deuda previa, se arregla el código.
+      # prohíbe a propósito. Si asoma deuda previa, se arregla el código, no la
+      # puerta.
       - name: Lint
         run: npm run lint
 
