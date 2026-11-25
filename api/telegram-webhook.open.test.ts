@@ -10,14 +10,27 @@
  * ningún 401 en todo el recorrido— para que nadie lo cierre «por seguridad»
  * y devuelva al bot al silencio. Lo que se prueba es la puerta, no el envío:
  * `telegram-webhook.failure.test.ts` cubre la conversación.
+ *
+ * El handler lee `TELEGRAM_WEBHOOK_SECRET` **al importarse**, no en cada
+ * petición, así que la primera prueba comprueba que el módulo no ve ninguno
+ * antes de medir nada: un secreto colado en `process.env` cerraría la puerta y
+ * el resto de la suite diría «401» sin explicar por qué.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Handler = (req: unknown, res: unknown) => Promise<unknown>;
 
+type Report = {
+  ok?: boolean;
+  secretConfigured?: boolean;
+  registration?: string;
+  expectedUrl?: string;
+};
+
 function mockRes() {
   let status = 0;
   let sent: string | null = null;
+  let body: Report | null = null;
   const res = {
     statusCode: 200,
     status(code: number) {
@@ -25,7 +38,8 @@ function mockRes() {
       res.statusCode = code;
       return res;
     },
-    json() {
+    json(payload: unknown) {
+      body = payload as Report;
       return res;
     },
     send(payload: unknown) {
@@ -33,7 +47,7 @@ function mockRes() {
       return res;
     },
   };
-  return { res, snap: () => ({ status, sent }) };
+  return { res, snap: () => ({ status, sent, body }) };
 }
 
 /** Telegram dice que sí a todo: aquí interesa la puerta, no lo que se envía. */
@@ -83,8 +97,14 @@ afterEach(() => {
   clearEnv();
 });
 
-/** El módulo se carga después de fijar el entorno: lee `process.env` al importarse. */
+/**
+ * El módulo se carga después de fijar el entorno: lee `process.env` al importarse.
+ *
+ * El borrado va aquí, pegado al `import`, y no sólo en `beforeEach`: así el valor
+ * que ve el módulo no depende de nada que se ejecute entre el hook y la carga.
+ */
 async function loadHandler(): Promise<Handler> {
+  delete process.env.TELEGRAM_WEBHOOK_SECRET;
   const module = await import("./telegram-webhook");
   return module.default as unknown as Handler;
 }
@@ -109,7 +129,24 @@ const post = (headers: Record<string, string> = {}, ip = IP) =>
     socket: { remoteAddress: ip },
   }) as never;
 
+const get = () => ({ method: "GET", url: "/api/telegram-webhook", headers: { host: "localhost" } }) as never;
+
 describe("sin TELEGRAM_WEBHOOK_SECRET el webhook acepta actualizaciones sin firma", () => {
+  it("el módulo no ve secreto y registra el webhook sin secret_token", async () => {
+    stubTelegram();
+    expect(process.env.TELEGRAM_WEBHOOK_SECRET).toBeUndefined();
+    const handler = await loadHandler();
+    const { res, snap } = mockRes();
+
+    await handler(get(), res);
+
+    // Precondición de toda la suite: si esto no se cumple, el 401 que saldría
+    // después vendría de un secreto que nadie ha puesto aquí.
+    expect(snap().status).toBe(200);
+    expect(snap().body?.secretConfigured).toBe(false);
+    expect(snap().body?.registration).toBe("registrado-sin-secreto");
+  });
+
   it("contesta 200 y lo deja dicho en el log, en vez de 401", async () => {
     stubTelegram();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
