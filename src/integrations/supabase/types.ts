@@ -19,9 +19,13 @@ export type Database = {
           amount_usd: number
           chain: string
           created_at: string
+          cycle: string
+          granted_at: string | null
           id: string
-          plan: Database["public"]["Enums"]["credit_tier"]
-          recipient: string
+          price_version: string | null
+          recipient: string | null
+          status: string
+          token: string
           tx_hash: string
           user_id: string
           wallet_address: string | null
@@ -30,9 +34,13 @@ export type Database = {
           amount_usd: number
           chain: string
           created_at?: string
+          cycle: string
+          granted_at?: string | null
           id?: string
-          plan: Database["public"]["Enums"]["credit_tier"]
-          recipient: string
+          price_version?: string | null
+          recipient?: string | null
+          status?: string
+          token?: string
           tx_hash: string
           user_id: string
           wallet_address?: string | null
@@ -41,9 +49,13 @@ export type Database = {
           amount_usd?: number
           chain?: string
           created_at?: string
+          cycle?: string
+          granted_at?: string | null
           id?: string
-          plan?: Database["public"]["Enums"]["credit_tier"]
-          recipient?: string
+          price_version?: string | null
+          recipient?: string | null
+          status?: string
+          token?: string
           tx_hash?: string
           user_id?: string
           wallet_address?: string | null
@@ -136,22 +148,25 @@ export type Database = {
       }
       user_credits: {
         Row: {
+          created_at: string
           paid_tier: Database["public"]["Enums"]["credit_tier"]
-          reset_at: string
+          paid_until: string | null
           updated_at: string
           used: number
           user_id: string
         }
         Insert: {
+          created_at?: string
           paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          reset_at?: string
+          paid_until?: string | null
           updated_at?: string
           used?: number
           user_id: string
         }
         Update: {
+          created_at?: string
           paid_tier?: Database["public"]["Enums"]["credit_tier"]
-          reset_at?: string
+          paid_until?: string | null
           updated_at?: string
           used?: number
           user_id?: string
