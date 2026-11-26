@@ -16,14 +16,13 @@ begin;
 set local search_path = public, extensions;
 create extension if not exists pgtap with schema extensions;
 
-select plan(21);
+select plan(24);
 
 -- crypto_payments: una sola política, de lectura y del propio usuario.
 --
--- La tabla no lleva GRANT explícito en ninguna migración —los pone el proyecto
--- hospedado por defecto y el CLI no—, así que aquí no se afirma nada sobre
--- privilegios: lo que la defiende es el RLS, y una política que se pierda deja
--- la tabla legible por cualquiera.
+-- Los GRANT los pone 20261126160000_crypto_payments_forma_final: sin ellos, en
+-- una base recién creada la política no da acceso a nada y el cliente recibe
+-- un 401 al leer su historial.
 select has_table('public', 'crypto_payments', 'existe crypto_payments');
 
 select ok(
@@ -56,6 +55,21 @@ select ok(
        and array_length(roles, 1) = 1
   ),
   'y sólo se aplica a authenticated'
+);
+
+select ok(
+  has_table_privilege('authenticated', 'public.crypto_payments', 'SELECT'),
+  'authenticated puede leer su historial de pagos'
+);
+
+select ok(
+  not has_table_privilege('anon', 'public.crypto_payments', 'INSERT'),
+  'anon no puede escribir en el libro de pagos'
+);
+
+select ok(
+  not has_table_privilege('authenticated', 'public.crypto_payments', 'INSERT'),
+  'authenticated tampoco: el libro lo escribe la service role'
 );
 
 -- user_credits: tres políticas —lectura propia, service role y un candado
