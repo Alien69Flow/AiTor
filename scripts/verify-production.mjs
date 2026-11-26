@@ -83,9 +83,14 @@ const fail = (detail) => ({ status: "fail", detail });
 const skip = (detail) => ({ status: "skip", detail });
 
 /**
- * Webhook: vive, identifica al bot, apunta a la URL buena y no arrastra
- * entregas. Sin firma funciona, pero es un aviso (Fase 8): cualquiera puede
- * gastar cuota del modelo.
+ * Webhook: vivo, identificado, apuntando a la URL buena, firmado y sin
+ * entregas pendientes.
+ *
+ * `secretConfigured: false` es un fallo, no un aviso: sin
+ * `TELEGRAM_WEBHOOK_SECRET` el endpoint es fail-closed y rechaza todas las
+ * actualizaciones, así que el bot está mudo aunque la URL sea la correcta. Y
+ * `matchesExpected` tiene que ser `true`: un despliegue que ni lo expone no
+ * demuestra que apunte donde debe.
  */
 export function interpretWebhook(status, payload) {
   if (status !== 200 || !payload || payload.ok !== true) {
@@ -93,7 +98,10 @@ export function interpretWebhook(status, payload) {
   }
   const webhook = payload.webhook || {};
   const problemas = [];
-  if (webhook.matchesExpected === false) problemas.push("URL registrada distinta");
+  if (!payload.secretConfigured) {
+    problemas.push("sin TELEGRAM_WEBHOOK_SECRET: el endpoint rechaza con 401 y el bot está mudo");
+  }
+  if (webhook.matchesExpected !== true) problemas.push("URL registrada distinta");
   if (typeof webhook.pendingUpdates === "number" && webhook.pendingUpdates > 0) {
     problemas.push(`${webhook.pendingUpdates} entregas pendientes`);
   }
@@ -102,9 +110,7 @@ export function interpretWebhook(status, payload) {
 
   const bot = payload.bot?.username ? `@${payload.bot.username}` : "bot sin identificar";
   const base = `${bot} · ${payload.registration || "sin registro"}`;
-  return payload.secretConfigured
-    ? ok(`${base} · firma activa`)
-    : warn(`${base} · sin firma (configura TELEGRAM_WEBHOOK_SECRET)`);
+  return ok(`${base} · firma activa`);
 }
 
 /**
