@@ -4,9 +4,11 @@
  *
  * El endpoint /api/telegram-webhook es "fail closed": solo acepta actualizaciones
  * firmadas con el mismo `secret_token` con el que se registró el webhook. Si el
- * secret no está en Vercel o el webhook no se registró con él, el bot contesta
- * 401 a Telegram y se queda mudo. Este script comprueba el estado real según
- * Telegram y (con --set) lo registra correctamente.
+ * secret no está en Vercel —o está pero no sirve como `secret_token`: Telegram
+ * solo admite `A-Za-z0-9_-` de 1 a 256 caracteres, así que un valor con espacios
+ * o comillas de más cuenta como ausente— el endpoint contesta 401 a Telegram, que
+ * lo anota en getWebhookInfo, y el bot se queda mudo. Este script comprueba el
+ * estado real según Telegram y (con --set) lo registra correctamente.
  *
  * Uso:
  *   node scripts/telegram-webhook.mjs            # estado (getWebhookInfo)
