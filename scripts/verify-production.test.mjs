@@ -31,9 +31,11 @@ describe("webhook", () => {
     });
   });
 
-  it("sin firma funciona pero avisa: es la Fase 8", () => {
+  it("sin TELEGRAM_WEBHOOK_SECRET es un fallo, no un aviso", () => {
+    // El estado real de producción el 26-nov: URL correcta, cero pendientes y
+    // ninguna firma. Con ⚠️ pasaba por «parcial» y el bot estaba mudo.
     const result = interpretWebhook(200, { ...sano, secretConfigured: false });
-    expect(result.status).toBe("warn");
+    expect(result.status).toBe("fail");
     expect(result.detail).toContain("TELEGRAM_WEBHOOK_SECRET");
   });
 
@@ -44,6 +46,22 @@ describe("webhook", () => {
     expect(
       interpretWebhook(200, { ...sano, webhook: { ...sano.webhook, pendingUpdates: 4 } }).status,
     ).toBe("fail");
+  });
+
+  it("un despliegue que no dice que la URL coincide tampoco pasa", () => {
+    // Sin el campo no hay prueba de que apunte donde debe: no es un `true`.
+    const result = interpretWebhook(200, { ...sano, webhook: { ...sano.webhook, matchesExpected: undefined } });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("URL registrada distinta");
+  });
+
+  it("un 401 anotado por Telegram es fallo, no ruido", () => {
+    const result = interpretWebhook(200, {
+      ...sano,
+      webhook: { ...sano.webhook, lastErrorMessage: "Wrong response from the webhook: 401 Unauthorized" },
+    });
+    expect(result.status).toBe("fail");
+    expect(result.detail).toContain("último envío con error");
   });
 
   it("un 500 no se confunde con verde", () => {
