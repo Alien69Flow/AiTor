@@ -34,9 +34,29 @@ create policy "user_credits: lectura del propio saldo"
   to authenticated
   using (auth.uid() = user_id);
 
--- No hay políticas de insert/update/delete a propósito: quien escribe es la
--- service role (que no pasa por RLS). Sin política, un usuario no puede
--- darse créditos a sí mismo.
+-- No hay políticas de insert/update/delete permisivas a propósito: quien
+-- escribe es la service role (que no pasa por RLS). Sin política, un usuario
+-- no puede darse créditos a sí mismo.
 
 create index if not exists user_credits_paid_tier_idx
   on public.user_credits (paid_tier);
+
+-- Los candados de escritura que 20260801201811 aplicaba a esta tabla antes de
+-- que existiera: allí se omiten cuando la tabla no está, así que en una base
+-- nueva tienen que quedar aquí o el cliente se queda con los GRANT por
+-- defecto y puede escribir créditos.
+revoke insert, update, delete on public.user_credits from anon, authenticated;
+grant select on public.user_credits to authenticated;
+grant all on public.user_credits to service_role;
+
+drop policy if exists "Service role manages user_credits" on public.user_credits;
+create policy "Service role manages user_credits"
+  on public.user_credits for all
+  to service_role
+  using (true) with check (true);
+
+drop policy if exists "No client writes to user_credits" on public.user_credits;
+create policy "No client writes to user_credits"
+  on public.user_credits as restrictive for all
+  to anon, authenticated
+  using (true) with check (false);
