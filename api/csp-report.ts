@@ -9,6 +9,11 @@
  * `{ type: "csp-violation", body }`— agrupa los informes de cada petición por
  * directiva y origen, y escribe una línea por grupo con su cuenta en los logs de
  * la función. No guarda nada: el histórico es la retención de Vercel.
+ *
+ * El colector es público y la línea base se construye sumando lo que escribe,
+ * así que un informe cuyo documento no sea de nuestro dominio se marca como
+ * ajeno y se escribe con otra etiqueta: se puede leer, pero no entra en la
+ * cuenta. Sin eso, cualquiera podía meter orígenes inventados en la medida.
  */
 import { checkRateLimit } from "./_shared/rate-limit.js";
 import type { ApiRequest, ApiResponse } from "./_shared/types.js";
@@ -22,11 +27,29 @@ const MAX_REPORTS = 20;
 /** Un campo más largo que esto no aporta: para agregar orígenes sobra. */
 const MAX_FIELD_CHARS = 512;
 
+/**
+ * Nuestro dominio, y por tanto la única fuente de la línea base.
+ *
+ * El colector es público: cualquiera puede mandar un informe con el
+ * `document-uri` que quiera. Sin este filtro, un tercero podía meter orígenes
+ * inventados en el agregado hasta que la política pareciera necesitar algo que
+ * el sitio no usa. Cuenta el sitio y sus subdominios, y nada más.
+ */
+const DOMINIO = "alienflow.space";
+
+/** La etiqueta de lo que se registra pero no se cuenta. */
+const ETIQUETA_AJENA = "[csp-report-ajeno]";
+
+/** La etiqueta de la línea base; el agregado de #186 la busca literalmente. */
+const ETIQUETA = "[csp-report]";
+
 export interface CspReport {
   directive: string;
   disposition: string;
   blocked: string;
   document: string;
+  /** El documento no es de los nuestros: se registra, pero fuera de la cuenta. */
+  foreign: boolean;
 }
 
 /** Un grupo de informes iguales dentro de una petición, con cuántos eran. */
@@ -89,6 +112,23 @@ function originOnly(value: string): string {
 }
 
 /**
+ * Si el documento es nuestro.
+ *
+ * `document` ya viene de `originOnly`, así que es `esquema://host[:puerto]`. Se
+ * compara el host y no el origen entero: el puerto de un despliegue no cambia de
+ * quién es el documento. El sufijo se compara con el punto delante, así que
+ * `alienflow.space.evil.example` es ajeno y `aitor.alienflow.space` no.
+ *
+ * Un documento vacío no se puede probar nuestro —viene de quien no mandó
+ * `document-uri`—, así que cuenta como ajeno: es la vía que quedaba para llenar
+ * la cuenta sin decir desde dónde se envía.
+ */
+function esNuestro(document: string): boolean {
+  const host = /^[a-z][a-z0-9+.-]*:\/\/([^:/]+)/i.exec(document)?.[1]?.toLowerCase() ?? "";
+  return host === DOMINIO || host.endsWith(`.${DOMINIO}`);
+}
+
+/**
  * Una entrada a la forma que se registra, o null si no es una violación CSP.
  *
  * Tres envoltorios y una sola capa: `body` (Reporting API), `csp-report`
@@ -97,13 +137,11 @@ function originOnly(value: string): string {
  */
 function toReport(item: unknown): CspReport | null {
   if (!item || typeof item !== "object") return null;
-
   const entry = item as Record<string, unknown>;
   // `body` sólo vale si la entrada dice ser una violación CSP: `deprecation` e
   // `intervention` llegan por el mismo `report-to` y no son esto.
   const inner = entry.type === "csp-violation" ? entry.body : (entry["csp-report"] ?? entry);
   if (!inner || typeof inner !== "object") return null;
-
   const violation = inner as Record<string, unknown>;
   const directive = pick(
     violation,
@@ -118,11 +156,14 @@ function toReport(item: unknown): CspReport | null {
   // solo no dice qué origen falta, así que no es un informe útil.
   if (!directive && !blocked) return null;
 
+  const document = originOnly(pick(violation, "document-uri", "documentURL"));
+
   return {
     directive,
     blocked,
-    document: originOnly(pick(violation, "document-uri", "documentURL")),
+    document,
     disposition: pick(violation, "disposition"),
+    foreign: !esNuestro(document),
   };
 }
 
@@ -151,6 +192,9 @@ export function parseReports(payload: unknown): CspReport[] {
  *
  * `document` y `disposition` son los del primer informe del grupo: la cuenta es
  * del par (directiva, origen), y las páginas se reparten entre peticiones.
+ *
+ * El «ajeno o no» va en la clave: si no, un `img-src` idéntico mandado desde
+ * fuera se sumaría al de nuestras páginas y movería el recuento de la línea base.
  */
 export function groupReports(reports: CspReport[]): CspGroup[] {
   const groups = new Map<string, CspGroup>();
@@ -158,7 +202,7 @@ export function groupReports(reports: CspReport[]): CspGroup[] {
   for (const report of reports) {
     // Los campos saneados no llevan controles, así que el separador no puede
     // aparecer dentro de un valor y pegar dos claves distintas.
-    const key = `${report.directive}\u0000${report.blocked}`;
+    const key = `${report.foreign ? "ajeno" : "propio"}\u0000${report.directive}\u0000${report.blocked}`;
     const group = groups.get(key);
     if (group) {
       group.count += 1;
@@ -213,8 +257,12 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
   }
 
   for (const group of groupReports(reports)) {
+    // La etiqueta separa de verdad: el agregado busca `[csp-report]` y una línea
+    // `[csp-report-ajeno]` no lo contiene, así que lo ajeno no entra en la cuenta
+    // ni por descuido.
+    const etiqueta = group.foreign ? ETIQUETA_AJENA : ETIQUETA;
     console.warn(
-      `[csp-report] directive=${group.directive || "-"} blocked=${group.blocked || "-"} document=${group.document || "-"} disposition=${group.disposition || "-"} count=${group.count}`,
+      `${etiqueta} directive=${group.directive || "-"} blocked=${group.blocked || "-"} document=${group.document || "-"} disposition=${group.disposition || "-"} count=${group.count}`,
     );
   }
 

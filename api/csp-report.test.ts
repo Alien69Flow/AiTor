@@ -92,6 +92,34 @@ describe("parseReports", () => {
     expect(longBlocked.blocked.length).toBe(512);
   });
 
+  it("marca ajeno lo que no viene de nuestro dominio", () => {
+    const ajeno = (documentUri: string | undefined) => {
+      const [report] = parseReports({
+        "csp-report": {
+          "effective-directive": "img-src",
+          "blocked-uri": "https://x.example/a.png",
+          ...(documentUri === undefined ? {} : { "document-uri": documentUri }),
+        },
+      });
+      return report.foreign;
+    };
+
+    // El sitio, el subdominio de despliegue y el de entrada son nuestros.
+    expect(ajeno("https://alienflow.space/")).toBe(false);
+    expect(ajeno("https://www.alienflow.space/")).toBe(false);
+    expect(ajeno("https://aitor.alienflow.space/hub")).toBe(false);
+    // El puerto no cambia de quién es el documento.
+    expect(ajeno("http://alienflow.space:3000/hub")).toBe(false);
+
+    // El sufijo se compara con el punto delante: un `alienflow.space` pegado a
+    // otro dominio, o delante de él, no es nuestro.
+    expect(ajeno("https://notalienflow.space/")).toBe(true);
+    expect(ajeno("https://alienflow.space.evil.example/")).toBe(true);
+    expect(ajeno("https://evil.example/hub")).toBe(true);
+    // Sin documento no se puede probar nuestro, así que no cuenta.
+    expect(ajeno(undefined)).toBe(true);
+  });
+
   it("descarta el userinfo del documento antes de formar el origen", () => {
     const document = (documentUri: string) => {
       const [report] = parseReports({
@@ -220,7 +248,7 @@ describe("handler", () => {
     const repeated = (directive: string, blocked: string, times: number) =>
       Array.from({ length: times }, () => ({
         type: "csp-violation",
-        body: { effectiveDirective: directive, blockedURL: blocked },
+        body: { documentURL: "https://aitor.alienflow.space/hub", effectiveDirective: directive, blockedURL: blocked },
       }));
 
     const { status, lines } = await run([
@@ -231,14 +259,80 @@ describe("handler", () => {
     expect(status).toBe(204);
     // Dos pares (directiva, origen) → dos líneas, no cinco.
     expect(lines).toHaveLength(2);
-    expect(lines[0]).toBe("[csp-report] directive=img-src blocked=https://x.example/a.png document=- disposition=- count=3");
-    expect(lines[1]).toBe("[csp-report] directive=connect-src blocked=https://y.example/api document=- disposition=- count=2");
+    expect(lines[0]).toBe(
+      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space disposition=- count=3",
+    );
+    expect(lines[1]).toBe(
+      "[csp-report] directive=connect-src blocked=https://y.example/api document=https://aitor.alienflow.space disposition=- count=2",
+    );
 
     // El tope de informes se aplica antes de agrupar: 25 repeticiones cuentan 20.
     const capped = await run(repeated("img-src", "https://x.example/a.png", 25));
 
     expect(capped.lines).toHaveLength(1);
     expect(capped.lines[0]).toContain("count=20");
+  });
+
+  it("separa los ajenos: el mismo par desde fuera va en su línea y con su etiqueta", async () => {
+    const { status, lines } = await run([
+      {
+        type: "csp-violation",
+        body: {
+          documentURL: "https://aitor.alienflow.space/hub",
+          blockedURL: "https://x.example/a.png",
+          effectiveDirective: "img-src",
+          disposition: "report",
+        },
+      },
+      {
+        type: "csp-violation",
+        body: {
+          documentURL: "https://evil.example/hub",
+          blockedURL: "https://x.example/a.png",
+          effectiveDirective: "img-src",
+          disposition: "report",
+        },
+      },
+    ]);
+
+    expect(status).toBe(204);
+    // Mismo (directiva, origen bloqueado): sin la marca serían una sola línea
+    // con `count=2`, y el ajeno habría movido el recuento de la línea base.
+    expect(lines).toEqual([
+      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space disposition=report count=1",
+      "[csp-report-ajeno] directive=img-src blocked=https://x.example/a.png document=https://evil.example disposition=report count=1",
+    ]);
+    // El agregado busca `[csp-report]` literal, así que la etiqueta ajena queda
+    // fuera de la cuenta por construcción y no por convenio.
+    expect(lines[1]).not.toContain("[csp-report]");
+  });
+
+  it("un ajeno repetido se agrupa aparte, nunca con los nuestros", async () => {
+    const repeated = (documentURL: string, times: number) =>
+      Array.from({ length: times }, () => ({
+        type: "csp-violation",
+        body: { documentURL, blockedURL: "https://x.example/a.png", effectiveDirective: "img-src" },
+      }));
+
+    const { lines } = await run([
+      ...repeated("https://aitor.alienflow.space/hub", 2),
+      ...repeated("https://evil.example/hub", 3),
+    ]);
+
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain("count=2");
+    expect(lines[0]).not.toContain("ajeno");
+    expect(lines[1]).toContain("[csp-report-ajeno]");
+    expect(lines[1]).toContain("count=3");
+  });
+
+  it("un informe sin documento es ajeno: no hay forma de probar que sea nuestro", async () => {
+    const { status, lines } = await run(legacyBody(0));
+
+    expect(status).toBe(204);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("[csp-report-ajeno]");
+    expect(lines[0]).toContain("document=-");
   });
 
   it("JSON roto responde 204 y no registra ni lanza", async () => {
