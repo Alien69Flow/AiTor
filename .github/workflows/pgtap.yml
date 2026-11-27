@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Fijado a propósito. Sin `version`, la action resuelve 2.20.3 (lo dijo su
-      # log) frente al 3.3.0 del 23-nov-2026. Las migraciones se prueban contra
+      # log) frente al 3.3.0 de 23-nov-2026. Las migraciones se prueban contra
       # un CLI conocido, no contra el que toque esa semana.
       - uses: supabase/setup-cli@v1
         with:
@@ -66,9 +66,9 @@ jobs:
           supabase test db supabase/tests > "$log" 2>&1 || status=$?
           tap="${RUNNER_TEMP}/pgtap.tap"
           grep -E -e '^[[:space:]]*(TAP version|[0-9]+\.\.|ok |not ok |#|Bail out!)' \
-                  -e '^[[:space:]]*[^[:space:]]*\.sql' \
-                  -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
-                  "$log" \
+                   -e '^[[:space:]]*[^[:space:]]*\.sql' \
+                   -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
+                   "$log" \
             | grep -v 'NOTICE:' > "$tap" || true
           if [ -s "$tap" ]; then
             cat "$tap"
@@ -78,5 +78,47 @@ jobs:
           fi
           if [ "$status" -ne 0 ]; then
             echo "::error::pgTAP en rojo: mira arriba las líneas '# Failed test' o 'not ok'."
+            exit 1
+          fi
+
+      - name: Los plan() declarados cuadran con lo ejecutado
+        run: |
+          # El paso anterior vuelca lo que pg_prove imprimió, pero no nota lo
+          # que falta: pg_prove da el total (`Tests=N`) sin desglose por
+          # fichero, así que una suite que no llega a ejecutarse sólo se ve como
+          # un total más bajo, y con `Result: PASS` el run sigue verde.
+          #
+          # Se compara el total con la suma de los `plan(N)` que declaran las
+          # suites: si son distintos, alguna no corrió (parse error, fichero no
+          # recogido, base a medias) y esto se pone rojo.
+          log="${RUNNER_TEMP}/pgtap.log"
+
+          declaradas=0
+          suites=0
+          for f in supabase/tests/*.sql; do
+            [ -e "$f" ] || continue
+            suites=$((suites + 1))
+            n=$(grep -oE 'plan[[:space:]]*\([[:space:]]*[0-9]+' "$f" | grep -oE '[0-9]+' | head -n1)
+            if [ -z "$n" ]; then
+              echo "::error file=$f::no declara plan(N): sin número no hay forma de saber si se ejecutó"
+              exit 1
+            fi
+            declaradas=$((declaradas + n))
+          done
+
+          if [ "$suites" -eq 0 ]; then
+            echo "::error::no hay ninguna suite en supabase/tests"
+            exit 1
+          fi
+
+          ejecutadas=$(grep -oE 'Tests=[[:space:]]*[0-9]+' "$log" | tail -n1 | grep -oE '[0-9]+' || true)
+          if [ -z "$ejecutadas" ]; then
+            echo "::error::pg_prove no imprimió un total (Tests=N): no se sabe qué se ejecutó"
+            exit 1
+          fi
+
+          echo "$suites suites declaran $declaradas aserciones; pg_prove ejecutó $ejecutadas."
+          if [ "$declaradas" -ne "$ejecutadas" ]; then
+            echo "::error::$declaradas aserciones declaradas frente a $ejecutadas ejecutadas: alguna suite no llegó a correr entera."
             exit 1
           fi
