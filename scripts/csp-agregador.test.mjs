@@ -77,8 +77,20 @@ describe("agregar", () => {
 
   it("suma el count de la misma clave y guarda la ventana", () => {
     const filas = agregar([
-      { directiva: "img-src", blocked: "https://x.example/a.png", document: "https://aitor.alienflow.space", count: 3, cuando: dia("08") },
-      { directiva: "img-src", blocked: "https://x.example/b.png", document: "https://aitor.alienflow.space", count: 2, cuando: dia("17") },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/a.png",
+        document: "https://aitor.alienflow.space",
+        count: 3,
+        cuando: dia("08"),
+      },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/b.png",
+        document: "https://aitor.alienflow.space",
+        count: 2,
+        cuando: dia("17"),
+      },
     ]);
 
     expect(filas).toEqual([
@@ -96,8 +108,20 @@ describe("agregar", () => {
 
   it("separa por día: una fila no puede empezar un día y acabar en otro", () => {
     const filas = agregar([
-      { directiva: "img-src", blocked: "https://x.example/a.png", document: "-", count: 1, cuando: dia("23") },
-      { directiva: "img-src", blocked: "https://x.example/a.png", document: "-", count: 1, cuando: new Date("2026-11-28T00:10:00.000Z") },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/a.png",
+        document: "-",
+        count: 1,
+        cuando: dia("23"),
+      },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/a.png",
+        document: "-",
+        count: 1,
+        cuando: new Date("2026-11-28T00:10:00.000Z"),
+      },
     ]);
 
     expect(filas.map((fila) => fila.dia)).toEqual(["2026-11-27", "2026-11-28"]);
@@ -106,22 +130,47 @@ describe("agregar", () => {
 
   it("separa por directiva y por origen del documento", () => {
     const filas = agregar([
-      { directiva: "img-src", blocked: "https://x.example/a.png", document: "https://aitor.alienflow.space", count: 1, cuando: dia("09") },
-      { directiva: "font-src", blocked: "https://x.example/a.png", document: "https://aitor.alienflow.space", count: 1, cuando: dia("09") },
-      { directiva: "img-src", blocked: "https://x.example/a.png", document: "https://aitor.alienflow.space/hub", count: 1, cuando: dia("09") },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/a.png",
+        document: "https://aitor.alienflow.space",
+        count: 1,
+        cuando: dia("09"),
+      },
+      {
+        directiva: "font-src",
+        blocked: "https://x.example/a.png",
+        document: "https://aitor.alienflow.space",
+        count: 1,
+        cuando: dia("09"),
+      },
+      {
+        directiva: "img-src",
+        blocked: "https://x.example/a.png",
+        document: "https://alienflow.space/hub",
+        count: 1,
+        cuando: dia("09"),
+      },
     ]);
 
-    expect(filas).toHaveLength(2);
-    expect(filas.map((fila) => fila.document_origen)).toEqual([
-      "https://aitor.alienflow.space",
-      "https://aitor.alienflow.space",
+    expect(filas).toHaveLength(3);
+    expect(filas.map((fila) => `${fila.directiva} ${fila.document_origen}`)).toEqual([
+      "img-src https://aitor.alienflow.space",
+      "font-src https://aitor.alienflow.space",
+      "img-src https://alienflow.space",
     ]);
   });
 
   it("descarta lo que no tiene fecha válida en vez de inventarse un día", () => {
     expect(
       agregar([
-        { directiva: "img-src", blocked: "- ", document: "-", count: 1, cuando: new Date("no") },
+        {
+          directiva: "img-src",
+          blocked: "- ",
+          document: "-",
+          count: 1,
+          cuando: new Date("no"),
+        },
         { directiva: "img-src", blocked: "-", document: "-", count: 1, cuando: null },
       ]),
     ).toEqual([]);
@@ -132,10 +181,14 @@ describe("líneas de log a informes", () => {
   it("lee el JSON del CLI y se queda con el mensaje y la fecha", () => {
     const salida = [
       JSON.stringify({
-        message: "[csp-report] directive=img-src blocked=https://x.example/a.png document=- disposition=report count=1",
+        message:
+          "[csp-report] directive=img-src blocked=https://x.example/a.png document=- disposition=report count=1",
         timestamp: Date.parse("2026-11-27T10:00:00.000Z"),
       }),
-      JSON.stringify({ message: "otra cosa del log", timestamp: Date.parse("2026-11-27T10:01:00.000Z") }),
+      JSON.stringify({
+        message: "otra cosa del log",
+        timestamp: Date.parse("2026-11-27T10:01:00.000Z"),
+      }),
     ].join("\n");
 
     const { entradas, sinFecha } = informesDeLineas(lineasDeLog(salida));
@@ -149,7 +202,12 @@ describe("líneas de log a informes", () => {
   it("una línea sin fecha no se pierde: se cuenta hoy y se dice cuántas", () => {
     const ahora = new Date("2026-11-27T12:00:00.000Z");
     const { entradas, sinFecha } = informesDeLineas(
-      [{ mensaje: "[csp-report] directive=img-src blocked=- document=- disposition=- count=1", cuando: null }],
+      [
+        {
+          mensaje: "[csp-report] directive=img-src blocked=- document=- disposition=- count=1",
+          cuando: null,
+        },
+      ],
       ahora,
     );
 
