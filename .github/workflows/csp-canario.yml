@@ -1,0 +1,50 @@
+name: Canario CSP
+
+# Seguimiento 3 de #168. El circuito de informes se apaga sin ruido: si el
+# colector desaparece o deja de escribir, el log se queda vacío y «no hay
+# violaciones» parece lo mismo que «no hay medición». Esto manda un informe
+# sintético cada hora y exige las dos piezas: 204 del endpoint y la línea
+# `[csp-report]` con la marca de esa pasada en los Runtime Logs.
+#
+# Necesita el secreto `VERCEL_TOKEN` (sólo lectura de logs) y, si los nombres
+# del proyecto cambian, las variables `VERCEL_PROJECT` / `VERCEL_SCOPE` y
+# `CSP_CANARIO_URL`. Sin token el job sale rojo como «sin verificar»: un
+# canario que no puede mirar no está verde.
+#
+# Hoy el colector está retirado (`bbdb740`), así que lo esperado es rojo con el
+# 404 explicado. Ese rojo es el estado real del circuito, no un fallo del job.
+
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csp-canario
+  cancel-in-progress: false
+
+jobs:
+  canario:
+    name: informe sintético
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Sin `npm ci`: el script sólo usa módulos `node:` y `npx` se trae el CLI
+      # de Vercel. La vigilancia no depende de que el árbol de dependencias
+      # instale.
+      - name: Enviar el informe y leer su línea
+        env:
+          CSP_CANARIO_URL: ${{ vars.CSP_CANARIO_URL || 'https://aitor.alienflow.space' }}
+          VERCEL_PROJECT: ${{ vars.VERCEL_PROJECT || 'ai-tor' }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'alien-flow-space' }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/csp-canario.mjs --canario

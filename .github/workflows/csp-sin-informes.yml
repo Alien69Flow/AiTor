@@ -1,0 +1,48 @@
+name: CSP sin informes
+
+# Seguimiento 3 de #168, la otra mitad: el canario prueba que el circuito
+# responde; esto mira si el circuito se usa. Una vez al día pregunta a los
+# Runtime Logs si en 24 h hubo algún informe de navegador.
+#
+# Cero informes es un fallo, no un aviso: con la política en modo informe y las
+# violaciones que el sitio ya tenía documentadas, 24 h sin una sola línea
+# significa que no se está midiendo (cabecera que dejó de enviarse, colector
+# mudo o endpoint retirado).
+#
+# Las líneas del canario (`canario.invalid`) se descuentan: su informe horario
+# no es un informe de nadie y, si contara, este job nunca se pondría rojo.
+#
+# Necesita el mismo `VERCEL_TOKEN` que `csp-canario.yml`. Si el plan de Vercel no
+# permite mirar 24 h atrás, el job sale «sin verificar», no con un cero falso.
+
+on:
+  schedule:
+    - cron: '41 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: csp-sin-informes
+  cancel-in-progress: false
+
+jobs:
+  cero:
+    name: informes en 24 h
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Contar informes de las últimas 24 h
+        env:
+          CSP_CANARIO_URL: ${{ vars.CSP_CANARIO_URL || 'https://aitor.alienflow.space' }}
+          VERCEL_PROJECT: ${{ vars.VERCEL_PROJECT || 'ai-tor' }}
+          VERCEL_SCOPE: ${{ vars.VERCEL_SCOPE || 'alien-flow-space' }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: node scripts/csp-canario.mjs --cero-24h
