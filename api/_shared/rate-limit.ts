@@ -19,7 +19,7 @@
  */
 
 import type { ApiRequest, ApiResponse } from "./types.js";
-import { clientIp, header } from "./types.js";
+import { clientIp } from "./types.js";
 import { isRedisConfigured, redisCommand } from "./redis.js";
 
 const LUA_SLIDING = `
@@ -106,7 +106,11 @@ export async function checkRateLimit(
   res: ApiResponse,
   policy: RateLimitPolicy,
 ): Promise<boolean> {
-  const identity = policy.identifier || `${clientIp(req)}|${header(req, "user-agent").slice(0, 80)}`;
+  // La identidad es la IP real, sin User-Agent: el UA lo elige el cliente, así
+  // que meterlo en la clave convertía el límite en decorativo (rotarlo
+  // estrenaba cubo). Para endpoints caros, `identifier` debe ser el usuario
+  // verificado, no la IP.
+  const identity = policy.identifier || clientIp(req);
   const key = `rl:${policy.name}:${identity}`;
 
   let decision = isRedisConfigured() ? await redisDecision(key, policy) : null;

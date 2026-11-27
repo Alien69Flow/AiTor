@@ -17,7 +17,6 @@ export interface ApiRequest {
   url?: string;
   body?: unknown;
 }
-
 export interface ApiResponse {
   statusCode: number;
   status(code: number): ApiResponse;
@@ -33,9 +32,30 @@ export function header(req: ApiRequest, name: string): string {
   return raw ?? "";
 }
 
-/** IP del llamante según la cadena de proxies de Vercel. */
+/**
+ * IP del llamante, y sólo de cabeceras que escribe la plataforma.
+ *
+ * Vercel sobrescribe estas tres con la IP pública del visitante —una sola, sin
+ * cadena— y no reenvía la que mande el cliente (salvo Enterprise con proxy de
+ * confianza). `x-vercel-forwarded-for` es la que sobrevive si algún día hay un
+ * proxy encima; `x-real-ip` lleva el mismo valor.
+ *
+ * `x-forwarded-for` queda para cuando no hay Vercel delante (dev en local),
+ * donde sí puede ser una cadena: ahí manda el último salto, el que añade el
+ * proxy, no el que pudo poner el cliente.
+ *
+ * `cf-connecting-ip` no se lee: no hay Cloudflare delante, así que sólo puede
+ * venir del visitante, y aceptarla permitía estrenar un cubo de rate limit con
+ * cada petición.
+ */
 export function clientIp(req: ApiRequest): string {
-  const forwarded = header(req, "x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return header(req, "x-real-ip") || header(req, "cf-connecting-ip") || "unknown";
+  const platform = header(req, "x-vercel-forwarded-for") || header(req, "x-real-ip");
+  if (platform) return platform;
+
+  const hops = header(req, "x-forwarded-for")
+    .split(",")
+    .map((hop) => hop.trim())
+    .filter(Boolean);
+
+  return hops.pop() || "unknown";
 }
