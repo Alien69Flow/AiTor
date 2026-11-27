@@ -233,8 +233,6 @@ export function trocear(filas, tamano = LOTE) {
 const USO =
   "uso: node scripts/csp-agregador.mjs --entrada <fichero|-> | --ventana <1h|24h> [--dry-run]";
 
-const esperar = null;
-
 async function leerEntrada(ruta) {
   if (ruta !== "-") return readFile(ruta, "utf8");
 
@@ -244,7 +242,9 @@ async function leerEntrada(ruta) {
 }
 
 async function leerVentana(ventana) {
-  if (!TOKEN_VERCEL) return { status: "skip", detail: "falta VERCEL_TOKEN: no se pueden leer los Runtime Logs" };
+  if (!TOKEN_VERCEL) {
+    return { status: "skip", detail: "falta VERCEL_TOKEN: no se pueden leer los Runtime Logs" };
+  }
 
   try {
     const { stdout } = await ejecutar(
@@ -309,7 +309,9 @@ function imprimirTabla(filas) {
   const ordenadas = [...filas].sort((a, b) => b.count - a.count);
   const visibles = ordenadas.slice(0, 20);
 
-  console.log(`[csp-agregado] ${filas.length} filas (día · directiva · bloqueado → documento · count)`);
+  console.log(
+    `[csp-agregado] ${filas.length} filas (día · directiva · bloqueado → documento · count)`,
+  );
   for (const fila of visibles) {
     console.log(
       `  ${fila.dia}  ${fila.directiva}  ${fila.blocked_origen} → ${fila.document_origen}  ×${fila.count}`,
@@ -393,7 +395,9 @@ async function main() {
 
 if (process.argv[1] && process.argv[1].endsWith("csp-agregador.mjs")) {
   main().catch((error) => {
-    console.error(`[csp-agregado] SIN VERIFICAR · ${error instanceof Error ? error.message : String(error)}`);
+    console.error(
+      `[csp-agregado] SIN VERIFICAR · ${error instanceof Error ? error.message : String(error)}`,
+    );
     process.exitCode = 2;
   });
 }
