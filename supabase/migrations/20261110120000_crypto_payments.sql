@@ -1,53 +1,23 @@
--- Libro de pagos on-chain.
+-- Libro de pagos on-chain: aquí sólo queda el portero.
 --
--- `verify-crypto-payment` ya leía e insertaba en esta tabla, pero ninguna
--- migración la creaba: en un proyecto nuevo el pago se verificaba, el plan se
--- acreditaba y el insert reventaba con 500, sin dejar rastro ni poder detectar
--- una transacción reutilizada.
+-- La tabla la crea 20260917102030, y allí van también los índices, el RLS, la
+-- política y los comentarios. Este fichero llegó a tener una copia entera de
+-- esa DDL; dos copias de lo mismo acaban divergiendo, y la de septiembre es la
+-- que corre antes, así que la que manda es esa.
+--
+-- En una base que ya aplicó septiembre esto es un no-op. En un proyecto
+-- restaurado a mano sin aquella migración falla aquí, con el nombre de la que
+-- falta, en vez de reventar más tarde en el código con un 500 y sin rastro.
 --
 -- El libro es la fuente de verdad y se escribe ANTES de extender el plan:
 --   status = 'verified' → pago comprobado on-chain, plan aún no extendido;
 --   status = 'granted'  → plan ya extendido, no se puede volver a usar.
 -- Así un fallo a mitad se puede reintentar, y un reintento nunca regala otro
 -- periodo.
-
-create table if not exists public.crypto_payments (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references auth.users (id) on delete cascade,
-  -- Siempre en minúsculas: el hash canónico es uno solo.
-  tx_hash text not null,
-  chain text not null,
-  token text not null default 'USDC',
-  cycle text not null,
-  amount_usd numeric(12, 2) not null check (amount_usd > 0),
-  -- Versión de la tarifa aplicada, para poder auditar subidas de precio.
-  price_version text,
-  wallet_address text,
-  recipient text,
-  status text not null default 'verified' check (status in ('verified', 'granted')),
-  granted_at timestamptz,
-  created_at timestamptz not null default now(),
-  constraint crypto_payments_hash_lowercase check (tx_hash = lower(tx_hash))
-);
-
--- Una transacción, un pago: lo que hace imposible reutilizar un hash.
-create unique index if not exists crypto_payments_tx_hash_key
-  on public.crypto_payments (tx_hash);
-
-create index if not exists crypto_payments_user_created_idx
-  on public.crypto_payments (user_id, created_at desc);
-
-alter table public.crypto_payments enable row level security;
-
--- El cliente sólo lee su propio historial; quien escribe es la service role.
-drop policy if exists "crypto_payments: ver los propios" on public.crypto_payments;
-create policy "crypto_payments: ver los propios"
-  on public.crypto_payments
-  for select
-  to authenticated
-  using ((select auth.uid()) = user_id);
-
-comment on table public.crypto_payments is
-  'Libro de pagos on-chain verificados. Lo escribe verify-crypto-payment con la service role.';
-comment on column public.crypto_payments.status is
-  'verified = comprobado sin acreditar (reintentable); granted = plan ya extendido (no reutilizable).';
+do $$
+begin
+  if to_regclass('public.crypto_payments') is null then
+    raise exception 'public.crypto_payments no existe: falta aplicar 20260917102030'
+      using errcode = '42P01';
+  end if;
+end $$;

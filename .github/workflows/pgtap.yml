@@ -1,0 +1,217 @@
+name: pgTAP
+
+# Las aserciones de supabase/tests no las ejecutaba nadie: no existía job.
+# `record_game_run.sql` (plan 12) y `games_scores_guard.sql` (plan 19) estaban
+# escritas y jamás corridas, así que la liga podía estar rota sin que el CI
+# dijera nada.
+#
+# La secuencia `db start` + `test db` es la que documenta Supabase para GitHub
+# Actions: `db start` levanta Postgres, aplica migraciones y seed, y `test db`
+# corre pg_prove contra esa base.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pgtap-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pgtap:
+    name: supabase pgTAP
+    runs-on: ubuntu-latest
+    # Techo holgado: un arranque en frío ronda 2-4 min, y esto sólo evita que un
+    # pull de imagen atascado bloquee el gate para siempre.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # `@v1` apuntaba a una action con `using: node20`, runtime que GitHub
+      # retiró de los runners el 23-sep-2026: cada run avisaba de que la forzaba
+      # a Node 24. `@v3` es composite (no declara runtime propio), resuelve el
+      # CLI desde npm con caída al release de GitHub del mismo tag, y si el
+      # runner no trae Node se instala Node 24 él mismo; si lo trae, exige
+      # Node >= 20.
+      - uses: supabase/setup-cli@v3
+        with:
+          # Fijado a propósito. El default de `@v3` no es un número ni «la
+          # última» a secas: sin `version`, lee el lockfile de la raíz
+          # (`bun.lock`, `pnpm-lock.yaml` o `package-lock.json`) e instala la
+          # versión de `supabase` que éste declare; cae en `latest` cuando el
+          # lockfile no la declara — aquí no la declara, así que sin este pin el
+          # CLI sería el que se hubiera publicado esa semana. El número fijo por
+          # defecto era cosa de `@v1`, que instalaba 2.20.3 si no se le decía
+          # nada. Las migraciones se prueban contra una versión conocida, no
+          # contra la que toque.
+          version: 3.3.0
+
+      - name: Start local database
+        run: |
+          # El pull de la imagen de Postgres es lo que hinchaba el log hasta que
+          # la descarga por API se truncaba antes de llegar al TAP. Se guarda
+          # aparte y sólo se muestra si el arranque falla.
+          log="${RUNNER_TEMP}/db-start.log"
+          if ! supabase db start > "$log" 2>&1; then
+            echo "::group::log de supabase db start"
+            tail -n 80 "$log"
+            echo "::endgroup::"
+            exit 1
+          fi
+
+      - name: Run pgTAP suites
+        run: |
+          # El comando que decide el veredicto sigue siendo exactamente
+          # `supabase test db supabase/tests`: aquí no se filtra, ni se envuelve,
+          # ni se sustituye. Sólo se le pone un `tee` para no perder la salida y
+          # `pipefail` para que el código de salida del pipeline sea el del CLI y
+          # no el de `tee`, que siempre sale 0 y tapaba el fallo. Se declara
+          # explícito para no depender del default del shell del runner.
+          set -o pipefail
+          log="${RUNNER_TEMP}/pgtap.log"
+          status=0
+          supabase test db supabase/tests 2>&1 | tee "$log" || status=$?
+
+          # Copia filtrada de la parte TAP: sólo el resumen por fichero, las
+          # líneas `ok`/`not ok`, los diagnósticos `#` y el veredicto. Fuera los
+          # avisos de psql (`NOTICE: extension "pgtap" already exists`) y lo que
+          # añade el CLI (pull de imágenes, spinners). No se imprime: el `tee` ya
+          # dejó la salida completa arriba, y esto es lo que leen el resumen y
+          # quien depure después.
+          tap="${RUNNER_TEMP}/pgtap.tap"
+          grep -E -e '^[[:space:]]*(TAP version|[0-9]+\.\.|ok |not ok |#|Bail out!)' \
+                  -e '^[[:space:]]*[^[:space:]]*\.sql' \
+                  -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
+                  "$log" \
+            | grep -v 'NOTICE:' > "$tap" || true
+
+          # Resumen en la página del run. El log descargable ya se truncó más de
+          # una vez antes de llegar al TAP; el step summary no se trunca y se lee
+          # sin bajar nada. No decide nada: el veredicto es el `if` del final.
+          resumen="${GITHUB_STEP_SUMMARY:-}"
+          if [ -n "$resumen" ]; then
+            {
+              echo "## pgTAP · \`supabase test db\`"
+              echo
+              if [ "$status" -eq 0 ]; then
+                echo "**Veredicto: verde.**"
+              else
+                echo "**Veredicto: ROJO (exit \`$status\`).**"
+              fi
+              echo
+              if [ -s "$tap" ]; then
+                suites_tsv="${RUNNER_TEMP}/pgtap-suites.tsv"
+                emitidas_tsv="${RUNNER_TEMP}/pgtap-emitidas.tsv"
+                : > "$suites_tsv"
+                for f in supabase/tests/*.sql; do
+                  [ -e "$f" ] || continue
+                  basename "$f" >> "$suites_tsv"
+                done
+
+                # Un bloque por fichero en el TAP de pg_prove: la línea con la
+                # ruta, luego `1..N` y después las `ok`/`not ok`.
+                awk '
+                  function volcar() {
+                    if (fichero != "") printf "%s\t%d\t%d\t%d\n", fichero, plan, ok, mal
+                  }
+                  /\.sql/ && !/^[[:space:]]*(ok|not ok|#)/ {
+                    volcar()
+                    fichero = $0
+                    sub(/[[:space:]].*$/, "", fichero)
+                    sub(/.*\//, "", fichero)
+                    plan = 0; ok = 0; mal = 0
+                    next
+                  }
+                  /^[[:space:]]*[0-9]+\.\.[0-9]+/ {
+                    plan = $0
+                    sub(/.*\.\./, "", plan)
+                    plan = plan + 0
+                    next
+                  }
+                  /^[[:space:]]*ok /     { ok++;  next }
+                  /^[[:space:]]*not ok / { mal++; next }
+                  END { volcar() }
+                ' "$tap" > "$emitidas_tsv"
+
+                echo "| suite | emitidas | ok | not ok | estado |"
+                echo "| --- | ---: | ---: | ---: | --- |"
+                awk -F '\t' '
+                  NR == FNR { emitido[$1] = $2 FS $3 FS $4; next }
+                  {
+                    if ($1 in emitido) {
+                      split(emitido[$1], e, "\t")
+                      estado = (e[3] + 0 == 0) ? "ok" : "con fallos"
+                      printf "| `%s` | %d | %d | %d | %s |\n", $1, e[1], e[2], e[3], estado
+                    } else {
+                      printf "| `%s` | — | — | — | no llegó a ejecutarse |\n", $1
+                    }
+                  }
+                ' "$emitidas_tsv" "$suites_tsv"
+                echo
+              else
+                echo "_Sin líneas TAP reconocibles: no hay desglose por suite._"
+                echo
+              fi
+              echo '```'
+              grep -E '^(Files=|Result|Failed|Dubious|Parse errors)' "$log" | tail -n 5 || true
+              echo '```'
+              if [ -s "$tap" ] && grep -qE '^[[:space:]]*not ok ' "$tap"; then
+                echo
+                echo "**Primeros fallos**"
+                echo '```'
+                grep -E '^[[:space:]]*not ok ' "$tap" | awk 'NR <= 10' || true
+                echo '```'
+              fi
+            } >> "$resumen"
+          fi
+
+          if [ "$status" -ne 0 ]; then
+            echo "::error::pgTAP en rojo: el paso 'Run pgTAP suites' resume arriba las líneas 'not ok' y el total."
+            exit 1
+          fi
+
+      - name: Los plan() declarados cuadran con lo ejecutado
+        run: |
+          # El paso anterior vuelca lo que pg_prove imprimió, pero no nota lo
+          # que falta: pg_prove da el total (`Tests=N`) sin desglose por
+          # fichero, así que una suite que no llega a ejecutarse sólo se ve como
+          # un total más bajo, y con `Result: PASS` el run sigue verde.
+          #
+          # Se compara el total con la suma de los `plan(N)` que declaran las
+          # suites: si son distintos, alguna no corrió (parse error, fichero no
+          # recogido, base a medias) y esto se pone rojo.
+          log="${RUNNER_TEMP}/pgtap.log"
+
+          declaradas=0
+          suites=0
+          for f in supabase/tests/*.sql; do
+            [ -e "$f" ] || continue
+            suites=$((suites + 1))
+            n=$(grep -oE 'plan[[:space:]]*\([[:space:]]*[0-9]+' "$f" | grep -oE '[0-9]+' | head -n1)
+            if [ -z "$n" ]; then
+              echo "::error file=$f::no declara plan(N): sin número no hay forma de saber si se ejecutó"
+              exit 1
+            fi
+            declaradas=$((declaradas + n))
+          done
+
+          if [ "$suites" -eq 0 ]; then
+            echo "::error::no hay ninguna suite en supabase/tests"
+            exit 1
+          fi
+
+          ejecutadas=$(grep -oE 'Tests=[[:space:]]*[0-9]+' "$log" | tail -n1 | grep -oE '[0-9]+' || true)
+          if [ -z "$ejecutadas" ]; then
+            echo "::error::pg_prove no imprimió un total (Tests=N): no se sabe qué se ejecutó"
+            exit 1
+          fi
+
+          echo "$suites suites declaran $declaradas aserciones; pg_prove ejecutó $ejecutadas."
+          if [ "$declaradas" -ne "$ejecutadas" ]; then
+            echo "::error::$declaradas aserciones declaradas frente a $ejecutadas ejecutadas: alguna suite no llegó a correr entera."
+            exit 1
+          fi
