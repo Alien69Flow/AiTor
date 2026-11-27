@@ -15,6 +15,12 @@
 -- Se ejecuta como `postgres` (es lo que usa `supabase test db`), así que los
 -- INSERT de las pruebas funcionales no chocan con RLS: lo que se prueba es la
 -- tabla, no el portero.
+--
+-- Los `throws_ok` van en su forma de cuatro argumentos con el mensaje en NULL.
+-- Con tres, el de pgTAP mira si el segundo mide cinco bytes, lo toma por el
+-- SQLSTATE y entonces **el tercero es el mensaje esperado**, no la descripción:
+-- se acabaría comparando la descripción contra el SQLERRM del motor. Y el texto
+-- de un CHECK no es contrato de nadie; el SQLSTATE sí.
 
 begin;
 
@@ -240,6 +246,7 @@ select throws_ok(
       '0x' || repeat('b', 64), 'base', 'monthly', 1, 'paid'
     )$$,
   '23514',
+  null,
   'un status que no sea verified ni granted no entra'
 );
 
@@ -250,6 +257,7 @@ select throws_ok(
       '0x' || repeat('c', 64), 'base', 'monthly', 0
     )$$,
   '23514',
+  null,
   'un pago de importe cero no entra'
 );
 
@@ -260,6 +268,7 @@ select throws_ok(
       '0x' || repeat('D', 64), 'base', 'monthly', 1
     )$$,
   '23514',
+  null,
   'un hash en mayúsculas no entra: el canónico es uno solo'
 );
 
@@ -270,6 +279,7 @@ select throws_ok(
       (select hash from t_pago), 'base', 'monthly', 5
     )$$,
   '23505',
+  null,
   'el mismo hash no se puede cobrar dos veces'
 );
 
