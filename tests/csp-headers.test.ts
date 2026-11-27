@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 /**
@@ -230,7 +231,10 @@ function problemasDe(politicas: Politicas): string[] {
   return problemas;
 }
 
-const vercel: unknown = JSON.parse(readFileSync(new URL("../vercel.json", import.meta.url), "utf8"));
+// vitest corre desde la raíz del proyecto, y con `environment: "jsdom"`
+// `import.meta.url` deja de ser `file:` (`readFileSync` rechaza un `http:`), así
+// que el fichero se resuelve desde el cwd.
+const vercel: unknown = JSON.parse(readFileSync(join(process.cwd(), "vercel.json"), "utf8"));
 const politicas = cabecerasDeVercel(vercel);
 
 describe("CSP de vercel.json", () => {
