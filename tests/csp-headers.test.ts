@@ -46,6 +46,13 @@ const DIRECTIVAS_BLOQUEO = ["frame-ancestors", "object-src", "base-uri", "upgrad
  */
 const DIRECTIVAS_INFORME = ["default-src", "script-src"];
 
+/**
+ * Las del cableado. No son «directivas de la política» que se congelen por
+ * nombre: lo que importa es a dónde apuntan, y eso se comprueba aparte. Si
+ * entraran en la lista de sobrantes, el circuito completo saldría mal.
+ */
+const DIRECTIVAS_DE_CABLEADO = ["report-uri", "report-to"];
+
 /** El colector y el grupo que lo declara: los dos lados del cableado. */
 const COLECTOR = "/api/csp-report";
 const GRUPO = "csp";
@@ -183,7 +190,7 @@ function problemasDe(politicas: Politicas): string[] {
   const informe = directivasDe(politicas.informe);
   problemas.push(
     ...faltantes(informe, DIRECTIVAS_INFORME, "informe"),
-    ...sobrantes(informe, DIRECTIVAS_INFORME, "informe"),
+    ...sobrantes(informe, [...DIRECTIVAS_INFORME, ...DIRECTIVAS_DE_CABLEADO], "informe"),
     ...repetidas(politicas.informe, "informe"),
     ...vacias(informe, "informe"),
   );
@@ -275,10 +282,14 @@ describe("el circuito de informes de #168", () => {
   });
 
   it("report-uri y report-to apuntando a otro sitio son un problema", () => {
-    const otroUri = problemasDe(conInforme({ informe: INFORME_DE_168.replace(`report-uri ${COLECTOR}`, "report-uri /api/otro") }));
+    const otroUri = problemasDe(
+      conInforme({ informe: INFORME_DE_168.replace(`report-uri ${COLECTOR}`, "report-uri /api/otro") }),
+    );
     expect(otroUri.some((problema) => problema.includes("report-uri=/api/otro"))).toBe(true);
 
-    const otroGrupo = problemasDe(conInforme({ informe: INFORME_DE_168.replace(`report-to ${GRUPO}`, "report-to otro") }));
+    const otroGrupo = problemasDe(
+      conInforme({ informe: INFORME_DE_168.replace(`report-to ${GRUPO}`, "report-to otro") }),
+    );
     expect(otroGrupo.some((problema) => problema.includes("report-to=otro"))).toBe(true);
   });
 
@@ -321,7 +332,12 @@ describe("el circuito de informes de #168", () => {
 
   it("una directiva del cableado metida en la política que bloquea es media instalación", () => {
     const problemas = problemasDe(
-      conInforme({ bloqueo: `${BLOQUEO_DE_MAIN.replace("upgrade-insecure-requests", "upgrade-insecure-requests; report-uri /api/csp-report")}` }),
+      conInforme({
+        bloqueo: BLOQUEO_DE_MAIN.replace(
+          "upgrade-insecure-requests",
+          "upgrade-insecure-requests; report-uri /api/csp-report",
+        ),
+      }),
     );
     expect(problemas.some((problema) => problema.includes("la política de bloqueo declara el cableado"))).toBe(
       true,
@@ -332,9 +348,7 @@ describe("el circuito de informes de #168", () => {
     const vacia = problemasDe(conInforme({ bloqueo: `${BLOQUEO_DE_MAIN}; report-uri` }));
     expect(vacia.some((problema) => problema.includes("report-uri no tiene valores"))).toBe(true);
 
-    const repetida = problemasDe(
-      conInforme({ bloqueo: `${BLOQUEO_DE_MAIN}; base-uri 'none'` }),
-    );
+    const repetida = problemasDe(conInforme({ bloqueo: `${BLOQUEO_DE_MAIN}; base-uri 'none'` }));
     expect(repetida.some((problema) => problema.includes("repite base-uri"))).toBe(true);
   });
 });
