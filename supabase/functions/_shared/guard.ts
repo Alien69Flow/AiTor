@@ -23,25 +23,60 @@ const ALLOWED_ORIGINS = [
 export function isAllowedOrigin(req: Request): boolean {
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
   if (!origin) return false;
+
   let host: string;
   try {
     host = new URL(origin).hostname;
   } catch {
     return false;
   }
+
   return ALLOWED_ORIGINS.some((allowed) =>
     allowed.startsWith(".") ? host.endsWith(allowed) : host === allowed,
   );
+}
+
+// Regla única de IP, copia literal de `clientIp` en `api/_shared/types.ts`.
+// Los edge functions sólo empaquetan su propio directorio, así que no se puede
+// importar de `api/`: el orden de abajo tiene que ser el mismo, y el test
+// `guard.ip.test.ts` usa la misma tabla que el lado Node para detectarlo si no.
+//
+// Antes esta función ponía `cf-connecting-ip` por delante, y eso la hacía
+// esquivable: la manda el cliente y rotarla daba un cubo de rate limit nuevo
+// por petición. Ahora no se consulta en absoluto: mandarla no cambia la clave.
+//
+// `x-vercel-forwarded-for` sólo aparece si hay un Vercel delante; en el borde de
+// Supabase se salta. Aun así se deja en la lista para que las dos copias sean
+// literalmente la misma y la tabla de pruebas valga para las dos.
+export const IP_HEADERS = ["x-vercel-forwarded-for", "x-real-ip", "x-forwarded-for"] as const;
+
+export const UNKNOWN_IP = "unknown";
+
+/** Último segmento no vacío de una cadena `x-forwarded-for`. */
+export function lastForwardedIp(value: string): string {
+  const segments = value.split(",");
+  for (let index = segments.length - 1; index >= 0; index--) {
+    const trimmed = (segments[index] ?? "").trim();
+    if (trimmed) return trimmed;
+  }
+  return "";
+}
+
+/** IP del llamante según la regla única; `remoteAddress` sólo existe en Node. */
+export function clientIp(headers: Headers, remoteAddress?: string): string {
+  for (const name of IP_HEADERS) {
+    const raw = headers.get(name) ?? "";
+    const candidate = name === "x-forwarded-for" ? lastForwardedIp(raw) : raw.trim();
+    if (candidate) return candidate;
+  }
+  return remoteAddress?.trim() || UNKNOWN_IP;
 }
 
 type Bucket = { count: number; reset: number };
 const buckets = new Map<string, Bucket>();
 
 export function rateLimit(req: Request, limit = 30, windowMs = 60_000): boolean {
-  const ip =
-    req.headers.get("cf-connecting-ip") ||
-    req.headers.get("x-forwarded-for")?.split(",")[0].trim() ||
-    "unknown";
+  const ip = clientIp(req.headers);
   const now = Date.now();
   const b = buckets.get(ip);
   if (!b || b.reset <= now) {
@@ -68,6 +103,7 @@ export function guardPublic(
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
   if (!rateLimit(req, limit)) {
     return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
       status: 429,

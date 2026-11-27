@@ -10,7 +10,11 @@
  * había montaje en el backend Node, que no está desplegado, así que en
  * producción el botón de herramientas MCP daba 404.
  *
- * **Este archivo no importa nada del proyecto a propósito.** La primera versión
+ * **Este archivo no importa nada de `src/` a propósito.** La única excepción es
+ * `api/_shared/types.js` (la regla de IP), el mismo import relativo que ya usan
+ * los demás handlers de `api/` y que no arrastra nada del navegador.
+ *
+ * La primera versión
  * montaba `src/lib/mcp/…` y el runtime de Vercel devolvió
  * `FUNCTION_INVOCATION_FAILED`, el mismo fallo que documenta
  * `api/predictions.ts`. El código de `src/lib/mcp` sigue siendo la referencia
@@ -25,6 +29,7 @@
  *  - `GEMINI_API_KEY` vive solo aquí; el navegador recibe texto, nunca la clave.
  */
 import type { VercelRequest, VercelResponse } from "@vercel/node";
+import { clientIp } from "./_shared/types.js";
 import * as satellite from "satellite.js";
 
 export const maxDuration = 60;
@@ -2392,10 +2397,8 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
   }
   if (req.method !== "POST") return send(json({ error: "Usa POST" }, 405));
 
-  const forwarded = req.headers["x-forwarded-for"];
-  const ip = (Array.isArray(forwarded) ? forwarded[0] : forwarded)?.split(",")[0].trim() ||
-    req.socket?.remoteAddress ||
-    "unknown";
+  // Regla única de IP: vive en api/_shared/types.ts, la misma que usa el lado Deno.
+  const ip = clientIp(req);
 
   const caller = await resolveCaller(req.headers.authorization, ip);
   if (!caller) return send(json({ error: "No autorizado" }, 401));
