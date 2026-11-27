@@ -32,7 +32,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # Fijado a propósito. Sin `version`, la action resuelve 2.20.3 (lo dijo su
-      # log) frente al 3.3.0 de 23-nov-2026. Las migraciones se prueban contra
+      # log) frente al 3.3.0 del 23-nov-2026. Las migraciones se prueban contra
       # un CLI conocido, no contra el que toque esa semana.
       - uses: supabase/setup-cli@v1
         with:
@@ -66,9 +66,9 @@ jobs:
           supabase test db supabase/tests > "$log" 2>&1 || status=$?
           tap="${RUNNER_TEMP}/pgtap.tap"
           grep -E -e '^[[:space:]]*(TAP version|[0-9]+\.\.|ok |not ok |#|Bail out!)' \
-                   -e '^[[:space:]]*[^[:space:]]*\.sql' \
-                   -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
-                   "$log" \
+                  -e '^[[:space:]]*[^[:space:]]*\.sql' \
+                  -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
+                  "$log" \
             | grep -v 'NOTICE:' > "$tap" || true
           if [ -s "$tap" ]; then
             cat "$tap"
