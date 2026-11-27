@@ -19,7 +19,6 @@ const ALLOWED_ORIGINS = [
   "localhost",
   "127.0.0.1",
 ];
-
 export function isAllowedOrigin(req: Request): boolean {
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
   if (!origin) return false;
@@ -47,7 +46,7 @@ const buckets = new Map<string, Bucket>();
  * estrenara un cubo de rate limit.
  */
 export function clientIp(req: Request): string {
-  const real = req.headers.get("x-real-ip")?.trim();
+  const real = req.headers.get("x-real-ip");
   if (real) return real;
 
   const hops = (req.headers.get("x-forwarded-for") ?? "")
@@ -55,7 +54,7 @@ export function clientIp(req: Request): string {
     .map((hop) => hop.trim())
     .filter(Boolean);
 
-  return hops.pop() || "unknown";
+  return hops[hops.length - 1] || "unknown";
 }
 
 export function rateLimit(req: Request, limit = 30, windowMs = 60_000): boolean {

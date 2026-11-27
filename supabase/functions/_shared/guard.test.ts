@@ -8,22 +8,24 @@ const requestWith = (headers: Record<string, string>) =>
   new Request("https://example.com/air-traffic", { headers });
 
 describe("client IP for the rate limit", () => {
-  it("usa la IP que escribe la plataforma", () => {
-    expect(clientIp(requestWith({ "x-real-ip": "198.51.100.9" }))).toBe("198.51.100.9");
-  });
+  // Lo único que se mide aquí es el bypass: `cf-connecting-ip` no la pone nadie
+  // de confianza en Edge Functions, así que rotarla no puede estrenar cubo.
 
-  it("no deja estrenar cubo con cabeceras que escribe el visitante", () => {
-    // `cf-connecting-ip` no la pone nadie de confianza en Edge Functions y el
-    // primer salto de `x-forwarded-for` lo prefija quien llama: ninguno de los
-    // dos puede decidir el cubo.
+  it("cf-connecting-ip sola no es una IP", () => {
     expect(clientIp(requestWith({ "cf-connecting-ip": "203.0.113.7" }))).toBe("unknown");
-    expect(clientIp(requestWith({ "x-forwarded-for": "203.0.113.7, 198.51.100.9" }))).toBe(
-      "198.51.100.9",
-    );
   });
 
-  it("sin cabeceras cae en un único cubo", () => {
-    expect(clientIp(requestWith({}))).toBe("unknown");
+  it("cf-connecting-ip no adelanta a x-real-ip", () => {
+    const both = requestWith({ "cf-connecting-ip": "203.0.113.7", "x-real-ip": "198.51.100.9" });
+    expect(clientIp(both)).toBe("198.51.100.9");
+  });
+
+  it("cf-connecting-ip no adelanta al último salto de x-forwarded-for", () => {
+    const both = requestWith({
+      "cf-connecting-ip": "203.0.113.7",
+      "x-forwarded-for": "203.0.113.7, 198.51.100.9",
+    });
+    expect(clientIp(both)).toBe("198.51.100.9");
   });
 });
 
