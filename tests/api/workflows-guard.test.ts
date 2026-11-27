@@ -2,9 +2,13 @@
  * Guardián de los workflows.
  *
  * Un `continue-on-error` marca el paso como *success* aunque el comando salga
- * con 1: el rojo desaparece sin que nadie lo haya aprobado. Se prohíbe en todos
+ * con 1: el rojo desaparece sin que nadie lo haya aprobado. Se procúbe en todos
  * los workflows del directorio, no sólo en `ci.yml`, y el que corre pgTAP tiene
  * que arrancar la base y apuntar a `supabase/tests`.
+ *
+ * Este es el único fichero que mira el contenido de `.github/workflows`:
+ * `collected-by-vitest.test.ts` se ocupa sólo del `include` de Vitest. Dos
+ * ficheros con el mismo criterio acaban divergiendo.
  *
  * El directorio se enumera en tiempo de ejecución: un workflow nuevo queda
  * cubierto el día que se añade, sin tocar este fichero.
@@ -45,9 +49,17 @@ describe("los workflows no silencian un rojo", () => {
     expect(silencian(workflows)).toEqual([]);
   });
 
-  it("alguno ejecuta la suite: sin comandos no hay rojo que silenciar", () => {
+  it("algún workflow ejecuta la suite: sin comandos no hay rojo que silenciar", () => {
     const yamls = [...workflows.values()];
     expect(yamls.some((yaml) => /npm test|npx vitest run/.test(yaml))).toBe(true);
+  });
+
+  it("ci.yml ejecuta los tests y el lint", () => {
+    // Por nombre y no «algún workflow»: el gate de la app no puede mudarse de
+    // `ci.yml` a otro workflow sin que se vea aquí.
+    const ci = workflows.get("ci.yml") ?? "";
+    expect(ci).toMatch(/npm test|npx vitest run/);
+    expect(ci).toMatch(/npm run lint/);
   });
 
   it("el que corre pgTAP arranca la base y apunta a supabase/tests", () => {

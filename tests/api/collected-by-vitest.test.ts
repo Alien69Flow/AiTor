@@ -3,7 +3,7 @@
  *
  * Los handlers de `api/` se quedaron fuera de Vitest una vez y un cambio en los
  * mocks (respuestas sin `json()`, el contrato viejo de `sendJson`) rompió
- * pruebas que nadie ejecutaba. Arreglar los mocks —#`1d4b476`, `9a3fb4f`— no
+ * pruebas que nadie ejecutaba. Arreglar los mocks —`c@1d4b476`, `9a3fb4f`— no
  * basta: dentro de seis meses alguien puede tocar `include` en
  * `vitest.config.ts` y volver a dejar cientos de pruebas en el limbo sin que
  * ningún rojo lo diga.
@@ -14,15 +14,17 @@
  *  - Cada `api/**\/*.test.ts` del disco tiene que encajar en un glob de
  *    `include`; si sobra uno, falla con su ruta.
  *  - `include` tiene que seguir nombrando `api/**` de forma explícita.
- *  - El workflow de la CI tiene que ejecutar `npm test` y no puede envolverlo
- *    en `continue-on-error`, que es como un rojo se convierte en verde.
+ *
+ * Los workflows no se miran aquí: de eso se encarga
+ * `tests/api/workflows-guard.test.ts`, que enumera el directorio entero. Dos
+ * ficheros con el mismo criterio acaban divergiendo.
  */
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 // jsdom sirve los módulos desde `http://localhost/`, así que `import.meta.url`
-// no es un `file:` y no vale para localizar el repo. Vitest arranca con la raíz
+// no es un `file:` y no vale para localizar el repo. Vite arranca con la raíz
 // del proyecto como cwd, que es justo lo que necesitamos.
 const ROOT = path.resolve(process.cwd());
 
@@ -62,7 +64,7 @@ export function globToRegex(glob: string): RegExp {
   return new RegExp(`^${pattern}$`);
 }
 
-/** Globs del bloque `include` de un `vitest.config.ts` dado. */
+/** Globos del bloque `include` de un `vitest.config.ts` dado. */
 export function includeGlobs(configSource: string): string[] {
   const block = configSource.match(/include:\s*\[([\s\S]*?)\]/);
   if (!block) return [];
@@ -83,7 +85,6 @@ function apiTestFiles(): string[] {
 }
 
 const config = readFileSync(path.join(ROOT, "vitest.config.ts"), "utf8");
-const workflow = readFileSync(path.join(ROOT, ".github/workflows/ci.yml"), "utf8");
 
 describe("la suite de api/ está dentro de Vitest", () => {
   it("recoge todos los tests de api/ que existen en disco", () => {
@@ -111,19 +112,5 @@ describe("la suite de api/ está dentro de Vitest", () => {
     expect(apiMatcher.test("api/health.test.tsx")).toBe(true);
     expect(apiMatcher.test("src/lib/health.test.ts")).toBe(false);
     expect(apiMatcher.test("api/health.test.mjs")).toBe(false);
-  });
-});
-
-describe("la CI no puede silenciar un rojo", () => {
-  it("ejecuta la suite", () => {
-    expect(workflow).toMatch(/npm test|npx vitest run/);
-  });
-
-  it("no envuelve ningún paso en continue-on-error", () => {
-    expect(workflow).not.toMatch(/continue-on-error/);
-  });
-
-  it("el lint también bloquea", () => {
-    expect(workflow).toMatch(/npm run lint/);
   });
 });
