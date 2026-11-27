@@ -11,12 +11,5 @@
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": [
-    "api/_shared/**/*.ts",
-    "api/health.ts",
-    "api/gdelt.ts",
-    "api/traffic.ts",
-    "api/bitnodes.ts",
-    "api/github.ts"
-  ]
+  "include": ["api/**/*.ts"]
 }

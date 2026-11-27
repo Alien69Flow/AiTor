@@ -60,6 +60,25 @@ function stubFetch(messages: string[]): { chatBodies: Array<Record<string, unkno
 
 async function run(text: string): Promise<void> {
   const handler = (await import("./telegram-webhook")).default as unknown as Handler;
+
+  // El mock se nombra antes de la llamada. Pasado como argumento no tiene tipo
+  // contextual (el handler está tipado contra `unknown`), así que dentro de sus
+  // métodos `this` es `{}` y `this.statusCode` no existe. Con la constante, `res`
+  // se refiere a sí misma y el tipo sale sin ningún casting.
+  const res = {
+    statusCode: 200,
+    status(code: number) {
+      res.statusCode = code;
+      return res;
+    },
+    json() {
+      return res;
+    },
+    send() {
+      return res;
+    },
+  };
+
   await handler(
     {
       method: "POST",
@@ -67,19 +86,7 @@ async function run(text: string): Promise<void> {
       headers: { host: "localhost", "x-telegram-bot-api-secret-token": "secreto-de-prueba" },
       socket: { remoteAddress: "203.0.113.11" },
     },
-    {
-      statusCode: 200,
-      status(code: number) {
-        this.statusCode = code;
-        return this;
-      },
-      json() {
-        return this;
-      },
-      send() {
-        return this;
-      },
-    },
+    res,
   );
 }
 
@@ -97,7 +104,6 @@ describe("conocimiento en el turno", () => {
   it("una pregunta de mercados no lleva contexto inventado", async () => {
     const { chatBodies } = stubFetch([]);
     await run("¿cuánto cuesta el bitcoin hoy?");
-
     expect(chatBodies[0].context).toBeUndefined();
   });
 });
