@@ -1,9 +1,12 @@
 name: CI
 
-# Quality gate + dependency audit.
-# Uses only first-party GitHub actions (actions/*) and no secrets, so it is safe
-# on pull requests from forks. Merge control lives in the branch protection
-# "required status checks" — this workflow does not auto-merge anything.
+# Instala, compila y prueba. Sin secretos, así que nunca falla por claves que
+# falten. Tipos, build, tests y lint bloquean: un rojo de verdad tiene que verse
+# en la CI, no quedarse dentro de un job que termina en verde.
+#
+# Aparte del gate de la app van dos jobs que no lo frenan ni dependen de él:
+# `providers` comprueba que cada método de login encendido en GoTrue puede
+# arrancar, y `audit` sólo se pone rojo con avisos críticos de dependencias.
 
 on:
   push:
@@ -18,8 +21,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
-    name: typecheck · lint · build
+  build:
+    name: build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,10 +32,17 @@ jobs:
           node-version: '22'
           cache: npm
 
-      # lockfile is generated with npm 10 (Node 22); do not regenerate with npm 11.
+      # `npm ci` en vez de `npm install`: instala exactamente el árbol del
+      # lockfile y falla si `package.json` no cuadra con él. Con `npm install`,
+      # un lockfile desfasado se arreglaba en silencio y la CI medía otra cosa.
+      # El lockfile se generó con npm 10 (Node 22): no lo regeneres con npm 11.
+      # `--no-audit` porque la auditoría tiene su propio job, más abajo.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --no-audit --no-fund
 
+      # Vite compila sin comprobar tipos, así que un TS2339 podía llegar a `main`
+      # con la CI en verde. `tsc --noEmit` va antes del build para fallar rápido y
+      # con el error de tipos, no con el de empaquetado.
       - name: Typecheck
         run: npm run typecheck
 
@@ -40,6 +50,9 @@ jobs:
       # que habría cazado el mock roto de #94 antes de fusionar.
       - name: Typecheck de la API
         run: npx tsc -p tsconfig.api.json --noEmit
+
+      - name: Build
+        run: npm run build
 
       # jsdom needs require(esm), so these only run on Node >= 20 (this job uses
       # 22). Vitest 3 is pinned: vitest 5 requires Vite 6 and this app is on 5.
@@ -52,18 +65,6 @@ jobs:
       # puerta.
       - name: Lint
         run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      - name: Upload build output
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist
-          if-no-files-found: warn
-          retention-days: 7
 
   # The login page offers every method GoTrue has switched on, so an enabled
   # provider without credentials is a button that dies on click (that is how
