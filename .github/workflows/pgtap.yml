@@ -39,7 +39,38 @@ jobs:
           version: 3.3.0
 
       - name: Start local database
-        run: supabase db start
+        run: |
+          # El pull de la imagen de Postgres es lo que hinchaba el log hasta que
+          # la descarga por API se truncaba antes de llegar al TAP. Se guarda
+          # aparte y sólo se muestra si el arranque falla.
+          log="${RUNNER_TEMP}/db-start.log"
+          if ! supabase db start > "$log" 2>&1; then
+            echo "::group::log de supabase db start"
+            tail -n 80 "$log"
+            echo "::endgroup::"
+            exit 1
+          fi
 
       - name: Run pgTAP suites
-        run: supabase test db supabase/tests
+        run: |
+          # Sólo la parte TAP del log: el resumen por fichero, las líneas
+          # `ok`/`not ok` y sus diagnósticos `#`. Lo que añade el CLI (pull de
+          # imágenes, spinners) queda fuera, para que un fallo quepa entero.
+          log="${RUNNER_TEMP}/pgtap.log"
+          supabase test db supabase/tests > "$log" 2>&1
+          status=$?
+          tap="${RUNNER_TEMP}/pgtap.tap"
+          grep -E -e '^[[:space:]]*(TAP version|[0-9]+\.\.|ok |not ok |#|Bail out!)' \
+                  -e '^[[:space:]]*[^[:space:]]*\.sql' \
+                  -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
+                  "$log" > "$tap" || true
+          if [ -s "$tap" ]; then
+            cat "$tap"
+          else
+            echo "(sin líneas TAP reconocibles; se muestra el final del log)"
+            tail -n 40 "$log"
+          fi
+          if [ "$status" -ne 0 ]; then
+            echo "::error::pgTAP en rojo: mira las líneas 'not ok' de arriba."
+            exit 1
+          fi
