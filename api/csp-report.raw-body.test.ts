@@ -80,9 +80,13 @@ describe("handler: cuerpo que Vercel no ha parseado", () => {
     expect(status).toBe(204);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("directive=connect-src");
-    expect(lines[0]).toContain("blocked=https://pnyigikagdxqaogbiift.supabase.co/rest/v1");
+    // Lo bloqueado tambien se queda en su origen, aunque el informe traiga
+    // `/rest/v1`: la politica se edita por origen.
+    expect(lines[0]).toContain("blocked=https://pnyigikagdxqaogbiift.supabase.co ");
+    expect(lines[0]).not.toContain("/rest/v1");
     // Sólo el origen del documento, aunque el informe traiga `/hub`.
     expect(lines[0]).toContain("document=https://aitor.alienflow.space ");
+    expect(lines[0]).toContain("via=legacy");
   });
 
   it("tambien cuando `body` es un objeto sin datos", async () => {
@@ -107,7 +111,7 @@ describe("handler: cuerpo que Vercel no ha parseado", () => {
     const { lines } = await run(req);
 
     expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain("blocked=https://pnyigikagdxqaogbiift.supabase.co/rest/v1");
+    expect(lines[0]).toContain("blocked=https://pnyigikagdxqaogbiift.supabase.co ");
     expect(lines[0]).not.toContain("otro.example");
   });
 

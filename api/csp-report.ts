@@ -22,11 +22,15 @@ const MAX_REPORTS = 20;
 /** Un campo más largo que esto no aporta: para agregar orígenes sobra. */
 const MAX_FIELD_CHARS = 512;
 
+/** Por dónde llegó el informe: `reports+json`, `csp-report` o el objeto plano. */
+export type CspVia = "reporting" | "legacy" | "plano";
+
 export interface CspReport {
   directive: string;
   disposition: string;
   blocked: string;
   document: string;
+  via: CspVia;
 }
 
 /** Un grupo de informes iguales dentro de una petición, con cuántos eran. */
@@ -89,11 +93,29 @@ function originOnly(value: string): string {
 }
 
 /**
+ * Lo bloqueado, en la forma en que la política puede actuar sobre ello.
+ *
+ * Si es una URL se queda en su origen: la política se escribe por origen
+ * (`connect-src https://…supabase.co`), así que la ruta no cambia ninguna
+ * decisión y la query es donde viaja la firma de una URL de Storage
+ * (`…/object/sign/bucket/f.pdf?token=<jwt>`).
+ *
+ * Aplicar `originOnly` a todo rompería `inline` y `eval`: ninguno de los dos
+ * tiene autoridad, así que saldrían como `-`, y son justo lo que dice si falta
+ * `'unsafe-inline'` o `'unsafe-eval'` en la política. Por eso lo que no es una
+ * URL se registra tal cual.
+ */
+function blockedOrigin(value: string): string {
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(value) ? originOnly(value) : value;
+}
+
+/**
  * Una entrada a la forma que se registra, o null si no es una violación CSP.
  *
  * Tres envoltorios y una sola capa: `body` (Reporting API), `csp-report`
  * (legacy) o el objeto ya plano. `effective-directive` manda; `violated-directive`
- * es el respaldo de los navegadores que sólo mandan ese campo.
+ * es el respaldo de los navegadores que sólo mandan ese campo. `via` deja dicho
+ * por cuál de los tres llegó, que no se deduce del resto de la línea.
  */
 function toReport(item: unknown): CspReport | null {
   if (!item || typeof item !== "object") return null;
@@ -101,6 +123,8 @@ function toReport(item: unknown): CspReport | null {
   const entry = item as Record<string, unknown>;
   // `body` sólo vale si la entrada dice ser una violación CSP: `deprecation` e
   // `intervention` llegan por el mismo `report-to` y no son esto.
+  const via: CspVia =
+    entry.type === "csp-violation" ? "reporting" : entry["csp-report"] ? "legacy" : "plano";
   const inner = entry.type === "csp-violation" ? entry.body : (entry["csp-report"] ?? entry);
   if (!inner || typeof inner !== "object") return null;
 
@@ -112,7 +136,7 @@ function toReport(item: unknown): CspReport | null {
     "violated-directive",
     "violatedDirective",
   );
-  const blocked = pick(violation, "blocked-uri", "blockedURL");
+  const blocked = blockedOrigin(pick(violation, "blocked-uri", "blockedURL"));
 
   // Sin directiva ni origen bloqueado no hay nada que medir: un `document-uri`
   // solo no dice qué origen falta, así que no es un informe útil.
@@ -123,6 +147,7 @@ function toReport(item: unknown): CspReport | null {
     blocked,
     document: originOnly(pick(violation, "document-uri", "documentURL")),
     disposition: pick(violation, "disposition"),
+    via,
   };
 }
 
@@ -149,8 +174,10 @@ export function parseReports(payload: unknown): CspReport[] {
  * así que dos valores que sólo difieren en caracteres de control caen juntos, que
  * es lo correcto: son el mismo aviso.
  *
- * `document` y `disposition` son los del primer informe del grupo: la cuenta es
- * del par (directiva, origen), y las páginas se reparten entre peticiones.
+ * `document`, `disposition` y `via` son los del primer informe del grupo: la
+ * cuenta es del par (directiva, origen), y las páginas se reparten entre
+ * peticiones. Un lote llega por un solo canal, así que `via` no cambia dentro
+ * de un grupo.
  */
 export function groupReports(reports: CspReport[]): CspGroup[] {
   const groups = new Map<string, CspGroup>();
@@ -214,7 +241,7 @@ export default async function handler(req: ApiRequest, res: ApiResponse): Promis
 
   for (const group of groupReports(reports)) {
     console.warn(
-      `[csp-report] directive=${group.directive || "-"} blocked=${group.blocked || "-"} document=${group.document || "-"} disposition=${group.disposition || "-"} count=${group.count}`,
+      `[csp-report] directive=${group.directive || "-"} blocked=${group.blocked || "-"} document=${group.document || "-"} disposition=${group.disposition || "-"} via=${group.via} count=${group.count}`,
     );
   }
 

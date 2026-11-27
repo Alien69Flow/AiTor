@@ -69,7 +69,7 @@ describe("handler: contrato HTTP", () => {
 
     expect(status).toBe(204);
     expect(lines).toEqual([
-      "[csp-report] directive=script-src-elem blocked=https://cdn.example/x.js document=https://aitor.alienflow.space disposition=report count=1",
+      "[csp-report] directive=script-src-elem blocked=https://cdn.example document=https://aitor.alienflow.space disposition=report via=legacy count=1",
     ]);
   });
 
@@ -100,8 +100,8 @@ describe("handler: contrato HTTP", () => {
 
     expect(status).toBe(204);
     expect(lines).toEqual([
-      "[csp-report] directive=connect-src blocked=https://api.coingecko.com/api document=https://aitor.alienflow.space disposition=report count=1",
-      "[csp-report] directive=font-src blocked=https://fonts.gstatic.com/s/x.woff2 document=https://aitor.alienflow.space disposition=report count=1",
+      "[csp-report] directive=connect-src blocked=https://api.coingecko.com document=https://aitor.alienflow.space disposition=report via=reporting count=1",
+      "[csp-report] directive=font-src blocked=https://fonts.gstatic.com document=https://aitor.alienflow.space disposition=report via=reporting count=1",
     ]);
   });
 
@@ -132,7 +132,7 @@ describe("handler: contrato HTTP", () => {
     expect(status).toBe(204);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toBe(
-      "[csp-report] directive=img-src blocked=https://x.example/a.png document=https://aitor.alienflow.space disposition=report count=1",
+      "[csp-report] directive=img-src blocked=https://x.example document=https://aitor.alienflow.space disposition=report via=reporting count=1",
     );
     expect(lines[0]).not.toContain("deprecation");
   });
