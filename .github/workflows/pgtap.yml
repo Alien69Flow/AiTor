@@ -39,10 +39,15 @@ jobs:
       # Node >= 20.
       - uses: supabase/setup-cli@v3
         with:
-          # Fijado a propósito. Sin `version`, la action resuelve la última
-          # publicada (hoy 3.4.0) y el check cambiaría solo el día que el runner
-          # traiga otra. Las migraciones se prueban contra un CLI conocido, no
-          # contra el que toque esa semana.
+          # Fijado a propósito. El default de `@v3` no es un número ni «la
+          # última» a secas: sin `version`, lee el lockfile de la raíz
+          # (`bun.lock`, `pnpm-lock.yaml` o `package-lock.json`) e instala la
+          # versión de `supabase` que éste declare; cae en `latest` cuando el
+          # lockfile no la declara — aquí no la declara, así que sin este pin el
+          # CLI sería el que se hubiera publicado esa semana. El número fijo por
+          # defecto era cosa de `@v1`, que instalaba 2.20.3 si no se le decía
+          # nada. Las migraciones se prueban contra una versión conocida, no
+          # contra la que toque.
           version: 3.3.0
 
       - name: Start local database
