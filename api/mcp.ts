@@ -2397,7 +2397,7 @@ export default async function mcp(req: VercelRequest, res: VercelResponse) {
   }
   if (req.method !== "POST") return send(json({ error: "Usa POST" }, 405));
 
-  // Regla unica de IP: vive en api/_shared/types.ts, la misma que usa el lado Deno.
+  // Regla única de IP: vive en api/_shared/types.ts, la misma que usa el lado Deno.
   const ip = clientIp(req);
 
   const caller = await resolveCaller(req.headers.authorization, ip);

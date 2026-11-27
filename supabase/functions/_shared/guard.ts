@@ -40,7 +40,7 @@ export function isAllowedOrigin(req: Request): boolean {
 // `guard.ip.test.ts` usa la misma tabla que el lado Node para detectarlo si no.
 //
 // Antes esta función ponía `cf-connecting-ip` por delante, y eso la hacía
-// esquivables: la manda el cliente y rotarla daba un cubo de rate limit nuevo
+// esquivable: la manda el cliente y rotarla daba un cubo de rate limit nuevo
 // por petición.
 export const IP_HEADERS = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const;
 
