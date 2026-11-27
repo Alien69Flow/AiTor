@@ -23,12 +23,14 @@ const ALLOWED_ORIGINS = [
 export function isAllowedOrigin(req: Request): boolean {
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
   if (!origin) return false;
+
   let host: string;
   try {
     host = new URL(origin).hostname;
   } catch {
     return false;
   }
+
   return ALLOWED_ORIGINS.some((allowed) =>
     allowed.startsWith(".") ? host.endsWith(allowed) : host === allowed,
   );
@@ -41,15 +43,20 @@ export function isAllowedOrigin(req: Request): boolean {
 //
 // Antes esta función ponía `cf-connecting-ip` por delante, y eso la hacía
 // esquivable: la manda el cliente y rotarla daba un cubo de rate limit nuevo
-// por petición.
-export const IP_HEADERS = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const;
+// por petición. Ahora no se consulta en absoluto: mandarla no cambia la clave.
+//
+// `x-vercel-forwarded-for` sólo aparece si hay un Vercel delante; en el borde de
+// Supabase se salta. Aun así se deja en la lista para que las dos copias sean
+// literalmente la misma y la tabla de pruebas valga para las dos.
+export const IP_HEADERS = ["x-vercel-forwarded-for", "x-real-ip", "x-forwarded-for"] as const;
 
 export const UNKNOWN_IP = "unknown";
 
-/** Primer segmento no vacío de una cadena `x-forwarded-for`. */
-export function firstForwardedIp(value: string): string {
-  for (const segment of value.split(",")) {
-    const trimmed = segment.trim();
+/** Último segmento no vacío de una cadena `x-forwarded-for`. */
+export function lastForwardedIp(value: string): string {
+  const segments = value.split(",");
+  for (let index = segments.length - 1; index >= 0; index--) {
+    const trimmed = (segments[index] ?? "").trim();
     if (trimmed) return trimmed;
   }
   return "";
@@ -59,7 +66,7 @@ export function firstForwardedIp(value: string): string {
 export function clientIp(headers: Headers, remoteAddress?: string): string {
   for (const name of IP_HEADERS) {
     const raw = headers.get(name) ?? "";
-    const candidate = name === "x-forwarded-for" ? firstForwardedIp(raw) : raw.trim();
+    const candidate = name === "x-forwarded-for" ? lastForwardedIp(raw) : raw.trim();
     if (candidate) return candidate;
   }
   return remoteAddress?.trim() || UNKNOWN_IP;
@@ -96,6 +103,7 @@ export function guardPublic(
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
+
   if (!rateLimit(req, limit)) {
     return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
       status: 429,

@@ -57,32 +57,37 @@ export function header(req: ApiRequest, name: string): string {
  *
  * Orden, y por qué:
  *
- *   1. `x-forwarded-for`, primer segmento NO vacío. Es la única cabecera que
- *      los dos bordes (Vercel y el runtime de Supabase) ponen siempre. Se toma
- *      el primero porque es el orden en que la cadena declara el cliente.
- *   2. `x-real-ip`. Respaldo de proxies que la ponen en vez de la cadena.
- *   3. `cf-connecting-ip`. Tercera opción, por compatibilidad con delante-de-
- *      Cloudflare. Va DESPUÉS, no antes: un cliente puede mandarla y rotar
- *      cubos de rate limit si se cree primero.
+ *   1. `x-vercel-forwarded-for`, entera. La escribe el borde de Vercel y la
+ *      sobrescribe, así que el cliente no puede colar la suya.
+ *   2. `x-real-ip`, entera. Respaldo de proxies que la ponen en vez de una
+ *      cadena.
+ *   3. `x-forwarded-for`, ÚLTIMO segmento no vacío. Lo que añade el borde va
+ *      al final de la cadena y lo que antepone el cliente, al principio: el
+ *      primer segmento es justo el que puede escribir quien llama.
  *   4. El socket, sólo en Node. Sirve para desarrollo y para peticiones que no
  *      pasan por el borde; en Deno no existe y se salta.
  *   5. `"unknown"`. Nunca se devuelve cadena vacía: el rate limit necesita una
  *      clave estable y un `""` agruparía a todos los que no traen cabecera.
+ *
+ * `cf-connecting-ip` ya no se consulta: no está documentada para ninguno de
+ * los dos bordes, así que la manda el cliente y rotarla estrenaba un cubo de
+ * rate limit por petición.
  *
  * LÍMITE, dicho claro: `x-forwarded-for` la puede inventar el cliente. Esto es
  * una clave de rate limit y de agrupación, no una identidad. Quien quiera
  * saltarse el límite puede rotarla; lo que no puede es ganar permisos, porque
  * la autorización va por el `Bearer` (mcp) o por la lista de orígenes (guard).
  */
-export const IP_HEADERS = ["x-forwarded-for", "x-real-ip", "cf-connecting-ip"] as const;
+export const IP_HEADERS = ["x-vercel-forwarded-for", "x-real-ip", "x-forwarded-for"] as const;
 
 /** Valor de IP cuando no hay ninguna cabecera ni socket. */
 export const UNKNOWN_IP = "unknown";
 
-/** Primer segmento no vacío de una cadena `x-forwarded-for`. */
-export function firstForwardedIp(value: string): string {
-  for (const segment of value.split(",")) {
-    const trimmed = segment.trim();
+/** Último segmento no vacío de una cadena `x-forwarded-for`. */
+export function lastForwardedIp(value: string): string {
+  const segments = value.split(",");
+  for (let index = segments.length - 1; index >= 0; index--) {
+    const trimmed = (segments[index] ?? "").trim();
     if (trimmed) return trimmed;
   }
   return "";
@@ -92,7 +97,7 @@ export function firstForwardedIp(value: string): string {
 export function clientIp(req: ApiRequest): string {
   for (const name of IP_HEADERS) {
     const raw = header(req, name);
-    const candidate = name === "x-forwarded-for" ? firstForwardedIp(raw) : raw.trim();
+    const candidate = name === "x-forwarded-for" ? lastForwardedIp(raw) : raw.trim();
     if (candidate) return candidate;
   }
   return req.socket?.remoteAddress?.trim() || UNKNOWN_IP;
