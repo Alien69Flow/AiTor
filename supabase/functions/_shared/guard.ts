@@ -19,6 +19,7 @@ const ALLOWED_ORIGINS = [
   "localhost",
   "127.0.0.1",
 ];
+
 export function isAllowedOrigin(req: Request): boolean {
   const origin = req.headers.get("origin") || req.headers.get("referer") || "";
   if (!origin) return false;
