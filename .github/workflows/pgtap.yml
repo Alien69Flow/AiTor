@@ -54,8 +54,10 @@ jobs:
       - name: Run pgTAP suites
         run: |
           # Sólo la parte TAP del log: el resumen por fichero, las líneas
-          # `ok`/`not ok` y sus diagnósticos `#`. Lo que añade el CLI (pull de
-          # imágenes, spinners) queda fuera, para que un fallo quepa entero.
+          # `ok`/`not ok`, los diagnósticos `#` y el veredicto. Fuera los avisos
+          # de psql (`NOTICE: extension "pgtap" already exists`) y lo que añade
+          # el CLI (pull de imágenes, spinners), para que un fallo quepa entero
+          # en la descarga del log.
           #
           # El runner corre con `bash -e`: sin el `|| status=$?` la primera
           # orden que falla corta el script antes de imprimir nada.
@@ -66,7 +68,8 @@ jobs:
           grep -E -e '^[[:space:]]*(TAP version|[0-9]+\.\.|ok |not ok |#|Bail out!)' \
                   -e '^[[:space:]]*[^[:space:]]*\.sql' \
                   -e '^(Result|Failed|Tests=|Files=|Dubious|Parse errors)' \
-                  "$log" > "$tap" || true
+                  "$log" \
+            | grep -v 'NOTICE:' > "$tap" || true
           if [ -s "$tap" ]; then
             cat "$tap"
           else
@@ -74,6 +77,6 @@ jobs:
             tail -n 40 "$log"
           fi
           if [ "$status" -ne 0 ]; then
-            echo "::error::pgTAP en rojo: mira las líneas 'not ok' de arriba."
+            echo "::error::pgTAP en rojo: mira arriba las líneas '# Failed test' o 'not ok'."
             exit 1
           fi
