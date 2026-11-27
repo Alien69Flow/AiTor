@@ -54,6 +54,12 @@ const DIRECTIVAS_INFORME = ["default-src", "script-src"];
  */
 const DIRECTIVAS_DE_CABLEADO = ["report-uri", "report-to"];
 
+/**
+ * Directivas booleanas: no llevan valores porque no los admiten. Sin esta lista,
+ * `upgrade-insecure-requests` parecería una directiva a medio escribir.
+ */
+const SIN_VALORES = ["upgrade-insecure-requests", "block-all-mixed-content"];
+
 /** El colector y el grupo que lo declara: los dos lados del cableado. */
 const COLECTOR = "/api/csp-report";
 const GRUPO = "csp";
@@ -143,9 +149,10 @@ function repetidas(politica: string, etiqueta: string): string[] {
   return problemas;
 }
 
+/** Una directiva que espera valores y no los trae está a medio escribir. */
 function vacias(politica: Record<string, string[]>, etiqueta: string): string[] {
   return Object.entries(politica)
-    .filter(([, valores]) => valores.length === 0)
+    .filter(([nombre, valores]) => valores.length === 0 && !SIN_VALORES.includes(nombre))
     .map(([nombre]) => `${nombre} no tiene valores en la política de ${etiqueta}`);
 }
 
