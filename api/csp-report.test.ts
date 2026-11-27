@@ -253,7 +253,7 @@ describe("handler", () => {
     expect((await run(new TextEncoder().encode(big))).lines).toHaveLength(0);
   });
 
-  it("un array enorme se corta en 20 informes: 20 grupos distintos", async () => {
+  it("un array enorme se corta en 20 informes, no en 200", async () => {
     const reports = Array.from({ length: 200 }, (_, index) => ({
       type: "csp-violation",
       body: { effectiveDirective: "img-src", blockedURL: `https://x.example/${index}.png` },
@@ -262,8 +262,8 @@ describe("handler", () => {
     const { status, lines } = await run(reports);
 
     expect(status).toBe(204);
-    // Todos comparten origen, así que ahora colapsan en una sola línea con su
-    // cuenta: el tope de 20 informes sigue mordiendo (count=20), no 200.
+    // Todos comparten origen, así que ahora colapsan en una sola línea: el tope
+    // de 20 informes sigue mordiendo (count=20), no 200.
     expect(lines).toHaveLength(1);
     expect(lines[0]).toContain("count=20");
   });
